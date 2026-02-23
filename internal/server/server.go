@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,7 +14,11 @@ import (
 	"github.com/steveyegge/loguetown/internal/agents"
 	"github.com/steveyegge/loguetown/internal/chronicle"
 	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/steveyegge/loguetown/internal/embeddings"
+	"github.com/steveyegge/loguetown/internal/memory"
 	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/steveyegge/loguetown/internal/skills"
+	"github.com/steveyegge/loguetown/internal/storage"
 )
 
 // Server handles HTTP requests for the Loguetown GUI.
@@ -69,6 +74,14 @@ func (s *Server) registerRoutes() {
 
 	// Chronicle
 	s.mux.HandleFunc("GET /api/chronicle", s.handleQueryChronicle)
+
+	// Skills
+	s.mux.HandleFunc("GET /api/skills", s.handleListSkills)
+	s.mux.HandleFunc("POST /api/skills/reindex", s.handleReindexSkills)
+
+	// Memory
+	s.mux.HandleFunc("GET /api/memory", s.handleListMemory)
+	s.mux.HandleFunc("PATCH /api/memory/{id}", s.handleUpdateMemory)
 
 	// SPA static files (must be last — catch-all)
 	sub, _ := fs.Sub(webui.Files, "dist")
@@ -253,6 +266,111 @@ func (s *Server) handleQueryChronicle(w http.ResponseWriter, r *http.Request) {
 		events = []chronicle.Event{}
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+// skillRow is the JSON representation of a skill chunk (no embedding bytes).
+type skillRow struct {
+	ID           string `json:"id"`
+	Role         string `json:"role"`
+	FilePath     string `json:"file_path"`
+	Title        string `json:"title,omitempty"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
+	db, err := storage.Get()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	rows, err := db.Query(
+		`SELECT id, role, file_path, COALESCE(title,''), COALESCE(content_hash,''), created_at
+		 FROM skill_files ORDER BY role, file_path, title`,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("query skill_files: %w", err))
+		return
+	}
+	defer rows.Close()
+
+	result := []skillRow{}
+	for rows.Next() {
+		var sk skillRow
+		if err := rows.Scan(&sk.ID, &sk.Role, &sk.FilePath, &sk.Title, &sk.ContentHash, &sk.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		result = append(result, sk)
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleReindexSkills(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadProject(s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("load project config: %w", err))
+		return
+	}
+	provider, err := embeddings.New(cfg.Embeddings)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("create embedding provider: %w", err))
+		return
+	}
+	skillsDir := filepath.Join(s.projectPath, ".loguetown", "skills")
+	result, err := skills.Reindex(skillsDir, provider)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{
+		"files":   result.Files,
+		"chunks":  result.Chunks,
+		"skipped": result.Skipped,
+	})
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+func (s *Server) handleListMemory(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	chunks, err := memory.List(q.Get("layer"), q.Get("agent"), s.projectID, q.Get("status"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if chunks == nil {
+		chunks = []memory.Chunk{}
+	}
+	writeJSON(w, http.StatusOK, chunks)
+}
+
+func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Status          string `json:"status"`
+		RejectionReason string `json:"rejection_reason,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if body.Status != "approved" && body.Status != "rejected" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("status must be 'approved' or 'rejected'"))
+		return
+	}
+	if err := memory.SetStatus(id, body.Status, body.RejectionReason); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	c, err := memory.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

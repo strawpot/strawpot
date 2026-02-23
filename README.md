@@ -4,7 +4,7 @@
 
 A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Planner, Implementer, Reviewer, Fixer) work in isolated git worktrees while a full Chronicle audit trail captures everything.
 
-**Phase 1 (current):** CLI + GUI for project/role/agent management and Chronicle event viewing.
+**Phase 2 (current):** Skills knowledge-base with semantic search + memory chunk management.
 
 ---
 
@@ -12,6 +12,7 @@ A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Pl
 
 - Go 1.22+
 - Node.js 18+ (for GUI only)
+- Ollama (default) or OpenAI API key (for embedding features)
 
 ---
 
@@ -45,7 +46,11 @@ lt agent list
 # 3. Create an agent
 lt agent create --name charlie --role implementer
 
-# 4. Open the GUI
+# 4. Index skill files and search them
+lt skills reindex
+lt skills search "typescript error handling"
+
+# 5. Open the GUI
 lt gui   # → http://localhost:4242
 ```
 
@@ -59,7 +64,7 @@ Scaffolds `.loguetown/` inside the current git repository:
 
 ```
 .loguetown/
-  project.yaml          # project config, ID, orchestrator settings
+  project.yaml          # project config, ID, embeddings, memory settings
   roles/                # planner.yaml, implementer.yaml, reviewer.yaml, fixer.yaml
   agents/               # empty — create with lt agent create
   skills/               # stub .md files for each role
@@ -104,6 +109,39 @@ Agent charters live in `.loguetown/agents/<name>.yaml` and inherit defaults from
 
 ---
 
+### `lt skills <subcommand>`
+
+Manages the skills knowledge-base. Skill files are Markdown documents in `.loguetown/skills/` split on `## ` headings into searchable chunks.
+
+| Subcommand | Description |
+|---|---|
+| `lt skills reindex` | Embed all `.md` files and upsert into the DB; skips unchanged files |
+| `lt skills search <query>` | Semantic search; returns top-K chunks sorted by cosine similarity |
+
+**`lt skills search` flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `-k`, `--top` | `5` | Maximum results to return |
+| `-s`, `--min-sim` | `0.3` | Minimum cosine similarity score (0–1) |
+
+Embeddings are stored as raw BLOBs (little-endian float32) in SQLite — no CGo or external extensions required. Content hashing (SHA-256) ensures files are re-embedded only when their content changes.
+
+---
+
+### `lt memory <subcommand>`
+
+Manages memory chunks stored by agents across four layers: `episodic`, `semantic_local`, `semantic_global`, `working`.
+
+| Subcommand | Description |
+|---|---|
+| `lt memory list` | Table of chunks; filter with `--layer`, `--agent`, `--status` |
+| `lt memory show <id>` | Full content and metadata of a chunk |
+| `lt memory promote <id>` | Approve a proposed chunk (`MEMORY_PROMOTED` Chronicle event) |
+| `lt memory reject <id>` | Reject a proposed chunk; `--reason "..."` |
+
+---
+
 ### `lt gui [--port 4242]`
 
 Starts the web GUI and serves it at `http://localhost:<port>`.
@@ -115,40 +153,66 @@ Starts the web GUI and serves it at `http://localhost:<port>`.
 | Agents | Agent table with detail panel; create and delete |
 | Chronicle | Full event feed; filter by type, actor, limit; expand payload JSON |
 
+**REST API** (also used by the GUI):
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/project` | Project config |
+| `GET/POST/DELETE` | `/api/roles[/{name}]` | Role CRUD |
+| `GET/POST/DELETE` | `/api/agents[/{name}]` | Agent CRUD |
+| `GET` | `/api/chronicle` | Chronicle feed (`event_type`, `actor`, `limit` params) |
+| `GET` | `/api/skills` | List indexed skill chunks (no embedding bytes) |
+| `POST` | `/api/skills/reindex` | Trigger skill reindex |
+| `GET` | `/api/memory` | List memory chunks (`layer`, `agent`, `status` params) |
+| `PATCH` | `/api/memory/{id}` | Update chunk status (`approved` / `rejected`) |
+
+---
+
+## Embedding Configuration
+
+Loguetown uses pluggable embedding providers for semantic search. Configure in `.loguetown/project.yaml`:
+
+```yaml
+embeddings:
+  provider: ollama            # or: openai
+  model: nomic-embed-text     # or: text-embedding-3-small, all-MiniLM-L6-v2
+  base_url: ""                # default: http://localhost:11434 (ollama) or https://api.openai.com
+  dimensions: 768             # must match model output
+  api_key: ""                 # or set OPENAI_API_KEY env var
+```
+
+**Ollama** (default): Start with `ollama serve` and pull `ollama pull nomic-embed-text`.
+
+**OpenAI**: Set `provider: openai` and either `api_key` in the config or the `OPENAI_API_KEY` environment variable.
+
+---
+
+## Memory Configuration
+
+```yaml
+memory:
+  episodic_retention:
+    max_entries: 500
+    max_days: 30
+  retrieval:
+    top_k: 5
+    min_similarity: 0.3
+  max_tokens_injected: 2000
+```
+
 ---
 
 ## Global Data
 
 ```
 ~/.loguetown/
-  db.sqlite                          # SQLite — all projects (schema v1)
+  db.sqlite                          # SQLite — all projects (schema v2)
   data/
     projects/<project-id>/
       events.jsonl                   # Chronicle — append-only JSONL
 ```
 
-The database schema covers all future phases: projects, plans, tasks, runs, artifacts, messages, memory chunks, skill files, conversations, escalations, and the Chronicle index.
-
----
-
-## Project Config (`.loguetown/project.yaml`)
-
-```yaml
-project:
-  id: abc123def456
-  name: my-project
-  repo_path: .
-  default_branch: main
-
-orchestrator:
-  model:
-    provider: claude
-    id: claude-opus-4-6
-
-scheduler:
-  max_parallel_runs: 3
-  max_fix_attempts: 3
-```
+The schema covers all phases: projects, plans, tasks, runs, artifacts, messages, memory chunks (with embedding BLOBs), skill files (with embedding BLOBs and content hashes), conversations, escalations, and the Chronicle index.
 
 ---
 
@@ -180,11 +244,14 @@ cmd/lt/              # binary entry point
 internal/
   agents/            # Charter YAML loader + role resolution
   chronicle/         # JSONL + SQLite event writer and query
-  cmd/               # Cobra CLI commands (init, role, agent, gui)
-  config/            # project.yaml loader, git root finder
+  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory)
+  config/            # project.yaml loader (incl. EmbeddingsConfig, MemoryConfig)
+  embeddings/        # Provider interface, Ollama + OpenAI clients, cosine similarity
+  memory/            # memory_chunks CRUD and vector retrieval
   roles/             # Role YAML loader and built-in defaults
   server/            # HTTP server + REST API handlers
-  storage/           # SQLite schema (v1) and connection singleton
+  skills/            # Skill file indexer (chunking, embedding) and search
+  storage/           # SQLite schema (v2) and connection singleton
   tui/               # Terminal output helpers (lipgloss)
 web/
   src/               # React + TypeScript source
@@ -198,10 +265,9 @@ plan/                # Design documents for all 8 phases
 ## Roadmap
 
 - [x] Phase 1 — Foundation: SQLite schema, Chronicle, roles/agents CLI + GUI
-- [ ] Phase 2 — Worktrees: isolated git worktrees per run
+- [x] Phase 2 — Skills + Memory: pluggable embedding providers, skill indexing, semantic search, memory chunk management
 - [ ] Phase 3 — Runner: agent subprocess execution via Claude Code
-- [ ] Phase 4 — Memory: episodic + semantic retrieval
-- [ ] Phase 5 — Orchestrator: plan DAG, task scheduling
-- [ ] Phase 6 — Checks & Review: CI integration, merge gates
-- [ ] Phase 7 — Full GUI: DAG viewer, diff review, memory browser, chat
-- [ ] Phase 8 — Polish: escalation UI, notifications, multi-project
+- [ ] Phase 4 — Orchestrator: plan DAG, task scheduling, worktrees
+- [ ] Phase 5 — Checks & Review: CI integration, merge gates
+- [ ] Phase 6 — Full GUI: DAG viewer, diff review, memory browser, chat
+- [ ] Phase 7 — Polish: escalation UI, notifications, multi-project

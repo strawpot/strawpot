@@ -8,6 +8,34 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// EmbeddingsConfig configures the embedding provider used for skills and memory.
+type EmbeddingsConfig struct {
+	Provider   string `yaml:"provider" json:"provider"`           // ollama | openai
+	Model      string `yaml:"model" json:"model"`
+	BaseURL    string `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	Dimensions int    `yaml:"dimensions" json:"dimensions"`
+	APIKey     string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+}
+
+// MemoryRetrievalConfig controls vector search parameters.
+type MemoryRetrievalConfig struct {
+	TopK          int     `yaml:"top_k" json:"top_k"`
+	MinSimilarity float64 `yaml:"min_similarity" json:"min_similarity"`
+}
+
+// EpisodicRetentionConfig controls how long episodic memories are kept.
+type EpisodicRetentionConfig struct {
+	MaxEntries int `yaml:"max_entries" json:"max_entries"`
+	MaxDays    int `yaml:"max_days" json:"max_days"`
+}
+
+// MemoryConfig configures memory storage and retrieval.
+type MemoryConfig struct {
+	EpisodicRetention EpisodicRetentionConfig `yaml:"episodic_retention" json:"episodic_retention"`
+	Retrieval         MemoryRetrievalConfig   `yaml:"retrieval" json:"retrieval"`
+	MaxTokensInjected int                     `yaml:"max_tokens_injected" json:"max_tokens_injected"`
+}
+
 // Project holds the parsed .loguetown/project.yaml.
 type Project struct {
 	Project struct {
@@ -16,6 +44,8 @@ type Project struct {
 		RepoPat       string `yaml:"repo_path" json:"repo_path"`
 		DefaultBranch string `yaml:"default_branch" json:"default_branch"`
 	} `yaml:"project" json:"project"`
+	Embeddings EmbeddingsConfig `yaml:"embeddings" json:"embeddings"`
+	Memory     MemoryConfig     `yaml:"memory" json:"memory"`
 }
 
 // FindProjectPath walks up from startDir looking for .loguetown/project.yaml.
