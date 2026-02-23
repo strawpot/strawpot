@@ -1,1 +1,17 @@
-.claude/
+# Build output
+/lt
+/lt.exe
+
+# Go test cache and coverage
+*.test
+*.out
+coverage.html
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
