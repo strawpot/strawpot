@@ -11,34 +11,34 @@ import (
 
 // ModelConfig specifies the AI model for a role or agent.
 type ModelConfig struct {
-	Provider string                 `yaml:"provider"` // claude | openai | ollama | custom
-	ID       string                 `yaml:"id"`
-	Path     string                 `yaml:"path,omitempty"`
-	Options  map[string]interface{} `yaml:"options,omitempty"`
+	Provider string                 `yaml:"provider" json:"provider"` // claude | openai | ollama | custom
+	ID       string                 `yaml:"id" json:"id"`
+	Path     string                 `yaml:"path,omitempty" json:"path,omitempty"`
+	Options  map[string]interface{} `yaml:"options,omitempty" json:"options,omitempty"`
 }
 
 // ToolsConfig specifies allowed tools and bash commands.
 type ToolsConfig struct {
-	Allowed      []string `yaml:"allowed"`
-	BashAllowlist []string `yaml:"bash_allowlist,omitempty"`
+	Allowed       []string `yaml:"allowed" json:"allowed"`
+	BashAllowlist []string `yaml:"bash_allowlist,omitempty" json:"bash_allowlist,omitempty"`
 }
 
 // MemoryConfig specifies memory layer settings.
 type MemoryConfig struct {
-	Layers            []string               `yaml:"layers,omitempty"`
-	Provider          string                 `yaml:"provider,omitempty"`
-	MaxTokensInjected int                    `yaml:"max_tokens_injected,omitempty"`
-	Budget            map[string]interface{} `yaml:"budget,omitempty"`
+	Layers            []string               `yaml:"layers,omitempty" json:"layers,omitempty"`
+	Provider          string                 `yaml:"provider,omitempty" json:"provider,omitempty"`
+	MaxTokensInjected int                    `yaml:"max_tokens_injected,omitempty" json:"max_tokens_injected,omitempty"`
+	Budget            map[string]interface{} `yaml:"budget,omitempty" json:"budget,omitempty"`
 }
 
 // Role is the parsed content of a .loguetown/roles/{name}.yaml file.
 type Role struct {
-	Name          string       `yaml:"name"`
-	Description   string       `yaml:"description,omitempty"`
-	DefaultSkills []string     `yaml:"default_skills"`
-	DefaultTools  ToolsConfig  `yaml:"default_tools"`
-	DefaultModel  ModelConfig  `yaml:"default_model"`
-	DefaultMemory *MemoryConfig `yaml:"default_memory,omitempty"`
+	Name          string        `yaml:"name" json:"name"`
+	Description   string        `yaml:"description,omitempty" json:"description,omitempty"`
+	DefaultSkills []string      `yaml:"default_skills" json:"default_skills"`
+	DefaultTools  ToolsConfig   `yaml:"default_tools" json:"default_tools"`
+	DefaultModel  ModelConfig   `yaml:"default_model" json:"default_model"`
+	DefaultMemory *MemoryConfig `yaml:"default_memory,omitempty" json:"default_memory,omitempty"`
 }
 
 // Validate checks required fields.
