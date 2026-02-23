@@ -36,6 +36,15 @@ type MemoryConfig struct {
 	MaxTokensInjected int                     `yaml:"max_tokens_injected" json:"max_tokens_injected"`
 }
 
+// RunnerConfig configures the agent execution provider.
+type RunnerConfig struct {
+	Provider       string `yaml:"provider" json:"provider"`                 // claude-code | anthropic-api
+	Model          string `yaml:"model,omitempty" json:"model,omitempty"`   // for anthropic-api
+	APIKey         string `yaml:"api_key,omitempty" json:"api_key,omitempty"` // or ANTHROPIC_API_KEY
+	MaxTurns       int    `yaml:"max_turns" json:"max_turns"`               // agentic loop cap
+	TimeoutMinutes int    `yaml:"timeout_minutes" json:"timeout_minutes"`
+}
+
 // Project holds the parsed .loguetown/project.yaml.
 type Project struct {
 	Project struct {
@@ -46,6 +55,7 @@ type Project struct {
 	} `yaml:"project" json:"project"`
 	Embeddings EmbeddingsConfig `yaml:"embeddings" json:"embeddings"`
 	Memory     MemoryConfig     `yaml:"memory" json:"memory"`
+	Runner     RunnerConfig     `yaml:"runner" json:"runner"`
 }
 
 // FindProjectPath walks up from startDir looking for .loguetown/project.yaml.

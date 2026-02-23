@@ -27,4 +27,6 @@ func init() {
 	rootCmd.AddCommand(newGuiCmd())
 	rootCmd.AddCommand(newSkillsCmd())
 	rootCmd.AddCommand(newMemoryCmd())
+	rootCmd.AddCommand(newTasksCmd())
+	rootCmd.AddCommand(newPlanCmd())
 }
