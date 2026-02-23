@@ -13,18 +13,18 @@ import (
 
 // Charter is the parsed content of a .loguetown/agents/{name}.yaml file.
 type Charter struct {
-	Name        string              `yaml:"name"`
-	Role        string              `yaml:"role"`
-	Model       *roles.ModelConfig  `yaml:"model,omitempty"`
-	ExtraSkills []string            `yaml:"extra_skills,omitempty"`
-	Memory      *roles.MemoryConfig `yaml:"memory,omitempty"`
-	Tools       *roles.ToolsConfig  `yaml:"tools,omitempty"`
+	Name        string              `yaml:"name" json:"name"`
+	Role        string              `yaml:"role" json:"role"`
+	Model       *roles.ModelConfig  `yaml:"model,omitempty" json:"model,omitempty"`
+	ExtraSkills []string            `yaml:"extra_skills,omitempty" json:"extra_skills,omitempty"`
+	Memory      *roles.MemoryConfig `yaml:"memory,omitempty" json:"memory,omitempty"`
+	Tools       *roles.ToolsConfig  `yaml:"tools,omitempty" json:"tools,omitempty"`
 
 	// Resolved fields — populated by Resolve(), not stored in YAML.
-	ResolvedModel  *roles.ModelConfig  `yaml:"-"`
-	ResolvedSkills []string            `yaml:"-"`
-	ResolvedTools  *roles.ToolsConfig  `yaml:"-"`
-	ResolvedMemory *roles.MemoryConfig `yaml:"-"`
+	ResolvedModel  *roles.ModelConfig  `yaml:"-" json:"resolved_model,omitempty"`
+	ResolvedSkills []string            `yaml:"-" json:"resolved_skills,omitempty"`
+	ResolvedTools  *roles.ToolsConfig  `yaml:"-" json:"resolved_tools,omitempty"`
+	ResolvedMemory *roles.MemoryConfig `yaml:"-" json:"resolved_memory,omitempty"`
 }
 
 // Resolve merges role defaults into the charter and populates Resolved* fields.
@@ -155,6 +155,11 @@ func Load(name, projectPath string) (*Charter, error) {
 func Exists(name, projectPath string) bool {
 	_, err := os.Stat(FilePath(name, projectPath))
 	return err == nil
+}
+
+// Delete removes an agent charter file.
+func Delete(name, projectPath string) error {
+	return os.Remove(FilePath(name, projectPath))
 }
 
 // Save writes a charter to its YAML file (without Resolved* fields).

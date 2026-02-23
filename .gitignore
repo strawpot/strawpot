@@ -2,6 +2,11 @@
 /lt
 /lt.exe
 
+# Web frontend (rebuild: cd web && npm install && npm run build)
+web/node_modules/
+web/dist/**
+!web/dist/index.html
+
 # Go test cache and coverage
 *.test
 *.out
