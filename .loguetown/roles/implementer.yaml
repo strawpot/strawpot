@@ -1,0 +1,27 @@
+name: implementer
+description: Writes code to implement features and fix bugs
+default_skills:
+    - implementer/typescript-patterns.md
+    - implementer/testing-conventions.md
+    - implementer/git-workflow.md
+    - shared/commit-style.md
+default_tools:
+    allowed:
+        - read
+        - write
+        - bash
+    bash_allowlist:
+        - npm *
+        - git *
+        - npx tsc *
+        - npx eslint *
+default_model:
+    provider: claude
+    id: claude-opus-4-6
+default_memory:
+    layers:
+        - episodic
+        - semantic_local
+        - semantic_global
+    provider: local
+    max_tokens_injected: 8000

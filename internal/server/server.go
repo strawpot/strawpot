@@ -1,0 +1,290 @@
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"strconv"
+	"strings"
+
+	webui "github.com/steveyegge/loguetown/web"
+
+	"github.com/steveyegge/loguetown/internal/agents"
+	"github.com/steveyegge/loguetown/internal/chronicle"
+	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/steveyegge/loguetown/internal/roles"
+)
+
+// Server handles HTTP requests for the Loguetown GUI.
+type Server struct {
+	projectPath string
+	projectID   string
+	mux         *http.ServeMux
+}
+
+// New creates and configures the HTTP server for the given project.
+func New(projectPath string) (*Server, error) {
+	p, err := config.LoadProject(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("load project: %w", err)
+	}
+
+	s := &Server{
+		projectPath: projectPath,
+		projectID:   p.Project.ID,
+		mux:         http.NewServeMux(),
+	}
+	s.registerRoutes()
+	return s, nil
+}
+
+// ServeHTTP implements http.Handler; adds CORS headers for dev mode.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) registerRoutes() {
+	// Project
+	s.mux.HandleFunc("GET /api/project", s.handleGetProject)
+
+	// Roles
+	s.mux.HandleFunc("GET /api/roles", s.handleListRoles)
+	s.mux.HandleFunc("GET /api/roles/{name}", s.handleGetRole)
+	s.mux.HandleFunc("POST /api/roles", s.handleCreateRole)
+	s.mux.HandleFunc("DELETE /api/roles/{name}", s.handleDeleteRole)
+
+	// Agents
+	s.mux.HandleFunc("GET /api/agents", s.handleListAgents)
+	s.mux.HandleFunc("GET /api/agents/{name}", s.handleGetAgent)
+	s.mux.HandleFunc("POST /api/agents", s.handleCreateAgent)
+	s.mux.HandleFunc("DELETE /api/agents/{name}", s.handleDeleteAgent)
+
+	// Chronicle
+	s.mux.HandleFunc("GET /api/chronicle", s.handleQueryChronicle)
+
+	// SPA static files (must be last — catch-all)
+	sub, _ := fs.Sub(webui.Files, "dist")
+	s.mux.Handle("/", spaHandler(sub))
+}
+
+// ── Project ──────────────────────────────────────────────────────────────────
+
+func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
+	p, err := config.LoadProject(s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
+	names, err := roles.List(s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var result []*roles.Role
+	for _, name := range names {
+		role, err := roles.Load(name, s.projectPath)
+		if err != nil {
+			continue // skip invalid
+		}
+		result = append(result, role)
+	}
+	if result == nil {
+		result = []*roles.Role{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleGetRole(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	role, err := roles.Load(name, s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, role)
+}
+
+func (s *Server) handleCreateRole(w http.ResponseWriter, r *http.Request) {
+	var role roles.Role
+	if err := json.NewDecoder(r.Body).Decode(&role); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := role.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if roles.Exists(role.Name, s.projectPath) {
+		writeError(w, http.StatusConflict, fmt.Errorf("role %q already exists", role.Name))
+		return
+	}
+	if err := roles.Save(&role, s.projectPath); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, role)
+}
+
+func (s *Server) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !roles.Exists(name, s.projectPath) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("role %q not found", name))
+		return
+	}
+	if err := roles.Delete(name, s.projectPath); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Agents ────────────────────────────────────────────────────────────────────
+
+func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	names, err := agents.List(s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var result []*agents.Charter
+	for _, name := range names {
+		c, err := agents.Load(name, s.projectPath)
+		if err != nil {
+			continue // skip invalid
+		}
+		result = append(result, c)
+	}
+	if result == nil {
+		result = []*agents.Charter{}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	c, err := agents.Load(name, s.projectPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name  string `json:"name"`
+		Role  string `json:"role"`
+		Model string `json:"model,omitempty"` // optional model ID override
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Name == "" || req.Role == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("name and role are required"))
+		return
+	}
+	if agents.Exists(req.Name, s.projectPath) {
+		writeError(w, http.StatusConflict, fmt.Errorf("agent %q already exists", req.Name))
+		return
+	}
+	c := &agents.Charter{Name: req.Name, Role: req.Role}
+	if err := agents.Save(c, s.projectPath); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	loaded, _ := agents.Load(req.Name, s.projectPath)
+	writeJSON(w, http.StatusCreated, loaded)
+}
+
+func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !agents.Exists(name, s.projectPath) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("agent %q not found", name))
+		return
+	}
+	if err := agents.Delete(name, s.projectPath); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Chronicle ─────────────────────────────────────────────────────────────────
+
+func (s *Server) handleQueryChronicle(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	filter := chronicle.Filter{
+		ProjectID: s.projectID,
+		EventType: q.Get("event_type"),
+		Actor:     q.Get("actor"),
+	}
+	if lim := q.Get("limit"); lim != "" {
+		if n, err := strconv.Atoi(lim); err == nil {
+			filter.Limit = n
+		}
+	}
+	if filter.Limit == 0 {
+		filter.Limit = 100
+	}
+
+	events, err := chronicle.Query(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if events == nil {
+		events = []chronicle.Event{}
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, err error) {
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// spaHandler serves embedded static files with a fallback to index.html for
+// React Router paths that don't correspond to real files.
+func spaHandler(fsys fs.FS) http.Handler {
+	fileServer := http.FileServerFS(fsys)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if name == "" {
+			name = "index.html"
+		}
+		f, err := fsys.Open(name)
+		if err != nil {
+			// Not a real file — let React Router handle it
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			fileServer.ServeHTTP(w, r2)
+			return
+		}
+		f.Close()
+		fileServer.ServeHTTP(w, r)
+	})
+}

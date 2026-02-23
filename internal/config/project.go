@@ -11,11 +11,11 @@ import (
 // Project holds the parsed .loguetown/project.yaml.
 type Project struct {
 	Project struct {
-		ID            string `yaml:"id"`
-		Name          string `yaml:"name"`
-		RepoPat       string `yaml:"repo_path"`
-		DefaultBranch string `yaml:"default_branch"`
-	} `yaml:"project"`
+		ID            string `yaml:"id" json:"id"`
+		Name          string `yaml:"name" json:"name"`
+		RepoPat       string `yaml:"repo_path" json:"repo_path"`
+		DefaultBranch string `yaml:"default_branch" json:"default_branch"`
+	} `yaml:"project" json:"project"`
 }
 
 // FindProjectPath walks up from startDir looking for .loguetown/project.yaml.
