@@ -25,4 +25,6 @@ func init() {
 	rootCmd.AddCommand(newRoleCmd())
 	rootCmd.AddCommand(newAgentCmd())
 	rootCmd.AddCommand(newGuiCmd())
+	rootCmd.AddCommand(newSkillsCmd())
+	rootCmd.AddCommand(newMemoryCmd())
 }

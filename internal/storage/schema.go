@@ -1,6 +1,14 @@
 package storage
 
-const SchemaVersion = 1
+const SchemaVersion = 2
+
+// migrateV2SQL adds embedding and content columns to skill_files and memory_chunks.
+const migrateV2SQL = `
+ALTER TABLE skill_files   ADD COLUMN embedding     BLOB;
+ALTER TABLE skill_files   ADD COLUMN content_hash  TEXT;
+ALTER TABLE memory_chunks ADD COLUMN embedding     BLOB;
+ALTER TABLE memory_chunks ADD COLUMN content       TEXT;
+`
 
 const createTablesSQL = `
 PRAGMA journal_mode = WAL;

@@ -86,10 +86,26 @@ func migrate(db *sql.DB) error {
 		if _, err := db.Exec(createTablesSQL); err != nil {
 			return fmt.Errorf("create tables: %w", err)
 		}
-		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
+		version = 1
+		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
 			return fmt.Errorf("set schema version: %w", err)
 		}
 	}
-	// Future: apply incremental migrations when version < SchemaVersion
+	if version < 2 {
+		// Add embedding/content columns to skill_files and memory_chunks.
+		for _, stmt := range []string{
+			"ALTER TABLE skill_files   ADD COLUMN embedding     BLOB",
+			"ALTER TABLE skill_files   ADD COLUMN content_hash  TEXT",
+			"ALTER TABLE memory_chunks ADD COLUMN embedding     BLOB",
+			"ALTER TABLE memory_chunks ADD COLUMN content       TEXT",
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				return fmt.Errorf("migrate v2 (%s): %w", stmt, err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 2"); err != nil {
+			return fmt.Errorf("set schema version 2: %w", err)
+		}
+	}
 	return nil
 }
