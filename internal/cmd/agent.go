@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/loguetown/internal/agents"
+	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/steveyegge/loguetown/internal/embeddings"
+	"github.com/steveyegge/loguetown/internal/plans"
 	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/steveyegge/loguetown/internal/runner"
 	"github.com/steveyegge/loguetown/internal/tui"
 )
 
@@ -20,6 +25,7 @@ func newAgentCmd() *cobra.Command {
 	cmd.AddCommand(agentShowCmd())
 	cmd.AddCommand(agentCreateCmd())
 	cmd.AddCommand(agentEditCmd())
+	cmd.AddCommand(agentSpawnCmd())
 	return cmd
 }
 
@@ -206,4 +212,109 @@ func agentEditCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func agentSpawnCmd() *cobra.Command {
+	var base string
+	var noWorktree bool
+
+	cmd := &cobra.Command{
+		Use:   "spawn <name> <task>",
+		Short: "Run an agent on a task in an isolated git worktree",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agentName, task := args[0], args[1]
+			projectPath := requireProject()
+
+			if !agents.Exists(agentName, projectPath) {
+				return fmt.Errorf("agent %q not found; create with: lt agent create --name %s --role <role>", agentName, agentName)
+			}
+
+			cfg, err := config.LoadProject(projectPath)
+			if err != nil {
+				return fmt.Errorf("load project config: %w", err)
+			}
+
+			// Create plan + task records.
+			plan, err := plans.CreatePlan(cfg.Project.ID, task)
+			if err != nil {
+				return fmt.Errorf("create plan: %w", err)
+			}
+			t, err := plans.CreateTask(plan.ID, task, "")
+			if err != nil {
+				return fmt.Errorf("create task: %w", err)
+			}
+
+			tui.Info(fmt.Sprintf("Plan %s | Task %s", plan.ID[:8], t.ID[:8]))
+
+			// Build embedding provider (best-effort; nil is fine if unconfigured).
+			var embProvider embeddings.Provider
+			if ep, e := embeddings.New(cfg.Embeddings); e == nil {
+				embProvider = ep
+			}
+
+			// Build runner provider.
+			prov, err := runner.New(cfg.Runner)
+			if err != nil {
+				return fmt.Errorf("runner provider: %w", err)
+			}
+
+			r := &runner.Runner{
+				ProjectPath:   projectPath,
+				ProjectID:     cfg.Project.ID,
+				ProjectName:   cfg.Project.Name,
+				DefaultBranch: cfg.Project.DefaultBranch,
+				EmbProvider:   embProvider,
+				Provider:      prov,
+				Cfg:           cfg.Runner,
+			}
+
+			tui.Info(fmt.Sprintf("Spawning %s (%s) on task…", agentName, prov.Name()))
+
+			result, err := r.Run(context.Background(), runner.RunRequest{
+				PlanID:     plan.ID,
+				TaskID:     t.ID,
+				AgentName:  agentName,
+				Task:       task,
+				BaseSHA:    base,
+				NoWorktree: noWorktree,
+				Attempt:    1,
+			})
+			if err != nil {
+				return err
+			}
+
+			status := "succeeded"
+			if !result.Success {
+				status = "FAILED"
+				tui.Warning(fmt.Sprintf("Run %s — %s: %s", result.RunID[:8], status, result.Error))
+			} else {
+				tui.Success(fmt.Sprintf("Run %s — %s", result.RunID[:8], status))
+			}
+
+			if result.Output != "" {
+				fmt.Println()
+				fmt.Println(result.Output)
+			}
+
+			_ = plans.SetTaskStatus(t.ID, func() string {
+				if result.Success {
+					return "done"
+				}
+				return "failed"
+			}())
+			_ = plans.SetPlanStatus(plan.ID, func() string {
+				if result.Success {
+					return "done"
+				}
+				return "failed"
+			}())
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&base, "base", "", "Base branch or SHA for the worktree (default: current HEAD)")
+	cmd.Flags().BoolVar(&noWorktree, "no-worktree", false, "Run in the repo root instead of an isolated worktree")
+	return cmd
 }

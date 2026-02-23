@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/loguetown/internal/config"
 	"github.com/steveyegge/loguetown/internal/embeddings"
 	"github.com/steveyegge/loguetown/internal/memory"
+	"github.com/steveyegge/loguetown/internal/plans"
 	"github.com/steveyegge/loguetown/internal/roles"
 	"github.com/steveyegge/loguetown/internal/skills"
 	"github.com/steveyegge/loguetown/internal/storage"
@@ -82,6 +83,14 @@ func (s *Server) registerRoutes() {
 	// Memory
 	s.mux.HandleFunc("GET /api/memory", s.handleListMemory)
 	s.mux.HandleFunc("PATCH /api/memory/{id}", s.handleUpdateMemory)
+
+	// Plans / Tasks / Runs
+	s.mux.HandleFunc("GET /api/plans", s.handleListPlans)
+	s.mux.HandleFunc("GET /api/plans/{id}", s.handleGetPlan)
+	s.mux.HandleFunc("GET /api/tasks", s.handleListTasks)
+	s.mux.HandleFunc("GET /api/tasks/{id}", s.handleGetTask)
+	s.mux.HandleFunc("GET /api/runs", s.handleListRuns)
+	s.mux.HandleFunc("GET /api/runs/{id}", s.handleGetRun)
 
 	// SPA static files (must be last — catch-all)
 	sub, _ := fs.Sub(webui.Files, "dist")
@@ -371,6 +380,86 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// ── Plans / Tasks / Runs ─────────────────────────────────────────────────────
+
+func (s *Server) handleListPlans(w http.ResponseWriter, r *http.Request) {
+	ps, err := plans.ListPlans(s.projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ps == nil {
+		ps = []plans.Plan{}
+	}
+	writeJSON(w, http.StatusOK, ps)
+}
+
+func (s *Server) handleGetPlan(w http.ResponseWriter, r *http.Request) {
+	p, err := plans.GetPlan(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	planID := r.URL.Query().Get("plan_id")
+	if planID == "" {
+		// Default to most-recent plan.
+		ps, err := plans.ListPlans(s.projectID)
+		if err != nil || len(ps) == 0 {
+			writeJSON(w, http.StatusOK, []plans.Task{})
+			return
+		}
+		planID = ps[0].ID
+	}
+	ts, err := plans.ListTasks(planID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ts == nil {
+		ts = []plans.Task{}
+	}
+	writeJSON(w, http.StatusOK, ts)
+}
+
+func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
+	t, err := plans.GetTask(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("task_id")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("task_id query param required"))
+		return
+	}
+	rs, err := plans.ListRuns(taskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if rs == nil {
+		rs = []plans.Run{}
+	}
+	writeJSON(w, http.StatusOK, rs)
+}
+
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
+	run, err := plans.GetRun(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
