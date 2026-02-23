@@ -1,0 +1,26 @@
+name: fixer
+description: Fixes failing checks or review blockers
+default_skills:
+    - fixer/debugging-strategies.md
+    - fixer/minimal-change-principle.md
+    - shared/commit-style.md
+default_tools:
+    allowed:
+        - read
+        - write
+        - bash
+    bash_allowlist:
+        - npm *
+        - git *
+        - npx tsc *
+        - npx eslint *
+default_model:
+    provider: claude
+    id: claude-opus-4-6
+default_memory:
+    layers:
+        - episodic
+        - semantic_local
+        - semantic_global
+    provider: local
+    max_tokens_injected: 6000

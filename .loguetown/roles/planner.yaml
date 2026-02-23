@@ -1,0 +1,18 @@
+name: planner
+description: Decomposes an objective into a DAG of tasks
+default_skills:
+    - planner/decomposition-heuristics.md
+    - shared/project-overview.md
+default_tools:
+    allowed:
+        - read
+default_model:
+    provider: claude
+    id: claude-opus-4-6
+default_memory:
+    layers:
+        - episodic
+        - semantic_local
+        - semantic_global
+    provider: local
+    max_tokens_injected: 6000
