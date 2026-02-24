@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/steveyegge/loguetown/internal/chronicle"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 const defaultTimeoutSeconds = 60
@@ -23,8 +23,8 @@ const defaultTimeoutSeconds = 60
 // Result is the outcome of a single check step execution.
 type Result struct {
 	Name         string
-	Passed       bool   // true if exit code 0
-	Blocking     bool   // true if failed AND OnFail=block (or default)
+	Passed       bool // true if exit code 0
+	Blocking     bool // true if failed AND OnFail=block (or default)
 	Skipped      bool
 	ExitCode     int
 	Stdout       string

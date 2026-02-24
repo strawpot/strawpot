@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/roles"
 )
 
 // TestMain isolates the storage singleton in a temp home dir.

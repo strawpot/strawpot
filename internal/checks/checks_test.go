@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/config"
 )
 
 // TestMain isolates the storage singleton in a temp home dir.
@@ -108,7 +108,7 @@ func TestRunPipelineStopsOnBlock(t *testing.T) {
 	artifactDir := t.TempDir()
 	steps := []config.CheckStep{
 		{Name: "a", Run: "echo a"},
-		{Name: "fail", Run: "exit 1"},     // blocking — should stop here
+		{Name: "fail", Run: "exit 1"},      // blocking — should stop here
 		{Name: "never", Run: "echo never"}, // must not run
 	}
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // Query returns events matching the filter.

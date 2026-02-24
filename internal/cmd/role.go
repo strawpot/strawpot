@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/roles"
-	"github.com/steveyegge/loguetown/internal/tui"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/tui"
 )
 
 func newRoleCmd() *cobra.Command {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/steveyegge/loguetown/internal/checks"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/tui"
+	"github.com/juhgiyo/loguetown/internal/checks"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/tui"
 )
 
 func newChecksCmd() *cobra.Command {

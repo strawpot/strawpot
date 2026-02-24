@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/config"
 )
 
 // PipelineResult is the combined outcome of running multiple check steps.

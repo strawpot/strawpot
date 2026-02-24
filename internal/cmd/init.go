@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/tui"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/loguetown/internal/chronicle"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/roles"
-	"github.com/steveyegge/loguetown/internal/storage"
-	"github.com/steveyegge/loguetown/internal/tui"
 )
 
 func newInitCmd() *cobra.Command {

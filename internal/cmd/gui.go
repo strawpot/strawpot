@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/juhgiyo/loguetown/internal/server"
+	"github.com/juhgiyo/loguetown/internal/tui"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/loguetown/internal/server"
-	"github.com/steveyegge/loguetown/internal/tui"
 )
 
 func newGuiCmd() *cobra.Command {

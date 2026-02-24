@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
 )
 
 // TestMain sets HOME to a temp dir so that storage.Get() (called internally by

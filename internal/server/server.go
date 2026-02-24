@@ -9,17 +9,18 @@ import (
 	"strconv"
 	"strings"
 
-	webui "github.com/steveyegge/loguetown/web"
+	webui "github.com/juhgiyo/loguetown/web"
 
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/chronicle"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/memory"
-	"github.com/steveyegge/loguetown/internal/plans"
-	"github.com/steveyegge/loguetown/internal/roles"
-	"github.com/steveyegge/loguetown/internal/skills"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/conversation"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/memory"
+	"github.com/juhgiyo/loguetown/internal/plans"
+	"github.com/juhgiyo/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/skills"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // Server handles HTTP requests for the Loguetown GUI.
@@ -91,6 +92,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/tasks/{id}", s.handleGetTask)
 	s.mux.HandleFunc("GET /api/runs", s.handleListRuns)
 	s.mux.HandleFunc("GET /api/runs/{id}", s.handleGetRun)
+
+	// Conversations
+	s.mux.HandleFunc("GET /api/conversations", s.handleListConversations)
+	s.mux.HandleFunc("GET /api/conversations/{id}/turns", s.handleListTurns)
 
 	// SPA static files (must be last — catch-all)
 	sub, _ := fs.Sub(webui.Files, "dist")
@@ -281,12 +286,12 @@ func (s *Server) handleQueryChronicle(w http.ResponseWriter, r *http.Request) {
 
 // skillRow is the JSON representation of a skill chunk (no embedding bytes).
 type skillRow struct {
-	ID           string `json:"id"`
-	Role         string `json:"role"`
-	FilePath     string `json:"file_path"`
-	Title        string `json:"title,omitempty"`
-	ContentHash  string `json:"content_hash,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	ID          string `json:"id"`
+	Role        string `json:"role"`
+	FilePath    string `json:"file_path"`
+	Title       string `json:"title,omitempty"`
+	ContentHash string `json:"content_hash,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
@@ -460,6 +465,33 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────────
+
+func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
+	convs, err := conversation.ListConversations(s.projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if convs == nil {
+		convs = []conversation.Conversation{}
+	}
+	writeJSON(w, http.StatusOK, convs)
+}
+
+func (s *Server) handleListTurns(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("id")
+	turns, err := conversation.ListTurns(convID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if turns == nil {
+		turns = []conversation.Turn{}
+	}
+	writeJSON(w, http.StatusOK, turns)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

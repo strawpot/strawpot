@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/roles"
 )
 
 // Charter is the parsed content of a .loguetown/agents/{name}.yaml file.

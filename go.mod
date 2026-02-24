@@ -1,4 +1,4 @@
-module github.com/steveyegge/loguetown
+module github.com/juhgiyo/loguetown
 
 go 1.25.6
 

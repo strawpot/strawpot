@@ -3,8 +3,8 @@ package memory
 import (
 	"fmt"
 
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // RetrieveResult is a memory chunk with its similarity score.

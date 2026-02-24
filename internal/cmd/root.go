@@ -30,4 +30,6 @@ func init() {
 	rootCmd.AddCommand(newTasksCmd())
 	rootCmd.AddCommand(newPlanCmd())
 	rootCmd.AddCommand(newChecksCmd())
+	rootCmd.AddCommand(newChatCmd())
+	rootCmd.AddCommand(newRunCmd())
 }

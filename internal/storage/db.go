@@ -130,5 +130,14 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("set schema version 4: %w", err)
 		}
 	}
+	if version < 5 {
+		// Add agent_name to tasks for scheduler-level agent assignment.
+		if _, err := db.Exec("ALTER TABLE tasks ADD COLUMN agent_name TEXT"); err != nil {
+			return fmt.Errorf("migrate v5: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 5"); err != nil {
+			return fmt.Errorf("set schema version 5: %w", err)
+		}
+	}
 	return nil
 }

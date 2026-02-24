@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // IndexResult summarises a reindex run.
