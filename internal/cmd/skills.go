@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/skills"
-	"github.com/steveyegge/loguetown/internal/tui"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/skills"
+	"github.com/juhgiyo/loguetown/internal/tui"
 )
 
 func newSkillsCmd() *cobra.Command {

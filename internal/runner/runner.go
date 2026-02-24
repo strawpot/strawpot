@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/checks"
-	"github.com/steveyegge/loguetown/internal/chronicle"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/memory"
-	"github.com/steveyegge/loguetown/internal/plans"
-	"github.com/steveyegge/loguetown/internal/session"
-	"github.com/steveyegge/loguetown/internal/worktree"
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/checks"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/memory"
+	"github.com/juhgiyo/loguetown/internal/plans"
+	"github.com/juhgiyo/loguetown/internal/session"
+	"github.com/juhgiyo/loguetown/internal/worktree"
 )
 
 // Runner orchestrates a single agent run: session building, worktree lifecycle,
@@ -35,13 +35,13 @@ type Runner struct {
 
 // RunRequest is the input to Runner.Run.
 type RunRequest struct {
-	PlanID      string
-	TaskID      string
-	AgentName   string
-	Task        string // natural language task description
-	BaseSHA     string // empty = use current HEAD
-	NoWorktree  bool   // skip git worktree (run in repo root)
-	Attempt     int
+	PlanID     string
+	TaskID     string
+	AgentName  string
+	Task       string // natural language task description
+	BaseSHA    string // empty = use current HEAD
+	NoWorktree bool   // skip git worktree (run in repo root)
+	Attempt    int
 }
 
 // RunResult is returned by Runner.Run.

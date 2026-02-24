@@ -52,6 +52,13 @@ type PathRoutingRule struct {
 	Skip     []string `yaml:"skip"`
 }
 
+// OrchestratorConfig configures the multi-agent orchestration layer.
+type OrchestratorConfig struct {
+	MaxParallel     int `yaml:"max_parallel" json:"max_parallel"`           // concurrent runners (default 3)
+	MaxFixAttempts  int `yaml:"max_fix_attempts" json:"max_fix_attempts"`   // retry cap per task (default 2)
+	PollIntervalSec int `yaml:"poll_interval_sec" json:"poll_interval_sec"` // scheduler tick (default 10)
+}
+
 // RunnerConfig configures the agent execution provider.
 type RunnerConfig struct {
 	Provider       string `yaml:"provider" json:"provider"`                   // claude-code | anthropic-api
@@ -69,11 +76,12 @@ type Project struct {
 		RepoPat       string `yaml:"repo_path" json:"repo_path"`
 		DefaultBranch string `yaml:"default_branch" json:"default_branch"`
 	} `yaml:"project" json:"project"`
-	Embeddings  EmbeddingsConfig            `yaml:"embeddings" json:"embeddings"`
-	Memory      MemoryConfig                `yaml:"memory" json:"memory"`
-	Runner      RunnerConfig                `yaml:"runner" json:"runner"`
-	Checks      []CheckStep                 `yaml:"checks,omitempty" json:"checks,omitempty"`
-	PathRouting map[string]PathRoutingRule  `yaml:"path_routing,omitempty" json:"path_routing,omitempty"`
+	Embeddings   EmbeddingsConfig           `yaml:"embeddings" json:"embeddings"`
+	Memory       MemoryConfig               `yaml:"memory" json:"memory"`
+	Runner       RunnerConfig               `yaml:"runner" json:"runner"`
+	Orchestrator OrchestratorConfig         `yaml:"orchestrator" json:"orchestrator"`
+	Checks       []CheckStep                `yaml:"checks,omitempty" json:"checks,omitempty"`
+	PathRouting  map[string]PathRoutingRule `yaml:"path_routing,omitempty" json:"path_routing,omitempty"`
 }
 
 // FindProjectPath walks up from startDir looking for .loguetown/project.yaml.

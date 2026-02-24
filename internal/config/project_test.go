@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/config"
 )
 
 func writeProjectYAML(t *testing.T, dir, content string) {

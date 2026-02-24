@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/plans"
+	"github.com/juhgiyo/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/runner"
+	"github.com/juhgiyo/loguetown/internal/tui"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/plans"
-	"github.com/steveyegge/loguetown/internal/roles"
-	"github.com/steveyegge/loguetown/internal/runner"
-	"github.com/steveyegge/loguetown/internal/tui"
 )
 
 func newAgentCmd() *cobra.Command {

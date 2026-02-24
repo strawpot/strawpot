@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/memory"
-	"github.com/steveyegge/loguetown/internal/skills"
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/memory"
+	"github.com/juhgiyo/loguetown/internal/skills"
 )
 
 // Session holds the assembled system prompt and metadata for one agent run.
@@ -23,16 +23,16 @@ type Session struct {
 
 // Config controls how skills and memory are retrieved.
 type Config struct {
-	SkillTopK      int
-	SkillMinSim    float32
-	MemoryTopK     int
-	MemoryMinSim   float32
-	WorkDir        string // worktree or repo path shown in prompt
-	ProjectID      string // used to scope semantic_local and episodic retrieval
-	AgentName      string // used to scope agent-scoped episodic memory retrieval
-	ProjectName    string
-	DefaultBranch  string
-	Branch         string // current run branch
+	SkillTopK     int
+	SkillMinSim   float32
+	MemoryTopK    int
+	MemoryMinSim  float32
+	WorkDir       string // worktree or repo path shown in prompt
+	ProjectID     string // used to scope semantic_local and episodic retrieval
+	AgentName     string // used to scope agent-scoped episodic memory retrieval
+	ProjectName   string
+	DefaultBranch string
+	Branch        string // current run branch
 }
 
 // Build assembles the system prompt for an agent run.

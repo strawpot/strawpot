@@ -1,6 +1,6 @@
 package storage
 
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 // migrateV2SQL adds embedding and content columns to skill_files and memory_chunks.
 const migrateV2SQL = `

@@ -3,11 +3,12 @@ package plans
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // ── Plan ──────────────────────────────────────────────────────────────────────
@@ -102,6 +103,8 @@ type Task struct {
 	PlanID      string `json:"plan_id"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
+	DepsJSON    string `json:"deps_json,omitempty"` // JSON array of task IDs this task depends on
+	AgentName   string `json:"agent_name,omitempty"`
 	Status      string `json:"status"` // todo | running | done | failed | needs-human
 	CreatedAt   string `json:"created_at"`
 }
@@ -136,9 +139,10 @@ func GetTask(id string) (*Task, error) {
 	}
 	var t Task
 	err = db.QueryRow(
-		`SELECT id, plan_id, title, COALESCE(description,''), status, created_at
+		`SELECT id, plan_id, title, COALESCE(description,''), COALESCE(deps_json,''),
+		        COALESCE(agent_name,''), status, created_at
 		 FROM tasks WHERE id = ?`, id,
-	).Scan(&t.ID, &t.PlanID, &t.Title, &t.Description, &t.Status, &t.CreatedAt)
+	).Scan(&t.ID, &t.PlanID, &t.Title, &t.Description, &t.DepsJSON, &t.AgentName, &t.Status, &t.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get task %s: %w", id, err)
 	}
@@ -152,7 +156,8 @@ func ListTasks(planID string) ([]Task, error) {
 		return nil, err
 	}
 	rows, err := db.Query(
-		`SELECT id, plan_id, title, COALESCE(description,''), status, created_at
+		`SELECT id, plan_id, title, COALESCE(description,''), COALESCE(deps_json,''),
+		        COALESCE(agent_name,''), status, created_at
 		 FROM tasks WHERE plan_id = ? ORDER BY created_at ASC`, planID,
 	)
 	if err != nil {
@@ -163,12 +168,80 @@ func ListTasks(planID string) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.PlanID, &t.Title, &t.Description, &t.Status, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.PlanID, &t.Title, &t.Description, &t.DepsJSON, &t.AgentName, &t.Status, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)
 	}
 	return tasks, rows.Err()
+}
+
+// CreateTaskWithDeps inserts a new task with status=todo and optional dependency list.
+// depsJSON is a JSON array of task IDs (e.g. `["id1","id2"]`); empty string means no deps.
+// agentName may be empty; the scheduler will pick the first available agent with the right role.
+func CreateTaskWithDeps(planID, title, description, depsJSON, agentName string) (*Task, error) {
+	db, err := storage.Get()
+	if err != nil {
+		return nil, err
+	}
+	t := &Task{
+		ID:          uuid.New().String(),
+		PlanID:      planID,
+		Title:       title,
+		Description: description,
+		DepsJSON:    depsJSON,
+		AgentName:   agentName,
+		Status:      "todo",
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	_, err = db.Exec(
+		`INSERT INTO tasks (id, plan_id, title, description, deps_json, agent_name, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.PlanID, t.Title, nullStr(t.Description), nullStr(t.DepsJSON), nullStr(t.AgentName),
+		t.Status, t.CreatedAt,
+	)
+	return t, err
+}
+
+// ListReadyTasks returns tasks for a plan with status=todo whose dependencies are all done.
+func ListReadyTasks(planID string) ([]Task, error) {
+	all, err := ListTasks(planID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build a map of taskID → status for dep resolution.
+	statusByID := make(map[string]string, len(all))
+	for _, t := range all {
+		statusByID[t.ID] = t.Status
+	}
+
+	var ready []Task
+	for _, t := range all {
+		if t.Status != "todo" {
+			continue
+		}
+		if t.DepsJSON == "" || t.DepsJSON == "[]" || t.DepsJSON == "null" {
+			ready = append(ready, t)
+			continue
+		}
+		// Parse deps_json as []string.
+		var deps []string
+		if err := json.Unmarshal([]byte(t.DepsJSON), &deps); err != nil {
+			continue // malformed deps — skip
+		}
+		allDone := true
+		for _, dep := range deps {
+			if statusByID[dep] != "done" {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			ready = append(ready, t)
+		}
+	}
+	return ready, nil
 }
 
 // SetTaskStatus updates a task's status.
@@ -178,6 +251,26 @@ func SetTaskStatus(id, status string) error {
 		return err
 	}
 	_, err = db.Exec("UPDATE tasks SET status = ? WHERE id = ?", status, id)
+	return err
+}
+
+// SetTaskDeps updates the deps_json field of a task.
+func SetTaskDeps(id, depsJSON string) error {
+	db, err := storage.Get()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE tasks SET deps_json = ? WHERE id = ?", nullStr(depsJSON), id)
+	return err
+}
+
+// SetTaskAgentName sets the preferred agent for a task.
+func SetTaskAgentName(id, agentName string) error {
+	db, err := storage.Get()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE tasks SET agent_name = ? WHERE id = ?", nullStr(agentName), id)
 	return err
 }
 

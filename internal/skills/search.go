@@ -3,8 +3,8 @@ package skills
 import (
 	"fmt"
 
-	"github.com/steveyegge/loguetown/internal/embeddings"
-	"github.com/steveyegge/loguetown/internal/storage"
+	"github.com/juhgiyo/loguetown/internal/embeddings"
+	"github.com/juhgiyo/loguetown/internal/storage"
 )
 
 // Result is a skill chunk with its similarity score.

@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/plans"
+	"github.com/juhgiyo/loguetown/internal/tui"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/plans"
-	"github.com/steveyegge/loguetown/internal/tui"
 )
 
 func newTasksCmd() *cobra.Command {

@@ -3,7 +3,7 @@ package embeddings
 import (
 	"fmt"
 
-	"github.com/steveyegge/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/config"
 )
 
 // New returns the Provider configured in the project embeddings config.

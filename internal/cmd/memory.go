@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/steveyegge/loguetown/internal/chronicle"
-	"github.com/steveyegge/loguetown/internal/config"
-	"github.com/steveyegge/loguetown/internal/memory"
-	"github.com/steveyegge/loguetown/internal/tui"
+	"github.com/juhgiyo/loguetown/internal/chronicle"
+	"github.com/juhgiyo/loguetown/internal/config"
+	"github.com/juhgiyo/loguetown/internal/memory"
+	"github.com/juhgiyo/loguetown/internal/tui"
 )
 
 func newMemoryCmd() *cobra.Command {

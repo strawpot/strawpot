@@ -3,7 +3,7 @@ package roles_test
 import (
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/roles"
 )
 
 func baseRole(name string) *roles.Role {

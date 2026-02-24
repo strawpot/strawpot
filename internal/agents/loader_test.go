@@ -3,8 +3,8 @@ package agents_test
 import (
 	"testing"
 
-	"github.com/steveyegge/loguetown/internal/agents"
-	"github.com/steveyegge/loguetown/internal/roles"
+	"github.com/juhgiyo/loguetown/internal/agents"
+	"github.com/juhgiyo/loguetown/internal/roles"
 )
 
 func makeRole() *roles.Role {

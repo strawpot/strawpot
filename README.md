@@ -4,7 +4,7 @@
 
 A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Planner, Implementer, Reviewer, Fixer) work in isolated git worktrees while a full Chronicle audit trail captures everything.
 
-**Phase 4 (current):** Check pipelines — per-project check commands (lint, test, typecheck) with timeout, retry, warn/block policy, path-based routing, stdout/stderr artifact store.
+**Phase 5 (current):** Multi-agent orchestration — conversational `lt chat` entry point, Planner → task DAG, background Scheduler, A2A dispatch, and non-interactive `lt run` scripting shortcut.
 
 ---
 
@@ -20,7 +20,7 @@ A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Pl
 ## Install
 
 ```bash
-git clone https://github.com/steveyegge/loguetown
+git clone https://github.com/juhgiyo/loguetown
 cd loguetown
 go build ./cmd/lt
 ```
@@ -51,19 +51,29 @@ lt agent create --name charlie --role implementer
 lt skills reindex
 lt skills search "typescript error handling"
 
-# 5. Spawn an agent to execute a task
+# 5. Orchestrate tasks conversationally (Phase 5)
+lt chat
+# > Create a plan to add OAuth login
+# > Start it
+# > What's the status?
+
+# 6. Or run non-interactively (Phase 5)
+lt run "Add input validation to the login form"
+lt run "Refactor the auth module" --dry-run   # preview the plan only
+
+# 7. Spawn a single agent to execute one task
 lt agent spawn charlie "Add input validation to the login form"
 
-# 6. Run the check pipeline manually
+# 8. Run the check pipeline manually
 lt checks run
 lt checks run lint typecheck    # run specific steps only
 
-# 7. Inspect the results
+# 9. Inspect the results
 lt plan list
 lt tasks list
 lt tasks show <task-id>
 
-# 8. Open the GUI
+# 10. Open the GUI
 lt gui   # → http://localhost:4242
 ```
 
@@ -207,6 +217,45 @@ Manages memory chunks stored by agents across four layers: `episodic`, `semantic
 
 ---
 
+### `lt chat [--conv <id>]`
+
+Interactive conversational entry point. Starts an Orchestrator agent session backed by the Anthropic API.
+
+```bash
+lt chat                      # start a new conversation
+lt chat --conv <id>          # resume an existing conversation
+```
+
+The Orchestrator uses a tool-use loop to:
+- **Create a plan** — calls the Planner to decompose your objective into a task DAG and stores it in SQLite.
+- **Start execution** — enqueues the plan in the Scheduler goroutine, which spawns runners as task dependencies are resolved.
+- **Check status** — lists plans/tasks with current status.
+- **View chronicle** — returns recent audit events.
+- **Search memory** — semantic recall via embeddings.
+- **Re-queue a task** — manually re-trigger a failed task.
+
+The Orchestrator will ask for confirmation before starting plan execution. Type `Ctrl+C` to exit and stop the Scheduler gracefully.
+
+Conversation history is persisted in the `conversations` / `conversation_turns` SQLite tables and survives across sessions.
+
+---
+
+### `lt run <objective> [--dry-run]`
+
+Non-interactive scripting shortcut — useful for CI or one-shot automation.
+
+```bash
+lt run "Add OpenAPI documentation to all REST endpoints"
+lt run "Refactor the auth module" --dry-run   # print the plan, don't execute
+```
+
+1. Calls the **Planner** to produce a task DAG (one Anthropic API call with forced `tool_choice`).
+2. Prints a table: `ID | Title | Deps | Agent`.
+3. If `--dry-run` is not set: persists tasks in SQLite and calls `scheduler.RunAll()` (blocking until all tasks reach `done` or `failed`).
+4. Prints a final status table and exits with a summary.
+
+---
+
 ### `lt gui [--port 4242]`
 
 Starts the web GUI and serves it at `http://localhost:<port>`.
@@ -236,6 +285,8 @@ Starts the web GUI and serves it at `http://localhost:<port>`.
 | `GET` | `/api/tasks/{id}` | Get task by ID |
 | `GET` | `/api/runs` | List runs (`task_id` param, required) |
 | `GET` | `/api/runs/{id}` | Get run by ID |
+| `GET` | `/api/conversations` | List conversations (`project_id` param) |
+| `GET` | `/api/conversations/{id}/turns` | List turns for a conversation (ordered by `created_at ASC`) |
 
 ---
 
@@ -274,6 +325,23 @@ runner:
 **`claude-code`** (default): Spawns `claude -p "<prompt>" --output-format text` as a subprocess in the worktree directory. Requires the `claude` CLI to be installed and on `$PATH`.
 
 **`anthropic-api`**: Calls `POST https://api.anthropic.com/v1/messages` directly with a tool-use agentic loop. Tools available to the agent: `read_file`, `write_file`, `run_bash`, `list_directory`. The loop runs until the model signals `end_turn` or `max_turns` is reached. Set `api_key` or export `ANTHROPIC_API_KEY`.
+
+---
+
+## Orchestrator Configuration
+
+Controls the Scheduler and multi-agent execution. Configure in `.loguetown/project.yaml`:
+
+```yaml
+orchestrator:
+  max_parallel: 3        # max concurrent agent runs (default: 3)
+  max_fix_attempts: 2    # Fixer retry attempts before marking a task failed (default: 2)
+  poll_interval_sec: 10  # how often the Scheduler checks for unblocked tasks (default: 10)
+```
+
+The Scheduler polls the SQLite `tasks` table for tasks whose dependencies are all in `done` status. It spawns up to `max_parallel` runner goroutines at a time. Failed runs are retried via the Fixer pipeline up to `max_fix_attempts` times before the task is marked `failed`.
+
+**Dependency resolution**: Task DAGs are stored as a `deps_json` JSON array of task IDs per task row. `ListReadyTasks()` resolves deps in Go — no complex SQL required.
 
 ---
 
@@ -340,7 +408,7 @@ memory:
 
 ```
 ~/.loguetown/
-  db.sqlite                          # SQLite — all projects (schema v4)
+  db.sqlite                          # SQLite — all projects (schema v5)
   skills/global/                     # Cross-project global skills (indexed once, used everywhere)
   memory/global/
     semantic_global/                 # Cross-project memory (follows you across all repos)
@@ -362,7 +430,7 @@ memory:
       semantic_local/                # Project facts and conventions
 ```
 
-The schema covers all phases: projects, plans, tasks, runs, artifacts, messages, memory chunks (with embedding BLOBs), skill files (with embedding BLOBs, content hashes, scope, and agent name), conversations, escalations, and the Chronicle index.
+The schema covers all phases: projects, plans, tasks (with `deps_json` + `agent_name`), runs, artifacts, messages (A2A dispatch bus), memory chunks (with embedding BLOBs), skill files (with embedding BLOBs, content hashes, scope, and agent name), conversations + conversation turns, escalations, and the Chronicle index.
 
 ---
 
@@ -395,17 +463,21 @@ internal/
   agents/            # Charter YAML loader + role resolution
   checks/            # Check pipeline executor (run, timeout, retry, artifact store, path routing)
   chronicle/         # JSONL + SQLite event writer and query
-  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks, checks)
-  config/            # project.yaml loader (EmbeddingsConfig, MemoryConfig, RunnerConfig, CheckStep)
+  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks, checks, chat, run)
+  config/            # project.yaml loader (EmbeddingsConfig, MemoryConfig, RunnerConfig, CheckStep, OrchestratorConfig)
+  conversation/      # Conversation + turn CRUD (conversations / conversation_turns tables)
+  dispatch/          # A2A message bus (messages table; Send / Poll / MarkDelivered)
   embeddings/        # Provider interface, Ollama + OpenAI clients, cosine similarity
   memory/            # memory_chunks CRUD and vector retrieval
-  plans/             # Plan, Task, Run CRUD against SQLite
+  orchestrator/      # Planner (forced tool_use → task DAG), tool implementations, chat loop
+  plans/             # Plan, Task, Run CRUD against SQLite; ListReadyTasks dep resolution
   roles/             # Role YAML loader and built-in defaults
   runner/            # Pluggable provider interface; Claude Code + Anthropic API providers
+  scheduler/         # Background polling goroutine; Enqueue / Start / Stop / RunAll
   server/            # HTTP server + REST API handlers
   session/           # System prompt builder (role + skills + memory + context)
   skills/            # Skill file indexer (chunking, embedding, 3-scope) and search
-  storage/           # SQLite schema (v4) and connection singleton
+  storage/           # SQLite schema (v5) and connection singleton
   tui/               # Terminal output helpers (lipgloss)
   worktree/          # Git worktree lifecycle (create, remove, HEAD SHA)
 web/
@@ -423,7 +495,7 @@ plan/                # Design documents for all 8 phases
 - [x] Phase 2 — Skills + Memory: global + project-local skill scopes, pluggable embeddings, semantic search, multi-layer memory (global/local/episodic)
 - [x] Phase 3 — Runner: session builder, git worktree isolation, pluggable runner providers (Claude Code + Anthropic API), plan/task/run lifecycle, episodic memory proposals
 - [x] Phase 4 — Check Pipelines: per-project check commands (lint, typecheck, test), timeout + retry + warn/block policy, path-based routing, stdout/stderr artifact store
-- [ ] Phase 5 — Orchestration (Chat-First): conversational Orchestrator agent (`lt chat`), Planner → DAG, multi-agent scheduler, Reviewer + Fixer agents, A2A dispatch
+- [x] Phase 5 — Orchestration (Chat-First): conversational Orchestrator agent (`lt chat`), Planner → task DAG, background Scheduler with dep resolution, Reviewer + Fixer retry pipeline, A2A dispatch (`messages` table), `lt run` scripting shortcut, conversation persistence
 - [ ] Phase 6 — Merge Gate + Escalation: approval policies, integration branches, patrol loop, escalation system
 - [ ] Phase 7 — Full GUI: Plan/DAG viewer, diff & review, memory browser, orchestrator chat screen
 - [ ] Phase 8 — Polish: mem0 adapter, custom memory providers, failure summaries, GUI auth
