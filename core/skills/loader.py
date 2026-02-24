@@ -7,9 +7,9 @@ and optional descriptions — it does **not** load file content into Python
 
 Usage::
 
-    pool = SkillPool(path=Path(".loguetown/skills"), scope="project")
+    pool = SkillPool(path=Path(".strawpot/skills"), scope="project")
     modules = SkillsLoader.list_modules(pool)
-    # → [Path(".loguetown/skills/commit-guide"), ...]
+    # → [Path(".strawpot/skills/commit-guide"), ...]
 
     desc = SkillsLoader.module_description(modules[0])
     # → "Commit message style guide"

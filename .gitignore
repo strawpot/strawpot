@@ -42,9 +42,9 @@ htmlcov/
 *.swp
 *.swo
 
-# Loguetown runtime (per-project, not committed)
-.loguetown/runtime/
-.loguetown/worktrees/
+# Strawpot runtime (per-project, not committed)
+.strawpot/runtime/
+.strawpot/worktrees/
 
 # Claude Code session files written by ClaudeSessionProvider
 .claude/settings.json

@@ -3,7 +3,7 @@
     "allow": [
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(node /Users/woong/projects/loguetown/cli/dist/main.js:*)",
+      "Bash(node /Users/woong/projects/strawpot/cli/dist/main.js:*)",
       "Bash(go get:*)"
     ]
   }

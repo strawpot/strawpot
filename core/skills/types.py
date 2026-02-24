@@ -18,15 +18,15 @@ class SkillPool:
 
     Directory layout::
 
-        global  → ~/.loguetown/skills/
+        global  → ~/.strawpot/skills/
                       ├── personal-style/
                       └── security-baseline/
 
-        project → <repo>/.loguetown/skills/
+        project → <repo>/.strawpot/skills/
                       ├── architecture/
                       └── commit-guide/
 
-        agent   → <repo>/.loguetown/skills/<agent-name>/
+        agent   → <repo>/.strawpot/skills/<agent-name>/
                       ├── typescript-patterns/
                       └── testing-conventions/
     """

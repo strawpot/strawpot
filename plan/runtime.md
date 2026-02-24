@@ -1,4 +1,4 @@
-# Loguetown — Runtime
+# Strawpot — Runtime
 
 ## Agent Session Model
 
@@ -10,27 +10,27 @@ Each Implementer, Reviewer, or Fixer run is an **interactive Claude agent sessio
 ```
 AgentManager.spawn(charter, workdir, context)
   │
-  ├─ Write .loguetown/runtime/agent.json   {"name": "charlie", "role": "implementer"}
-  ├─ Write .loguetown/runtime/work.txt     current task description
+  ├─ Write .strawpot/runtime/agent.json   {"name": "charlie", "role": "implementer"}
+  ├─ Write .strawpot/runtime/work.txt     current task description
   ├─ Write .claude/settings.json           hook config + allowed tools
   └─ tmux new-session -d -s lt-charlie -c <workdir>
          claude --dangerously-skip-permissions
            │
            └─ SessionStart hook → lt prime --hook
                   ├─ Reads agent.json → name + role
-                  ├─ Loads charter from .loguetown/agents/<name>.yaml
+                  ├─ Loads charter from .strawpot/agents/<name>.yaml
                   ├─ SkillManager.from_charter() → resolves three SkillPool paths
-                  │     global:   ~/.loguetown/skills/
-                  │     project:  <workdir>/.loguetown/skills/
-                  │     agent:    <workdir>/.loguetown/skills/<name>/
+                  │     global:   ~/.strawpot/skills/
+                  │     project:  <workdir>/.strawpot/skills/
+                  │     agent:    <workdir>/.strawpot/skills/<name>/
                   ├─ Reads work.txt
                   ├─ ContextBuilder.build() → injects pool path table + CLAUDE.md instruction
-                  ├─ Persists session_id → .loguetown/runtime/session.json
+                  ├─ Persists session_id → .strawpot/runtime/session.json
                   └─ Prints markdown → injected into Claude's context window
                        (agent uses Glob/Read to discover skills, generates CLAUDE.md)
 ```
 
-**Session resume:** If a session crashes or is killed, the daemon can respawn with `claude --resume <session_id>` (stored in `.loguetown/runtime/session.json`). Claude Code restores its compressed context; `lt prime` re-injects only identity + current work (lighter pass — skills are already in the compressed transcript).
+**Session resume:** If a session crashes or is killed, the daemon can respawn with `claude --resume <session_id>` (stored in `.strawpot/runtime/session.json`). Claude Code restores its compressed context; `lt prime` re-injects only identity + current work (lighter pass — skills are already in the compressed transcript).
 
 **Human attach:** `lt agent attach <name>` runs `tmux attach-session -t lt-<name>`. The human can observe or intervene, then detach without disrupting the session.
 
@@ -42,7 +42,7 @@ AgentManager.spawn(charter, workdir, context)
 
 Each Implementer or Fixer run gets an isolated git worktree. This allows parallel agents to work on separate tasks without file system conflicts.
 
-**Worktree root:** `.loguetown/worktrees/{run_id}/`
+**Worktree root:** `.strawpot/worktrees/{run_id}/`
 
 **Branch naming:** `lt/{plan_id}/{task_id}/a{attempt}`
 (e.g., `lt/pl-abc12/tk-xyz34/a1`)
@@ -71,10 +71,10 @@ git worktree add <path> -b <branch> <base_sha>
 
 ## Check Pipelines
 
-Each project declares its check commands in `.loguetown/project.yaml`:
+Each project declares its check commands in `.strawpot/project.yaml`:
 
 ```yaml
-# .loguetown/project.yaml
+# .strawpot/project.yaml
 checks:
   setup:
     run: "pip install -e .[dev]"
@@ -213,7 +213,7 @@ A task passes the merge gate only when **all structural gates** are satisfied, a
 | `auto` | Daemon merges automatically as soon as all structural gates pass. No human action required. |
 | `risk_based` | Auto-merge if `risk_score ≤ auto_merge_max_risk_score` (set in project config). Escalates to `awaiting-approval` otherwise. |
 
-Set the policy per project in `.loguetown/project.yaml`:
+Set the policy per project in `.strawpot/project.yaml`:
 
 ```yaml
 merge:

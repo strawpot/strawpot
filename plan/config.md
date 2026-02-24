@@ -1,9 +1,9 @@
-# Loguetown — Configuration and File Layout
+# Strawpot — Configuration and File Layout
 
 ## File Layout
 
 ```
-loguetown/                          # this repo (the tool) — Python
+strawpot/                          # this repo (the tool) — Python
 ├── core/                           # core Python library
 │   ├── agents/
 │   │   ├── __init__.py
@@ -89,7 +89,7 @@ loguetown/                          # this repo (the tool) — Python
 │           └── test_skill_manager.py
 │
 ├── pyproject.toml
-└── .loguetown/                     # per-project config (committed to project repo)
+└── .strawpot/                     # per-project config (committed to project repo)
     ├── project.yaml                # check pipelines, merge policy, embeddings config
     ├── roles/                      # role definitions (user-manageable YAML)
     │   ├── planner.yaml
@@ -112,7 +112,7 @@ loguetown/                          # this repo (the tool) — Python
     │       │   └── guide.md
     │       └── git-workflow/
     │           └── guide.md
-~/.loguetown/                       # global (developer-wide, all projects)
+~/.strawpot/                       # global (developer-wide, all projects)
 └── skills/                         # global skill pool — applies in every project
     ├── personal-coding-style/      # each sub-folder is one skill module
     │   └── style.md
@@ -123,7 +123,7 @@ loguetown/                          # this repo (the tool) — Python
 ### Runtime files (per workdir, gitignored)
 
 ```
-<workdir>/.loguetown/runtime/
+<workdir>/.strawpot/runtime/
     agent.json      ← {"name": "charlie", "role": "implementer"}
     work.txt        ← current task description (written by daemon before spawn)
     session.json    ← {"session_id": "...", "source": "startup", "transcript_path": "..."}
@@ -134,7 +134,7 @@ loguetown/                          # this repo (the tool) — Python
 
 ---
 
-## Project Config (`.loguetown/project.yaml`)
+## Project Config (`.strawpot/project.yaml`)
 
 ```yaml
 project:

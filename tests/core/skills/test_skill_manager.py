@@ -18,15 +18,15 @@ from core.skills.types import SkillPool
 @pytest.fixture
 def workdir(tmp_path: Path) -> Path:
     """Workdir with agent identity and skill pool directories."""
-    runtime = tmp_path / ".loguetown" / "runtime"
+    runtime = tmp_path / ".strawpot" / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "agent.json").write_text(
         json.dumps({"name": "charlie", "role": "implementer"})
     )
 
     # Create project and agent pool directories
-    (tmp_path / ".loguetown" / "skills").mkdir(parents=True)
-    (tmp_path / ".loguetown" / "skills" / "charlie").mkdir(parents=True)
+    (tmp_path / ".strawpot" / "skills").mkdir(parents=True)
+    (tmp_path / ".strawpot" / "skills" / "charlie").mkdir(parents=True)
     return tmp_path
 
 
@@ -59,7 +59,7 @@ def test_from_workdir_no_identity(tmp_path, global_root):
 
 def test_from_workdir_missing_dirs_omitted(tmp_path, global_root):
     """Project and agent pools are omitted when their directories don't exist."""
-    runtime = tmp_path / ".loguetown" / "runtime"
+    runtime = tmp_path / ".strawpot" / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "agent.json").write_text(json.dumps({"name": "bob", "role": "reviewer"}))
     # No project or agent skills directories created
@@ -125,14 +125,14 @@ def test_pools_project_path(workdir, global_root):
     manager = SkillManager.from_workdir(workdir, global_root=global_root)
     pools = manager.pools()
     project_pool = next(p for p in pools if p.scope == "project")
-    assert project_pool.path == workdir / ".loguetown" / "skills"
+    assert project_pool.path == workdir / ".strawpot" / "skills"
 
 
 def test_pools_agent_path(workdir, global_root):
     manager = SkillManager.from_workdir(workdir, global_root=global_root)
     pools = manager.pools()
     agent_pool = next(p for p in pools if p.scope == "agent")
-    assert agent_pool.path == workdir / ".loguetown" / "skills" / "charlie"
+    assert agent_pool.path == workdir / ".strawpot" / "skills" / "charlie"
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def test_pools_agent_path(workdir, global_root):
 
 def test_all_pools_includes_nonexistent(tmp_path, global_root):
     """all_pools() includes all configured paths even if they don't exist."""
-    runtime = tmp_path / ".loguetown" / "runtime"
+    runtime = tmp_path / ".strawpot" / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "agent.json").write_text(json.dumps({"name": "charlie", "role": "implementer"}))
 

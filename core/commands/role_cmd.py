@@ -2,7 +2,7 @@
 
 Commands::
 
-    lt role list                  # list all roles in .loguetown/roles/
+    lt role list                  # list all roles in .strawpot/roles/
     lt role show <name>           # print resolved role YAML
     lt role create <name>         # scaffold new role YAML
     lt role edit <name>           # open role YAML in $EDITOR
@@ -28,7 +28,7 @@ from core.workdir import WorkdirError, resolve_workdir
 
 
 def _roles_dir(workdir: Path) -> Path:
-    return workdir / ".loguetown" / "roles"
+    return workdir / ".strawpot" / "roles"
 
 
 def _role_path(workdir: Path, name: str) -> Path:
@@ -44,7 +44,7 @@ def _list_role_names(workdir: Path) -> list[str]:
 
 def _check_agents_using_role(workdir: Path, role_name: str) -> list[str]:
     """Return names of agents that reference *role_name*."""
-    agents_dir = workdir / ".loguetown" / "agents"
+    agents_dir = workdir / ".strawpot" / "agents"
     if not agents_dir.is_dir():
         return []
     using = []
@@ -66,7 +66,7 @@ def _check_agents_using_role(workdir: Path, role_name: str) -> list[str]:
 def _cmd_list(workdir: Path) -> None:
     names = _list_role_names(workdir)
     if not names:
-        print("No roles found in .loguetown/roles/")
+        print("No roles found in .strawpot/roles/")
         return
     # Print name + description
     for name in names:
@@ -84,7 +84,7 @@ def _cmd_list(workdir: Path) -> None:
 def _cmd_show(workdir: Path, name: str) -> None:
     path = _role_path(workdir, name)
     if not path.exists():
-        print(f"error: role {name!r} not found in .loguetown/roles/", file=sys.stderr)
+        print(f"error: role {name!r} not found in .strawpot/roles/", file=sys.stderr)
         sys.exit(1)
     print(path.read_text(), end="")
 
@@ -119,7 +119,7 @@ def _cmd_edit(workdir: Path, name: str) -> None:
 def _cmd_delete(workdir: Path, name: str) -> None:
     path = _role_path(workdir, name)
     if not path.exists():
-        print(f"error: role {name!r} not found in .loguetown/roles/", file=sys.stderr)
+        print(f"error: role {name!r} not found in .strawpot/roles/", file=sys.stderr)
         sys.exit(1)
     using = _check_agents_using_role(workdir, name)
     if using:
@@ -142,7 +142,7 @@ def add_parser(subparsers) -> None:  # type: ignore[type-arg]
     sub = p.add_subparsers(dest="role_cmd", metavar="<subcommand>")
     sub.required = True
 
-    sub.add_parser("list", help="List all roles in .loguetown/roles/")
+    sub.add_parser("list", help="List all roles in .strawpot/roles/")
 
     show_p = sub.add_parser("show", help="Print resolved role YAML")
     show_p.add_argument("name", help="Role name")

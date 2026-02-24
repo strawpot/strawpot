@@ -25,7 +25,7 @@ from core.workdir import WorkdirError, resolve_workdir
 
 
 def _agents_dir(workdir: Path) -> Path:
-    return workdir / ".loguetown" / "agents"
+    return workdir / ".strawpot" / "agents"
 
 
 def _agent_path(workdir: Path, name: str) -> Path:
@@ -47,7 +47,7 @@ def _list_agent_names(workdir: Path) -> list[str]:
 def _cmd_list(workdir: Path) -> None:
     names = _list_agent_names(workdir)
     if not names:
-        print("No agents found in .loguetown/agents/")
+        print("No agents found in .strawpot/agents/")
         return
     print(f"{'NAME':<20} {'ROLE':<20}")
     print("-" * 42)
@@ -65,7 +65,7 @@ def _cmd_list(workdir: Path) -> None:
 def _cmd_show(workdir: Path, name: str) -> None:
     path = _agent_path(workdir, name)
     if not path.exists():
-        print(f"error: agent {name!r} not found in .loguetown/agents/", file=sys.stderr)
+        print(f"error: agent {name!r} not found in .strawpot/agents/", file=sys.stderr)
         sys.exit(1)
 
     charter = Charter.from_yaml(path)

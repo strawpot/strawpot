@@ -1,11 +1,11 @@
-"""lt init — scaffold a new loguetown project.
+"""lt init — scaffold a new strawpot project.
 
-Creates ``.loguetown/`` in the current directory (or ``--workdir``) with the
+Creates ``.strawpot/`` in the current directory (or ``--workdir``) with the
 standard directory layout and default role YAML files.
 
 Usage::
 
-    lt init               # scaffold .loguetown/ in CWD
+    lt init               # scaffold .strawpot/ in CWD
     lt init --force       # add missing files only (never overwrites)
     lt init --workdir /path/to/repo
 """
@@ -92,7 +92,7 @@ escalation:
   critical_task_threshold: 3
 """
 
-_GITIGNORE_ENTRY = ".loguetown/runtime/\n"
+_GITIGNORE_ENTRY = ".strawpot/runtime/\n"
 
 
 # ---------------------------------------------------------------------------
@@ -101,16 +101,16 @@ _GITIGNORE_ENTRY = ".loguetown/runtime/\n"
 
 
 def run_init(workdir: Path, force: bool = False) -> None:
-    """Scaffold ``.loguetown/`` inside *workdir*.
+    """Scaffold ``.strawpot/`` inside *workdir*.
 
     Args:
         workdir: The project root directory.
         force:   If True, only add missing files without failing on existing ones.
 
     Raises:
-        SystemExit: if ``.loguetown/`` already exists and *force* is False.
+        SystemExit: if ``.strawpot/`` already exists and *force* is False.
     """
-    lt_dir = workdir / ".loguetown"
+    lt_dir = workdir / ".strawpot"
 
     if lt_dir.exists() and not force:
         print(
@@ -154,13 +154,13 @@ def run_init(workdir: Path, force: bool = False) -> None:
         _write(gitignore, _GITIGNORE_ENTRY)
     else:
         content = gitignore.read_text()
-        if ".loguetown/runtime/" not in content:
+        if ".strawpot/runtime/" not in content:
             gitignore.write_text(content.rstrip("\n") + "\n" + _GITIGNORE_ENTRY)
             created.append(".gitignore (updated)")
 
     # Summary
     if created:
-        print(f"Initialised loguetown project in {workdir}/")
+        print(f"Initialised strawpot project in {workdir}/")
         for item in created:
             print(f"  created  {item}")
     else:
@@ -176,7 +176,7 @@ def run_init(workdir: Path, force: bool = False) -> None:
 
 
 def add_parser(subparsers) -> None:  # type: ignore[type-arg]
-    p = subparsers.add_parser("init", help="Scaffold .loguetown/ in the current repo")
+    p = subparsers.add_parser("init", help="Scaffold .strawpot/ in the current repo")
     p.add_argument(
         "--force",
         action="store_true",

@@ -2,9 +2,9 @@
 
 Skills are folder-based modules.  Each skill is a directory under a pool:
 
-    global  → ~/.loguetown/skills/<module>/
-    project → <workdir>/.loguetown/skills/<module>/
-    agent   → <workdir>/.loguetown/skills/<agent-name>/<module>/
+    global  → ~/.strawpot/skills/<module>/
+    project → <workdir>/.strawpot/skills/<module>/
+    agent   → <workdir>/.strawpot/skills/<agent-name>/<module>/
 
 Commands::
 
@@ -42,7 +42,7 @@ from core.skills.loader import SkillsLoader
 from core.skills.types import PoolScope, SkillPool
 from core.workdir import WorkdirError, resolve_workdir
 
-_GLOBAL_ROOT = Path.home() / ".loguetown"
+_GLOBAL_ROOT = Path.home() / ".strawpot"
 
 # ---------------------------------------------------------------------------
 # Pool resolution
@@ -59,10 +59,10 @@ def _pool_path(
         return global_root / "skills"
     if scope == "project":
         assert workdir is not None
-        return workdir / ".loguetown" / "skills"
+        return workdir / ".strawpot" / "skills"
     # agent
     assert workdir is not None and agent_name is not None
-    return workdir / ".loguetown" / "skills" / agent_name
+    return workdir / ".strawpot" / "skills" / agent_name
 
 
 def _resolve_target_pool(
@@ -76,12 +76,12 @@ def _resolve_target_pool(
     agent = getattr(args, "agent", None)
     if agent:
         if workdir is None:
-            raise WorkdirError("--agent requires a loguetown project directory")
-        return "agent", workdir / ".loguetown" / "skills" / agent
+            raise WorkdirError("--agent requires a strawpot project directory")
+        return "agent", workdir / ".strawpot" / "skills" / agent
     # Default: project pool
     if workdir is None:
-        raise WorkdirError("project pool requires a loguetown project directory")
-    return "project", workdir / ".loguetown" / "skills"
+        raise WorkdirError("project pool requires a strawpot project directory")
+    return "project", workdir / ".strawpot" / "skills"
 
 
 
@@ -105,18 +105,18 @@ def _cmd_list(
         pools.append(("GLOBAL", global_root / "skills"))
     elif agent_name:
         if workdir is None:
-            print("error: --agent requires a loguetown project directory", file=sys.stderr)
+            print("error: --agent requires a strawpot project directory", file=sys.stderr)
             sys.exit(1)
         pools.append(("GLOBAL", global_root / "skills"))
-        pools.append(("PROJECT", workdir / ".loguetown" / "skills"))
-        pools.append((f"AGENT ({agent_name})", workdir / ".loguetown" / "skills" / agent_name))
+        pools.append(("PROJECT", workdir / ".strawpot" / "skills"))
+        pools.append((f"AGENT ({agent_name})", workdir / ".strawpot" / "skills" / agent_name))
     else:
         # Default project view: global + project
         if workdir is None:
-            print("error: not in a loguetown project (no .loguetown/ found)", file=sys.stderr)
+            print("error: not in a strawpot project (no .strawpot/ found)", file=sys.stderr)
             sys.exit(1)
         pools.append(("GLOBAL", global_root / "skills"))
-        pools.append(("PROJECT", workdir / ".loguetown" / "skills"))
+        pools.append(("PROJECT", workdir / ".strawpot" / "skills"))
 
     found_any = False
     for label, pool_path in pools:
@@ -263,7 +263,7 @@ def add_parser(subparsers) -> None:  # type: ignore[type-arg]
         "--global",
         dest="global_flag",
         action="store_true",
-        help="Show only global pool (~/.loguetown/skills/)",
+        help="Show only global pool (~/.strawpot/skills/)",
     )
     scope_group.add_argument(
         "--agent",
@@ -279,7 +279,7 @@ def add_parser(subparsers) -> None:  # type: ignore[type-arg]
         "--global",
         dest="global_flag",
         action="store_true",
-        help="Install into global pool (~/.loguetown/skills/)",
+        help="Install into global pool (~/.strawpot/skills/)",
     )
     scope_grp_i.add_argument(
         "--agent",
@@ -316,7 +316,7 @@ def add_parser(subparsers) -> None:  # type: ignore[type-arg]
 
 
 def _cli_handler(args) -> None:  # type: ignore[type-arg]
-    global_root = Path.home() / ".loguetown"
+    global_root = Path.home() / ".strawpot"
 
     # Resolve workdir — non-fatal for global-only operations
     workdir: Path | None = None

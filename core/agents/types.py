@@ -33,9 +33,9 @@ class Charter:
 
     Can be loaded from / saved to a YAML file::
 
-        charter = Charter.from_yaml(Path(".loguetown/agents/charlie.yaml"))
+        charter = Charter.from_yaml(Path(".strawpot/agents/charlie.yaml"))
         charter.instructions = "Updated instructions"
-        charter.to_yaml(Path(".loguetown/agents/charlie.yaml"))
+        charter.to_yaml(Path(".strawpot/agents/charlie.yaml"))
     """
 
     name: str

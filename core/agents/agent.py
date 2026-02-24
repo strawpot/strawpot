@@ -91,7 +91,7 @@ class Agent:
     ) -> AgentSession:
         """Start an interactive agent session in *workdir*.
 
-        Writes ``.loguetown/runtime/`` identity files and ``.claude/settings.json``
+        Writes ``.strawpot/runtime/`` identity files and ``.claude/settings.json``
         (with the SessionStart hook), then launches the agent in a tmux session.
 
         The ``lt prime --hook`` command runs at session start and injects:

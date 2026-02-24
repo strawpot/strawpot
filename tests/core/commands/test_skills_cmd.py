@@ -20,8 +20,8 @@ from core.commands.skills_cmd import (
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    """Minimal loguetown project with some skill modules."""
-    project_pool = tmp_path / ".loguetown" / "skills"
+    """Minimal strawpot project with some skill modules."""
+    project_pool = tmp_path / ".strawpot" / "skills"
     project_pool.mkdir(parents=True)
 
     # Create two project skill modules
@@ -57,13 +57,13 @@ def global_root(tmp_path: Path) -> Path:
 
 
 def test_install_creates_directory(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     _cmd_install("react-patterns", "project", pool)
     assert (pool / "react-patterns").is_dir()
 
 
 def test_install_creates_readme(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     _cmd_install("react-patterns", "project", pool)
     readme = pool / "react-patterns" / "README.md"
     assert readme.exists()
@@ -77,7 +77,7 @@ def test_install_creates_parent_dirs(tmp_path: Path):
 
 
 def test_install_fails_if_module_exists(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     with pytest.raises(SystemExit):
         _cmd_install("commit-conventions", "project", pool)
 
@@ -88,13 +88,13 @@ def test_install_fails_if_module_exists(project: Path):
 
 
 def test_remove_deletes_directory(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     _cmd_remove("commit-conventions", "project", pool)
     assert not (pool / "commit-conventions").exists()
 
 
 def test_remove_fails_if_not_found(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     with pytest.raises(SystemExit):
         _cmd_remove("nonexistent", "project", pool)
 
@@ -105,7 +105,7 @@ def test_remove_fails_if_not_found(project: Path):
 
 
 def test_show_prints_md_content(project: Path, capsys):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     _cmd_show("commit-conventions", "project", pool)
     out = capsys.readouterr().out
     assert "conventional commits" in out.lower() or "commit" in out.lower()
@@ -124,7 +124,7 @@ def test_show_multiple_md_files(tmp_path: Path, capsys):
 
 
 def test_show_fails_if_not_found(project: Path):
-    pool = project / ".loguetown" / "skills"
+    pool = project / ".strawpot" / "skills"
     with pytest.raises(SystemExit):
         _cmd_show("nonexistent", "project", pool)
 
@@ -170,13 +170,13 @@ def test_list_global_only(project: Path, global_root: Path, capsys):
 
 def test_list_agent_view_shows_all_three(tmp_path: Path, global_root: Path, capsys):
     # Set up agent pool
-    agent_pool = tmp_path / ".loguetown" / "skills" / "charlie"
+    agent_pool = tmp_path / ".strawpot" / "skills" / "charlie"
     agent_pool.mkdir(parents=True)
     (agent_pool / "ts-patterns").mkdir()
     (agent_pool / "ts-patterns" / "guide.md").write_text("# TS Patterns\n")
 
     # Project pool
-    project_pool = tmp_path / ".loguetown" / "skills"
+    project_pool = tmp_path / ".strawpot" / "skills"
     (project_pool / "commit-guide").mkdir()
     (project_pool / "commit-guide" / "guide.md").write_text("# Commits\n")
 
@@ -194,8 +194,8 @@ def test_list_agent_view_shows_all_three(tmp_path: Path, global_root: Path, caps
 
 def test_list_empty_shows_message(tmp_path: Path, global_root: Path, capsys):
     # Empty project pool
-    (tmp_path / ".loguetown" / "skills").mkdir(parents=True)
-    # global_root fixture already created ~/.loguetown/skills/ with a module;
+    (tmp_path / ".strawpot" / "skills").mkdir(parents=True)
+    # global_root fixture already created ~/.strawpot/skills/ with a module;
     # use a fresh global root with an empty skills dir
     empty_global = tmp_path / "empty_global"
     (empty_global / "skills").mkdir(parents=True)

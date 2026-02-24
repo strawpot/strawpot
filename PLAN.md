@@ -1,4 +1,4 @@
-# Loguetown — Design Plan
+# Strawpot — Design Plan
 
 > Plan. Execute. Review. Merge—with a record.
 
@@ -46,7 +46,7 @@ If an action can be expressed as a command, it lives in the CLI. The GUI calls t
 
 ```bash
 cd my-project
-lt init                                    # scaffold .loguetown/ in the repo
+lt init                                    # scaffold .strawpot/ in the repo
 lt role create documenter                  # optional: add a custom role
 lt agent create --name charlie --role implementer
 lt run "Add OAuth2 login with Google and GitHub"
@@ -81,7 +81,7 @@ The GUI is a **full management interface**. It calls the same API as the CLI and
 | **Agents** | Management | `lt agent list/create/edit/spawn` |
 | **Roles & Skills** | Management | `lt role list/create/edit`, `lt skills list/add/edit` |
 | **Chat** | Conversation | `lt chat [--agent <name>]` |
-| **Settings** | Configuration | `lt init`, edit `.loguetown/project.yaml` |
+| **Settings** | Configuration | `lt init`, edit `.strawpot/project.yaml` |
 
 ---
 
@@ -125,8 +125,8 @@ Local control plane + local execution plane + GUI, all on one machine.
 ```
 AgentManager.spawn(charter, workdir, context)
     │
-    ├─ Write .loguetown/runtime/agent.json    (identity)
-    ├─ Write .loguetown/runtime/work.txt      (current task)
+    ├─ Write .strawpot/runtime/agent.json    (identity)
+    ├─ Write .strawpot/runtime/work.txt      (current task)
     ├─ Write .claude/settings.json            (hook + allowed tools)
     └─ tmux new-session: claude --dangerously-skip-permissions
            │
@@ -136,7 +136,7 @@ AgentManager.spawn(charter, workdir, context)
                   │     global/ → shared/ → <role>/
                   ├─ ContextBuilder.build()
                   │     # Identity + Role Instructions + Skills + Current Work
-                  ├─ Persists session_id → .loguetown/runtime/session.json
+                  ├─ Persists session_id → .strawpot/runtime/session.json
                   └─ Prints markdown context → injected into Claude's context
 ```
 
@@ -149,7 +149,7 @@ AgentManager.spawn(charter, workdir, context)
 | **AgentManager** | Provider registry + agent lifecycle; spawns sessions via `AgentSessionProvider` |
 | **ClaudeSessionProvider** | Starts `claude --dangerously-skip-permissions` in a named tmux session; writes hook config |
 | **`lt prime`** | SessionStart hook command; builds and prints charter + skills context at session start |
-| **SkillsLoader** | Scans `~/.loguetown/skills/global/`, `.loguetown/skills/shared/`, `.loguetown/skills/<role>/` |
+| **SkillsLoader** | Scans `~/.strawpot/skills/global/`, `.strawpot/skills/shared/`, `.strawpot/skills/<role>/` |
 | **ContextBuilder** | Assembles identity + instructions + skills + work into injected markdown |
 | **Chronicle** | Append-only JSONL event log (canonical) + SQLite index (queryable) |
 | **Dispatch** | A2A message bus; daemon validates envelopes, routes to agent inboxes |
@@ -164,7 +164,7 @@ AgentManager.spawn(charter, workdir, context)
 | [plan/concepts.md](plan/concepts.md) | Agent Charter, Skills, Roles, Memory (layers, retrieval, lifecycle), Task, Integration Branch, Dispatch (A2A), Chronicle (events), Escalation |
 | [plan/architecture.md](plan/architecture.md) | Model Provider Abstraction, SQLite Data Model (all tables + indexes), End-to-End Data Flow |
 | [plan/runtime.md](plan/runtime.md) | Git / Worktree Strategy, Check Pipelines, Orchestration + Scheduler Loop + Patrol Loop, Merge Gate (approval policies), Security |
-| [plan/config.md](plan/config.md) | Full File Layout (monorepo + `.loguetown/`), Project Config (`project.yaml` reference), Technology Stack |
+| [plan/config.md](plan/config.md) | Full File Layout (monorepo + `.strawpot/`), Project Config (`project.yaml` reference), Technology Stack |
 | [plan/cli.md](plan/cli.md) | Complete CLI reference — all `lt` commands with flags and descriptions |
 | [plan/gui.md](plan/gui.md) | GUI Deep Dive — all screens: DAG, Timeline, Diff & Review, Merge Gate, Memory, Agents, Roles & Skills, Chat |
 | [plan/roadmap.md](plan/roadmap.md) | Implementation Phases (1–8), Extensibility Roadmap (v1.1, v1.2, v2), Key Differences from Gastown, Open Questions |
