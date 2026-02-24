@@ -3,154 +3,133 @@
 ## File Layout
 
 ```
-loguetown/                          # this repo (the tool)
-├── packages/
-│   ├── daemon/                     # Control plane (Node.js / TypeScript)
-│   │   ├── src/
-│   │   │   ├── api/                # REST + WebSocket server (Fastify)
-│   │   │   │   ├── routes/
-│   │   │   │   │   ├── projects.ts
-│   │   │   │   │   ├── plans.ts
-│   │   │   │   │   ├── tasks.ts
-│   │   │   │   │   ├── runs.ts
-│   │   │   │   │   ├── agents.ts
-│   │   │   │   │   ├── memory.ts
-│   │   │   │   │   ├── escalations.ts
-│   │   │   │   │   ├── conversations.ts
-│   │   │   │   │   └── chronicle.ts
-│   │   │   │   └── ws.ts           # WebSocket: stream Chronicle events
-│   │   │   ├── scheduler/
-│   │   │   │   ├── loop.ts         # main scheduling loop
-│   │   │   │   ├── dag.ts          # DAG unblock logic
-│   │   │   │   ├── retry.ts        # bounded retry policy
-│   │   │   │   └── patrol.ts       # health monitor loop (stale runs, escalations, notifications)
-│   │   │   ├── dispatch/
-│   │   │   │   ├── bus.ts          # message queue (SQLite)
-│   │   │   │   ├── router.ts       # route to agent inboxes
-│   │   │   │   └── validator.ts    # validate typed envelopes
-│   │   │   ├── merge/
-│   │   │   │   ├── gate.ts         # gate policy evaluation
-│   │   │   │   └── executor.ts     # git merge operations
-│   │   │   ├── chronicle/
-│   │   │   │   ├── writer.ts       # append to JSONL + SQLite index
-│   │   │   │   └── query.ts        # Chronicle queries for GUI
-│   │   │   └── storage/
-│   │   │       ├── db.ts           # SQLite connection + migrations
-│   │   │       ├── schema.ts       # table definitions
-│   │   │       └── migrations/
-│   │   └── package.json
-│   │
-│   ├── runner/                     # Execution plane (Node.js subprocess)
-│   │   ├── src/
-│   │   │   ├── session.ts          # build agent context (Charter + skills + memory)
-│   │   │   ├── executor.ts         # run agent loop (Anthropic SDK)
-│   │   │   ├── worktree.ts         # create/cleanup git worktrees
-│   │   │   ├── checks.ts           # run check pipeline commands
-│   │   │   ├── memory/
-│   │   │   │   ├── injector.ts     # retrieve + inject memory into system prompt
-│   │   │   │   ├── writer.ts       # propose new memory chunks
-│   │   │   │   ├── providers/
-│   │   │   │   │   ├── local.ts    # Markdown files + sqlite-vec (default)
-│   │   │   │   │   ├── mem0.ts     # Mem0 provider adapter
-│   │   │   │   │   └── custom.ts   # dynamic loader for user-supplied providers
-│   │   │   │   └── embedder.ts     # embed text via @xenova/transformers or OpenAI
-│   │   │   ├── models/
-│   │   │   │   ├── providers/
-│   │   │   │   │   ├── claude.ts   # Anthropic SDK
-│   │   │   │   │   ├── openai.ts   # OpenAI SDK
-│   │   │   │   │   └── ollama.ts   # Ollama REST API
-│   │   │   │   └── registry.ts     # resolve provider by name, load custom
-│   │   │   ├── skills/
-│   │   │   │   ├── loader.ts       # scan .loguetown/skills/, read .md files
-│   │   │   │   └── retriever.ts    # vector search over skill files
-│   │   │   └── events.ts           # stream events back to daemon
-│   │   └── package.json
-│   │
-│   └── gui/                        # React + Vite frontend
-│       ├── src/
-│       │   ├── pages/
-│       │   │   ├── Dashboard.tsx
-│       │   │   ├── PlanDAG.tsx
-│       │   │   ├── TaskDetail.tsx
-│       │   │   ├── RunTimeline.tsx
-│       │   │   ├── DiffReview.tsx
-│       │   │   ├── MergeGate.tsx
-│       │   │   ├── Memory.tsx
-│       │   │   ├── Agents.tsx
-│       │   │   ├── RolesSkills.tsx
-│       │   │   ├── Chat.tsx
-│       │   │   └── Settings.tsx
-│       │   ├── components/
-│       │   │   ├── DAGGraph.tsx     # task dependency graph (React Flow)
-│       │   │   ├── EventFeed.tsx    # live Chronicle stream
-│       │   │   ├── DiffViewer.tsx   # code diff with findings overlay
-│       │   │   ├── MessageTrace.tsx # A2A message thread view
-│       │   │   ├── MemoryCard.tsx   # entry with promote/reject actions
-│       │   │   ├── AgentCard.tsx
-│       │   │   └── CharterEditor.tsx # in-browser YAML editor (Monaco)
-│       │   └── lib/
-│       │       ├── ws.ts            # WebSocket client
-│       │       └── api.ts           # REST client
-│       └── package.json
+loguetown/                          # this repo (the tool) — Python
+├── core/                           # core Python library
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── agent.py                # Agent class (run/stream for API, spawn for sessions)
+│   │   ├── context.py              # ContextBuilder + SessionContext
+│   │   ├── manager.py              # AgentManager (provider registry + agent lifecycle)
+│   │   ├── provider.py             # AgentProvider + AgentSessionProvider protocols
+│   │   ├── session.py              # AgentSession (tmux wrapper)
+│   │   ├── types.py                # Charter, ModelConfig, Message, AgentResponse
+│   │   └── providers/
+│   │       ├── claude_api.py       # Anthropic AsyncAnthropic SDK
+│   │       ├── claude_session.py   # tmux + claude --dangerously-skip-permissions
+│   │       └── claude_subprocess.py # claude --print (non-interactive fallback)
+│   ├── skills/
+│   │   ├── __init__.py
+│   │   ├── loader.py               # SkillsLoader: scans skill pool directories
+│   │   ├── manager.py              # SkillManager: pool resolver (global/project/agent)
+│   │   └── types.py                # SkillFile, SkillPool, PoolScope
+│   ├── prime.py                    # lt prime --hook (SessionStart context injection)
+│   └── __init__.py
 │
-├── cli/                            # lt CLI — primary interface (Commander.js)
+├── daemon/                         # Control plane (Python, asyncio + SQLite)   [Phase 3+]
+│   ├── api/                        # REST + WebSocket server (FastAPI or Starlette)
+│   │   └── routes/
+│   │       ├── projects.py
+│   │       ├── plans.py
+│   │       ├── tasks.py
+│   │       ├── runs.py
+│   │       ├── agents.py
+│   │       ├── escalations.py
+│   │       ├── conversations.py
+│   │       └── chronicle.py
+│   ├── scheduler/
+│   │   ├── loop.py                 # main scheduling loop
+│   │   ├── dag.py                  # DAG unblock logic
+│   │   ├── retry.py                # bounded retry policy
+│   │   └── patrol.py               # health monitor (stale sessions, escalations)
+│   ├── dispatch/
+│   │   ├── bus.py                  # A2A message queue (SQLite)
+│   │   ├── router.py               # route to agent inboxes
+│   │   └── validator.py            # validate typed envelopes
+│   ├── merge/
+│   │   ├── gate.py                 # gate policy evaluation
+│   │   └── executor.py             # git merge operations
+│   ├── chronicle/
+│   │   ├── writer.py               # append to JSONL + SQLite index
+│   │   └── query.py                # Chronicle queries for GUI
+│   └── storage/
+│       ├── db.py                   # SQLite connection + migrations
+│       └── schema.py               # table definitions
+│
+├── gui/                            # React + Vite frontend                      [Phase 7+]
 │   └── src/
-│       ├── client.ts               # thin REST client wrapping the daemon API
-│       ├── output.ts               # formatted terminal output (tables, trees, colors)
-│       ├── commands/
-│       │   ├── init.ts             # lt init
-│       │   ├── plan.ts             # lt plan create/show/start/stop
-│       │   ├── run.ts              # lt run <objective>
-│       │   ├── status.ts           # lt status
-│       │   ├── role.ts             # lt role list/create/edit/show
-│       │   ├── agent.ts            # lt agent create/list/edit/spawn
-│       │   ├── skills.ts           # lt skills list/add/edit/reindex
-│       │   ├── memory.ts           # lt memory list/show/promote/reject/deprecate/reindex
-│       │   ├── tasks.ts            # lt tasks list/show/approve/reject
-│       │   ├── diff.ts             # lt diff <task-id>  (prints unified diff to stdout)
-│       │   ├── review.ts           # lt review show <task-id>  (print reviewer findings)
-│       │   ├── chronicle.ts        # lt chronicle (tail / filter)
-│       │   ├── escalate.ts         # lt escalate list/show/ack/resolve
-│       │   ├── chat.ts             # lt chat [--agent <name>] [--history]
-│       │   └── gui.ts              # lt gui  (start browser UI server)
-│       └── main.ts
+│       ├── pages/
+│       │   ├── Dashboard.tsx
+│       │   ├── PlanDAG.tsx
+│       │   ├── RunTimeline.tsx
+│       │   ├── DiffReview.tsx
+│       │   ├── MergeGate.tsx
+│       │   ├── Memory.tsx
+│       │   ├── Agents.tsx
+│       │   ├── RolesSkills.tsx
+│       │   ├── Chat.tsx
+│       │   └── Settings.tsx
+│       └── components/
+│           ├── DAGGraph.tsx
+│           ├── EventFeed.tsx
+│           ├── DiffViewer.tsx
+│           ├── CharterEditor.tsx   # Monaco YAML editor
+│           └── SkillEditor.tsx     # Monaco Markdown editor
 │
+├── tests/
+│   └── core/
+│       ├── agents/
+│       │   ├── test_agent.py
+│       │   ├── test_context_and_prime.py
+│       │   ├── test_manager.py
+│       │   ├── test_providers.py
+│       │   ├── test_session_provider.py
+│       │   └── test_types.py
+│       └── skills/
+│           ├── test_loader.py
+│           └── test_skill_manager.py
+│
+├── pyproject.toml
 └── .loguetown/                     # per-project config (committed to project repo)
-    ├── project.yaml                # check pipelines, merge strategy, policies, embeddings
-    ├── roles/                      # role definitions (user-manageable)
+    ├── project.yaml                # check pipelines, merge policy, embeddings config
+    ├── roles/                      # role definitions (user-manageable YAML)
     │   ├── planner.yaml
     │   ├── implementer.yaml
     │   ├── reviewer.yaml
     │   ├── fixer.yaml
-    │   └── documenter.yaml         # example custom role
+    │   └── documenter.yaml
     ├── agents/                     # Charter YAML files (one per agent instance)
     │   ├── charlie.yaml
     │   └── diana.yaml
-    ├── skills/                     # *.md skill files (git-tracked)
-    │   ├── implementer/
-    │   │   ├── typescript-patterns.md
-    │   │   ├── testing-conventions.md
-    │   │   └── git-workflow.md
-    │   ├── reviewer/
-    │   │   ├── code-review-checklist.md
-    │   │   └── security-checklist.md
-    │   ├── documenter/
-    │   │   └── api-docs-style.md
-    │   ├── planner/
-    │   │   └── decomposition-heuristics.md
-    │   └── shared/
-    │       ├── commit-style.md
-    │       └── project-overview.md
-    └── memory/                     # memory chunk files per agent (git-tracked)
-        └── {agent-name}/
-            ├── episodic/
-            │   ├── 2025-01-15-oauth-state-csrf.md
-            │   └── 2025-01-20-db-migration-rollback.md
-            ├── semantic_local/
-            │   └── my-service/
-            │       ├── auth-architecture.md
-            │       └── api-error-format.md
-            └── semantic_global/ -> ~/.loguetown/memory/{agent}/semantic_global/
+    ├── skills/                     # project-wide skill modules (git-tracked, folder-based)
+    │   ├── project-overview/       # each sub-folder is one skill module
+    │   │   └── architecture.md
+    │   ├── commit-conventions/
+    │   │   └── guide.md
+    │   └── charlie/                # agent-specific skill pool for "charlie"
+    │       ├── typescript-patterns/
+    │       │   └── patterns.md
+    │       ├── testing-conventions/
+    │       │   └── guide.md
+    │       └── git-workflow/
+    │           └── guide.md
+~/.loguetown/                       # global (developer-wide, all projects)
+└── skills/                         # global skill pool — applies in every project
+    ├── personal-coding-style/      # each sub-folder is one skill module
+    │   └── style.md
+    └── security-baseline/
+        └── checklist.md
+```
+
+### Runtime files (per workdir, gitignored)
+
+```
+<workdir>/.loguetown/runtime/
+    agent.json      ← {"name": "charlie", "role": "implementer"}
+    work.txt        ← current task description (written by daemon before spawn)
+    session.json    ← {"session_id": "...", "source": "startup", "transcript_path": "..."}
+
+<workdir>/.claude/
+    settings.json   ← hook config + allowed tools (written by ClaudeSessionProvider)
 ```
 
 ---
@@ -160,77 +139,44 @@ loguetown/                          # this repo (the tool)
 ```yaml
 project:
   name: my-service
-  repo_path: .              # relative to this file
+  repo_path: .
   default_branch: main
 
 orchestrator:
   model:
-    provider: claude
+    provider: claude_session
     id: claude-opus-4-6
   max_tasks_per_plan: 20
-  stale_run_timeout_minutes: 20
+  stale_session_timeout_minutes: 20
 
 scheduler:
-  max_parallel_runs: 3
-  max_fix_attempts: 3       # per task before escalating to human
-
-embeddings:
-  provider: local           # local | openai | custom
-  model: all-MiniLM-L6-v2  # for local provider; ~23MB, runs on-device
-  dimensions: 384
-  # provider: openai
-  # model: text-embedding-3-small
-
-memory:
-  episodic_retention:
-    max_entries: 100
-    max_days: 90
-  retrieval:
-    top_k: 5               # chunks per layer retrieved per session
-    min_similarity: 0.65
-  max_tokens_injected: 6000
+  max_parallel_sessions: 3
+  max_fix_attempts: 3
 
 checks:
   setup:
-    run: "npm ci"
+    run: "pip install -e .[dev]"
   lint:
-    run: "npx eslint src"
+    run: "ruff check ."
   typecheck:
-    run: "npx tsc --noEmit"
+    run: "mypy src"
   test_fast:
-    run: "npm test -- --testPathPattern=unit"
+    run: "pytest tests/unit -x"
     timeout_seconds: 60
   test_full:
-    run: "npm test"
+    run: "pytest tests/"
     timeout_seconds: 300
-    retry_on_flake: 1
 
 merge:
-  approval_policy: require_human   # require_human | auto | risk_based
-  auto_merge_max_risk_score: 0.3   # used when approval_policy: risk_based (0.0–1.0)
-  strategy: squash                 # squash | ff
+  approval_policy: require_human
+  strategy: squash
   require_checks: [lint, typecheck, test_full]
   require_review: true
-  restricted_paths: []             # always require_human if these paths are touched
+  restricted_paths: []
 
 escalation:
-  auto_bump_after_minutes: 30    # bump severity after this time if unacknowledged
-  critical_task_threshold: 3     # escalate to critical when ≥ N tasks need-human
-
-notifications:
-  # At least one channel must be configured for push alerts to work.
-  # All channels are optional; leave section empty to disable notifications.
-  on_needs_human:
-    desktop: true                  # macOS/Linux desktop notification
-    # webhook: https://hooks.slack.com/... # POST JSON payload to this URL
-  on_escalation_bumped:
-    desktop: true
-  on_merge_ready:
-    desktop: true
-
-gui:
-  port: 4242
-  auth: false
+  auto_bump_after_minutes: 30
+  critical_task_threshold: 3
 ```
 
 ---
@@ -239,23 +185,21 @@ gui:
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Default agent runtime | `@anthropic-ai/sdk` (Claude) | Native tool use, streaming, Claude 4.x; TypeScript-first |
-| Alt model: OpenAI | `openai` npm package | ModelProvider adapter for GPT/o1 |
-| Alt model: local | Ollama REST API | ModelProvider adapter for on-device models |
-| Backend (daemon) | Node.js + TypeScript + Fastify | Same language as SDK; Fastify is fast and schema-validating |
-| Runner subprocess | Node.js + TypeScript | Shares types with daemon; spawned as child process |
-| Local DB | SQLite (`better-sqlite3`) | Zero-infra, sync writes, fast queries |
-| Vector search | `sqlite-vec` extension | In-process vector similarity search over memory + skills embeddings |
-| Embeddings (default) | `@xenova/transformers` (`all-MiniLM-L6-v2`) | On-device, no API key, ~23MB, 384-dim |
-| Embeddings (alt) | OpenAI `text-embedding-3-small` | Higher quality, requires API key |
-| Event log | JSONL files | Append-only, immutable, human-readable |
-| Memory + Skills | Markdown files in git | Human-readable, diffable, per-chunk files |
-| Worktree management | `simple-git` + `child_process` | git operations from Node |
-| GUI framework | React + Vite | Fast dev, large component ecosystem |
-| GUI styling | Tailwind CSS | Utility-first, dark-mode-ready |
-| GUI DAG renderer | React Flow | Purpose-built dependency graph visualization |
-| GUI code editor | Monaco Editor | In-browser Charter YAML and skill `.md` editing |
-| Real-time transport | WebSocket (`ws`) | Low-latency Chronicle streaming to GUI |
-| CLI framework | Commander.js | Mature, composable |
-| Config format | YAML | Human-friendly Charters, roles, and project config |
-| GitHub integration | Octokit (`@octokit/rest`) | v1.2 only |
+| **Language** | Python 3.11+ | Single-language stack; `asyncio` for concurrent agent sessions |
+| **Agent sessions** | `claude --dangerously-skip-permissions` in tmux | Full tool access (read/write/bash); session attach/detach; resume via `--resume` |
+| **Completion API** | `anthropic` Python SDK (`AsyncAnthropic`) | Programmatic batch tasks, context building, background completions |
+| **Context injection** | `lt prime --hook` (SessionStart hook) | Gastown-style: charter + skills injected at session start via Claude Code hook |
+| **Skills** | Folder-based modules in git (global/project/agent scopes) | Agent discovers via Glob/Read, generates CLAUDE.md; human-readable and diffable |
+| **Charter / Role config** | YAML (`pyyaml`) | `Charter.from_yaml()` / `to_yaml()`; hot-reloadable; editable in GUI (Monaco) |
+| **Backend (daemon)** | Python + FastAPI + asyncio | Same language as core; async-first for concurrent session management |
+| **Local DB** | SQLite (`aiosqlite` or `sqlite3`) | Zero-infra, fast queries |
+| **Event log** | JSONL files | Append-only, immutable, human-readable |
+| **Worktree management** | `gitpython` or `subprocess` | git worktree add/remove |
+| **Session management** | `tmux` (via subprocess) | Named sessions; attach/detach; crash-resilient |
+| **GUI framework** | React + Vite | Fast dev, large component ecosystem |
+| **GUI styling** | Tailwind CSS | Utility-first, dark-mode-ready |
+| **GUI DAG renderer** | React Flow | Purpose-built dependency graph |
+| **GUI code editor** | Monaco Editor | Charter YAML + skill `.md` editing in-browser |
+| **Real-time transport** | WebSocket | Chronicle streaming to GUI |
+| **Config format** | YAML | Human-friendly Charters, roles, project config |
+| **GitHub integration** | `PyGithub` or `httpx` (v1.2) | Deferred |

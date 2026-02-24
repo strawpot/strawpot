@@ -91,27 +91,53 @@ Local control plane + local execution plane + GUI, all on one machine.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                         CLI  (lt ...)                            │
+│                      CLI  (lt ...)  — Python                     │
 └───────────────────────┬──────────────────────────────────────────┘
                         │ REST / WebSocket
 ┌───────────────────────▼──────────────────────────────────────────┐
-│                   Daemon (Control Plane)                          │
+│                   Daemon (Control Plane) — Python                 │
 │  • Owns canonical state (SQLite)                                  │
 │  • Validates A2A message schemas                                  │
 │  • Writes append-only trace events (JSONL + SQLite index)         │
 │  • Schedules runs, handles retries, manages merge gate            │
 │  • Serves REST API + WebSocket to GUI                             │
 └────────┬──────────────────────────────────────┬───────────────────┘
-         │ spawn subprocess                      │ REST / WS
+         │ ClaudeSessionProvider.spawn()          │ REST / WS
+         │ (tmux + lt prime --hook)               │
 ┌────────▼─────────────────────┐    ┌────────────▼─────────────────┐
-│   Runner (Execution Plane)   │    │      GUI (React / Vite)       │
-│  • Creates git worktrees     │    │  • DAG, timelines, diffs      │
-│  • Loads Charter + skills    │    │  • Merge gate, memory browser │
-│  • Injects memory context    │    │  • Real-time event stream     │
-│  • Invokes Claude via SDK    │    │  • Charter editor             │
-│  • Runs local check commands │    └──────────────────────────────┘
-│  • Streams events → daemon   │
+│   Agent Session (tmux)       │    │      GUI (React / Vite)       │
+│  • claude --dangerously-...  │    │  • DAG, timelines, diffs      │
+│  • SessionStart hook fires   │    │  • Merge gate, memory browser │
+│  • lt prime --hook injects:  │    │  • Real-time event stream     │
+│    - Charter identity        │    │  • Charter YAML editor        │
+│    - Role instructions       │    └──────────────────────────────┘
+│    - Skills (all *.md)       │
+│    - Current work item       │
+│  • Agent runs with full      │
+│    Claude tool access        │
+│  • Session resumable via     │
+│    --resume <session-id>     │
 └──────────────────────────────┘
+```
+
+### Agent Session Startup Flow
+
+```
+AgentManager.spawn(charter, workdir, context)
+    │
+    ├─ Write .loguetown/runtime/agent.json    (identity)
+    ├─ Write .loguetown/runtime/work.txt      (current task)
+    ├─ Write .claude/settings.json            (hook + allowed tools)
+    └─ tmux new-session: claude --dangerously-skip-permissions
+           │
+           └─ SessionStart hook → lt prime --hook
+                  ├─ Reads agent.json → resolves charter YAML
+                  ├─ SkillsLoader.load(role)
+                  │     global/ → shared/ → <role>/
+                  ├─ ContextBuilder.build()
+                  │     # Identity + Role Instructions + Skills + Current Work
+                  ├─ Persists session_id → .loguetown/runtime/session.json
+                  └─ Prints markdown context → injected into Claude's context
 ```
 
 ### Components
@@ -120,7 +146,11 @@ Local control plane + local execution plane + GUI, all on one machine.
 |---|---|
 | **CLI** | Primary interface for all operations; thin client over the daemon REST API |
 | **Daemon** | State authority, scheduler, event logger, REST + WebSocket API server |
-| **Runner** | Subprocess that hosts one agent session; isolated to a worktree |
+| **AgentManager** | Provider registry + agent lifecycle; spawns sessions via `AgentSessionProvider` |
+| **ClaudeSessionProvider** | Starts `claude --dangerously-skip-permissions` in a named tmux session; writes hook config |
+| **`lt prime`** | SessionStart hook command; builds and prints charter + skills context at session start |
+| **SkillsLoader** | Scans `~/.loguetown/skills/global/`, `.loguetown/skills/shared/`, `.loguetown/skills/<role>/` |
+| **ContextBuilder** | Assembles identity + instructions + skills + work into injected markdown |
 | **Chronicle** | Append-only JSONL event log (canonical) + SQLite index (queryable) |
 | **Dispatch** | A2A message bus; daemon validates envelopes, routes to agent inboxes |
 | **GUI** | Full management interface (visualization + management + moderation + chat); served at `localhost:PORT`; calls the same API as the CLI |
