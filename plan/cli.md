@@ -1,4 +1,4 @@
-# Loguetown — CLI Reference
+# Strawpot — CLI Reference
 
 The CLI is the **primary interface**. Every operation is available here; the GUI is optional.
 
@@ -6,9 +6,9 @@ The CLI is the **primary interface**. Every operation is available here; the GUI
 
 Every `lt` command that operates on a project resolves the working directory automatically:
 
-1. Walk up from `$CWD` until a `.loguetown/` directory is found (same as how `git` finds `.git/`)
+1. Walk up from `$CWD` until a `.strawpot/` directory is found (same as how `git` finds `.git/`)
 2. If `$LT_WORKDIR` is set, use that path instead
-3. If neither is found, the command fails with a clear error: `not in a loguetown project (no .loguetown/ found)`
+3. If neither is found, the command fails with a clear error: `not in a strawpot project (no .strawpot/ found)`
 
 This means you never need to pass `--project` or a project name — just `cd` into the repo as usual.
 
@@ -21,7 +21,7 @@ LT_WORKDIR=/path/to/repo lt skills list
 
 ```bash
 # ── Project setup ─────────────────────────────────────────────────────────────
-lt init                               # scaffold .loguetown/ in the current repo
+lt init                               # scaffold .strawpot/ in the current repo
 lt init --force                       # re-scaffold (adds missing files only)
 
 # ── Orchestration (chat-first) ────────────────────────────────────────────────
@@ -46,7 +46,7 @@ lt plan land                          # land integration branch → base (runs c
 lt status                             # one-screen summary: agents, tasks, checks
 
 # ── Role management ───────────────────────────────────────────────────────────
-lt role list                          # list all roles in .loguetown/roles/
+lt role list                          # list all roles in .strawpot/roles/
 lt role show implementer              # print resolved role YAML with inherited defaults
 lt role create documenter             # scaffold new role YAML + empty skill directory
 lt role edit reviewer                 # open role YAML in $EDITOR
@@ -62,7 +62,7 @@ lt agent kill charlie                 # terminate a running agent session
 
 # ── Skills management ─────────────────────────────────────────────────────────
 lt skills list                        # global + project modules (project view, default)
-lt skills list --global               # only ~/.loguetown/skills/ (global pool only)
+lt skills list --global               # only ~/.strawpot/skills/ (global pool only)
 lt skills list --agent charlie        # global + project + agent modules (full agent view)
 
 lt skills install react-patterns      # scaffold new skill module in project pool (default)

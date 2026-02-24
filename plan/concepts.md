@@ -1,13 +1,13 @@
-# Loguetown — Core Concepts
+# Strawpot — Core Concepts
 
 ## Agent Charter
 
 An **Agent Charter** is a hot-reloadable YAML file that is the single source of truth for an agent's identity, role, instructions, model, and allowed tools. Editing it takes effect on the agent's next session — no restart of the daemon required.
 
 ```yaml
-# .loguetown/agents/charlie.yaml
+# .strawpot/agents/charlie.yaml
 name: charlie
-role: implementer               # inherits defaults from .loguetown/roles/implementer.yaml
+role: implementer               # inherits defaults from .strawpot/roles/implementer.yaml
 
 model:
   provider: claude              # claude | openai | ollama | custom
@@ -36,9 +36,9 @@ Skills exist at three scopes, resolved from broadest to narrowest:
 
 | Scope | Location | Includes |
 |---|---|---|
-| **Global** | `~/.loguetown/skills/` | Global only. Cross-project, developer-wide conventions. Applies in every project. |
-| **Project** | `.loguetown/skills/` | Global + Project. Shared across all agents in this project (e.g. commit style, architecture overview). |
-| **Agent** | `.loguetown/skills/<agent-name>/` | Global + Project + Agent. Full skill set for a specific agent instance. |
+| **Global** | `~/.strawpot/skills/` | Global only. Cross-project, developer-wide conventions. Applies in every project. |
+| **Project** | `.strawpot/skills/` | Global + Project. Shared across all agents in this project (e.g. commit style, architecture overview). |
+| **Agent** | `.strawpot/skills/<agent-name>/` | Global + Project + Agent. Full skill set for a specific agent instance. |
 
 Scopes are cumulative: an agent session sees all three pools. The `lt skills list` command follows the same convention — default shows global + project, `--agent <name>` shows all three.
 
@@ -47,21 +47,21 @@ Scopes are cumulative: an agent session sees all three pools. The `lt skills lis
 Each scope is a flat directory of skill sub-folders. Each sub-folder is one skill module:
 
 ```
-~/.loguetown/skills/
+~/.strawpot/skills/
   personal-coding-style/       # global: applies to all projects
     style.md
     examples/
   security-baseline/           # global: OWASP + auth conventions
     checklist.md
 
-.loguetown/skills/
+.strawpot/skills/
   project-overview/            # project-wide: high-level architecture
     architecture.md
     monorepo-layout.md
   commit-conventions/          # project-wide: commit style guide
     guide.md
 
-.loguetown/skills/charlie/     # agent-specific (charlie)
+.strawpot/skills/charlie/     # agent-specific (charlie)
   typescript-patterns/
     patterns.md
     examples/
@@ -88,7 +88,7 @@ This avoids front-loading context: the first session does the discovery work; su
 Each skill module is a directory. No required file structure — the agent reads whatever Markdown files are present:
 
 ```
-.loguetown/skills/charlie/typescript-patterns/
+.strawpot/skills/charlie/typescript-patterns/
   patterns.md        # main content
   examples/          # optional sub-directory with code examples
   anti-patterns.md   # additional content files
@@ -100,12 +100,12 @@ Each skill module is a directory. No required file structure — the agent reads
 
 ## Roles
 
-A **Role** is a named, reusable configuration template stored in `.loguetown/roles/{name}.yaml`. Agents are instances of roles — a role defines defaults (skills, tools, model), an agent Charter can override any of them.
+A **Role** is a named, reusable configuration template stored in `.strawpot/roles/{name}.yaml`. Agents are instances of roles — a role defines defaults (skills, tools, model), an agent Charter can override any of them.
 
-Roles are fully user-manageable: create `documenter.yaml`, `security-auditor.yaml`, `migration-writer.yaml`, etc. Built-in roles ship with Loguetown but can be overridden.
+Roles are fully user-manageable: create `documenter.yaml`, `security-auditor.yaml`, `migration-writer.yaml`, etc. Built-in roles ship with Strawpot but can be overridden.
 
 ```yaml
-# .loguetown/roles/implementer.yaml
+# .strawpot/roles/implementer.yaml
 name: implementer
 description: "Writes code to implement features and fix bugs"
 
@@ -128,7 +128,7 @@ default_model:
 | **fixer** | Fixes failing checks or review blockers | Minimal changes to satisfy the merge gate |
 | **documenter** | Writes/updates docs, changelogs, READMEs | Doc patches, changelog entries |
 
-Add any role by creating a YAML file in `.loguetown/roles/`. The Planner can assign any defined role to tasks it creates.
+Add any role by creating a YAML file in `.strawpot/roles/`. The Planner can assign any defined role to tasks it creates.
 
 ---
 
@@ -225,7 +225,7 @@ In v1.2+, tasks can optionally sync to GitHub Issues (one-way or bidirectional).
 
 ## Integration Branch (Optional)
 
-For large plans where multiple tasks should be reviewed together before landing on `main`, Loguetown supports an optional **integration branch** — a staging branch that task branches merge into, with a single final land to `main`.
+For large plans where multiple tasks should be reviewed together before landing on `main`, Strawpot supports an optional **integration branch** — a staging branch that task branches merge into, with a single final land to `main`.
 
 **When to use it:** Enable this on Plans that touch multiple subsystems or have high inter-task dependency. Disabled by default; most small plans merge each task to `main` individually.
 
@@ -407,7 +407,7 @@ An **Escalation** is a structured alert created when the system needs the develo
 If an escalation is not acknowledged within `auto_bump_after_minutes`, the daemon bumps its severity by 1 and emits `ESCALATION_BUMPED`. Configured per project:
 
 ```yaml
-# .loguetown/project.yaml
+# .strawpot/project.yaml
 escalation:
   auto_bump_after_minutes: 30    # bump severity if unacknowledged after this time
   critical_task_threshold: 3     # escalate to critical when ≥ N tasks need-human simultaneously

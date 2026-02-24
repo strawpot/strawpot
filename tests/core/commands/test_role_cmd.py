@@ -19,8 +19,8 @@ from core.roles.types import Role
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    """Minimal loguetown project with a roles/ directory."""
-    roles_dir = tmp_path / ".loguetown" / "roles"
+    """Minimal strawpot project with a roles/ directory."""
+    roles_dir = tmp_path / ".strawpot" / "roles"
     roles_dir.mkdir(parents=True)
     # Create two roles
     for name, desc in [("implementer", "Writes code"), ("reviewer", "Reviews diffs")]:
@@ -39,7 +39,7 @@ def test_list_role_names(project: Path):
 
 
 def test_list_role_names_empty(tmp_path: Path):
-    (tmp_path / ".loguetown" / "roles").mkdir(parents=True)
+    (tmp_path / ".strawpot" / "roles").mkdir(parents=True)
     assert _list_role_names(tmp_path) == []
 
 
@@ -66,7 +66,7 @@ def test_cmd_list_includes_description(project: Path, capsys):
 
 
 def test_cmd_list_empty(tmp_path: Path, capsys):
-    (tmp_path / ".loguetown" / "roles").mkdir(parents=True)
+    (tmp_path / ".strawpot" / "roles").mkdir(parents=True)
     _cmd_list(tmp_path)
     out = capsys.readouterr().out
     assert "No roles" in out
@@ -127,7 +127,7 @@ def test_cmd_delete_missing_exits(project: Path):
 
 def test_cmd_delete_warns_if_agents_use_role(project: Path, capsys):
     # Create an agent that uses 'implementer'
-    agents_dir = project / ".loguetown" / "agents"
+    agents_dir = project / ".strawpot" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
     (agents_dir / "charlie.yaml").write_text(
         yaml.dump({"name": "charlie", "role": "implementer"})

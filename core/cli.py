@@ -1,8 +1,8 @@
-"""Loguetown CLI entry point — ``lt <command> [args]``.
+"""Strawpot CLI entry point — ``lt <command> [args]``.
 
 Commands
 --------
-lt init       Scaffold .loguetown/ in the current repo
+lt init       Scaffold .strawpot/ in the current repo
 lt prime      Print session context for injection via the SessionStart hook
 lt role       Manage role YAML files
 lt agent      Manage agent Charter YAML files
@@ -18,7 +18,7 @@ import sys
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="lt",
-        description="Loguetown — local-first multi-agent coding assistant",
+        description="Strawpot — local-first multi-agent coding assistant",
     )
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     subparsers.required = True

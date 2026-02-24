@@ -4,7 +4,7 @@ A Role is a named, reusable configuration template for agents.  Agent Charters
 reference a role name; the role supplies default tools and model config that
 the Charter may override.
 
-File location: ``.loguetown/roles/<name>.yaml``
+File location: ``.strawpot/roles/<name>.yaml``
 """
 
 from __future__ import annotations

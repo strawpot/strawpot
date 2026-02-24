@@ -1,4 +1,4 @@
-# Loguetown — Roadmap
+# Strawpot — Roadmap
 
 ## Implementation Phases
 
@@ -20,7 +20,7 @@
 - [ ] `lt skills install/remove` — scaffold and delete skill module directories; default project scope, `--global` / `--agent <name>` flags for other scopes
 - [ ] `lt skills list` — enumerate all skill modules across the three pool scopes (cumulative: default = global+project, `--agent` = all three)
 - [ ] `lt skills edit/show` — open skill module in `$EDITOR` or print content
-- [ ] Project context resolution: walk up from CWD for `.loguetown/`; `$LT_WORKDIR` env override
+- [ ] Project context resolution: walk up from CWD for `.strawpot/`; `$LT_WORKDIR` env override
 
 ### Phase 3 — Single Agent Runtime
 - [ ] Session builder: role → skill pool paths (agent-discovered) → system prompt
@@ -30,7 +30,7 @@
 - [ ] `lt agent spawn` single-task execution loop
 
 ### Phase 4 — Check Pipelines
-- [ ] `.loguetown/project.yaml` check pipeline loader
+- [ ] `.strawpot/project.yaml` check pipeline loader
 - [ ] Runner: execute check commands, emit COMMAND_* events
 - [ ] Path-based routing (skip checks for docs-only changes)
 - [ ] Artifact store: save stdout/stderr to disk with Chronicle reference
@@ -83,8 +83,8 @@
 - Better diff UI: file tree, syntax highlighting, inline blame
 - Interactive step approval ("pause before commit" mode)
 - Rebase merge strategy
-- **Per-agent work history (CV)** — global `~/.loguetown/db.sqlite` with `agent_runs` table tracking tasks completed, outcomes, token usage, duration across all projects. Surface via `lt agent show` and the Agents screen. Enables reliability-based agent selection for risky tasks.
-- **Plan templates (Formulas)** — `.loguetown/templates/*.yaml` pre-define a task DAG structure with placeholder variables. `lt run --template <name> <args>` fills the template and creates a plan without a full Planner invocation. Useful for repeated patterns (add-endpoint, add-test-suite, refactor-module).
+- **Per-agent work history (CV)** — global `~/.strawpot/db.sqlite` with `agent_runs` table tracking tasks completed, outcomes, token usage, duration across all projects. Surface via `lt agent show` and the Agents screen. Enables reliability-based agent selection for risky tasks.
+- **Plan templates (Formulas)** — `.strawpot/templates/*.yaml` pre-define a task DAG structure with placeholder variables. `lt run --template <name> <args>` fills the template and creates a plan without a full Planner invocation. Useful for repeated patterns (add-endpoint, add-test-suite, refactor-module).
 - **Explore mode agents** — Charter option `mode: explore` gives an agent a full git clone (not worktree), no check pipeline, and no merge gate. Produces reports/proposals rather than commits. Useful for large codebase analysis, documentation drafting, or investigative spikes.
 - **Chronicle archival** — `lt chronicle archive --before <date>` compresses old JSONL events into a summary SQLite record, moving detailed per-step events to a cold archive. Prevents event log bloat on long-running projects.
 
@@ -105,7 +105,7 @@
 
 ## Key Differences from Gastown
 
-| Aspect | Gastown | Loguetown |
+| Aspect | Gastown | Strawpot |
 |---|---|---|
 | Language | Go (75k LOC) | Python 3.11+ (starts lean) |
 | Task queue | Git-backed Beads | Local SQLite tasks; GitHub Issues in v1.2 |

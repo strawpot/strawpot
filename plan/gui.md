@@ -1,4 +1,4 @@
-# Loguetown — GUI Deep Dive
+# Strawpot — GUI Deep Dive
 
 The GUI is a **full management interface**. It calls the same API as the CLI and adds richer interaction for visualization, management, moderation, and conversation.
 
@@ -130,7 +130,7 @@ The Agents screen is a full management surface — not just a viewer.
 CLI equivalent: `lt role list/create/edit/delete`, `lt skills list/add/edit/reindex`
 
 **Roles panel (left):**
-- List of all role YAML files in `.loguetown/roles/`
+- List of all role YAML files in `.strawpot/roles/`
 - **"New Role"** button → scaffold a new role with name and description
 - Each row: name, description, agent count (how many agents use this role)
 - Click a role → open role detail
@@ -141,7 +141,7 @@ CLI equivalent: `lt role list/create/edit/delete`, `lt skills list/add/edit/rein
 - **Delete** button (disabled if any agents reference this role; shows warning)
 
 **Skills panel (right, per selected role):**
-- List of all `*.md` files under `.loguetown/skills/{role}/` and `shared/`
+- List of all `*.md` files under `.strawpot/skills/{role}/` and `shared/`
 - Columns: filename, title (first heading), tags, last modified
 - **"New skill file"** button → creates blank `.md` with frontmatter scaffold, opens in Monaco editor
 - Click any file → open inline editor; **Save** writes to disk and triggers re-embedding

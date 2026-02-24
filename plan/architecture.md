@@ -1,8 +1,8 @@
-# Loguetown — Architecture
+# Strawpot — Architecture
 
 ## Provider Abstraction
 
-Loguetown has **two provider protocols** serving different use cases. Both are Python `Protocol` classes in `core/agents/provider.py` (structural typing — no inheritance required).
+Strawpot has **two provider protocols** serving different use cases. Both are Python `Protocol` classes in `core/agents/provider.py` (structural typing — no inheritance required).
 
 ### AgentSessionProvider — Interactive sessions
 
@@ -74,7 +74,7 @@ class AgentProvider(Protocol):
 ### Charter Configuration
 
 ```yaml
-# .loguetown/agents/charlie.yaml
+# .strawpot/agents/charlie.yaml
 name: charlie
 role: implementer
 
@@ -99,9 +99,9 @@ Charter files are loaded/saved with `Charter.from_yaml(path)` / `charter.to_yaml
 
 All `lt` commands resolve the project working directory automatically — no `--project` flag needed:
 
-1. Walk up from `$CWD` until a `.loguetown/` directory is found (same as `git` finding `.git/`)
+1. Walk up from `$CWD` until a `.strawpot/` directory is found (same as `git` finding `.git/`)
 2. If `$LT_WORKDIR` is set, use that path instead
-3. If neither is found, fail with `not in a loguetown project (no .loguetown/ found)`
+3. If neither is found, fail with `not in a strawpot project (no .strawpot/ found)`
 
 `lt prime` is always called by Claude Code from the agent's working directory, so the workdir is always the project root.
 
@@ -120,12 +120,12 @@ When a session starts, Claude Code fires the `SessionStart` hook defined in `.cl
 
 `lt prime --hook` receives JSON on stdin (`session_id`, `transcript_path`, `source`) then:
 
-1. Reads `.loguetown/runtime/agent.json` → resolves agent name + role
-2. Loads charter from `.loguetown/agents/<name>.yaml` (falls back to bare runtime identity)
+1. Reads `.strawpot/runtime/agent.json` → resolves agent name + role
+2. Loads charter from `.strawpot/agents/<name>.yaml` (falls back to bare runtime identity)
 3. `SkillManager.from_charter(charter, workdir)` → resolves three `SkillPool` directories (global / project / agent)
-4. Reads `.loguetown/runtime/work.txt` if present
+4. Reads `.strawpot/runtime/work.txt` if present
 5. `ContextBuilder.build(SessionContext(...))` → structured markdown
-6. Persists `session_id` to `.loguetown/runtime/session.json` (for resume support)
+6. Persists `session_id` to `.strawpot/runtime/session.json` (for resume support)
 7. Prints the markdown → Claude Code prepends it to the agent's context window
 
 **Injected context structure:**
@@ -145,17 +145,17 @@ Claude Code will pick up `CLAUDE.md` automatically in future sessions.
 
 | Scope   | Path                                      |
 |---------|-------------------------------------------|
-| global  | /home/user/.loguetown/skills              |
-| project | /path/to/repo/.loguetown/skills           |
-| agent   | /path/to/repo/.loguetown/skills/charlie   |
+| global  | /home/user/.strawpot/skills              |
+| project | /path/to/repo/.strawpot/skills           |
+| agent   | /path/to/repo/.strawpot/skills/charlie   |
 
 # Current Work
-<content of .loguetown/runtime/work.txt>
+<content of .strawpot/runtime/work.txt>
 ```
 
 ### Session Resume
 
-When a session crashes or is killed, the daemon can respawn it with `claude --resume <session_id>` (the ID is stored in `.loguetown/runtime/session.json`). Claude Code restores its compressed context. `lt prime` re-injects only identity + current work (lighter pass — skills are in the compressed transcript).
+When a session crashes or is killed, the daemon can respawn it with `claude --resume <session_id>` (the ID is stored in `.strawpot/runtime/session.json`). Claude Code restores its compressed context. `lt prime` re-injects only identity + current work (lighter pass — skills are in the compressed transcript).
 
 ---
 
@@ -166,9 +166,9 @@ Skills are **folder-based modules** resolved across three pool scopes. `lt prime
 **Pool scope resolution:**
 
 ```
-~/.loguetown/skills/                          ← global: developer-wide, all projects
-<workdir>/.loguetown/skills/                  ← project: all agents in this project
-<workdir>/.loguetown/skills/<agent-name>/     ← agent: this agent only
+~/.strawpot/skills/                          ← global: developer-wide, all projects
+<workdir>/.strawpot/skills/                  ← project: all agents in this project
+<workdir>/.strawpot/skills/<agent-name>/     ← agent: this agent only
 ```
 
 `SkillManager.from_charter(charter, workdir)` resolves the three `SkillPool` objects. Only pools whose directories exist on disk are passed to the agent.

@@ -14,8 +14,8 @@ from core.workdir import WorkdirError, resolve_workdir
 
 
 def _make_project(base: Path) -> Path:
-    """Create a minimal loguetown project under *base*."""
-    (base / ".loguetown").mkdir(parents=True, exist_ok=True)
+    """Create a minimal strawpot project under *base*."""
+    (base / ".strawpot").mkdir(parents=True, exist_ok=True)
     return base
 
 
@@ -24,7 +24,7 @@ def _make_project(base: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_finds_loguetown_in_cwd(tmp_path: Path):
+def test_finds_strawpot_in_cwd(tmp_path: Path):
     _make_project(tmp_path)
     result = resolve_workdir(cwd=tmp_path)
     assert result == tmp_path
@@ -46,8 +46,8 @@ def test_walks_up_multiple_levels(tmp_path: Path):
     assert result == tmp_path
 
 
-def test_raises_when_no_loguetown_found(tmp_path: Path):
-    with pytest.raises(WorkdirError, match="not in a loguetown project"):
+def test_raises_when_no_strawpot_found(tmp_path: Path):
+    with pytest.raises(WorkdirError, match="not in a strawpot project"):
         resolve_workdir(cwd=tmp_path)
 
 
@@ -57,7 +57,7 @@ def test_error_message_suggests_lt_init(tmp_path: Path):
 
 
 def test_nested_projects_finds_nearest(tmp_path: Path):
-    """Nested .loguetown/ — should find the nearest ancestor."""
+    """Nested .strawpot/ — should find the nearest ancestor."""
     outer = tmp_path / "outer"
     inner = tmp_path / "outer" / "inner"
     _make_project(outer)
@@ -77,11 +77,11 @@ def test_lt_workdir_env_takes_priority(tmp_path: Path, monkeypatch: pytest.Monke
     project = tmp_path / "myproject"
     _make_project(project)
     monkeypatch.setenv("LT_WORKDIR", str(project))
-    result = resolve_workdir(cwd=tmp_path)  # cwd has no .loguetown/
+    result = resolve_workdir(cwd=tmp_path)  # cwd has no .strawpot/
     assert result == project
 
 
-def test_lt_workdir_env_fails_if_no_loguetown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_lt_workdir_env_fails_if_no_strawpot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     empty = tmp_path / "empty"
     empty.mkdir()
     monkeypatch.setenv("LT_WORKDIR", str(empty))

@@ -10,7 +10,7 @@ From an already-resolved ``Charter`` (preferred in ``lt prime``)::
 
     manager = SkillManager.from_charter(charter, workdir)
 
-From a workdir (reads identity from ``.loguetown/runtime/``)::
+From a workdir (reads identity from ``.strawpot/runtime/``)::
 
     manager = SkillManager.from_workdir(workdir)
 
@@ -39,7 +39,7 @@ class SkillManager:
     ) -> None:
         self._workdir = workdir.resolve()
         self._agent_name = agent_name
-        self._global_root = (global_root or Path.home() / ".loguetown").resolve()
+        self._global_root = (global_root or Path.home() / ".strawpot").resolve()
 
     # ------------------------------------------------------------------
     # Factories
@@ -61,11 +61,11 @@ class SkillManager:
         workdir: Path,
         global_root: Path | None = None,
     ) -> SkillManager:
-        """Build by reading agent identity from ``.loguetown/runtime/agent.json``."""
+        """Build by reading agent identity from ``.strawpot/runtime/agent.json``."""
         workdir = workdir.resolve()
         agent_name: str | None = None
 
-        agent_json = workdir / ".loguetown" / "runtime" / "agent.json"
+        agent_json = workdir / ".strawpot" / "runtime" / "agent.json"
         if agent_json.exists():
             try:
                 identity = json.loads(agent_json.read_text())
@@ -102,12 +102,12 @@ class SkillManager:
     def _all_pools(self) -> list[SkillPool]:
         result: list[SkillPool] = [
             SkillPool(path=self._global_root / "skills", scope="global"),
-            SkillPool(path=self._workdir / ".loguetown" / "skills", scope="project"),
+            SkillPool(path=self._workdir / ".strawpot" / "skills", scope="project"),
         ]
         if self._agent_name:
             result.append(
                 SkillPool(
-                    path=self._workdir / ".loguetown" / "skills" / self._agent_name,
+                    path=self._workdir / ".strawpot" / "skills" / self._agent_name,
                     scope="agent",
                 )
             )

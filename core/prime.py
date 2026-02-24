@@ -1,4 +1,4 @@
-"""lt prime — SessionStart hook for Loguetown agents.
+"""lt prime — SessionStart hook for Strawpot agents.
 
 Called by Claude Code's ``SessionStart`` hook::
 
@@ -38,23 +38,23 @@ def build_prime_output(workdir: Path, hook_input: dict | None = None) -> str:
     """Build the context string that gets injected at session start.
 
     Args:
-        workdir:    The agent's working directory (where .loguetown/ lives).
+        workdir:    The agent's working directory (where .strawpot/ lives).
         hook_input: Parsed JSON from Claude Code's SessionStart hook stdin.
                     May be None when called outside hook context (e.g. tests).
     """
-    runtime_dir = workdir / ".loguetown" / "runtime"
+    runtime_dir = workdir / ".strawpot" / "runtime"
 
     # --- Resolve charter ---------------------------------------------------
     agent_json = runtime_dir / "agent.json"
     if not agent_json.exists():
-        return "# Loguetown\n\nNo agent identity found in this directory."
+        return "# Strawpot\n\nNo agent identity found in this directory."
 
     identity = json.loads(agent_json.read_text())
     agent_name: str = identity["name"]
     agent_role: str = identity["role"]
 
     # Prefer full charter YAML; fall back to bare charter from runtime JSON
-    charter_path = workdir / ".loguetown" / "agents" / f"{agent_name}.yaml"
+    charter_path = workdir / ".strawpot" / "agents" / f"{agent_name}.yaml"
     if charter_path.exists():
         charter = Charter.from_yaml(charter_path)
     else:

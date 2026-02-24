@@ -169,7 +169,7 @@ def test_charter_from_yaml_allowed_tools(tmp_path: Path):
 @pytest.fixture
 def prime_workdir(tmp_path: Path) -> Path:
     """Workdir with agent identity, a skill pool, and current work."""
-    runtime = tmp_path / ".loguetown" / "runtime"
+    runtime = tmp_path / ".strawpot" / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "agent.json").write_text(
         json.dumps({"name": "charlie", "role": "implementer"})
@@ -177,7 +177,7 @@ def prime_workdir(tmp_path: Path) -> Path:
     (runtime / "work.txt").write_text("Implement the login endpoint.")
 
     # Create the agent skill pool directory
-    agent_skills = tmp_path / ".loguetown" / "skills" / "charlie"
+    agent_skills = tmp_path / ".strawpot" / "skills" / "charlie"
     agent_skills.mkdir(parents=True)
     (agent_skills / "typescript-patterns").mkdir()
 
@@ -211,7 +211,7 @@ def test_prime_persists_session_id(prime_workdir: Path):
     hook_input = {"session_id": "sess-abc123", "source": "startup"}
     build_prime_output(prime_workdir, hook_input=hook_input)
 
-    session_file = prime_workdir / ".loguetown" / "runtime" / "session.json"
+    session_file = prime_workdir / ".strawpot" / "runtime" / "session.json"
     assert session_file.exists()
     data = json.loads(session_file.read_text())
     assert data["session_id"] == "sess-abc123"
@@ -226,13 +226,13 @@ def test_prime_no_identity(tmp_path: Path):
 def test_prime_uses_charter_yaml(tmp_path: Path):
     from core.prime import build_prime_output
 
-    runtime = tmp_path / ".loguetown" / "runtime"
+    runtime = tmp_path / ".strawpot" / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "agent.json").write_text(
         json.dumps({"name": "charlie", "role": "implementer"})
     )
 
-    charter_dir = tmp_path / ".loguetown" / "agents"
+    charter_dir = tmp_path / ".strawpot" / "agents"
     charter_dir.mkdir(parents=True)
     (charter_dir / "charlie.yaml").write_text(textwrap.dedent("""\
         name: charlie

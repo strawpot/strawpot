@@ -87,7 +87,7 @@ class TestClaudeSessionProvider:
         charter = make_charter(name="charlie", role="implementer")
         await self._spawn(provider, charter, workdir)
 
-        agent_json = workdir / ".loguetown" / "runtime" / "agent.json"
+        agent_json = workdir / ".strawpot" / "runtime" / "agent.json"
         assert agent_json.exists()
         data = json.loads(agent_json.read_text())
         assert data["name"] == "charlie"
@@ -97,7 +97,7 @@ class TestClaudeSessionProvider:
         charter = make_charter()
         await self._spawn(provider, charter, workdir, work="Build the login page.")
 
-        work_file = workdir / ".loguetown" / "runtime" / "work.txt"
+        work_file = workdir / ".strawpot" / "runtime" / "work.txt"
         assert work_file.exists()
         assert work_file.read_text() == "Build the login page."
 
@@ -107,7 +107,7 @@ class TestClaudeSessionProvider:
         await self._spawn(provider, charter, workdir, work="task 1")
         # Second spawn without work
         await self._spawn(provider, charter, workdir, work=None)
-        work_file = workdir / ".loguetown" / "runtime" / "work.txt"
+        work_file = workdir / ".strawpot" / "runtime" / "work.txt"
         assert not work_file.exists()
 
     # --- tmux command construction ---

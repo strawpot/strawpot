@@ -82,7 +82,7 @@ class ClaudeSessionProvider:
 
     def _write_runtime(self, workdir: Path, charter: Charter, context: SessionContext) -> None:
         """Write runtime files that ``lt prime --hook`` reads at session start."""
-        runtime_dir = workdir / ".loguetown" / "runtime"
+        runtime_dir = workdir / ".strawpot" / "runtime"
         runtime_dir.mkdir(parents=True, exist_ok=True)
 
         # Agent identity — used by lt prime to find the right charter
@@ -171,7 +171,7 @@ class ClaudeSessionProvider:
     @staticmethod
     def _read_charter(workdir: Path) -> Charter:
         """Reconstruct a minimal Charter from the saved runtime identity."""
-        agent_json = workdir / ".loguetown" / "runtime" / "agent.json"
+        agent_json = workdir / ".strawpot" / "runtime" / "agent.json"
         if not agent_json.exists():
             raise FileNotFoundError(
                 f"No runtime identity found at {agent_json}. "
@@ -180,7 +180,7 @@ class ClaudeSessionProvider:
         data = json.loads(agent_json.read_text())
 
         # Prefer a full charter YAML if it exists
-        charter_path = workdir / ".loguetown" / "agents" / f"{data['name']}.yaml"
+        charter_path = workdir / ".strawpot" / "agents" / f"{data['name']}.yaml"
         if charter_path.exists():
             return Charter.from_yaml(charter_path)
 

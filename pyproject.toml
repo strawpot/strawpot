@@ -1,5 +1,5 @@
 [project]
-name = "loguetown"
+name = "strawpot"
 version = "0.1.0"
 description = "Local-first multi-agent coding assistant"
 requires-python = ">=3.11"
