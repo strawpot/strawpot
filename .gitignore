@@ -1,16 +1,37 @@
-# Build output
-/lt
-/lt.exe
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+MANIFEST
 
-# Web frontend (rebuild: cd web && npm install && npm run build)
-web/node_modules/
-web/dist/**
-!web/dist/index.html
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# Go test cache and coverage
-*.test
-*.out
-coverage.html
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+.pyright/
+
+# Linting
+.ruff_cache/
 
 # macOS
 .DS_Store
@@ -20,3 +41,10 @@ coverage.html
 .vscode/
 *.swp
 *.swo
+
+# Loguetown runtime (per-project, not committed)
+.loguetown/runtime/
+.loguetown/worktrees/
+
+# Claude Code session files written by ClaudeSessionProvider
+.claude/settings.json

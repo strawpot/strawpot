@@ -2,7 +2,7 @@
 
 ## Agent Charter
 
-An **Agent Charter** is a hot-reloadable YAML file that is the single source of truth for an agent's identity, role, skill bundle, memory settings, model, and allowed tools. Editing it takes effect on the agent's next session — no restart of the daemon required.
+An **Agent Charter** is a hot-reloadable YAML file that is the single source of truth for an agent's identity, role, instructions, model, and allowed tools. Editing it takes effect on the agent's next session — no restart of the daemon required.
 
 ```yaml
 # .loguetown/agents/charlie.yaml
@@ -13,19 +13,6 @@ model:
   provider: claude              # claude | openai | ollama | custom
   id: claude-opus-4-6
 
-extra_skills:                   # files to load in addition to the role's default_skills
-  - implementer/react-patterns.md
-
-memory:
-  layers: [working, episodic, semantic_local, semantic_global]
-  provider: local               # local | mem0 | custom
-  max_tokens_injected: 8000
-  budget:
-    skills_pct: 25              # % of budget for skill files
-    episodic_pct: 25            # % of budget for past-run experiences
-    semantic_local_pct: 35      # % of budget for project-scoped facts
-    semantic_global_pct: 15     # % of budget for cross-project facts
-
 tools:
   allowed: [read, write, bash]
   bash_allowlist:
@@ -35,74 +22,79 @@ tools:
     - "npx eslint *"
 ```
 
-Charters reference a **Role** (which supplies default skills, tool policy, and model) and can override or extend any field. This keeps agent identity separate from capability definitions.
+Charters reference a **Role** (which supplies default tool policy and model) and can override or extend any field. This keeps agent identity separate from capability definitions.
 
 ---
 
 ## Skills
 
-Skills are plain **Markdown files** (`*.md`). Each file teaches the agent one specific capability, convention, or pattern. Files are small and independently retrievable via vector search — avoiding the "one giant CLAUDE.md" anti-pattern.
+Skills are **folder-based modules** — each skill is a directory containing one or more Markdown files. A skill directory teaches the agent one capability, convention, or workflow area. The agent reads skills using its native `Glob` and `Read` tools, then synthesises the applicable guidelines into a `CLAUDE.md` file that Claude Code auto-loads on subsequent sessions.
 
 ### Skill Scopes
 
-Skills exist at three scopes, retrieved in order from broadest to narrowest:
+Skills exist at three scopes, resolved from broadest to narrowest:
 
-| Scope | Location | Description |
+| Scope | Location | Includes |
 |---|---|---|
-| **Global** | `~/.loguetown/skills/global/` | Cross-project, personal conventions (e.g. preferred coding style, universal security practices). Indexed once, retrieved in every project. |
-| **Project shared** | `.loguetown/skills/shared/` | Available to all roles within this project (e.g. commit style, architecture overview, monorepo layout). |
-| **Role-specific** | `.loguetown/skills/<role>/` | Skills for a particular role in this project (e.g. implementer/typescript-patterns.md). |
+| **Global** | `~/.loguetown/skills/` | Global only. Cross-project, developer-wide conventions. Applies in every project. |
+| **Project** | `.loguetown/skills/` | Global + Project. Shared across all agents in this project (e.g. commit style, architecture overview). |
+| **Agent** | `.loguetown/skills/<agent-name>/` | Global + Project + Agent. Full skill set for a specific agent instance. |
 
-At retrieval time the session builder queries all three scopes against the current task and assembles the top-K chunks within the token budget. Global skills are always searched first; role-specific skills have the highest weight in ranking when similarity scores are equal.
+Scopes are cumulative: an agent session sees all three pools. The `lt skills list` command follows the same convention — default shows global + project, `--agent <name>` shows all three.
+
+### Directory Structure
+
+Each scope is a flat directory of skill sub-folders. Each sub-folder is one skill module:
 
 ```
-~/.loguetown/skills/global/
-  personal-coding-style.md     # applies to all projects
-  security-baseline.md         # OWASP + auth conventions I always follow
-  commit-conventions.md        # conventional commits preference
+~/.loguetown/skills/
+  personal-coding-style/       # global: applies to all projects
+    style.md
+    examples/
+  security-baseline/           # global: OWASP + auth conventions
+    checklist.md
 
 .loguetown/skills/
-  shared/                      # available to ALL roles in this project
-    project-overview.md        # high-level architecture (human-maintained)
+  project-overview/            # project-wide: high-level architecture
+    architecture.md
     monorepo-layout.md
-    api-error-format.md
-  implementer/
-    typescript-patterns.md
-    testing-conventions.md
-    git-workflow.md
-    api-design.md
-    react-patterns.md
-  reviewer/
-    code-review-checklist.md
-    security-checklist.md
-    performance-checklist.md
-  planner/
-    decomposition-heuristics.md
-    risk-scoring.md
-  fixer/
-    debugging-strategies.md
-    minimal-change-principle.md
+  commit-conventions/          # project-wide: commit style guide
+    guide.md
+
+.loguetown/skills/charlie/     # agent-specific (charlie)
+  typescript-patterns/
+    patterns.md
+    examples/
+  testing-conventions/
+    guide.md
+  react-patterns/
+    hooks.md
+    components.md
 ```
 
-**Skill file format** — pure Markdown, no required frontmatter. Optional frontmatter enables better indexing:
+### Session Start: CLAUDE.md Generation
 
-```markdown
----
-id: sk_typescript_patterns
-role: implementer
-tags: [typescript, patterns, style]
----
+At session start `lt prime` injects the three skill pool paths and instructs the agent to:
 
-# TypeScript Patterns
+1. Use `Glob` and `Read` to explore each skill pool directory
+2. Identify modules relevant to the current task and role
+3. Synthesise the applicable guidelines into `CLAUDE.md` in the working directory
+4. Claude Code auto-loads `CLAUDE.md` in all future sessions — no re-reading required
 
-## Error Handling
-Always use typed errors. Extend the base `AppError` class in `src/errors/base.ts`...
+This avoids front-loading context: the first session does the discovery work; subsequent sessions get the synthesised result automatically.
 
-## Async/Await
-Prefer async/await over raw Promise chains. Always handle rejections...
+### Skill Module Format
+
+Each skill module is a directory. No required file structure — the agent reads whatever Markdown files are present:
+
+```
+.loguetown/skills/charlie/typescript-patterns/
+  patterns.md        # main content
+  examples/          # optional sub-directory with code examples
+  anti-patterns.md   # additional content files
 ```
 
-**CLI:** `lt skills reindex` indexes all three scopes. `lt skills reindex --global` indexes only the global store. `lt skills search <query>` searches all scopes; results are tagged with their scope.
+**CLI:** `lt skills list` shows all skill modules across scopes. `lt skills install` scaffolds a new skill module directory (default: project scope; `--global` / `--agent <name>` for other scopes). `lt skills remove` deletes a module.
 
 ---
 
@@ -117,12 +109,6 @@ Roles are fully user-manageable: create `documenter.yaml`, `security-auditor.yam
 name: implementer
 description: "Writes code to implement features and fix bugs"
 
-default_skills:
-  - implementer/typescript-patterns.md
-  - implementer/testing-conventions.md
-  - implementer/git-workflow.md
-  - shared/commit-style.md
-
 default_tools:
   allowed: [read, write, bash]
   bash_allowlist: ["npm *", "git *", "npx tsc *", "npx eslint *"]
@@ -130,10 +116,6 @@ default_tools:
 default_model:
   provider: claude
   id: claude-opus-4-6
-
-default_memory:
-  layers: [working, episodic, semantic_local, semantic_global]
-  max_tokens_injected: 8000
 ```
 
 **Built-in roles:**
@@ -149,186 +131,6 @@ default_memory:
 Add any role by creating a YAML file in `.loguetown/roles/`. The Planner can assign any defined role to tasks it creates.
 
 ---
-
-## Memory
-
-Memory is composed of **multiple layers** with different lifetimes, scopes, and retrieval strategies. Each layer is stored as **individual Markdown chunk files** — not one monolithic file — enabling targeted vector search retrieval.
-
-### Memory Layers
-
-| Layer | Name | Scope | Lifetime | Purpose |
-|---|---|---|---|---|
-| 0 | **Working** | Session | Cleared at session end | In-context scratchpad; active observations and reasoning |
-| 1 | **Episodic** | Agent | Configurable (e.g. 90 days / 100 entries) | Past run experiences: what happened, what worked, what to avoid |
-| 2 | **Semantic Local** | Project | Until deprecated | Project facts: conventions, architecture decisions, known patterns |
-| 3 | **Semantic Global** | Cross-project | Until deprecated | Personal standards, reusable patterns, tool preferences |
-| 4 | **Skills** | Role | Managed separately | How-to knowledge (see Skills section above) |
-
-Layers 1–3 are each stored as many small `.md` chunk files, independently embedded and searchable. The Working layer is in-context only.
-
-### Memory Chunk Format
-
-Each chunk is a single `.md` file with optional YAML frontmatter:
-
-```markdown
----
-id: mem_abc123
-layer: episodic
-agent: charlie
-project: my-service      # null for global
-tags: [auth, oauth, csrf]
-outcome: failure         # episodic: success | failure | warning
-provenance:
-  task_id: tk-xyz34
-  run_id: run-456
-  commit: abc123f
-created_at: 2025-01-15T14:23:00Z
-last_validated_at: 2025-01-15T14:23:00Z
-status: active           # active | deprecated
----
-
-## Mistake: not validating OAuth state parameter
-
-When implementing the OAuth callback I forgot to validate `req.query.state` against
-`req.session.oauthState` before calling the token exchange endpoint. This introduced
-a CSRF vulnerability.
-
-**What to do instead:**
-- Always verify `state` matches the stored session value before token exchange
-- Return 400 if state is missing or mismatched
-- Clear state from session after successful validation
-```
-
-Semantic chunk example:
-
-```markdown
----
-id: mem_def456
-layer: semantic_local
-project: my-service
-tags: [auth, architecture, jwt]
-status: active
----
-
-## JWT token strategy
-
-Tokens are issued by `POST /auth/login`. Access tokens expire in 15 minutes,
-refresh tokens in 7 days. Tokens are stored in httpOnly cookies, never
-localStorage. Validation middleware lives in `src/middleware/auth.ts`.
-```
-
-### File Layout
-
-Memory is split across two physical locations: **project-local** (inside `.loguetown/`) and **global** (inside `~/.loguetown/`). The scope boundary is hard: local layers live with the project, global layers live with the developer.
-
-```
-# Project-local (tied to this repo)
-.loguetown/memory/
-  charlie/
-    episodic/
-      2025-01-15-oauth-state-csrf.md
-      2025-01-20-db-migration-rollback.md
-    semantic_local/
-      auth-architecture.md
-      db-schema-conventions.md
-      api-error-format.md
-
-# Global (shared across all projects, stored with user profile)
-~/.loguetown/memory/
-  global/
-    semantic_global/
-      typescript-preferences.md
-      testing-philosophy.md
-      security-checklist.md
-    episodic_global/             # rare: cross-project lessons (e.g. "never use eval")
-      no-eval-lesson.md
-```
-
-**Storage rules:**
-- `episodic` and `semantic_local` are always project-local — they describe what happened *here*.
-- `semantic_global` lives at `~/.loguetown/memory/global/` — it follows the developer across all projects.
-- `episodic_global` is an optional layer for cross-project procedural lessons (off by default; enabled in config).
-- The `working` layer is in-context only (never persisted).
-
-### Retrieval at Session Start
-
-The session builder performs **vector similarity search** across all scopes:
-
-```
-query = current task description + role name + project name
-
-1. Global skills      (~/.loguetown/skills/global/)       → top-K, min_similarity
-2. Project shared skills (.loguetown/skills/shared/)       → top-K, min_similarity
-3. Role skills        (.loguetown/skills/<role>/)          → top-K, min_similarity
-4. semantic_global    (~/.loguetown/memory/global/...)     → top-K, min_similarity
-5. semantic_local     (.loguetown/memory/<agent>/...)      → top-K, min_similarity
-6. episodic           (.loguetown/memory/<agent>/episodic) → top-K, min_similarity
-
-inject into system prompt in order: global semantic → local semantic → episodic → skills
-(each section capped by its layer token budget)
-```
-
-Global layers (steps 1 and 4) are searched regardless of which project is active. Project-local layers (steps 2, 3, 5, 6) are scoped to the current `.loguetown/` directory. This ensures the agent receives the most relevant knowledge for *this specific task* from both its project context and its cross-project experience.
-
-### Memory Promotion Lifecycle
-
-Agents cannot directly write to promoted layers — all writes are proposals:
-
-```
-proposed ──► approved ──► promoted (active, retrievable)
-              │
-              └──► rejected (with reason, stored but not retrieved)
-
-promoted ──► deprecated (invalidated by later changes, excluded from retrieval)
-```
-
-- **Any agent** can *propose* episodic, semantic-local, or semantic-global chunks during a run
-- **Reviewer** *approves or rejects* proposed chunks (with structured reasons)
-- **Human** can override: promote rejected entries or deprecate stale ones from the GUI
-
-### Episodic Memory — Learning from Mistakes
-
-Episodic memory is the "don't do this again" layer. After each run completes (success or failure), the daemon prompts the active agent:
-
-> *"What did you learn from this run that future agents should know? Any mistakes made, patterns discovered, or decisions that should be remembered?"*
-
-The agent writes one or more episodic chunks tagged with `outcome: success | failure | warning`. These are proposed, approved by the Reviewer, and then retrievable in future sessions when a similar task is encountered.
-
-Episodic entries have a configurable **retention policy** (default: keep the 100 most recent, or entries within 90 days — whichever is larger).
-
-### Memory Provider Abstraction
-
-The local Markdown + vector-search implementation is the default, but the memory system is pluggable:
-
-```typescript
-interface MemoryProvider {
-  store(chunk: MemoryChunk): Promise<void>;
-  retrieve(query: MemoryQuery): Promise<MemoryChunk[]>;
-  update(id: string, updates: Partial<MemoryChunk>): Promise<void>;
-  delete(id: string): Promise<void>;
-  list(filter?: MemoryFilter): Promise<MemoryChunk[]>;
-}
-
-interface MemoryQuery {
-  text: string;           // natural language query for vector search
-  layer?: MemoryLayer[];  // filter to specific layers
-  agent?: string;
-  project?: string;
-  tags?: string[];
-  limit?: number;
-  min_similarity?: number;
-}
-```
-
-**Built-in providers:**
-
-| Provider | Description | Config |
-|---|---|---|
-| `local` | Markdown files + sqlite-vec embeddings. Zero-infra, default. | `provider: local` |
-| `mem0` | [Mem0](https://mem0.ai) managed memory service (cloud or self-hosted) | `provider: mem0` + API key |
-| `custom` | Any class implementing `MemoryProvider` | `provider: custom`, `path: ./my-provider.ts` |
-
-Custom providers are loaded by path. This enables integration with any external memory system (LangMem, Zep, Weaviate, Pinecone, etc.).
 
 ---
 
@@ -355,7 +157,6 @@ The Orchestrator is always available as a conversation partner. A session persis
 | *"Stop everything, something is broken"* | Pauses all active runners, emits RUN_CANCELED events |
 | *"What did charlie do today?"* | Summarizes chronicle events for that agent |
 | *"Approve T4"* | Triggers the merge gate for task T4 |
-| *"Show me charlie's memory about OAuth"* | Queries charlie's memory and returns matching chunks |
 
 ### Orchestrator Session Model
 
@@ -372,7 +173,7 @@ Conversation
   └── Turn 7: orchestrator spawns fixer, eventually reports merge complete
 ```
 
-The underlying **scheduler** still runs as a Go goroutine, but it is driven by the Orchestrator's decisions rather than a standalone poll loop. The Orchestrator:
+The underlying **scheduler** runs as an asyncio task, driven by the Orchestrator's decisions rather than a standalone poll loop. The Orchestrator:
 
 1. Receives human goals via conversation
 2. Invokes the Planner agent to decompose goals into tasks (or accepts the human's manual task descriptions)
@@ -392,7 +193,6 @@ During a conversation turn the Orchestrator can call internal tools (not exposed
 | `get_chronicle(task_id)` | Returns recent events for a task |
 | `approve_task(task_id)` | Clears the merge gate for a task |
 | `pause_all()` / `resume_all()` | Stops or resumes all active runners |
-| `get_memory(agent, query)` | Retrieves memory chunks for an agent |
 
 ### Relationship to CLI Commands
 
@@ -568,7 +368,6 @@ The **Chronicle** is the full audit record of everything that happens. It has tw
 | Escalation | `ESCALATION_CREATED` `ESCALATION_BUMPED` `ESCALATION_ACKNOWLEDGED` `ESCALATION_RESOLVED` |
 | Agent comms | `AGENT_MESSAGE_SENT` `AGENT_MESSAGE_RECEIVED` `REVIEW_REQUESTED` `REVIEW_SUBMITTED` |
 | Checks | `COMMAND_STARTED` `COMMAND_FINISHED` `CHECKS_STARTED` `CHECKS_FINISHED` |
-| Memory | `MEMORY_PROPOSED` `MEMORY_APPROVED` `MEMORY_REJECTED` `MEMORY_PROMOTED` `MEMORY_DEPRECATED` |
 | Human | `HUMAN_APPROVED` `HUMAN_REJECTED` `HUMAN_COMMENTED` |
 | Merge | `MERGE_GATE_PASSED` `AUTO_MERGE_TRIGGERED` `MERGE_PERFORMED` |
 | Chat | `CONVERSATION_TURN_HUMAN` `CONVERSATION_TURN_ASSISTANT` |

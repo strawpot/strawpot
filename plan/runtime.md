@@ -1,10 +1,48 @@
 # Loguetown — Runtime
 
+## Agent Session Model
+
+Each Implementer, Reviewer, or Fixer run is an **interactive Claude agent session** running inside a named tmux session. This provides full tool access, session resilience (crash-and-resume), and human-attachable terminals.
+
+**Session naming:** `lt-<agent-name>` (e.g., `lt-charlie`, `lt-diana`)
+
+**Session lifecycle:**
+```
+AgentManager.spawn(charter, workdir, context)
+  │
+  ├─ Write .loguetown/runtime/agent.json   {"name": "charlie", "role": "implementer"}
+  ├─ Write .loguetown/runtime/work.txt     current task description
+  ├─ Write .claude/settings.json           hook config + allowed tools
+  └─ tmux new-session -d -s lt-charlie -c <workdir>
+         claude --dangerously-skip-permissions
+           │
+           └─ SessionStart hook → lt prime --hook
+                  ├─ Reads agent.json → name + role
+                  ├─ Loads charter from .loguetown/agents/<name>.yaml
+                  ├─ SkillManager.from_charter() → resolves three SkillPool paths
+                  │     global:   ~/.loguetown/skills/
+                  │     project:  <workdir>/.loguetown/skills/
+                  │     agent:    <workdir>/.loguetown/skills/<name>/
+                  ├─ Reads work.txt
+                  ├─ ContextBuilder.build() → injects pool path table + CLAUDE.md instruction
+                  ├─ Persists session_id → .loguetown/runtime/session.json
+                  └─ Prints markdown → injected into Claude's context window
+                       (agent uses Glob/Read to discover skills, generates CLAUDE.md)
+```
+
+**Session resume:** If a session crashes or is killed, the daemon can respawn with `claude --resume <session_id>` (stored in `.loguetown/runtime/session.json`). Claude Code restores its compressed context; `lt prime` re-injects only identity + current work (lighter pass — skills are already in the compressed transcript).
+
+**Human attach:** `lt agent attach <name>` runs `tmux attach-session -t lt-<name>`. The human can observe or intervene, then detach without disrupting the session.
+
+**Session check:** `AgentSession.is_alive` runs `tmux has-session -t lt-<name>` to detect live vs. dead sessions.
+
+---
+
 ## Git / Worktree Strategy
 
 Each Implementer or Fixer run gets an isolated git worktree. This allows parallel agents to work on separate tasks without file system conflicts.
 
-**Worktree root:** `data/projects/{project_id}/worktrees/{run_id}/`
+**Worktree root:** `.loguetown/worktrees/{run_id}/`
 
 **Branch naming:** `lt/{plan_id}/{task_id}/a{attempt}`
 (e.g., `lt/pl-abc12/tk-xyz34/a1`)
@@ -12,7 +50,7 @@ Each Implementer or Fixer run gets an isolated git worktree. This allows paralle
 **Lifecycle:**
 ```
 git worktree add <path> -b <branch> <base_sha>
-  → agent commits work
+  → agent session commits work inside the worktree
   → checks run inside worktree
   → human approves
   → merge to base branch
@@ -39,25 +77,21 @@ Each project declares its check commands in `.loguetown/project.yaml`:
 # .loguetown/project.yaml
 checks:
   setup:
-    run: "npm ci"
-    cache_key: "package-lock.json"
-
-  format:
-    run: "npx prettier --check ."
-    on_fail: warn              # warn | block (default block)
+    run: "pip install -e .[dev]"
 
   lint:
-    run: "npx eslint src"
+    run: "ruff check ."
+    on_fail: warn              # warn | block (default block)
 
   typecheck:
-    run: "npx tsc --noEmit"
+    run: "mypy src"
 
   test_fast:
-    run: "npm test -- --testPathPattern=unit"
+    run: "pytest tests/unit -x"
     timeout_seconds: 60
 
   test_full:
-    run: "npm test"
+    run: "pytest tests/"
     timeout_seconds: 300
     retry_on_flake: 1          # retry flaky tests once
 
@@ -67,10 +101,10 @@ path_routing:
     skip: [lint, typecheck, test_fast, test_full]
 ```
 
-**Runner execution order per task:**
+**Execution order per task:**
 
 ```
-after each agent commit:   format → lint → typecheck → test_fast
+after each agent commit:   lint → typecheck → test_fast
 before requesting review:  test_full
 before merge gate:         full suite must be green
 ```
@@ -81,7 +115,7 @@ All command invocations emit `COMMAND_STARTED` / `COMMAND_FINISHED` events with 
 
 ## Orchestration and Scheduling
 
-### 8.1 Planner Output → DAG
+### Planner Output → DAG
 
 The Planner creates tasks with:
 - Dependency list (DAG edges)
@@ -92,26 +126,26 @@ The Planner creates tasks with:
 
 The daemon persists tasks in SQLite and renders the DAG in the GUI.
 
-### 8.2 Scheduler Loop
+### Scheduler Loop
 
 ```
 loop every N seconds:
   1. Find unblocked tasks (status=todo AND all deps done)
-  2. If running_count < max_parallel_runs:
+  2. If running_count < max_parallel_sessions:
        pick next unblocked task
        create Run record (role=implementer, attempt=1)
        emit RUN_QUEUED event
-       spawn Runner subprocess
+       spawn Agent Session (ClaudeSessionProvider)
 
   3. For each Run that succeeded + checks passed:
        create Run record (role=reviewer)
        emit RUN_QUEUED event
-       spawn Reviewer Runner
+       spawn Reviewer Agent Session
 
   4. For each Reviewer Run with blockers:
        if attempt < max_fix_attempts:
          create Run record (role=fixer, attempt=N+1)
-         spawn Fixer Runner
+         spawn Fixer Agent Session
        else:
          set task status=needs-human
          create failure summary artifact
@@ -122,24 +156,24 @@ loop every N seconds:
        emit MERGE_GATE_PASSED
 ```
 
-### 8.3 Retry Policy (Bounded)
+### Retry Policy (Bounded)
 
 | Config key | Default | Description |
 |---|---|---|
 | `max_fix_attempts` | 3 | Max Fixer runs per task before escalating to human |
-| `max_parallel_runs` | 3 | Max concurrent Runner subprocesses on this machine |
-| `stale_run_timeout_minutes` | 20 | Kill and requeue a run that goes silent |
+| `max_parallel_sessions` | 3 | Max concurrent Agent Sessions (tmux) on this machine |
+| `stale_session_timeout_minutes` | 20 | Kill and requeue a session that goes silent |
 
 After exceeding `max_fix_attempts`, the task becomes `needs-human` and the daemon creates a **failure summary artifact** (last logs + diff + review findings) for the human to inspect.
 
-### 8.4 Patrol Loop (Health Monitor)
+### Patrol Loop (Health Monitor)
 
 The daemon runs a lightweight **patrol loop** every `patrol_interval_seconds` (default: 60) alongside the scheduler loop. The patrol loop is not an AI agent — it is a deterministic state machine:
 
 ```
 patrol loop every 60s:
-  1. Find runs with status=running older than stale_run_timeout_minutes
-     → kill process, emit RUN_CANCELED, requeue (attempt+1) or set needs-human
+  1. Find runs with status=running older than stale_session_timeout_minutes
+     → terminate tmux session, emit RUN_CANCELED, requeue (attempt+1) or set needs-human
 
   2. Find tasks with status=needs-human
      → if no open escalation for this task: create Escalation (severity=2)
@@ -155,7 +189,7 @@ patrol loop every 60s:
      (lower severity notifications are batched and sent once per patrol cycle)
 ```
 
-The patrol loop is the only component that fires notifications. Runners and the scheduler only update state; the patrol loop observes state and acts on it. This separation keeps agent code simple and avoids double-notification races.
+The patrol loop is the only component that fires notifications. Agent sessions and the scheduler only update state; the patrol loop observes state and acts on it. This separation keeps agent code simple and avoids double-notification races.
 
 ---
 
@@ -214,10 +248,10 @@ Even local-only, the system needs guardrails to prevent runaway agent behavior:
 
 | Concern | Mitigation |
 |---|---|
-| Arbitrary command execution | `bash_allowlist` in Charter; Runner validates each command against allowlist before executing |
-| File system escape | Runner validates all file paths are within worktree root |
+| Arbitrary command execution | `allowed_tools` in Charter; `.claude/settings.json` restricts which tools Claude Code can invoke |
+| File system escape | Agent session operates inside its git worktree; daemon validates worktree paths on creation |
 | Secret leakage in logs | Basic secret redaction heuristics (regex for tokens, passwords, API keys) in Chronicle writer |
-| Network access | Optional `no_network: true` toggle in Charter; Runner sets `NODE_NET=off` via env |
-| Runaway agent | `stale_run_timeout_minutes` kills and requeuees silently-hanging Runners |
+| Network access | Optional `no_network: true` toggle in Charter; daemon sets network restrictions via env |
+| Runaway agent | `stale_session_timeout_minutes` kills and requeues silently-hanging Agent Sessions via `tmux kill-session` |
 | Concurrent worktree conflict | Worktree path keyed on UUID run_id; daemon is sole creator/destroyer of worktrees |
-| Malformed A2A messages | Daemon validates all messages against TypeScript schemas before routing; invalid messages are rejected and logged |
+| Malformed A2A messages | Daemon validates all messages against typed schemas before routing; invalid messages are rejected and logged |

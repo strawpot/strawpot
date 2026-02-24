@@ -2,6 +2,23 @@
 
 The CLI is the **primary interface**. Every operation is available here; the GUI is optional.
 
+## Project Context Resolution
+
+Every `lt` command that operates on a project resolves the working directory automatically:
+
+1. Walk up from `$CWD` until a `.loguetown/` directory is found (same as how `git` finds `.git/`)
+2. If `$LT_WORKDIR` is set, use that path instead
+3. If neither is found, the command fails with a clear error: `not in a loguetown project (no .loguetown/ found)`
+
+This means you never need to pass `--project` or a project name — just `cd` into the repo as usual.
+
+```bash
+# Override workdir explicitly (useful in scripts / CI):
+LT_WORKDIR=/path/to/repo lt skills list
+```
+
+---
+
 ```bash
 # ── Project setup ─────────────────────────────────────────────────────────────
 lt init                               # scaffold .loguetown/ in the current repo
@@ -37,43 +54,29 @@ lt role delete security-auditor       # remove role file (warns if agents refere
 
 # ── Agent management ──────────────────────────────────────────────────────────
 lt agent list                         # name | role | status | current task
-lt agent show charlie                 # full Charter + resolved role + memory summary
+lt agent show charlie                 # full Charter + resolved role + skill pools
 lt agent create --name diana --role reviewer
 lt agent edit charlie                 # open Charter YAML in $EDITOR
 lt agent spawn charlie --task <id>    # manually start a session for a specific task
 lt agent kill charlie                 # terminate a running agent session
 
 # ── Skills management ─────────────────────────────────────────────────────────
-lt skills list                        # all *.md files: global + shared + role-scoped
-lt skills list --global               # only ~/.loguetown/skills/global/
-lt skills list --role implementer     # filtered by role directory
-lt skills add implementer react-patterns.md    # scaffold a new blank skill file (project)
-lt skills add --global personal-style.md       # scaffold a new global skill file
-lt skills edit implementer/typescript-patterns.md   # open in $EDITOR
-lt skills edit --global personal-style.md      # open global skill in $EDITOR
-lt skills show implementer/git-workflow.md     # print file content
-lt skills query "OAuth callback handler" --role implementer
-                                      # run vector search across all scopes; results tagged by scope
-lt skills reindex                     # re-embed all scopes (global + project)
-lt skills reindex --global            # re-embed only ~/.loguetown/skills/global/
-lt skills reindex --project           # re-embed only this project's skills
+lt skills list                        # global + project modules (project view, default)
+lt skills list --global               # only ~/.loguetown/skills/ (global pool only)
+lt skills list --agent charlie        # global + project + agent modules (full agent view)
 
-# ── Memory management ─────────────────────────────────────────────────────────
-lt memory list                        # all chunks: global + all agents + all layers
-lt memory list --global               # only ~/.loguetown/memory/global/
-lt memory list --agent charlie        # filter by agent
-lt memory list --layer episodic       # filter by layer (episodic, semantic_local, semantic_global)
-lt memory list --status proposed      # filter by promotion status
-lt memory show <id>                   # print full Markdown content + frontmatter
-lt memory query "state parameter validation" --agent charlie
-                                      # run vector search over charlie's memory (all scopes)
-lt memory query "..." --global        # search only the global semantic_global store
-lt memory promote <id>                # human-override: promote to active
-lt memory reject <id> --reason "..."  # human-override: reject with reason
-lt memory deprecate <id>              # mark as stale/invalidated
-lt memory split <file>                # interactively split a large .md into chunks
-lt memory reindex                     # re-embed all memory (global + project)
-lt memory reindex --global            # re-embed only ~/.loguetown/memory/global/
+lt skills install react-patterns      # scaffold new skill module in project pool (default)
+lt skills install --global personal-style          # install into global pool
+lt skills install --agent charlie react-patterns   # install into agent pool
+
+lt skills remove react-patterns       # remove skill module from project pool (default)
+lt skills remove --global personal-style           # remove from global pool
+lt skills remove --agent charlie react-patterns    # remove from agent pool
+
+lt skills edit react-patterns         # open skill module in $EDITOR (project pool default)
+lt skills edit --global personal-style             # open global skill module in $EDITOR
+lt skills edit --agent charlie react-patterns      # open agent skill module in $EDITOR
+lt skills show react-patterns         # print all .md file content in the module
 
 # ── Task management ───────────────────────────────────────────────────────────
 lt tasks list                         # all tasks in current plan with status
@@ -102,7 +105,7 @@ lt chronicle --tail 100               # last N events
 lt chronicle --task <task-id>         # full event trace for one task
 lt chronicle --run <run-id>           # trace for one agent run
 lt chronicle --agent charlie          # all activity attributed to charlie
-lt chronicle --type MEMORY_PROPOSED   # filter by event type
+lt chronicle --type CHECKS_FINISHED   # filter by event type
 lt chronicle --since "2025-01-15"     # events after a date
 lt chronicle --json                   # raw JSONL output (pipe-friendly)
 
