@@ -12,6 +12,7 @@ import (
 	"github.com/juhgiyo/loguetown/internal/chronicle"
 	"github.com/juhgiyo/loguetown/internal/config"
 	"github.com/juhgiyo/loguetown/internal/dispatch"
+	"github.com/juhgiyo/loguetown/internal/merge"
 	"github.com/juhgiyo/loguetown/internal/plans"
 	"github.com/juhgiyo/loguetown/internal/runner"
 )
@@ -189,7 +190,29 @@ func (s *Scheduler) runTask(ctx context.Context, planID string, task plans.Task,
 	})
 
 	if err == nil && result.Success {
-		_ = plans.SetTaskStatus(task.ID, "done")
+		// Attempt to merge agent commits into the default branch.
+		run, _ := plans.GetRun(result.RunID)
+		if run != nil && run.HeadSHA != "" && run.HeadSHA != run.BaseSHA {
+			if mergeErr := merge.MergeRun(s.Runner.ProjectPath, s.Runner.DefaultBranch,
+				run.BaseSHA, run.HeadSHA); mergeErr != nil {
+				_ = plans.SetTaskStatus(task.ID, "merge_conflict")
+				chronicle.Emit(s.Runner.ProjectID, "scheduler", "TASK_MERGE_CONFLICT",
+					map[string]interface{}{
+						"task_id": task.ID,
+						"run_id":  result.RunID,
+						"error":   mergeErr.Error(),
+					})
+			} else {
+				_ = plans.SetTaskStatus(task.ID, "merged")
+				chronicle.Emit(s.Runner.ProjectID, "scheduler", "TASK_MERGED",
+					map[string]interface{}{
+						"task_id": task.ID,
+						"run_id":  result.RunID,
+					})
+			}
+		} else {
+			_ = plans.SetTaskStatus(task.ID, "done") // no commits, nothing to merge
+		}
 		_ = dispatch.Send("scheduler", "orchestrator", dispatch.TypeTaskUnblocked,
 			planID, task.ID, result.RunID, map[string]string{"title": task.Title})
 		return
@@ -230,7 +253,10 @@ func (s *Scheduler) planDone(planID string) bool {
 		return false
 	}
 	for _, t := range tasks {
-		if t.Status != "done" && t.Status != "failed" {
+		switch t.Status {
+		case "done", "merged", "failed", "merge_conflict", "needs-human":
+			// terminal — continue
+		default:
 			return false
 		}
 	}
@@ -245,7 +271,7 @@ func (s *Scheduler) finalizePlan(planID string) {
 	}
 	status := "done"
 	for _, t := range tasks {
-		if t.Status == "failed" {
+		if t.Status == "failed" || t.Status == "merge_conflict" {
 			status = "failed"
 			break
 		}

@@ -4,7 +4,7 @@
 
 A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Planner, Implementer, Reviewer, Fixer) work in isolated git worktrees while a full Chronicle audit trail captures everything.
 
-**Phase 5 (current):** Multi-agent orchestration — conversational `lt chat` entry point, Planner → task DAG, background Scheduler, A2A dispatch, and non-interactive `lt run` scripting shortcut.
+**Phase 6 (current):** Merge agent + patrol loop — agent commits are automatically cherry-picked onto the default branch after each successful run; `lt patrol` recovers orphaned tasks and re-enqueues stalled plans.
 
 ---
 
@@ -51,29 +51,33 @@ lt agent create --name charlie --role implementer
 lt skills reindex
 lt skills search "typescript error handling"
 
-# 5. Orchestrate tasks conversationally (Phase 5)
+# 5. Orchestrate tasks conversationally
 lt chat
 # > Create a plan to add OAuth login
 # > Start it
 # > What's the status?
 
-# 6. Or run non-interactively (Phase 5)
+# 6. Or run non-interactively (blocking; commits land on default branch when done)
 lt run "Add input validation to the login form"
 lt run "Refactor the auth module" --dry-run   # preview the plan only
 
-# 7. Spawn a single agent to execute one task
+# 7. Recover a stalled plan (e.g. after a crash)
+lt patrol --once   # reset orphaned tasks, re-run, merge
+lt patrol          # keep watching indefinitely
+
+# 8. Spawn a single agent to execute one task
 lt agent spawn charlie "Add input validation to the login form"
 
-# 8. Run the check pipeline manually
+# 9. Run the check pipeline manually
 lt checks run
 lt checks run lint typecheck    # run specific steps only
 
-# 9. Inspect the results
+# 10. Inspect the results
 lt plan list
 lt tasks list
 lt tasks show <task-id>
 
-# 10. Open the GUI
+# 11. Open the GUI
 lt gui   # → http://localhost:4242
 ```
 
@@ -253,6 +257,35 @@ lt run "Refactor the auth module" --dry-run   # print the plan, don't execute
 2. Prints a table: `ID | Title | Deps | Agent`.
 3. If `--dry-run` is not set: persists tasks in SQLite and calls `scheduler.RunAll()` (blocking until all tasks reach `done` or `failed`).
 4. Prints a final status table and exits with a summary.
+
+---
+
+### `lt patrol [--once]`
+
+Recovers from a crashed scheduler and resumes in-flight plans.
+
+```bash
+lt patrol          # runs indefinitely — picks up any plans from lt chat / lt run
+lt patrol --once   # single scheduling pass then exit (useful in scripts / CI)
+```
+
+On startup `lt patrol`:
+1. **Resets orphaned tasks** — tasks stuck in `"running"` (left behind by a killed scheduler) are reset to `"todo"` so they are re-picked.
+2. **Re-enqueues running plans** — finds all plans with `status="running"` and enqueues them in the Scheduler.
+3. **Starts the Scheduler** — processes queued tasks using the configured runner, merging agent commits when done.
+
+**Task lifecycle with merge agent:**
+
+| Status | Meaning |
+|---|---|
+| `todo` | Waiting for dependencies or not yet started |
+| `running` | Agent goroutine active |
+| `done` | Agent succeeded but made no commits (nothing to merge) |
+| `merged` | Agent commits successfully cherry-picked onto the default branch |
+| `merge_conflict` | Cherry-pick failed — needs human resolution; plan marked `failed` |
+| `failed` | Run exhausted retries or encountered a fatal error |
+
+Successful cherry-picks emit a `TASK_MERGED` Chronicle event; conflicts emit `TASK_MERGE_CONFLICT` and leave the working tree clean (cherry-pick is aborted automatically).
 
 ---
 
@@ -463,12 +496,13 @@ internal/
   agents/            # Charter YAML loader + role resolution
   checks/            # Check pipeline executor (run, timeout, retry, artifact store, path routing)
   chronicle/         # JSONL + SQLite event writer and query
-  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks, checks, chat, run)
+  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks, checks, chat, run, patrol)
   config/            # project.yaml loader (EmbeddingsConfig, MemoryConfig, RunnerConfig, CheckStep, OrchestratorConfig)
   conversation/      # Conversation + turn CRUD (conversations / conversation_turns tables)
   dispatch/          # A2A message bus (messages table; Send / Poll / MarkDelivered)
   embeddings/        # Provider interface, Ollama + OpenAI clients, cosine similarity
   memory/            # memory_chunks CRUD and vector retrieval
+  merge/             # MergeRun: cherry-pick agent commits onto default branch after success
   orchestrator/      # Planner (forced tool_use → task DAG), tool implementations, chat loop
   plans/             # Plan, Task, Run CRUD against SQLite; ListReadyTasks dep resolution
   roles/             # Role YAML loader and built-in defaults
@@ -496,6 +530,7 @@ plan/                # Design documents for all 8 phases
 - [x] Phase 3 — Runner: session builder, git worktree isolation, pluggable runner providers (Claude Code + Anthropic API), plan/task/run lifecycle, episodic memory proposals
 - [x] Phase 4 — Check Pipelines: per-project check commands (lint, typecheck, test), timeout + retry + warn/block policy, path-based routing, stdout/stderr artifact store
 - [x] Phase 5 — Orchestration (Chat-First): conversational Orchestrator agent (`lt chat`), Planner → task DAG, background Scheduler with dep resolution, Reviewer + Fixer retry pipeline, A2A dispatch (`messages` table), `lt run` scripting shortcut, conversation persistence
-- [ ] Phase 6 — Merge Gate + Escalation: approval policies, integration branches, patrol loop, escalation system
+- [x] Phase 6 (simplified) — Merge Agent + Patrol Loop: cherry-pick agent commits onto default branch after success (`merged`/`merge_conflict` task states), `lt patrol` for orphan recovery and plan re-enqueue
+- [ ] Phase 6 (remaining) — Full Merge Gate + Escalation: approval policies, integration branches, escalation system, notification channels
 - [ ] Phase 7 — Full GUI: Plan/DAG viewer, diff & review, memory browser, orchestrator chat screen
 - [ ] Phase 8 — Polish: mem0 adapter, custom memory providers, failure summaries, GUI auth

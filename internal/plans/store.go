@@ -85,6 +85,49 @@ func ListPlans(projectID string) ([]Plan, error) {
 	return plans, rows.Err()
 }
 
+// ListRunningPlans returns plans with status='running' for a project, oldest first.
+// Used by the patrol loop to re-enqueue in-flight plans after a restart.
+func ListRunningPlans(projectID string) ([]Plan, error) {
+	db, err := storage.Get()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(
+		`SELECT id, project_id, objective, status, created_at
+		 FROM plans WHERE project_id = ? AND status = 'running' ORDER BY created_at ASC`, projectID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list running plans: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Plan
+	for rows.Next() {
+		var p Plan
+		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Objective, &p.Status, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ResetOrphanedTasks resets tasks stuck in "running" state back to "todo".
+// A task can be orphaned when the scheduler process is killed while a runner
+// goroutine is active. Call this at startup before re-enqueuing plans.
+func ResetOrphanedTasks(projectID string) error {
+	db, err := storage.Get()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
+		`UPDATE tasks SET status = 'todo'
+		 WHERE status = 'running'
+		   AND plan_id IN (SELECT id FROM plans WHERE project_id = ?)`, projectID,
+	)
+	return err
+}
+
 // SetPlanStatus updates a plan's status.
 func SetPlanStatus(id, status string) error {
 	db, err := storage.Get()
@@ -232,7 +275,8 @@ func ListReadyTasks(planID string) ([]Task, error) {
 		}
 		allDone := true
 		for _, dep := range deps {
-			if statusByID[dep] != "done" {
+			s := statusByID[dep]
+			if s != "done" && s != "merged" {
 				allDone = false
 				break
 			}

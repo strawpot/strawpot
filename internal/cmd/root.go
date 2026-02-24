@@ -32,4 +32,5 @@ func init() {
 	rootCmd.AddCommand(newChecksCmd())
 	rootCmd.AddCommand(newChatCmd())
 	rootCmd.AddCommand(newRunCmd())
+	rootCmd.AddCommand(newPatrolCmd())
 }
