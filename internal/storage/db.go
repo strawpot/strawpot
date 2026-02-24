@@ -107,5 +107,28 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("set schema version 2: %w", err)
 		}
 	}
+	if version < 3 {
+		// Add content and scope columns to skill_files.
+		for _, stmt := range []string{
+			"ALTER TABLE skill_files ADD COLUMN content TEXT",
+			"ALTER TABLE skill_files ADD COLUMN scope   TEXT NOT NULL DEFAULT 'project'",
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				return fmt.Errorf("migrate v3 (%s): %w", stmt, err)
+			}
+		}
+		if _, err := db.Exec("PRAGMA user_version = 3"); err != nil {
+			return fmt.Errorf("set schema version 3: %w", err)
+		}
+	}
+	if version < 4 {
+		// Add agent_name to skill_files for agent-scoped skills.
+		if _, err := db.Exec("ALTER TABLE skill_files ADD COLUMN agent_name TEXT"); err != nil {
+			return fmt.Errorf("migrate v4: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
+			return fmt.Errorf("set schema version 4: %w", err)
+		}
+	}
 	return nil
 }

@@ -20,9 +20,19 @@ type IndexResult struct {
 	Skipped int
 }
 
-// Reindex walks skillsDir (.loguetown/skills/), chunks each .md file by H2
-// heading, embeds each chunk, and upserts the results into skill_files.
-func Reindex(skillsDir string, provider embeddings.Provider) (IndexResult, error) {
+// Reindex walks skillsDir, chunks each .md file by H2 heading, embeds each
+// chunk, and upserts the results into skill_files.
+//
+// scope must be "global", "project", or "agent".
+//   - "global"  → ~/.loguetown/skills/global/
+//   - "project" → .loguetown/skills/
+//   - "agent"   → .loguetown/skills/agents/<agentName>/
+//
+// agentName is required when scope is "agent" and ignored otherwise.
+func Reindex(skillsDir string, scope string, agentName string, provider embeddings.Provider) (IndexResult, error) {
+	if scope == "" {
+		scope = "project"
+	}
 	db, err := storage.Get()
 	if err != nil {
 		return IndexResult{}, err
@@ -47,9 +57,18 @@ func Reindex(skillsDir string, provider embeddings.Provider) (IndexResult, error
 
 		hash := fmt.Sprintf("%x", sha256.Sum256(data))
 
-		// Relative path for storage (e.g. "implementer/typescript-patterns.md")
+		// Relative path for storage — prefixed by scope to avoid collisions.
+		//   global → "global/<filename>"
+		//   agent  → "agents/<agentName>/<filename>"
+		//   project → "<role>/<filename>" (no prefix, role from dir name)
 		relPath, _ := filepath.Rel(skillsDir, path)
 		relPath = filepath.ToSlash(relPath)
+		switch scope {
+		case "global":
+			relPath = "global/" + relPath
+		case "agent":
+			relPath = "agents/" + agentName + "/" + relPath
+		}
 
 		// Skip if content hash is unchanged.
 		var existing string
@@ -64,8 +83,12 @@ func Reindex(skillsDir string, provider embeddings.Provider) (IndexResult, error
 
 		// Role = parent directory name; top-level files use "shared".
 		role := filepath.Base(filepath.Dir(relPath))
-		if role == "." {
+		if role == "." || role == "global" {
 			role = "shared"
+		}
+		// Agent-scoped: role is the agent name.
+		if scope == "agent" {
+			role = agentName
 		}
 
 		chunks := chunkByH2(string(data))
@@ -73,6 +96,12 @@ func Reindex(skillsDir string, provider embeddings.Provider) (IndexResult, error
 		// Remove stale rows for this file before reinserting.
 		if _, err := db.Exec("DELETE FROM skill_files WHERE file_path = ?", relPath); err != nil {
 			return fmt.Errorf("delete old skill rows for %s: %w", relPath, err)
+		}
+
+		// agent_name stored only for agent-scoped skills.
+		var storedAgentName interface{}
+		if scope == "agent" {
+			storedAgentName = agentName
 		}
 
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -85,9 +114,9 @@ func Reindex(skillsDir string, provider embeddings.Provider) (IndexResult, error
 			blob := embeddings.Float32sToBytes(vec)
 
 			if _, err := db.Exec(
-				`INSERT INTO skill_files (id, role, file_path, title, embedding, content_hash, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				uuid.New().String(), role, relPath, c.heading, blob, hash, now,
+				`INSERT INTO skill_files (id, role, file_path, title, content, embedding, content_hash, scope, agent_name, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				uuid.New().String(), role, relPath, c.heading, c.body, blob, hash, scope, storedAgentName, now,
 			); err != nil {
 				return fmt.Errorf("insert skill chunk: %w", err)
 			}

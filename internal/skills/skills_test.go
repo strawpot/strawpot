@@ -104,7 +104,7 @@ func TestReindexCreatesChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := Reindex(skillsDir, &mockProvider{dims: 4})
+	result, err := Reindex(skillsDir, "project", "", &mockProvider{dims: 4})
 	if err != nil {
 		t.Fatalf("Reindex: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestReindexSkipsUnchanged(t *testing.T) {
 	provider := &mockProvider{dims: 4}
 
 	// First index.
-	r1, err := Reindex(skillsDir, provider)
+	r1, err := Reindex(skillsDir, "project", "", provider)
 	if err != nil {
 		t.Fatalf("first Reindex: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestReindexSkipsUnchanged(t *testing.T) {
 	}
 
 	// Second index — same file content should be skipped.
-	r2, err := Reindex(skillsDir, provider)
+	r2, err := Reindex(skillsDir, "project", "", provider)
 	if err != nil {
 		t.Fatalf("second Reindex: %v", err)
 	}
@@ -165,13 +165,13 @@ func TestReindexReindexesOnChange(t *testing.T) {
 	provider := &mockProvider{dims: 4}
 
 	write("## V1\nFirst version\n")
-	r1, err := Reindex(skillsDir, provider)
+	r1, err := Reindex(skillsDir, "project", "", provider)
 	if err != nil || r1.Chunks != 1 {
 		t.Fatalf("v1: err=%v chunks=%d", err, r1.Chunks)
 	}
 
 	write("## V2a\nSecond version\n## V2b\nAlso added\n")
-	r2, err := Reindex(skillsDir, provider)
+	r2, err := Reindex(skillsDir, "project", "", provider)
 	if err != nil {
 		t.Fatalf("v2 Reindex: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestReindexIgnoresNonMarkdown(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "notes.txt"), []byte("ignore me"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Reindex(skillsDir, &mockProvider{dims: 4})
+	result, err := Reindex(skillsDir, "project", "", &mockProvider{dims: 4})
 	if err != nil {
 		t.Fatalf("Reindex: %v", err)
 	}

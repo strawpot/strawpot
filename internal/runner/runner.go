@@ -93,6 +93,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		MemoryTopK:    5,
 		MemoryMinSim:  0.3,
 		WorkDir:       r.ProjectPath,
+		ProjectID:     r.ProjectID,
+		AgentName:     req.AgentName,
 		ProjectName:   r.ProjectName,
 		DefaultBranch: r.DefaultBranch,
 		Branch:        branch,

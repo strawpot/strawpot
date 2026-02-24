@@ -269,10 +269,22 @@ memory:
 ```
 ~/.loguetown/
   db.sqlite                          # SQLite — all projects (schema v2)
+  skills/global/                     # Cross-project global skills (indexed once, used everywhere)
+  memory/global/
+    semantic_global/                 # Cross-project memory (follows you across all repos)
   data/
     projects/<project-id>/
       events.jsonl                   # Chronicle — append-only JSONL
       worktrees/<run-id>/            # Isolated git worktrees (cleaned up after each run)
+
+.loguetown/                          # per-project (inside the git repo)
+  skills/
+    shared/                          # Skills available to all roles in this project
+    <role>/                          # Role-specific skills
+  memory/
+    <agent>/
+      episodic/                      # Past run experiences (project-local)
+      semantic_local/                # Project facts and conventions
 ```
 
 The schema covers all phases: projects, plans, tasks, runs, artifacts, messages, memory chunks (with embedding BLOBs), skill files (with embedding BLOBs and content hashes), conversations, escalations, and the Chronicle index.
@@ -332,9 +344,10 @@ plan/                # Design documents for all 8 phases
 ## Roadmap
 
 - [x] Phase 1 — Foundation: SQLite schema, Chronicle, roles/agents CLI + GUI
-- [x] Phase 2 — Skills + Memory: pluggable embedding providers, skill indexing, semantic search, memory chunk management
+- [x] Phase 2 — Skills + Memory: global + project-local skill scopes, pluggable embeddings, semantic search, multi-layer memory (global/local/episodic)
 - [x] Phase 3 — Runner: session builder, git worktree isolation, pluggable runner providers (Claude Code + Anthropic API), plan/task/run lifecycle, episodic memory proposals
-- [ ] Phase 4 — Orchestrator: plan DAG, multi-task scheduling, agent handoffs
-- [ ] Phase 5 — Checks & Review: CI integration, merge gates, reviewer agent workflow
-- [ ] Phase 6 — Full GUI: DAG viewer, diff review, memory browser, chat
-- [ ] Phase 7 — Polish: escalation UI, notifications, multi-project
+- [ ] Phase 4 — Check Pipelines: per-project check commands (lint, typecheck, test), path-based routing, artifact store
+- [ ] Phase 5 — Orchestration (Chat-First): conversational Orchestrator agent (`lt chat`), Planner → DAG, multi-agent scheduler, Reviewer + Fixer agents, A2A dispatch
+- [ ] Phase 6 — Merge Gate + Escalation: approval policies, integration branches, patrol loop, escalation system
+- [ ] Phase 7 — Full GUI: Plan/DAG viewer, diff & review, memory browser, orchestrator chat screen
+- [ ] Phase 8 — Polish: mem0 adapter, custom memory providers, failure summaries, GUI auth

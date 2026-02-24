@@ -11,13 +11,14 @@
 - [ ] Basic CLI: `lt init`, `lt role create`, `lt agent create`, `lt agent list`
 
 ### Phase 2 — Skills + Memory Infrastructure
-- [ ] Skill file scanner: index `*.md` files under `.loguetown/skills/`
-- [ ] Local embeddings: `@xenova/transformers` + `all-MiniLM-L6-v2` model
-- [ ] sqlite-vec integration: store embeddings, vector similarity search
-- [ ] `lt skills list/add/edit/reindex`
-- [ ] Memory chunk file writer (episodic + semantic layers, per-agent directories)
-- [ ] Memory retrieval: vector search per layer with budget allocation
-- [ ] `lt memory list/show/promote/reject/reindex`
+- [ ] Skill file scanner: index `*.md` files under `.loguetown/skills/` (role-scoped + shared)
+- [ ] **Global skills store** at `~/.loguetown/skills/global/` — scanned and indexed alongside project skills
+- [ ] Local embeddings: pluggable embedding provider (Ollama default, OpenAI option)
+- [ ] SQLite vector storage: store embeddings as float32 BLOBs, cosine similarity search
+- [ ] `lt skills list/add/edit/reindex` (all scopes); `lt skills reindex --global`
+- [ ] Memory chunk file writer: `episodic` + `semantic_local` (project-local); `semantic_global` at `~/.loguetown/memory/global/`
+- [ ] Memory retrieval: vector search per layer + scope, with budget allocation
+- [ ] `lt memory list/show/promote/reject`; layer filter includes global scope
 - [ ] Memory provider interface + local provider implementation
 
 ### Phase 3 — Single Agent Runtime
@@ -34,13 +35,17 @@
 - [ ] Path-based routing (skip checks for docs-only changes)
 - [ ] Artifact store: save stdout/stderr to disk with Chronicle reference
 
-### Phase 5 — Multi-Agent Orchestration
-- [ ] Planner agent: objective → DAG tasks in SQLite
-- [ ] Scheduler loop: unblock detection, Runner spawning
+### Phase 5 — Multi-Agent Orchestration (Chat-First)
+- [ ] **Orchestrator conversational agent**: persistent session, natural-language goal intake, plan proposal with human confirmation
+- [ ] Orchestrator internal tools: `create_plan`, `queue_run`, `get_status`, `get_chronicle`, `approve_task`, `pause_all`, `get_memory`
+- [ ] Planner agent invoked by Orchestrator: objective → DAG tasks in SQLite
+- [ ] Scheduler goroutine (driven by Orchestrator decisions): unblock detection, Runner spawning
+- [ ] Async status turns: Orchestrator injects progress updates back into the active conversation
 - [ ] Dispatch message bus: SQLite queue + validator + router
 - [ ] Typed A2A envelopes: REQUEST_REVIEW, REVIEW_RESULT, NEED_INFO
 - [ ] Reviewer agent + Fixer agent
 - [ ] Bounded retry policy
+- [ ] `lt chat` as primary orchestration entry point; `lt run` as scripting shortcut
 
 ### Phase 6 — Merge Gate + Integration Branches + Escalation
 - [ ] Gate policy evaluator (checks + review + approval_policy: require_human / auto / risk_based)
@@ -138,7 +143,7 @@
 
 6. **Planner hallucinating bad deps** — The DAG from the Planner may have incorrect dependency edges. The dry-run mode (`lt run --dry-run`) lets the user review and edit the plan before execution starts.
 
-7. **Cross-project semantic_global isolation** — Global memory is shared across all projects. If a global chunk is project-specific in practice, it should be `semantic_local` instead. Recommend: agents auto-tag global chunks with the project they were observed in, and include that tag in retrieval queries so cross-project contamination is visible.
+7. ~~**Cross-project semantic_global isolation**~~ — **Resolved.** `semantic_global` is stored at `~/.loguetown/memory/global/semantic_global/` and is intentionally cross-project. `semantic_local` and `episodic` are project-local (`.loguetown/memory/`). If a chunk is project-specific, agents must use `semantic_local`. Agents are instructed to choose the right layer via their role charter; the session builder retrieves both without mixing them. Global skills follow the same pattern: `~/.loguetown/skills/global/` is cross-project; `.loguetown/skills/shared/` is project-local.
 
 8. **Chronicle event log growth** — For active projects, JSONL files grow unboundedly. The `lt chronicle archive` command (v1.1) compresses old events, but the threshold for what counts as "old" needs design: (a) archive everything older than N days, (b) archive all events from completed plans, (c) let the user decide. Recommended: archive by completed plan (natural unit), keeping the last 3 completed plans in the hot log.
 

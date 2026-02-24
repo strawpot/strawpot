@@ -28,6 +28,8 @@ type Config struct {
 	MemoryTopK     int
 	MemoryMinSim   float32
 	WorkDir        string // worktree or repo path shown in prompt
+	ProjectID      string // used to scope semantic_local and episodic retrieval
+	AgentName      string // used to scope agent-scoped episodic memory retrieval
 	ProjectName    string
 	DefaultBranch  string
 	Branch         string // current run branch
@@ -73,8 +75,14 @@ func Build(charter *agents.Charter, task string, cfg Config, embProvider embeddi
 		if err == nil && len(results) > 0 {
 			sb.WriteString("## Relevant Skills\n\n")
 			for _, r := range results {
-				sb.WriteString(fmt.Sprintf("### %s (%s)\n\n%s\n\n",
-					r.Title, r.FilePath, r.FilePath))
+				heading := r.Title
+				if heading == "" {
+					heading = r.FilePath
+				}
+				sb.WriteString(fmt.Sprintf("### %s\n\n", heading))
+				if r.Content != "" {
+					sb.WriteString(r.Content + "\n\n")
+				}
 			}
 			skillsUsed = len(results)
 		}
@@ -92,16 +100,18 @@ func Build(charter *agents.Charter, task string, cfg Config, embProvider embeddi
 		}
 
 		layers := []struct {
-			name    string
-			heading string
+			name      string
+			heading   string
+			projectID string // empty = global (no project filter)
+			agentName string // non-empty for agent-scoped episodic retrieval
 		}{
-			{"semantic_global", "Cross-Project Knowledge"},
-			{"semantic_local", "Project Knowledge"},
-			{"episodic", "Past Experiences"},
+			{"semantic_global", "Cross-Project Knowledge", "", ""},
+			{"semantic_local", "Project Knowledge", cfg.ProjectID, ""},
+			{"episodic", "Past Experiences", cfg.ProjectID, cfg.AgentName},
 		}
 
 		for _, l := range layers {
-			chunks, err := memory.Retrieve(l.name, "", task, topK, float32(minSim), embProvider)
+			chunks, err := memory.Retrieve(l.name, l.projectID, l.agentName, task, topK, float32(minSim), embProvider)
 			if err != nil || len(chunks) == 0 {
 				continue
 			}

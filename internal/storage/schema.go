@@ -1,6 +1,6 @@
 package storage
 
-const SchemaVersion = 2
+const SchemaVersion = 4
 
 // migrateV2SQL adds embedding and content columns to skill_files and memory_chunks.
 const migrateV2SQL = `
@@ -8,6 +8,19 @@ ALTER TABLE skill_files   ADD COLUMN embedding     BLOB;
 ALTER TABLE skill_files   ADD COLUMN content_hash  TEXT;
 ALTER TABLE memory_chunks ADD COLUMN embedding     BLOB;
 ALTER TABLE memory_chunks ADD COLUMN content       TEXT;
+`
+
+// migrateV3SQL adds content and scope columns to skill_files.
+// scope: "global" = ~/.loguetown/skills/global/, "project" = .loguetown/skills/
+const migrateV3SQL = `
+ALTER TABLE skill_files ADD COLUMN content TEXT;
+ALTER TABLE skill_files ADD COLUMN scope   TEXT NOT NULL DEFAULT 'project';
+`
+
+// migrateV4SQL adds agent_name to skill_files to support agent-scoped skills.
+// scope: "agent" = .loguetown/skills/agents/<agent-name>/
+const migrateV4SQL = `
+ALTER TABLE skill_files ADD COLUMN agent_name TEXT;
 `
 
 const createTablesSQL = `
