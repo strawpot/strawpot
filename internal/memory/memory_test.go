@@ -168,3 +168,143 @@ func TestGetNotFound(t *testing.T) {
 		t.Error("Get nonexistent: expected error, got nil")
 	}
 }
+
+// ── Retrieve tests ─────────────────────────────────────────────────────────────
+
+// mockEmbedProvider returns a constant deterministic embedding for retrieval tests.
+type mockEmbedProvider struct{}
+
+func (m *mockEmbedProvider) Embed(_ string) ([]float32, error) {
+	return []float32{1.0, 0.0, 0.0, 0.0}, nil
+}
+func (m *mockEmbedProvider) Dimensions() int { return 4 }
+
+// saveApproved saves a chunk and immediately promotes it to "approved".
+func saveApproved(t *testing.T, c *Chunk) *Chunk {
+	t.Helper()
+	if err := Save(c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := SetStatus(c.ID, "approved", ""); err != nil {
+		t.Fatalf("SetStatus approved: %v", err)
+	}
+	return c
+}
+
+func TestRetrieveNilProvider(t *testing.T) {
+	c := saveApproved(t, &Chunk{
+		AgentName: "ret-nil-agent",
+		Layer:     "episodic",
+		ProjectID: "proj-ret-nil",
+		FilePath:  "ret-nil.md",
+		Title:     "Retrieve nil provider test",
+		Content:   "Some content",
+	})
+
+	results, err := Retrieve("episodic", "proj-ret-nil", "ret-nil-agent", "", 10, 0, nil)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.ID == c.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected to find approved chunk %q in nil-provider results", c.ID)
+	}
+}
+
+func TestRetrieveOnlyApproved(t *testing.T) {
+	pid := "proj-only-approved"
+	agent := "only-approved-agent"
+
+	proposed := newChunk(agent, "episodic", "Proposed - should not appear")
+	proposed.ProjectID = pid
+	if err := Save(proposed); err != nil {
+		t.Fatalf("Save proposed: %v", err)
+	}
+
+	approved := saveApproved(t, &Chunk{
+		AgentName: agent,
+		Layer:     "episodic",
+		ProjectID: pid,
+		FilePath:  "approved.md",
+		Title:     "Approved - should appear",
+		Content:   "Content",
+	})
+
+	results, err := Retrieve("episodic", pid, agent, "", 10, 0, nil)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	for _, r := range results {
+		if r.Status != "approved" {
+			t.Errorf("Retrieve returned non-approved chunk %q (status=%q)", r.Title, r.Status)
+		}
+	}
+	found := false
+	for _, r := range results {
+		if r.ID == approved.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected to find the approved chunk in results")
+	}
+}
+
+func TestRetrieveAgentFilter(t *testing.T) {
+	pid := "proj-agent-filter"
+	agent1 := "agent-filter-1"
+	agent2 := "agent-filter-2"
+
+	c1 := saveApproved(t, &Chunk{AgentName: agent1, Layer: "episodic", ProjectID: pid, FilePath: "c1.md", Title: "Agent1 chunk", Content: "content1"})
+	saveApproved(t, &Chunk{AgentName: agent2, Layer: "episodic", ProjectID: pid, FilePath: "c2.md", Title: "Agent2 chunk", Content: "content2"})
+
+	results, err := Retrieve("episodic", pid, agent1, "", 10, 0, nil)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	for _, r := range results {
+		if r.AgentName != agent1 {
+			t.Errorf("agentName filter: unexpected agent_name %q", r.AgentName)
+		}
+	}
+	found := false
+	for _, r := range results {
+		if r.ID == c1.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected agent1's chunk in filtered results")
+	}
+}
+
+func TestRetrieveProjectFilter(t *testing.T) {
+	agent := "proj-filter-agent"
+
+	cA := saveApproved(t, &Chunk{AgentName: agent, Layer: "semantic_local", ProjectID: "proj-filter-A", FilePath: "a.md", Title: "Project A chunk", Content: "content A"})
+	saveApproved(t, &Chunk{AgentName: agent, Layer: "semantic_local", ProjectID: "proj-filter-B", FilePath: "b.md", Title: "Project B chunk", Content: "content B"})
+
+	results, err := Retrieve("semantic_local", "proj-filter-A", "", "", 10, 0, nil)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	for _, r := range results {
+		if r.ProjectID != "proj-filter-A" {
+			t.Errorf("projectID filter: unexpected project_id %q", r.ProjectID)
+		}
+	}
+	found := false
+	for _, r := range results {
+		if r.ID == cA.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected proj-A chunk in filtered results")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/loguetown/internal/agents"
+	"github.com/steveyegge/loguetown/internal/checks"
 	"github.com/steveyegge/loguetown/internal/chronicle"
 	"github.com/steveyegge/loguetown/internal/config"
 	"github.com/steveyegge/loguetown/internal/embeddings"
@@ -19,7 +20,7 @@ import (
 )
 
 // Runner orchestrates a single agent run: session building, worktree lifecycle,
-// provider execution, episodic memory proposal, and chronicle events.
+// provider execution, check pipeline, episodic memory proposal, and chronicle events.
 type Runner struct {
 	ProjectPath   string
 	ProjectID     string
@@ -28,6 +29,8 @@ type Runner struct {
 	EmbProvider   embeddings.Provider // may be nil
 	Provider      Provider
 	Cfg           config.RunnerConfig
+	Checks        []config.CheckStep
+	PathRouting   map[string]config.PathRoutingRule
 }
 
 // RunRequest is the input to Runner.Run.
@@ -161,6 +164,30 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		Model:         r.Cfg.Model,
 	}
 	execResult, execErr := r.Provider.Execute(ctx, execReq)
+
+	// Run check pipeline if execution succeeded and checks are configured.
+	if execErr == nil && execResult.Success && len(r.Checks) > 0 {
+		home, _ := os.UserHomeDir()
+		artifactDir := filepath.Join(home, ".loguetown", "data", "projects", r.ProjectID, "artifacts", run.ID, "checks")
+		checkResult := checks.RunPipeline(
+			r.ProjectID, run.ID,
+			r.Checks, r.PathRouting,
+			workDir, artifactDir, baseSHA,
+		)
+		if !checkResult.Passed {
+			execResult.Success = false
+			// Surface the first blocking failure in the error message.
+			for _, res := range checkResult.Results {
+				if res.Blocking {
+					execResult.Error = fmt.Sprintf("check %q failed (exit %d)", res.Name, res.ExitCode)
+					break
+				}
+			}
+			if execResult.Error == "" {
+				execResult.Error = "check pipeline failed"
+			}
+		}
+	}
 
 	// Get HEAD SHA after execution.
 	headSHA, _ := worktree.HeadSHA(workDir)

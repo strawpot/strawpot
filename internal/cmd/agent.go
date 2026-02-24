@@ -267,6 +267,8 @@ func agentSpawnCmd() *cobra.Command {
 				EmbProvider:   embProvider,
 				Provider:      prov,
 				Cfg:           cfg.Runner,
+				Checks:        cfg.Checks,
+				PathRouting:   cfg.PathRouting,
 			}
 
 			tui.Info(fmt.Sprintf("Spawning %s (%s) on task…", agentName, prov.Name()))

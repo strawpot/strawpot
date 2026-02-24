@@ -4,7 +4,7 @@
 
 A local-first, CLI-first multi-agent coding assistant. Specialized AI agents (Planner, Implementer, Reviewer, Fixer) work in isolated git worktrees while a full Chronicle audit trail captures everything.
 
-**Phase 3 (current):** Single-agent runtime — session builder, git worktree isolation, pluggable runner providers (Claude Code CLI + Anthropic API), plan/task/run lifecycle.
+**Phase 4 (current):** Check pipelines — per-project check commands (lint, test, typecheck) with timeout, retry, warn/block policy, path-based routing, stdout/stderr artifact store.
 
 ---
 
@@ -54,12 +54,16 @@ lt skills search "typescript error handling"
 # 5. Spawn an agent to execute a task
 lt agent spawn charlie "Add input validation to the login form"
 
-# 6. Inspect the results
+# 6. Run the check pipeline manually
+lt checks run
+lt checks run lint typecheck    # run specific steps only
+
+# 7. Inspect the results
 lt plan list
 lt tasks list
 lt tasks show <task-id>
 
-# 7. Open the GUI
+# 8. Open the GUI
 lt gui   # → http://localhost:4242
 ```
 
@@ -130,12 +134,21 @@ Agent charters live in `.loguetown/agents/<name>.yaml` and inherit defaults from
 
 ### `lt skills <subcommand>`
 
-Manages the skills knowledge-base. Skill files are Markdown documents in `.loguetown/skills/` split on `## ` headings into searchable chunks.
+Manages the skills knowledge-base. Skill files are Markdown documents split on `## ` headings into searchable chunks. Three scopes are supported:
+
+| Scope | Directory | Indexed as |
+|---|---|---|
+| **agent** | `.loguetown/skills/agents/<name>/` | agent-specific skills |
+| **project** | `.loguetown/skills/<role>/` and `.loguetown/skills/shared/` | shared within the project |
+| **global** | `~/.loguetown/skills/global/` | cross-project (all repos) |
 
 | Subcommand | Description |
 |---|---|
-| `lt skills reindex` | Embed all `.md` files and upsert into the DB; skips unchanged files |
-| `lt skills search <query>` | Semantic search; returns top-K chunks sorted by cosine similarity |
+| `lt skills reindex` | Embed all scopes (global + project); skips unchanged files |
+| `lt skills reindex --global` | Only re-embed `~/.loguetown/skills/global/` |
+| `lt skills reindex --project` | Only re-embed `.loguetown/skills/` |
+| `lt skills reindex --agent <name>` | Only re-embed `.loguetown/skills/agents/<name>/` |
+| `lt skills search <query>` | Semantic search across all scopes; results show scope column |
 
 **`lt skills search` flags:**
 
@@ -176,6 +189,21 @@ Manages memory chunks stored by agents across four layers: `episodic`, `semantic
 |---|---|
 | `lt tasks list [--plan <id>]` | Table of tasks; defaults to the most recent plan |
 | `lt tasks show <id>` | Task details including all runs |
+
+---
+
+### `lt checks <subcommand>`
+
+| Subcommand | Description |
+|---|---|
+| `lt checks list` | Table of all configured check steps (name, command, timeout, on-fail) |
+| `lt checks run [<name>...]` | Run all checks (or named subset) in the project root |
+
+**`lt checks run` flags:**
+
+| Flag | Description |
+|---|---|
+| `--base <sha>` | Enable path routing — only skip checks when all changes since this commit match routing patterns |
 
 ---
 
@@ -249,6 +277,50 @@ runner:
 
 ---
 
+## Check Pipelines
+
+Define per-project check commands in `.loguetown/project.yaml`. Checks run automatically after `lt agent spawn` completes (when execution succeeds) and can also be triggered manually.
+
+```yaml
+checks:
+  - name: build
+    run: "go build ./..."
+  - name: test
+    run: "go test ./..."
+    timeout_seconds: 120
+    retry_on_flake: 1       # retry once on non-zero exit (for flaky tests)
+  - name: lint
+    run: "golangci-lint run"
+    on_fail: warn           # "warn" continues the pipeline; "block" (default) stops it
+```
+
+### `lt checks list`
+
+Print all configured check steps with timeout and on-fail policy.
+
+### `lt checks run [<name>...]`
+
+Run the full check pipeline (or named steps) in the current project directory.
+
+| Flag | Description |
+|---|---|
+| `--base <sha>` | Enable path routing — compare changed files since this commit |
+
+**Path routing** skips named checks when all changed files match a pattern set:
+
+```yaml
+path_routing:
+  docs_only:
+    patterns: ["docs/**", "*.md", "README*"]
+    skip: [lint, test]
+```
+
+Supported glob patterns: `dir/**` (all files under dir), `**/<suffix>` (suffix at any depth), `*.ext` (base-name match).
+
+**Check output** (stdout + stderr) is saved to `~/.loguetown/data/projects/<id>/artifacts/<runID>/checks/<name>.txt` and recorded in the `artifacts` SQLite table. Chronicle events `COMMAND_STARTED` and `COMMAND_FINISHED` are emitted for every check step.
+
+---
+
 ## Memory Configuration
 
 ```yaml
@@ -268,7 +340,7 @@ memory:
 
 ```
 ~/.loguetown/
-  db.sqlite                          # SQLite — all projects (schema v2)
+  db.sqlite                          # SQLite — all projects (schema v4)
   skills/global/                     # Cross-project global skills (indexed once, used everywhere)
   memory/global/
     semantic_global/                 # Cross-project memory (follows you across all repos)
@@ -276,18 +348,21 @@ memory:
     projects/<project-id>/
       events.jsonl                   # Chronicle — append-only JSONL
       worktrees/<run-id>/            # Isolated git worktrees (cleaned up after each run)
+      artifacts/<run-id>/
+        checks/<name>.txt            # stdout+stderr from each check step
 
 .loguetown/                          # per-project (inside the git repo)
   skills/
     shared/                          # Skills available to all roles in this project
-    <role>/                          # Role-specific skills
+    <role>/                          # Role-specific skills (project scope)
+    agents/<agent>/                  # Agent-specific skills (agent scope)
   memory/
     <agent>/
-      episodic/                      # Past run experiences (project-local)
+      episodic/                      # Past run experiences (agent-scoped)
       semantic_local/                # Project facts and conventions
 ```
 
-The schema covers all phases: projects, plans, tasks, runs, artifacts, messages, memory chunks (with embedding BLOBs), skill files (with embedding BLOBs and content hashes), conversations, escalations, and the Chronicle index.
+The schema covers all phases: projects, plans, tasks, runs, artifacts, messages, memory chunks (with embedding BLOBs), skill files (with embedding BLOBs, content hashes, scope, and agent name), conversations, escalations, and the Chronicle index.
 
 ---
 
@@ -318,9 +393,10 @@ cd web && npm run dev   # http://localhost:5173
 cmd/lt/              # binary entry point
 internal/
   agents/            # Charter YAML loader + role resolution
+  checks/            # Check pipeline executor (run, timeout, retry, artifact store, path routing)
   chronicle/         # JSONL + SQLite event writer and query
-  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks)
-  config/            # project.yaml loader (incl. EmbeddingsConfig, MemoryConfig, RunnerConfig)
+  cmd/               # Cobra CLI commands (init, role, agent, gui, skills, memory, plan, tasks, checks)
+  config/            # project.yaml loader (EmbeddingsConfig, MemoryConfig, RunnerConfig, CheckStep)
   embeddings/        # Provider interface, Ollama + OpenAI clients, cosine similarity
   memory/            # memory_chunks CRUD and vector retrieval
   plans/             # Plan, Task, Run CRUD against SQLite
@@ -328,8 +404,8 @@ internal/
   runner/            # Pluggable provider interface; Claude Code + Anthropic API providers
   server/            # HTTP server + REST API handlers
   session/           # System prompt builder (role + skills + memory + context)
-  skills/            # Skill file indexer (chunking, embedding) and search
-  storage/           # SQLite schema (v2) and connection singleton
+  skills/            # Skill file indexer (chunking, embedding, 3-scope) and search
+  storage/           # SQLite schema (v4) and connection singleton
   tui/               # Terminal output helpers (lipgloss)
   worktree/          # Git worktree lifecycle (create, remove, HEAD SHA)
 web/
@@ -346,7 +422,7 @@ plan/                # Design documents for all 8 phases
 - [x] Phase 1 — Foundation: SQLite schema, Chronicle, roles/agents CLI + GUI
 - [x] Phase 2 — Skills + Memory: global + project-local skill scopes, pluggable embeddings, semantic search, multi-layer memory (global/local/episodic)
 - [x] Phase 3 — Runner: session builder, git worktree isolation, pluggable runner providers (Claude Code + Anthropic API), plan/task/run lifecycle, episodic memory proposals
-- [ ] Phase 4 — Check Pipelines: per-project check commands (lint, typecheck, test), path-based routing, artifact store
+- [x] Phase 4 — Check Pipelines: per-project check commands (lint, typecheck, test), timeout + retry + warn/block policy, path-based routing, stdout/stderr artifact store
 - [ ] Phase 5 — Orchestration (Chat-First): conversational Orchestrator agent (`lt chat`), Planner → DAG, multi-agent scheduler, Reviewer + Fixer agents, A2A dispatch
 - [ ] Phase 6 — Merge Gate + Escalation: approval policies, integration branches, patrol loop, escalation system
 - [ ] Phase 7 — Full GUI: Plan/DAG viewer, diff & review, memory browser, orchestrator chat screen
