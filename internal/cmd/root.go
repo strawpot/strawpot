@@ -29,4 +29,5 @@ func init() {
 	rootCmd.AddCommand(newMemoryCmd())
 	rootCmd.AddCommand(newTasksCmd())
 	rootCmd.AddCommand(newPlanCmd())
+	rootCmd.AddCommand(newChecksCmd())
 }

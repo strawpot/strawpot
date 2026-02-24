@@ -196,3 +196,85 @@ func TestReindexIgnoresNonMarkdown(t *testing.T) {
 		t.Errorf("want 0 .md files, got %d", result.Files)
 	}
 }
+
+// ── Search tests ───────────────────────────────────────────────────────────────
+
+func TestSearchFindsIndexedChunk(t *testing.T) {
+	skillsDir := t.TempDir()
+	content := "## Error Handling\nAlways wrap errors with context.\n"
+	if err := os.WriteFile(filepath.Join(skillsDir, "errors.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &mockProvider{dims: 4}
+	if _, err := Reindex(skillsDir, "project", "", provider); err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+
+	results, err := Search("error handling patterns", provider, 10, 0.0)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("Search returned no results; expected at least 1")
+	}
+	found := false
+	for _, r := range results {
+		if r.Title == "Error Handling" {
+			found = true
+			if r.Scope != "project" {
+				t.Errorf("Scope: want 'project', got %q", r.Scope)
+			}
+			if r.Content == "" {
+				t.Error("Content should not be empty")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find 'Error Handling' chunk in Search results")
+	}
+}
+
+func TestSearchAgentScope(t *testing.T) {
+	agentDir := t.TempDir()
+	content := "## Agent Tip\nAgent-specific knowledge here.\n"
+	if err := os.WriteFile(filepath.Join(agentDir, "agent-tip.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &mockProvider{dims: 4}
+	if _, err := Reindex(agentDir, "agent", "myagent", provider); err != nil {
+		t.Fatalf("Reindex agent scope: %v", err)
+	}
+
+	results, err := Search("agent tip", provider, 10, 0.0)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.Title == "Agent Tip" {
+			found = true
+			if r.Scope != "agent" {
+				t.Errorf("Scope: want 'agent', got %q", r.Scope)
+			}
+			if r.AgentName != "myagent" {
+				t.Errorf("AgentName: want 'myagent', got %q", r.AgentName)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find 'Agent Tip' chunk in Search results")
+	}
+}
+
+func TestSearchEmptyDB(t *testing.T) {
+	// Create a fresh provider and search in an empty-ish state.
+	// Since the DB is shared per test run, results may be non-empty from other
+	// tests; we just verify no error is returned.
+	provider := &mockProvider{dims: 4}
+	_, err := Search("something", provider, 5, 0.99) // very high minSim cuts all results
+	if err != nil {
+		t.Errorf("Search with high minSim threshold: unexpected error: %v", err)
+	}
+}
