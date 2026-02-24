@@ -329,7 +329,7 @@ func (s *Server) handleReindexSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	skillsDir := filepath.Join(s.projectPath, ".loguetown", "skills")
-	result, err := skills.Reindex(skillsDir, provider)
+	result, err := skills.Reindex(skillsDir, "project", "", provider)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

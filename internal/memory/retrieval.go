@@ -13,10 +13,12 @@ type RetrieveResult struct {
 	Score float32
 }
 
-// Retrieve returns the top-K approved memory chunks for a given layer/project
+// Retrieve returns the top-K approved memory chunks for a given layer/project/agent
 // that are semantically similar to query. Returns chunks ordered by descending
 // score. If provider is nil, returns approved chunks in insertion order.
-func Retrieve(layer, projectID, query string, topK int, minSim float32, provider embeddings.Provider) ([]RetrieveResult, error) {
+//
+// agentName filters by agent when non-empty (used for episodic scope).
+func Retrieve(layer, projectID, agentName, query string, topK int, minSim float32, provider embeddings.Provider) ([]RetrieveResult, error) {
 	db, err := storage.Get()
 	if err != nil {
 		return nil, err
@@ -37,6 +39,10 @@ func Retrieve(layer, projectID, query string, topK int, minSim float32, provider
 	if projectID != "" {
 		q += " AND project_id = ?"
 		args = append(args, projectID)
+	}
+	if agentName != "" {
+		q += " AND agent_name = ?"
+		args = append(args, agentName)
 	}
 
 	rows, err := db.Query(q, args...)

@@ -7,10 +7,16 @@ The CLI is the **primary interface**. Every operation is available here; the GUI
 lt init                               # scaffold .loguetown/ in the current repo
 lt init --force                       # re-scaffold (adds missing files only)
 
-# ── Orchestration ─────────────────────────────────────────────────────────────
-lt run "Add OAuth2 login with Google + GitHub"
-lt run --dry-run "..."                # print planned task DAG without creating anything
-lt run --auto-start "..."             # plan + immediately start execution
+# ── Orchestration (chat-first) ────────────────────────────────────────────────
+lt chat                               # open (or resume) an orchestrator session
+lt chat --new                         # force-start a fresh conversation
+lt chat --history                     # print full conversation transcript to stdout
+lt chat --history --json              # machine-readable JSON transcript
+
+# Direct CLI shortcuts (also available within lt chat):
+lt run "Add OAuth2 login with Google + GitHub"   # plan + confirm + execute in one shot
+lt run --dry-run "..."                # print proposed task DAG without creating anything
+lt run --auto-start "..."             # plan + immediately start without confirmation prompt
 lt run --integration-branch "..."     # force-enable integration branch for this plan
 
 lt plan show                          # print current plan as a text DAG tree
@@ -38,28 +44,36 @@ lt agent spawn charlie --task <id>    # manually start a session for a specific 
 lt agent kill charlie                 # terminate a running agent session
 
 # ── Skills management ─────────────────────────────────────────────────────────
-lt skills list                        # all *.md files under .loguetown/skills/
+lt skills list                        # all *.md files: global + shared + role-scoped
+lt skills list --global               # only ~/.loguetown/skills/global/
 lt skills list --role implementer     # filtered by role directory
-lt skills add implementer react-patterns.md    # scaffold a new blank skill file
+lt skills add implementer react-patterns.md    # scaffold a new blank skill file (project)
+lt skills add --global personal-style.md       # scaffold a new global skill file
 lt skills edit implementer/typescript-patterns.md   # open in $EDITOR
+lt skills edit --global personal-style.md      # open global skill in $EDITOR
 lt skills show implementer/git-workflow.md     # print file content
 lt skills query "OAuth callback handler" --role implementer
-                                      # run vector search and show top-K results + scores
-lt skills reindex                     # re-embed all skill files into sqlite-vec
+                                      # run vector search across all scopes; results tagged by scope
+lt skills reindex                     # re-embed all scopes (global + project)
+lt skills reindex --global            # re-embed only ~/.loguetown/skills/global/
+lt skills reindex --project           # re-embed only this project's skills
 
 # ── Memory management ─────────────────────────────────────────────────────────
-lt memory list                        # all chunks across all agents and layers
+lt memory list                        # all chunks: global + all agents + all layers
+lt memory list --global               # only ~/.loguetown/memory/global/
 lt memory list --agent charlie        # filter by agent
-lt memory list --layer episodic       # filter by layer
+lt memory list --layer episodic       # filter by layer (episodic, semantic_local, semantic_global)
 lt memory list --status proposed      # filter by promotion status
 lt memory show <id>                   # print full Markdown content + frontmatter
 lt memory query "state parameter validation" --agent charlie
-                                      # run vector search over charlie's memory
+                                      # run vector search over charlie's memory (all scopes)
+lt memory query "..." --global        # search only the global semantic_global store
 lt memory promote <id>                # human-override: promote to active
 lt memory reject <id> --reason "..."  # human-override: reject with reason
 lt memory deprecate <id>              # mark as stale/invalidated
 lt memory split <file>                # interactively split a large .md into chunks
-lt memory reindex                     # re-embed all memory chunks into sqlite-vec
+lt memory reindex                     # re-embed all memory (global + project)
+lt memory reindex --global            # re-embed only ~/.loguetown/memory/global/
 
 # ── Task management ───────────────────────────────────────────────────────────
 lt tasks list                         # all tasks in current plan with status
@@ -92,11 +106,12 @@ lt chronicle --type MEMORY_PROPOSED   # filter by event type
 lt chronicle --since "2025-01-15"     # events after a date
 lt chronicle --json                   # raw JSONL output (pipe-friendly)
 
-# ── Chat (conversation with orchestrator or agents) ───────────────────────────
-lt chat                               # chat with the orchestrator (Planner / daemon)
-lt chat --agent charlie               # open a chat session with agent "charlie"
+# ── Chat (primary orchestration interface) ────────────────────────────────────
+lt chat                               # open (or resume) orchestrator session
+lt chat --new                         # force-start a fresh orchestrator conversation
+lt chat --agent charlie               # open a direct chat session with agent "charlie"
 lt chat --agent charlie --history     # print full conversation transcript to stdout
-lt chat --history --json              # machine-readable JSON transcript
+lt chat --history --json              # machine-readable JSON transcript of orchestrator session
 
 # ── GUI ───────────────────────────────────────────────────────────────────────
 lt gui                                # start GUI at http://localhost:4242

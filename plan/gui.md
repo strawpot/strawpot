@@ -154,37 +154,43 @@ CLI equivalent: `lt role list/create/edit/delete`, `lt skills list/add/edit/rein
 
 ---
 
-## Chat Screen *(conversation)*
+## Chat Screen *(primary orchestration interface)*
 
-CLI equivalent: `lt chat [--agent <name>]`, `lt chat --history`
+CLI equivalent: `lt chat`, `lt chat --agent <name>`
 
-The Chat screen provides a persistent conversation interface with the orchestrator or any individual agent. Conversations are stored in the `conversations` + `conversation_turns` tables and replayed on reload.
+The Chat screen is the **primary entry point for all multi-agent workflows**. The Orchestrator is a conversational agent — not a daemon — and this screen is where the human talks to it. Conversations are stored in the `conversations` + `conversation_turns` tables and replayed on reload.
 
 **Conversation list (left sidebar):**
-- One entry per conversation: participant name (orchestrator or agent), last message preview, timestamp
-- **"New conversation"** button → start a fresh chat (choose: orchestrator or select an agent by name)
-- Conversations persist across sessions; old ones are browseable as history
+- Two sections: **Orchestrator** (one persistent session per project) and **Agents** (per-agent threads)
+- Orchestrator session shows: last message preview, active plan name, number of running agents
+- Agent sessions show: agent name, role, current task, last message preview
+- **"New goal"** button → quick-entry box for describing a new task to the Orchestrator
 
-**Orchestrator chat:**
-- Converse with the Planner / daemon about the current plan
-- Example prompts:
-  - *"Why is task T3 blocked?"*
-  - *"What's the risk score on the T4 diff?"*
-  - *"Add a new task to add rate limiting to the auth endpoints"*
-  - *"Summarize what charlie has done today"*
-- The orchestrator has access to the full Chronicle and can answer queries about any task, run, or event
-- Tool calls made by the orchestrator during the conversation are shown inline (collapsed by default)
+**Orchestrator chat (primary):**
 
-**Per-agent chat:**
-- Select any agent by name → opens (or resumes) the conversation with that agent
-- Shows the full turn-by-turn transcript: human messages + assistant responses + tool calls
-- New messages are delivered to the running Runner subprocess (if active) or queued for the next session
-- **Context panel (right):** shows the current task the agent is working on, its active memory chunks, and the last check results — so the human can reference them while chatting
+The Orchestrator manages the full workflow through conversation. It is the human's primary point of contact for everything multi-agent:
+
+- *"Add OAuth login with Google and GitHub"* → Orchestrator proposes a task DAG inline; human says "go" to confirm
+- *"Why is T3 blocked?"* → Orchestrator queries Chronicle and explains
+- *"Add a task for rate limiting"* → creates a new task in the current plan, schedules it
+- *"Stop, something is broken"* → pauses all active runners
+- *"Approve T4"* → triggers the merge gate for that task
+- *"Show me charlie's memory about OAuth"* → retrieves and displays matching chunks
+
+The Orchestrator posts **async status turns** as agents complete work:
+> *"T1 done ✓. T2 running (charlie). Reviewer found 1 blocker on T3 — want me to spawn a fixer?"*
+
+Tool calls made by the Orchestrator are shown inline as collapsible blocks (tool name + input + result), so the human can see exactly what operations were triggered.
+
+**Per-agent chat (secondary):**
+- Select any agent → opens (or resumes) a direct conversation with that agent
+- Full turn-by-turn transcript: human messages + assistant responses + tool calls rendered as collapsible blocks
+- Messages sent here are delivered to the running Runner subprocess (if active) or queued for the next session
+- **Context panel (right):** active task, memory chunks loaded this session, last check results
 
 **Conversation transcript view:**
-- Each turn is rendered as a bubble: human (right), assistant (left)
-- Tool calls are shown as collapsible code blocks (tool name + input + output)
-- Chronicle events that reference this conversation are linked inline (e.g., `HUMAN_COMMENTED → TASK_UNBLOCKED`)
-- **Export** button → copy transcript as Markdown or JSON
+- Each turn is a bubble: human (right), assistant (left), tool calls (indented below assistant turn)
+- Chronicle events linked inline: `HUMAN_COMMENTED → TASK_UNBLOCKED`, `MEMORY_PROPOSED → (review)`
+- **Export** button → Markdown or JSON
 
-- **Why GUI over CLI?** — A persistent, threaded chat UI with tool-call rendering and context panel is significantly more usable than a terminal REPL. `lt chat` provides the same interaction for automation scripts or quick terminal queries.
+- **Why GUI over CLI?** — The Orchestrator's async status updates, DAG proposals for confirmation, and inline tool-call rendering are genuinely richer in a persistent chat UI. `lt chat` provides identical orchestration capability for scripted or terminal-first workflows.

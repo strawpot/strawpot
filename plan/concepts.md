@@ -43,32 +43,45 @@ Charters reference a **Role** (which supplies default skills, tool policy, and m
 
 Skills are plain **Markdown files** (`*.md`). Each file teaches the agent one specific capability, convention, or pattern. Files are small and independently retrievable via vector search — avoiding the "one giant CLAUDE.md" anti-pattern.
 
+### Skill Scopes
+
+Skills exist at three scopes, retrieved in order from broadest to narrowest:
+
+| Scope | Location | Description |
+|---|---|---|
+| **Global** | `~/.loguetown/skills/global/` | Cross-project, personal conventions (e.g. preferred coding style, universal security practices). Indexed once, retrieved in every project. |
+| **Project shared** | `.loguetown/skills/shared/` | Available to all roles within this project (e.g. commit style, architecture overview, monorepo layout). |
+| **Role-specific** | `.loguetown/skills/<role>/` | Skills for a particular role in this project (e.g. implementer/typescript-patterns.md). |
+
+At retrieval time the session builder queries all three scopes against the current task and assembles the top-K chunks within the token budget. Global skills are always searched first; role-specific skills have the highest weight in ranking when similarity scores are equal.
+
 ```
+~/.loguetown/skills/global/
+  personal-coding-style.md     # applies to all projects
+  security-baseline.md         # OWASP + auth conventions I always follow
+  commit-conventions.md        # conventional commits preference
+
 .loguetown/skills/
+  shared/                      # available to ALL roles in this project
+    project-overview.md        # high-level architecture (human-maintained)
+    monorepo-layout.md
+    api-error-format.md
   implementer/
-    typescript-patterns.md      # language conventions and idioms
-    testing-conventions.md      # how to write tests in this codebase
-    git-workflow.md             # commit style, branch rules, PR process
-    api-design.md               # REST/GraphQL conventions
-    react-patterns.md           # (example extra skill for a specific agent)
+    typescript-patterns.md
+    testing-conventions.md
+    git-workflow.md
+    api-design.md
+    react-patterns.md
   reviewer/
-    code-review-checklist.md    # what a thorough review checks
-    security-checklist.md       # OWASP top 10, injection, auth issues
-    performance-checklist.md    # DB queries, bundle size, rendering
-  documenter/
-    api-docs-style.md
-    changelog-format.md
-    readme-template.md
+    code-review-checklist.md
+    security-checklist.md
+    performance-checklist.md
   planner/
     decomposition-heuristics.md
     risk-scoring.md
   fixer/
     debugging-strategies.md
     minimal-change-principle.md
-  shared/                       # available to ALL roles
-    commit-style.md
-    project-overview.md         # high-level architecture (human-maintained)
-    monorepo-layout.md
 ```
 
 **Skill file format** — pure Markdown, no required frontmatter. Optional frontmatter enables better indexing:
@@ -89,7 +102,7 @@ Always use typed errors. Extend the base `AppError` class in `src/errors/base.ts
 Prefer async/await over raw Promise chains. Always handle rejections...
 ```
 
-At session start the Runner embeds each skill file (once, cached) and retrieves the **top-K most relevant** to the current task via vector similarity search, within the skills token budget. If the role has few skills and all fit in budget, all are loaded.
+**CLI:** `lt skills reindex` indexes all three scopes. `lt skills reindex --global` indexes only the global store. `lt skills search <query>` searches all scopes; results are tagged with their scope.
 
 ---
 
@@ -206,42 +219,56 @@ localStorage. Validation middleware lives in `src/middleware/auth.ts`.
 
 ### File Layout
 
+Memory is split across two physical locations: **project-local** (inside `.loguetown/`) and **global** (inside `~/.loguetown/`). The scope boundary is hard: local layers live with the project, global layers live with the developer.
+
 ```
+# Project-local (tied to this repo)
 .loguetown/memory/
   charlie/
     episodic/
       2025-01-15-oauth-state-csrf.md
       2025-01-20-db-migration-rollback.md
     semantic_local/
-      my-service/
-        auth-architecture.md
-        db-schema-conventions.md
-        api-error-format.md
+      auth-architecture.md
+      db-schema-conventions.md
+      api-error-format.md
+
+# Global (shared across all projects, stored with user profile)
+~/.loguetown/memory/
+  global/
     semantic_global/
       typescript-preferences.md
       testing-philosophy.md
-
-~/.loguetown/memory/
-  charlie/
-    semantic_global/             # symlinked or separate global store
+      security-checklist.md
+    episodic_global/             # rare: cross-project lessons (e.g. "never use eval")
+      no-eval-lesson.md
 ```
+
+**Storage rules:**
+- `episodic` and `semantic_local` are always project-local — they describe what happened *here*.
+- `semantic_global` lives at `~/.loguetown/memory/global/` — it follows the developer across all projects.
+- `episodic_global` is an optional layer for cross-project procedural lessons (off by default; enabled in config).
+- The `working` layer is in-context only (never persisted).
 
 ### Retrieval at Session Start
 
-The Runner performs **vector similarity search** for each active layer:
+The session builder performs **vector similarity search** across all scopes:
 
 ```
 query = current task description + role name + project name
 
-for each active layer:
-  retrieve top-K chunks where similarity(chunk.embedding, query) > threshold
-  sort by similarity DESC, recency DESC
-  apply layer token budget
+1. Global skills      (~/.loguetown/skills/global/)       → top-K, min_similarity
+2. Project shared skills (.loguetown/skills/shared/)       → top-K, min_similarity
+3. Role skills        (.loguetown/skills/<role>/)          → top-K, min_similarity
+4. semantic_global    (~/.loguetown/memory/global/...)     → top-K, min_similarity
+5. semantic_local     (.loguetown/memory/<agent>/...)      → top-K, min_similarity
+6. episodic           (.loguetown/memory/<agent>/episodic) → top-K, min_similarity
 
 inject into system prompt in order: global semantic → local semantic → episodic → skills
+(each section capped by its layer token budget)
 ```
 
-This ensures the agent receives the most relevant knowledge for *this specific task*, not a dump of everything it has ever learned.
+Global layers (steps 1 and 4) are searched regardless of which project is active. Project-local layers (steps 2, 3, 5, 6) are scoped to the current `.loguetown/` directory. This ensures the agent receives the most relevant knowledge for *this specific task* from both its project context and its cross-project experience.
 
 ### Memory Promotion Lifecycle
 
@@ -302,6 +329,74 @@ interface MemoryQuery {
 | `custom` | Any class implementing `MemoryProvider` | `provider: custom`, `path: ./my-provider.ts` |
 
 Custom providers are loaded by path. This enables integration with any external memory system (LangMem, Zep, Weaviate, Pinecone, etc.).
+
+---
+
+## Orchestrator
+
+The **Orchestrator** is the primary entry point for multi-agent workflows. It is a **session-based conversational agent** — not a polling daemon. The human talks to it in natural language; it plans, delegates, monitors, and reports back — all within a persistent conversation.
+
+### Chat-First Design
+
+```
+lt chat              # opens (or resumes) an orchestrator session
+lt chat --new        # force-start a fresh conversation
+```
+
+The Orchestrator is always available as a conversation partner. A session persists across multiple human turns and multiple agent runs. The human can describe a goal, ask for status, redirect work, approve proposals, or just ask questions — all without leaving the conversation.
+
+### What the Orchestrator Does
+
+| Human says | Orchestrator does |
+|---|---|
+| *"Add OAuth login with Google and GitHub"* | Proposes a task DAG, waits for approval, then queues runs |
+| *"Why is T3 blocked?"* | Queries Chronicle + SQLite, explains the blocker |
+| *"Add a task for rate limiting the auth endpoint"* | Creates a new task in the current plan and schedules it |
+| *"Stop everything, something is broken"* | Pauses all active runners, emits RUN_CANCELED events |
+| *"What did charlie do today?"* | Summarizes chronicle events for that agent |
+| *"Approve T4"* | Triggers the merge gate for task T4 |
+| *"Show me charlie's memory about OAuth"* | Queries charlie's memory and returns matching chunks |
+
+### Orchestrator Session Model
+
+```
+Conversation
+  │  (persisted in conversations + conversation_turns tables)
+  │
+  ├── Turn 1: human "Add OAuth login"
+  ├── Turn 2: orchestrator proposes DAG (shown inline, requires confirmation)
+  ├── Turn 3: human "looks good, go"
+  ├── Turn 4: orchestrator queues runs, reports "Running T1 with charlie..."
+  ├── Turn 5: (async) "T1 done. T2 queued. Reviewer found 1 blocker — want me to fix?"
+  ├── Turn 6: human "yes"
+  └── Turn 7: orchestrator spawns fixer, eventually reports merge complete
+```
+
+The underlying **scheduler** still runs as a Go goroutine, but it is driven by the Orchestrator's decisions rather than a standalone poll loop. The Orchestrator:
+
+1. Receives human goals via conversation
+2. Invokes the Planner agent to decompose goals into tasks (or accepts the human's manual task descriptions)
+3. Queues and monitors runs via the scheduler
+4. Reports status updates back into the conversation as async turns
+5. Escalates blockers by asking the human inline rather than creating a separate escalation record
+
+### Orchestrator Tools
+
+During a conversation turn the Orchestrator can call internal tools (not exposed to individual agents):
+
+| Tool | What it does |
+|---|---|
+| `create_plan(objective)` | Runs the Planner agent, creates plan + tasks in SQLite |
+| `queue_run(task_id, agent_name)` | Spawns a Runner for the given task |
+| `get_status(plan_id?)` | Returns a summary of all task statuses |
+| `get_chronicle(task_id)` | Returns recent events for a task |
+| `approve_task(task_id)` | Clears the merge gate for a task |
+| `pause_all()` / `resume_all()` | Stops or resumes all active runners |
+| `get_memory(agent, query)` | Retrieves memory chunks for an agent |
+
+### Relationship to CLI Commands
+
+`lt run`, `lt plan`, `lt tasks`, `lt agent spawn` all remain as **direct CLI entry points** for scripting and automation. The Orchestrator chat is the *human-facing* interface that calls the same underlying operations. Both paths write to the same SQLite state and emit the same Chronicle events.
 
 ---
 
