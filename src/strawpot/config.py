@@ -22,10 +22,10 @@ class StrawpotConfig:
     runtime: str = "claude_code"
     isolation: str = "worktree"
     denden_addr: str = "127.0.0.1:9700"
-    orchestrator_role: str | None = None
+    orchestrator_role: str = "orchestrator"
     allowed_roles: list[str] | None = None
     max_depth: int = 3
-    claude_model: str | None = None
+    agents: dict[str, dict] = field(default_factory=dict)
 
 
 def _read_toml(path: Path) -> dict:
@@ -57,9 +57,9 @@ def _apply(config: StrawpotConfig, data: dict) -> None:
     if "max_depth" in policy:
         config.max_depth = policy["max_depth"]
 
-    claude = data.get("claude", {})
-    if "model" in claude:
-        config.claude_model = claude["model"]
+    agents = data.get("agents", {})
+    for name, agent_data in agents.items():
+        config.agents.setdefault(name, {}).update(agent_data)
 
 
 def load_config(project_dir: Path | None = None) -> StrawpotConfig:
