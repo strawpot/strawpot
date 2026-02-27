@@ -14,6 +14,9 @@ def test_defaults():
     assert config.allowed_roles is None
     assert config.max_depth == 3
     assert config.agents == {}
+    assert config.merge_strategy == "auto"
+    assert config.pull_before_session == "prompt"
+    assert "gh pr create" in config.pr_command
 
 
 def test_strawpot_home_default(monkeypatch):
@@ -82,6 +85,11 @@ def test_load_config_full(tmp_path, monkeypatch):
         'allowed_roles = ["implementer", "reviewer"]\n'
         "max_depth = 5\n"
         "\n"
+        "[session]\n"
+        'merge_strategy = "pr"\n'
+        'pull_before_session = "auto"\n'
+        'pr_command = "glab mr create --source {session_branch} --target {base_branch}"\n'
+        "\n"
         "[agents.claude_code]\n"
         'model = "claude-sonnet-4-6"\n'
     )
@@ -94,6 +102,33 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.allowed_roles == ["implementer", "reviewer"]
     assert config.max_depth == 5
     assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
+    assert config.merge_strategy == "pr"
+    assert config.pull_before_session == "auto"
+    assert config.pr_command == "glab mr create --source {session_branch} --target {base_branch}"
+
+
+def test_load_config_session_override(tmp_path, monkeypatch):
+    """Project [session] overrides global [session] per-key."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text(
+        "[session]\n"
+        'merge_strategy = "local"\n'
+        'pull_before_session = "never"\n'
+    )
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    strawpot_dir = project_dir / ".strawpot"
+    strawpot_dir.mkdir(parents=True)
+    (strawpot_dir / "config.toml").write_text(
+        "[session]\n"
+        'merge_strategy = "pr"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.merge_strategy == "pr"
+    assert config.pull_before_session == "never"  # from global
 
 
 def test_load_config_agents_merge(tmp_path, monkeypatch):
