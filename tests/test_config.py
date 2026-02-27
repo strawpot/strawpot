@@ -10,10 +10,10 @@ def test_defaults():
     assert config.runtime == "claude_code"
     assert config.isolation == "worktree"
     assert config.denden_addr == "127.0.0.1:9700"
-    assert config.orchestrator_role is None
+    assert config.orchestrator_role == "orchestrator"
     assert config.allowed_roles is None
     assert config.max_depth == 3
-    assert config.claude_model is None
+    assert config.agents == {}
 
 
 def test_strawpot_home_default(monkeypatch):
@@ -36,12 +36,12 @@ def test_load_config_global(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "config.toml").write_text(
-        '[claude]\nmodel = "claude-opus-4-6"\n'
+        '[agents.claude_code]\nmodel = "claude-opus-4-6"\n'
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     config = load_config(tmp_path / "project")
-    assert config.claude_model == "claude-opus-4-6"
+    assert config.agents == {"claude_code": {"model": "claude-opus-4-6"}}
     assert config.runtime == "claude_code"  # default preserved
 
 
@@ -82,7 +82,7 @@ def test_load_config_full(tmp_path, monkeypatch):
         'allowed_roles = ["implementer", "reviewer"]\n'
         "max_depth = 5\n"
         "\n"
-        "[claude]\n"
+        "[agents.claude_code]\n"
         'model = "claude-sonnet-4-6"\n'
     )
 
@@ -93,4 +93,26 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.orchestrator_role == "team-lead"
     assert config.allowed_roles == ["implementer", "reviewer"]
     assert config.max_depth == 5
-    assert config.claude_model == "claude-sonnet-4-6"
+    assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
+
+
+def test_load_config_agents_merge(tmp_path, monkeypatch):
+    """Agent config from project overrides global per-key, not wholesale."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text(
+        '[agents.claude_code]\nmodel = "claude-opus-4-6"\ntimeout = 300\n'
+    )
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    strawpot_dir = project_dir / ".strawpot"
+    strawpot_dir.mkdir(parents=True)
+    (strawpot_dir / "config.toml").write_text(
+        '[agents.claude_code]\nmodel = "claude-sonnet-4-6"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.agents == {
+        "claude_code": {"model": "claude-sonnet-4-6", "timeout": 300}
+    }
