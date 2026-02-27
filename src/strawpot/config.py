@@ -20,7 +20,7 @@ def get_strawpot_home() -> Path:
 @dataclass
 class StrawpotConfig:
     runtime: str = "claude_code"
-    isolation: str = "worktree"
+    isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "orchestrator"
     allowed_roles: list[str] | None = None
