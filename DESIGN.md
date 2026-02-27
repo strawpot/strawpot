@@ -51,14 +51,14 @@ src/strawpot/
   context.py               # Build system prompt from resolved role + skills
   agents/
     protocol.py            # AgentRuntime protocol, AgentHandle, AgentResult
-    registry.py            # Discover agent.toml, validate config, resolve wrapper
+    registry.py            # Discover AGENT.md, validate config, resolve wrapper
     wrapper.py             # WrapperRuntime — calls any wrapper CLI via subprocess
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
     worktree.py            # GitWorktreeIsolator
   _builtin_agents/         # Ships with strawpot
     claude_code/
-      agent.toml           # Built-in Claude Code wrapper manifest
+      AGENT.md             # Built-in Claude Code wrapper manifest
       wrapper.py           # Built-in wrapper script
 ```
 
@@ -156,40 +156,60 @@ flags.
 ```
 
 The wrapper CLI can be named anything — `claude-agent`, `my-codex-wrapper`,
-`openhands-runner`. The `agent.toml` manifest declares which command to call.
+`openhands-runner`. The `AGENT.md` manifest declares which command to call.
 
-### Agent Manifest (`agent.toml`)
+### Agent Manifest (`AGENT.md`)
 
-Each agent is a folder with a manifest describing the wrapper and its config:
+Each agent is a folder with a manifest following the same YAML frontmatter +
+markdown body pattern as skills. The markdown body describes the agent's
+capabilities for LLM discovery. Strawpot-specific config lives under
+`metadata.strawpot`:
 
-```toml
-[agent]
-name = "claude-code"
-version = "0.1.0"
-description = "Claude Code agent via tmux"
+```yaml
+---
+name: claude-code
+description: Claude Code agent via tmux
+metadata:
+  version: "0.1.0"
+  strawpot:
+    wrapper:
+      # Bundled script (relative to agent folder):
+      script: wrapper.py
+      # OR external CLI on PATH:
+      # command: claude-agent
+    install:
+      commands:
+        tmux:
+          description: Terminal multiplexer
+          macos: brew install tmux
+          linux: apt install tmux
+        claude:
+          description: Claude Code CLI
+          macos: npm install -g @anthropic-ai/claude-code
+          linux: npm install -g @anthropic-ai/claude-code
+    params:
+      model:
+        type: string
+        default: claude-sonnet-4-6
+        description: Claude model
+    env:
+      ANTHROPIC_API_KEY:
+        required: true
+        description: Anthropic API key
+---
 
-[agent.wrapper]
-# Bundled script (relative to agent folder):
-script = "wrapper.py"
-# OR external CLI on PATH:
-# command = "claude-agent"
+# Claude Code Agent
 
-# Agent-specific config — NOT protocol args.
-# These are extras that vary per agent implementation.
-[config]
-model = { type = "string", default = "claude-sonnet-4-6", description = "Claude model" }
-
-# Required environment variables — validated at startup.
-[config.env]
-ANTHROPIC_API_KEY = { required = true, description = "Anthropic API key" }
+Runs Claude Code in tmux sessions. Supports interactive and non-interactive
+modes, custom model selection, and skill-based prompt augmentation.
 ```
 
 Two wrapper delivery modes:
 
-- `script = "wrapper.py"` — bundled in the agent folder, strawpot runs it
+- `script: wrapper.py` — bundled in the agent folder, strawpot runs it
   as `python <agent_dir>/wrapper.py spawn ...`. Zero install, just download
   the folder.
-- `command = "claude-agent"` — external CLI on PATH, installed however the
+- `command: claude-agent` — external CLI on PATH, installed however the
   provider wants (pip, cargo, npm, brew).
 
 ### Agent Registry (`agents/registry.py`)
@@ -202,15 +222,15 @@ class AgentSpec:
     name: str
     version: str
     wrapper_cmd: list[str]   # e.g. ["python", "/path/to/wrapper.py"]
-    config: dict             # merged from agent.toml defaults + user config
-    env_schema: dict         # required env vars from [config.env]
+    config: dict             # merged from AGENT.md defaults + user config
+    env_schema: dict         # required env vars from metadata.strawpot.env
 
 def resolve_agent(name: str, project_dir: str) -> AgentSpec:
     """
     Resolution order:
-    1. .strawpot/agents/<name>/agent.toml    (project-local)
-    2. ~/.strawpot/agents/<name>/agent.toml  (global install)
-    3. built-in _builtin_agents/<name>/      (ships with strawpot)
+    1. .strawpot/agents/<name>/AGENT.md    (project-local)
+    2. ~/.strawpot/agents/<name>/AGENT.md  (global install)
+    3. built-in _builtin_agents/<name>/    (ships with strawpot)
     """
 ```
 
@@ -361,8 +381,11 @@ temperature = 0.7
 1. working_dir = os.getcwd()
 2. config = load_config(working_dir)
 3. agent_spec = resolve_agent(config.runtime, working_dir)  # registry lookup
-   → validates [config.env] (fail fast if required env vars missing)
    → merges config.agents[name] into spec.config
+   → validates metadata.strawpot.install.commands (fail if missing — should
+     have been installed via `strawpot install agent`, this is a safety net)
+   → validates metadata.strawpot.env: prompt user for missing required env vars
+     interactively (set in process env for this session only, not persisted)
 4. runtime = WrapperRuntime(agent_spec)                     # generic, works for any agent
 5. isolator = resolve_isolator(config.isolation)             # none | worktree | docker
 6. session = Session(config, runtime, isolator)
@@ -374,6 +397,10 @@ temperature = 0.7
       → isolation=worktree: git worktree add .strawpot/worktrees/<run_id> ...
       All agents will work in env.path from here on.
    c. Start DenDenServer(addr=config.denden_addr)
+      - If port was explicitly provided (--port flag): fail with error if taken
+      - Otherwise (default from config): try configured port, if taken bind to
+        port 0 (OS assigns free port)
+      - Record actual addr in session file (agents use this to connect)
       - server.on_delegate(self._handle_delegate)
       - server.on_ask_user(self._handle_ask_user)
       - run in background thread
@@ -466,6 +493,59 @@ Only the markdown body is included — frontmatter is stripped.
 
 ---
 
+## Skill Manifest (`SKILL.md`)
+
+Skills follow the [Agent Skills](https://agentskills.io) open format — YAML
+frontmatter + markdown body. Strawpot-specific extensions live under
+`metadata.strawpot` to stay spec-compliant:
+
+```yaml
+---
+name: git-workflow
+description: Git workflow automation with GitHub PRs
+metadata:
+  author: example-org
+  version: "1.0"
+  strawpot:
+    dependencies: [git-basics]
+    install:
+      commands:
+        gh:
+          description: GitHub CLI
+          macos: brew install gh
+          linux: apt install gh
+    params:
+      base_branch:
+        type: string
+        default: main
+        description: Default base branch
+    env:
+      GITHUB_TOKEN:
+        required: true
+        description: GitHub API token
+---
+
+# Git Workflow
+
+Step-by-step instructions for the agent...
+```
+
+| Key | Description |
+|---|---|
+| `metadata.strawpot.dependencies` | List of skill slugs this skill depends on (resolved by strawhub) |
+| `metadata.strawpot.install.commands.<name>` | Install-time prerequisites with per-OS instructions |
+| `metadata.strawpot.params` | Configurable parameters for the skill |
+| `metadata.strawpot.env` | Required environment variables (prompted at session start) |
+
+All `metadata.strawpot` fields are optional. Most skills only need the
+standard Agent Skills fields (`name`, `description`) and the markdown body.
+
+The same `install.commands`, `params`, and `env` schema is shared across
+all package types — skills (`SKILL.md`), agents (`AGENT.md`), and memory
+providers (`MEMORY.md`). All use YAML frontmatter with `metadata.strawpot`.
+
+---
+
 ## Skill, Role, Agent & Memory Management
 
 Strawpot delegates all package management to the `strawhub` CLI.
@@ -495,17 +575,42 @@ Agents install to `$STRAWPOT_HOME/agents/<name>/` (default: `~/.strawpot/agents/
 ```
 ~/.strawpot/agents/
   claude_code/
-    agent.toml        # manifest: wrapper command, config schema, env requirements
+    AGENT.md          # manifest: wrapper config, params, env, install prereqs
     wrapper.py        # bundled wrapper script (if script= mode)
   codex/
-    agent.toml
+    AGENT.md
     wrapper.py
   my_custom_agent/
-    agent.toml        # may point to external CLI via command=
+    AGENT.md          # may point to external CLI via command=
 ```
 
 Project-local agents can also be placed at `.strawpot/agents/<name>/` and take
 precedence over global installs.
+
+### Install-time Prerequisite Validation
+
+When `strawpot install` runs (passthrough to strawhub), strawpot reads the
+installed manifest and validates `metadata.strawpot.install.commands`:
+
+```
+strawpot install agent claude_code:
+  1. strawhub install agent claude_code  → downloads to ~/.strawpot/agents/claude_code/
+  2. Read AGENT.md metadata.strawpot.install.commands
+  3. Detect current OS (platform.system() → macos/linux/windows)
+  4. For each command: shutil.which(cmd)
+     → found: ✓ tmux
+     → missing: ✗ claude — not found
+       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.install.commands.claude.macos)
+  5. If any missing: warn (don't block install — user may install later)
+```
+
+Each command entry has per-OS install instructions. Strawpot detects the
+current platform and shows the appropriate instruction. If the current OS
+has no entry, the warning omits the install hint.
+
+The same check runs as a safety net at `strawpot start` (step 3). If a
+prerequisite command is still missing at session start, strawpot errors out
+with the OS-specific install instructions from the manifest.
 
 ### Writing a Wrapper
 
@@ -543,22 +648,42 @@ agent's native interface. Strawpot handles everything else.
 Ships with strawpot at `_builtin_agents/claude_code/`. Serves as the default
 runtime and as a reference implementation for wrapper authors.
 
-### `agent.toml`
+### `AGENT.md`
 
-```toml
-[agent]
-name = "claude_code"
-version = "0.1.0"
-description = "Claude Code agent via tmux"
+```yaml
+---
+name: claude-code
+description: Claude Code agent via tmux
+metadata:
+  version: "0.1.0"
+  strawpot:
+    wrapper:
+      script: wrapper.py
+    install:
+      commands:
+        tmux:
+          description: Terminal multiplexer
+          macos: brew install tmux
+          linux: apt install tmux
+        claude:
+          description: Claude Code CLI
+          macos: npm install -g @anthropic-ai/claude-code
+          linux: npm install -g @anthropic-ai/claude-code
+    params:
+      model:
+        type: string
+        default: claude-sonnet-4-6
+        description: Claude model
+    env:
+      ANTHROPIC_API_KEY:
+        required: true
+        description: Anthropic API key
+---
 
-[agent.wrapper]
-script = "wrapper.py"
+# Claude Code Agent
 
-[config]
-model = { type = "string", default = "claude-sonnet-4-6", description = "Claude model" }
-
-[config.env]
-ANTHROPIC_API_KEY = { required = true, description = "Anthropic API key" }
+Runs Claude Code in tmux sessions. Supports interactive and non-interactive
+modes, custom model selection, and skill-based prompt augmentation.
 ```
 
 ### `wrapper.py`
@@ -589,7 +714,7 @@ kill:
 
 This is the only place that knows about `claude` CLI flags or tmux.
 Strawpot core never imports or references it directly — the registry
-discovers it via `agent.toml`.
+discovers it via `AGENT.md`.
 
 ---
 
@@ -832,14 +957,15 @@ same cleanup flow before starting a new session.
 
 ## Session State
 
-Written to `.strawpot/runtime/` (gitignored) for crash recovery and debugging.
+Written to `.strawpot/runtime/` (gitignored) for crash recovery, debugging,
+and the `strawpot sessions` / `strawpot agents` commands.
 
-For `isolation=none` (single session): `.strawpot/runtime/session.json`.
-For `worktree`/`docker` (concurrent sessions): `.strawpot/runtime/sessions/<run_id>.json`.
+All sessions write to `.strawpot/runtime/sessions/<run_id>.json`.
 
 ```json
 {
   "run_id": "run_abc123",
+  "working_dir": "/home/user/project",
   "isolation": "worktree",
   "runtime": "claude_code",
   "denden_addr": "127.0.0.1:9700",
@@ -847,15 +973,33 @@ For `worktree`/`docker` (concurrent sessions): `.strawpot/runtime/sessions/<run_
   "worktree": ".strawpot/worktrees/run_abc123",
   "worktree_branch": "strawpot/run_abc123",
   "base_branch": "main",
-  "orchestrator_agent_id": "agent_xyz",
   "started_at": "2026-02-27T10:00:00Z",
   "pid": 54321,
-  "agents": {}
+  "agents": {
+    "agent_xyz": {
+      "role": "orchestrator",
+      "runtime": "claude_code",
+      "parent": null,
+      "started_at": "2026-02-27T10:00:01Z",
+      "pid": 54322
+    },
+    "agent_abc": {
+      "role": "implementer",
+      "runtime": "claude_code",
+      "parent": "agent_xyz",
+      "started_at": "2026-02-27T10:01:00Z",
+      "pid": 54330
+    }
+  }
 }
 ```
 
-`pid` is the strawpot process ID — used to detect stale sessions (process
-dead but session file remains).
+- `pid` — strawpot process ID, used to detect stale sessions (process dead
+  but file remains).
+- `denden_addr` — actual bound address. May differ from config if the
+  configured port was taken and auto-assigned (see port auto-resolution).
+- `agents` — updated live as agents are spawned/completed. Each entry
+  tracks role, runtime, parent chain, and process ID.
 
 ---
 
@@ -867,6 +1011,8 @@ strawpot start  [--role SLUG] [--runtime NAME]
                 [--merge-strategy auto|local|pr]
                 [--pull auto|always|never|prompt]
                 [--host HOST] [--port PORT]
+strawpot sessions                    # list all running sessions
+strawpot agents <session_id>         # list agents for a session
 strawpot config
 
 # Passthrough to strawhub CLI:
@@ -893,7 +1039,14 @@ skip pulling when you want to work on the current HEAD.
 runs the cleanup flow (see Session Cleanup). For local strategy, the user is
 prompted for conflict resolution. For PR strategy, the branch is pushed and
 a PR is created automatically.
-No separate `stop`/`status`/`agents` commands needed.
+
+`sessions` reads all session files from `.strawpot/runtime/sessions/`,
+checks if each process is still alive (via `pid`), and displays a table of
+running sessions with run_id, isolation mode, runtime, denden port, and
+uptime. Stale sessions (dead pid) are marked accordingly.
+
+`agents <session_id>` reads a specific session file and displays the agent
+tree — role, runtime, parent, pid, and whether each agent is still alive.
 
 ---
 
@@ -901,9 +1054,9 @@ No separate `stop`/`status`/`agents` commands needed.
 
 1. `config.py` — add `agents: dict` field, parse `[agents.*]` sections
 2. `agents/protocol.py` + `isolation/protocol.py` — types
-3. `agents/registry.py` — discover `agent.toml`, validate env, merge config
+3. `agents/registry.py` — discover `AGENT.md`, validate env, merge config
 4. `agents/wrapper.py` — `WrapperRuntime` (calls wrapper CLI via subprocess)
-5. `_builtin_agents/claude_code/` — `agent.toml` + `wrapper.py`
+5. `_builtin_agents/claude_code/` — `AGENT.md` + `wrapper.py`
 6. `isolation/worktree.py`
 7. `context.py`
 8. `delegation.py`
@@ -1026,25 +1179,42 @@ Same pattern as agent wrappers — a CLI that implements a contract:
                    "sm_rm_proposals": [...], "deferred": [...]}
 ```
 
-### Memory Manifest (`memory.toml`)
+### Memory Manifest (`MEMORY.md`)
 
-```toml
-[memory]
-name = "strawpot-memory-local"
-version = "0.1.0"
-description = "File-based local memory provider"
+```yaml
+---
+name: strawpot-memory-local
+description: File-based local memory provider
+metadata:
+  version: "0.1.0"
+  strawpot:
+    wrapper:
+      script: wrapper.py
+      # OR: command: strawpot-memory-local
+    # install:
+    #   commands:
+    #     some-tool:
+    #       description: ...
+    #       macos: brew install some-tool
+    #       linux: apt install some-tool
+    params:
+      storage_dir:
+        type: string
+        default: .strawpot/memory
+      em_max_events:
+        type: int
+        default: 10000
+    env:
+      # e.g. for a vector-db-backed provider:
+      # PINECONE_API_KEY:
+      #   required: true
+      #   description: Pinecone API key
+---
 
-[memory.wrapper]
-script = "wrapper.py"
-# OR: command = "strawpot-memory-local"
+# Local Memory Provider
 
-[config]
-storage_dir = { type = "string", default = ".strawpot/memory" }
-em_max_events = { type = "int", default = 10000 }
-
-[config.env]
-# e.g. for a vector-db-backed provider:
-# PINECONE_API_KEY = { required = true }
+File-based memory provider for local development. Stores event memory,
+short-term memory, and semantic memory as local files.
 ```
 
 Installed to `~/.strawpot/memory/<name>/`, resolved the same way as agents:

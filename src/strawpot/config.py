@@ -17,6 +17,9 @@ def get_strawpot_home() -> Path:
     return Path.home() / ".strawpot"
 
 
+_DEFAULT_PR_COMMAND = "gh pr create --base {base_branch} --head {session_branch}"
+
+
 @dataclass
 class StrawpotConfig:
     runtime: str = "claude_code"
@@ -26,6 +29,9 @@ class StrawpotConfig:
     allowed_roles: list[str] | None = None
     max_depth: int = 3
     agents: dict[str, dict] = field(default_factory=dict)
+    merge_strategy: str = "auto"
+    pull_before_session: str = "prompt"
+    pr_command: str = _DEFAULT_PR_COMMAND
 
 
 def _read_toml(path: Path) -> dict:
@@ -60,6 +66,14 @@ def _apply(config: StrawpotConfig, data: dict) -> None:
     agents = data.get("agents", {})
     for name, agent_data in agents.items():
         config.agents.setdefault(name, {}).update(agent_data)
+
+    session = data.get("session", {})
+    if "merge_strategy" in session:
+        config.merge_strategy = session["merge_strategy"]
+    if "pull_before_session" in session:
+        config.pull_before_session = session["pull_before_session"]
+    if "pr_command" in session:
+        config.pr_command = session["pr_command"]
 
 
 def load_config(project_dir: Path | None = None) -> StrawpotConfig:
