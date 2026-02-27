@@ -163,7 +163,7 @@ The wrapper CLI can be named anything — `claude-agent`, `my-codex-wrapper`,
 Agents follow the same [Agent Skills](https://agentskills.io) open format as
 skills — YAML frontmatter (`name`, `description`) + markdown body. The body
 describes the agent's capabilities for LLM discovery. Strawpot-specific
-config (wrapper, installs, params, env) lives under `metadata.strawpot`:
+config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 
 ```yaml
 ---
@@ -177,15 +177,17 @@ metadata:
       script: wrapper.py
       # OR external CLI on PATH:
       # command: claude-agent
-    installs:
+    tools:
         tmux:
           description: Terminal multiplexer
-          macos: brew install tmux
-          linux: apt install tmux
+          install:
+            macos: brew install tmux
+            linux: apt install tmux
         claude:
           description: Claude Code CLI
-          macos: npm install -g @anthropic-ai/claude-code
-          linux: npm install -g @anthropic-ai/claude-code
+          install:
+            macos: npm install -g @anthropic-ai/claude-code
+            linux: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string
@@ -381,7 +383,7 @@ temperature = 0.7
 2. config = load_config(working_dir)
 3. agent_spec = resolve_agent(config.runtime, working_dir)  # registry lookup
    → merges config.agents[name] into spec.config
-   → validates metadata.strawpot.installs (fail if missing — should
+   → validates metadata.strawpot.tools (fail if missing — should
      have been installed via `strawpot install agent`, this is a safety net)
    → validates metadata.strawpot.env: prompt user for missing required env vars
      interactively (set in process env for this session only, not persisted)
@@ -507,11 +509,12 @@ metadata:
   version: "1.0"
   strawpot:
     dependencies: [git-basics]
-    installs:
+    tools:
         gh:
           description: GitHub CLI
-          macos: brew install gh
-          linux: apt install gh
+          install:
+            macos: brew install gh
+            linux: apt install gh
     params:
       base_branch:
         type: string
@@ -531,14 +534,14 @@ Step-by-step instructions for the agent...
 | Key | Description |
 |---|---|
 | `metadata.strawpot.dependencies` | List of skill slugs this skill depends on (resolved by strawhub) |
-| `metadata.strawpot.installs.<name>` | Install-time prerequisites with per-OS instructions |
+| `metadata.strawpot.tools.<name>` | Required tools with per-OS install instructions |
 | `metadata.strawpot.params` | Configurable parameters for the skill |
 | `metadata.strawpot.env` | Required environment variables (prompted at session start) |
 
 All `metadata.strawpot` fields are optional. Most skills only need the
 standard Agent Skills fields (`name`, `description`) and the markdown body.
 
-The same `installs`, `params`, and `env` schema is shared across
+The same `tools`, `params`, and `env` schema is shared across
 all package types — skills (`SKILL.md`), agents (`AGENT.md`), and memory
 providers (`MEMORY.md`). All use YAML frontmatter with `metadata.strawpot`.
 
@@ -561,6 +564,7 @@ strawpot uninstall agent <slug>   →  strawhub uninstall agent <slug>
 strawpot uninstall memory <slug>  →  strawhub uninstall memory <slug>
 strawpot search <query>           →  strawhub search <query>
 strawpot list                     →  strawhub list
+strawpot install-tools            →  strawhub install-tools
 ```
 
 At runtime (delegation), strawpot calls `strawhub.resolver.resolve()` directly
@@ -588,17 +592,17 @@ precedence over global installs.
 ### Install-time Prerequisite Validation
 
 When `strawpot install` runs (passthrough to strawhub), strawpot reads the
-installed manifest and validates `metadata.strawpot.installs`:
+installed manifest and validates `metadata.strawpot.tools`:
 
 ```
 strawpot install agent claude_code:
   1. strawhub install agent claude_code  → downloads to ~/.strawpot/agents/claude_code/
-  2. Read AGENT.md metadata.strawpot.installs
+  2. Read AGENT.md metadata.strawpot.tools
   3. Detect current OS (platform.system() → macos/linux/windows)
   4. For each command: shutil.which(cmd)
      → found: ✓ tmux
      → missing: ✗ claude — not found
-       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.installs.claude.macos)
+       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.tools.claude.install.macos)
   5. If any missing: warn (don't block install — user may install later)
 ```
 
@@ -609,6 +613,30 @@ has no entry, the warning omits the install hint.
 The same check runs as a safety net at `strawpot start` (step 3). If a
 prerequisite command is still missing at session start, strawpot errors out
 with the OS-specific install instructions from the manifest.
+
+### install-tools
+
+`strawpot install-tools` (passthrough to `strawhub install-tools`) scans all
+installed packages for `metadata.strawpot.tools`, checks which commands are
+missing via `shutil.which()`, and offers to install them:
+
+```
+$ strawpot install-tools
+
+Scanning installed packages for required tools...
+
+Missing tools:
+  ✗ claude (required by: claude_code)
+    Install: npm install -g @anthropic-ai/claude-code
+
+  ✗ tmux (required by: claude_code)
+    Install: brew install tmux
+
+Install missing tools? [y/N]
+```
+
+Tools are deduplicated across packages — if multiple packages require `tmux`,
+it appears once. The `--yes` flag skips the confirmation prompt.
 
 ### Writing a Wrapper
 
@@ -657,15 +685,17 @@ metadata:
   strawpot:
     wrapper:
       script: wrapper.py
-    installs:
+    tools:
         tmux:
           description: Terminal multiplexer
-          macos: brew install tmux
-          linux: apt install tmux
+          install:
+            macos: brew install tmux
+            linux: apt install tmux
         claude:
           description: Claude Code CLI
-          macos: npm install -g @anthropic-ai/claude-code
-          linux: npm install -g @anthropic-ai/claude-code
+          install:
+            macos: npm install -g @anthropic-ai/claude-code
+            linux: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string
@@ -1023,6 +1053,7 @@ strawpot uninstall agent <slug>
 strawpot uninstall memory <slug>
 strawpot search <query>
 strawpot list
+strawpot install-tools
 ```
 
 `--runtime NAME` accepts any agent name resolvable by the registry (project-local,
@@ -1181,7 +1212,7 @@ Same pattern as agent wrappers — a CLI that implements a contract:
 Memory providers follow the same [Agent Skills](https://agentskills.io) open
 format — YAML frontmatter (`name`, `description`) + markdown body. The body
 describes the provider's capabilities and storage approach. Strawpot-specific
-config (wrapper, installs, params, env) lives under `metadata.strawpot`:
+config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 
 ```yaml
 ---
@@ -1193,11 +1224,12 @@ metadata:
     wrapper:
       script: wrapper.py
       # OR: command: strawpot-memory-local
-    # installs:
+    # tools:
     #     some-tool:
     #       description: ...
-    #       macos: brew install some-tool
-    #       linux: apt install some-tool
+    #       install:
+    #         macos: brew install some-tool
+    #         linux: apt install some-tool
     params:
       storage_dir:
         type: string
