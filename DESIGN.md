@@ -160,10 +160,10 @@ The wrapper CLI can be named anything — `claude-agent`, `my-codex-wrapper`,
 
 ### Agent Manifest (`AGENT.md`)
 
-Each agent is a folder with a manifest following the same YAML frontmatter +
-markdown body pattern as skills. The markdown body describes the agent's
-capabilities for LLM discovery. Strawpot-specific config lives under
-`metadata.strawpot`:
+Agents follow the same [Agent Skills](https://agentskills.io) open format as
+skills — YAML frontmatter (`name`, `description`) + markdown body. The body
+describes the agent's capabilities for LLM discovery. Strawpot-specific
+config (wrapper, installs, params, env) lives under `metadata.strawpot`:
 
 ```yaml
 ---
@@ -177,8 +177,7 @@ metadata:
       script: wrapper.py
       # OR external CLI on PATH:
       # command: claude-agent
-    install:
-      commands:
+    installs:
         tmux:
           description: Terminal multiplexer
           macos: brew install tmux
@@ -382,7 +381,7 @@ temperature = 0.7
 2. config = load_config(working_dir)
 3. agent_spec = resolve_agent(config.runtime, working_dir)  # registry lookup
    → merges config.agents[name] into spec.config
-   → validates metadata.strawpot.install.commands (fail if missing — should
+   → validates metadata.strawpot.installs (fail if missing — should
      have been installed via `strawpot install agent`, this is a safety net)
    → validates metadata.strawpot.env: prompt user for missing required env vars
      interactively (set in process env for this session only, not persisted)
@@ -508,8 +507,7 @@ metadata:
   version: "1.0"
   strawpot:
     dependencies: [git-basics]
-    install:
-      commands:
+    installs:
         gh:
           description: GitHub CLI
           macos: brew install gh
@@ -533,14 +531,14 @@ Step-by-step instructions for the agent...
 | Key | Description |
 |---|---|
 | `metadata.strawpot.dependencies` | List of skill slugs this skill depends on (resolved by strawhub) |
-| `metadata.strawpot.install.commands.<name>` | Install-time prerequisites with per-OS instructions |
+| `metadata.strawpot.installs.<name>` | Install-time prerequisites with per-OS instructions |
 | `metadata.strawpot.params` | Configurable parameters for the skill |
 | `metadata.strawpot.env` | Required environment variables (prompted at session start) |
 
 All `metadata.strawpot` fields are optional. Most skills only need the
 standard Agent Skills fields (`name`, `description`) and the markdown body.
 
-The same `install.commands`, `params`, and `env` schema is shared across
+The same `installs`, `params`, and `env` schema is shared across
 all package types — skills (`SKILL.md`), agents (`AGENT.md`), and memory
 providers (`MEMORY.md`). All use YAML frontmatter with `metadata.strawpot`.
 
@@ -590,17 +588,17 @@ precedence over global installs.
 ### Install-time Prerequisite Validation
 
 When `strawpot install` runs (passthrough to strawhub), strawpot reads the
-installed manifest and validates `metadata.strawpot.install.commands`:
+installed manifest and validates `metadata.strawpot.installs`:
 
 ```
 strawpot install agent claude_code:
   1. strawhub install agent claude_code  → downloads to ~/.strawpot/agents/claude_code/
-  2. Read AGENT.md metadata.strawpot.install.commands
+  2. Read AGENT.md metadata.strawpot.installs
   3. Detect current OS (platform.system() → macos/linux/windows)
   4. For each command: shutil.which(cmd)
      → found: ✓ tmux
      → missing: ✗ claude — not found
-       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.install.commands.claude.macos)
+       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.installs.claude.macos)
   5. If any missing: warn (don't block install — user may install later)
 ```
 
@@ -659,8 +657,7 @@ metadata:
   strawpot:
     wrapper:
       script: wrapper.py
-    install:
-      commands:
+    installs:
         tmux:
           description: Terminal multiplexer
           macos: brew install tmux
@@ -1181,6 +1178,11 @@ Same pattern as agent wrappers — a CLI that implements a contract:
 
 ### Memory Manifest (`MEMORY.md`)
 
+Memory providers follow the same [Agent Skills](https://agentskills.io) open
+format — YAML frontmatter (`name`, `description`) + markdown body. The body
+describes the provider's capabilities and storage approach. Strawpot-specific
+config (wrapper, installs, params, env) lives under `metadata.strawpot`:
+
 ```yaml
 ---
 name: strawpot-memory-local
@@ -1191,8 +1193,7 @@ metadata:
     wrapper:
       script: wrapper.py
       # OR: command: strawpot-memory-local
-    # install:
-    #   commands:
+    # installs:
     #     some-tool:
     #       description: ...
     #       macos: brew install some-tool
