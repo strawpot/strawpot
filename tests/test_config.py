@@ -8,7 +8,7 @@ from strawpot.config import StrawpotConfig, get_strawpot_home, load_config
 def test_defaults():
     config = StrawpotConfig()
     assert config.runtime == "claude_code"
-    assert config.isolation == "worktree"
+    assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
     assert config.orchestrator_role == "orchestrator"
     assert config.allowed_roles is None
