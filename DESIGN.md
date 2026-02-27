@@ -564,6 +564,7 @@ strawpot uninstall agent <slug>   →  strawhub uninstall agent <slug>
 strawpot uninstall memory <slug>  →  strawhub uninstall memory <slug>
 strawpot search <query>           →  strawhub search <query>
 strawpot list                     →  strawhub list
+strawpot install-tools            →  strawhub install-tools
 ```
 
 At runtime (delegation), strawpot calls `strawhub.resolver.resolve()` directly
@@ -612,6 +613,30 @@ has no entry, the warning omits the install hint.
 The same check runs as a safety net at `strawpot start` (step 3). If a
 prerequisite command is still missing at session start, strawpot errors out
 with the OS-specific install instructions from the manifest.
+
+### install-tools
+
+`strawpot install-tools` (passthrough to `strawhub install-tools`) scans all
+installed packages for `metadata.strawpot.tools`, checks which commands are
+missing via `shutil.which()`, and offers to install them:
+
+```
+$ strawpot install-tools
+
+Scanning installed packages for required tools...
+
+Missing tools:
+  ✗ claude (required by: claude_code)
+    Install: npm install -g @anthropic-ai/claude-code
+
+  ✗ tmux (required by: claude_code)
+    Install: brew install tmux
+
+Install missing tools? [y/N]
+```
+
+Tools are deduplicated across packages — if multiple packages require `tmux`,
+it appears once. The `--yes` flag skips the confirmation prompt.
 
 ### Writing a Wrapper
 
@@ -1028,6 +1053,7 @@ strawpot uninstall agent <slug>
 strawpot uninstall memory <slug>
 strawpot search <query>
 strawpot list
+strawpot install-tools
 ```
 
 `--runtime NAME` accepts any agent name resolvable by the registry (project-local,
