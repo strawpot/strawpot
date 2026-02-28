@@ -1,0 +1,355 @@
+"""Tests for strawpot.context."""
+
+from strawpot.context import build_prompt, read_role_description
+
+
+def _write_skill(base, slug, body):
+    d = base / "skills" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(
+        f"---\nname: {slug}\ndescription: test\n---\n{body}\n"
+    )
+    return str(d)
+
+
+def _write_role(base, slug, body):
+    d = base / "roles" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "ROLE.md").write_text(
+        f"---\nname: {slug}\ndescription: test\n---\n{body}\n"
+    )
+    return str(d)
+
+
+def test_role_no_dependencies(tmp_path):
+    path = _write_role(tmp_path, "solo", "You are a solo agent.")
+
+    resolved = {
+        "slug": "solo",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved)
+    assert result == "## Role: solo\n\nYou are a solo agent."
+
+
+def test_role_with_skill_dependencies(tmp_path):
+    skill1_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
+    skill2_path = _write_skill(tmp_path, "code-review", "Review carefully.")
+    role_path = _write_role(tmp_path, "implementer", "You implement things.")
+
+    resolved = {
+        "slug": "implementer",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "git-workflow",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": skill1_path,
+                "source": "local",
+            },
+            {
+                "slug": "code-review",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": skill2_path,
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(resolved)
+    assert result == (
+        "## Skill: git-workflow\n\nUse git flow."
+        "\n---\n\n"
+        "## Skill: code-review\n\nReview carefully."
+        "\n---\n\n"
+        "## Role: implementer\n\nYou implement things."
+    )
+
+
+def test_role_dependency_includes_role(tmp_path):
+    """A role can depend on another role."""
+    dep_role_path = _write_role(tmp_path, "base-reviewer", "Review basics.")
+    root_path = _write_role(tmp_path, "senior-reviewer", "Senior review.")
+
+    resolved = {
+        "slug": "senior-reviewer",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": root_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "base-reviewer",
+                "kind": "role",
+                "version": "1.0.0",
+                "path": dep_role_path,
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(resolved)
+    assert result == (
+        "## Role: base-reviewer\n\nReview basics."
+        "\n---\n\n"
+        "## Role: senior-reviewer\n\nSenior review."
+    )
+
+
+def test_frontmatter_stripped(tmp_path):
+    """Frontmatter is stripped, only the body is included."""
+    d = tmp_path / "roles" / "complex"
+    d.mkdir(parents=True)
+    (d / "ROLE.md").write_text(
+        "---\n"
+        "name: complex\n"
+        "description: test\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    dependencies:\n"
+        "      skills:\n"
+        "        - something\n"
+        "---\n"
+        "# Complex Role\n\n"
+        "Body content here.\n"
+    )
+
+    resolved = {
+        "slug": "complex",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": str(d),
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved)
+    assert "---\nname:" not in result
+    assert "metadata:" not in result
+    assert "# Complex Role" in result
+    assert "Body content here." in result
+
+
+def test_body_whitespace_stripped(tmp_path):
+    """Leading/trailing whitespace in body is stripped."""
+    d = tmp_path / "skills" / "ws"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: ws\ndescription: test\n---\n\n\n  Body  \n\n\n"
+    )
+
+    role_path = _write_role(tmp_path, "r", "Role.")
+
+    resolved = {
+        "slug": "r",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "ws",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": str(d),
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(resolved)
+    assert result.startswith("## Skill: ws\n\nBody")
+
+
+# ---------------------------------------------------------------------------
+# Delegation section
+# ---------------------------------------------------------------------------
+
+
+def test_delegation_section_appended(tmp_path):
+    """Delegation section is appended when delegatable_roles is provided."""
+    role_path = _write_role(tmp_path, "orchestrator", "You orchestrate.")
+
+    resolved = {
+        "slug": "orchestrator",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        delegatable_roles=[
+            ("backend-engineer", "Handles backend API implementation"),
+            ("test-writer", "Writes and maintains test suites"),
+        ],
+    )
+
+    assert "## Role: orchestrator\n\nYou orchestrate." in result
+    assert "\n---\n\n## Delegation" in result
+    assert "- **backend-engineer**: Handles backend API implementation" in result
+    assert "- **test-writer**: Writes and maintains test suites" in result
+    assert "Use the `denden`" in result
+    assert "skill to request delegation." in result
+
+
+def test_delegation_with_dependencies(tmp_path):
+    """Delegation section comes after role body, after dependencies."""
+    skill_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
+    role_path = _write_role(tmp_path, "team-lead", "You lead the team.")
+
+    resolved = {
+        "slug": "team-lead",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "git-workflow",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": skill_path,
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(
+        resolved,
+        delegatable_roles=[("implementer", "Writes code")],
+    )
+
+    skill_pos = result.index("## Skill: git-workflow")
+    role_pos = result.index("## Role: team-lead")
+    delegation_pos = result.index("## Delegation")
+    assert skill_pos < role_pos < delegation_pos
+
+
+def test_no_delegation_when_none(tmp_path):
+    """No delegation section when delegatable_roles is None."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, delegatable_roles=None)
+    assert "Delegation" not in result
+
+
+def test_no_delegation_when_empty_list(tmp_path):
+    """No delegation section when delegatable_roles is empty."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, delegatable_roles=[])
+    assert "Delegation" not in result
+
+
+def test_delegation_single_role(tmp_path):
+    """Delegation section works with a single role."""
+    role_path = _write_role(tmp_path, "lead", "You lead.")
+
+    resolved = {
+        "slug": "lead",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        delegatable_roles=[("fixer", "Fixes bugs and issues")],
+    )
+
+    assert "- **fixer**: Fixes bugs and issues" in result
+    assert result.count("- **") == 1
+
+
+def test_delegation_section_exact_format(tmp_path):
+    """Delegation section matches the DESIGN.md format exactly."""
+    role_path = _write_role(tmp_path, "orch", "Orchestrate.")
+
+    resolved = {
+        "slug": "orch",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        delegatable_roles=[
+            ("backend-engineer", "Handles backend API implementation"),
+            ("test-writer", "Writes and maintains test suites"),
+        ],
+    )
+
+    expected_delegation = (
+        "## Delegation\n"
+        "\n"
+        "You can delegate tasks to the following roles:\n"
+        "- **backend-engineer**: Handles backend API implementation\n"
+        "- **test-writer**: Writes and maintains test suites\n"
+        "\n"
+        "Each role is described in `roles/<role-name>/ROLE.md`. Read the ROLE.md\n"
+        "file to learn more about the role before delegating. Use the `denden`\n"
+        "skill to request delegation."
+    )
+
+    assert result.endswith(expected_delegation)
+
+
+# ---------------------------------------------------------------------------
+# read_role_description
+# ---------------------------------------------------------------------------
+
+
+def test_read_role_description(tmp_path):
+    """read_role_description extracts description from ROLE.md frontmatter."""
+    d = tmp_path / "roles" / "implementer"
+    d.mkdir(parents=True)
+    (d / "ROLE.md").write_text(
+        "---\nname: implementer\ndescription: Writes code to implement features\n---\nBody.\n"
+    )
+
+    assert read_role_description(str(d)) == "Writes code to implement features"
+
+
+def test_read_role_description_missing(tmp_path):
+    """read_role_description returns empty string if no description."""
+    d = tmp_path / "roles" / "minimal"
+    d.mkdir(parents=True)
+    (d / "ROLE.md").write_text("---\nname: minimal\n---\nBody.\n")
+
+    assert read_role_description(str(d)) == ""
