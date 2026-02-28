@@ -28,7 +28,7 @@ class Isolator(Protocol):
         """
         ...
 
-    def cleanup(self, env: IsolatedEnv) -> None:
+    def cleanup(self, env: IsolatedEnv, *, base_dir: str) -> None:
         """Remove the isolated environment and clean up resources."""
         ...
 
@@ -40,5 +40,5 @@ class NoneIsolator:
         """Return base_dir as-is. No isolation setup."""
         return IsolatedEnv(path=base_dir)
 
-    def cleanup(self, env: IsolatedEnv) -> None:
+    def cleanup(self, env: IsolatedEnv, *, base_dir: str) -> None:
         """No-op — nothing to clean up."""

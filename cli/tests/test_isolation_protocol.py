@@ -25,7 +25,7 @@ def test_none_isolator_create():
 def test_none_isolator_cleanup():
     isolator = NoneIsolator()
     env = IsolatedEnv(path="/home/user/project")
-    isolator.cleanup(env)  # should not raise
+    isolator.cleanup(env, base_dir="/home/user/project")  # should not raise
 
 
 def test_none_isolator_satisfies_protocol():
