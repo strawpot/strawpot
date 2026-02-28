@@ -111,8 +111,9 @@ class AgentResult:
 
 class AgentRuntime(Protocol):
     name: str
-    def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt,
-              skills_dirs, roles_dirs, task, env) -> AgentHandle: ...
+    def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
+              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              task, env) -> AgentHandle: ...
     def wait(self, handle: AgentHandle, timeout: float | None = None) -> AgentResult: ...
     def is_alive(self, handle: AgentHandle) -> bool: ...
     def kill(self, handle: AgentHandle) -> None: ...
@@ -137,6 +138,7 @@ alive, kill) is handled internally by `WrapperRuntime` in strawpot core.
 |---|---|
 | `--agent-id ID` | Unique agent identifier |
 | `--working-dir DIR` | Session worktree path |
+| `--agent-workspace-dir DIR` | Dedicated temp workspace for this agent (prompt files, staged skills) |
 | `--role-prompt TEXT` | Role system prompt text |
 | `--memory-prompt TEXT` | Memory context text |
 | `--task TEXT` | Task text (empty string = interactive) |
@@ -257,10 +259,12 @@ class WrapperRuntime:
         result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         return result.returncode == 0
 
-    def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt,
-              skills_dirs, roles_dirs, task, env) -> AgentHandle:
+    def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
+              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              task, env) -> AgentHandle:
         # 1. Call <wrapper> build to get translated command
         args = ["build", "--agent-id", agent_id, "--working-dir", working_dir,
+                "--agent-workspace-dir", agent_workspace_dir,
                 "--role-prompt", role_prompt, "--memory-prompt", memory_prompt,
                 "--task", task, "--config", json.dumps(self.spec.config)]
         for d in skills_dirs: args += ["--skills-dir", d]
@@ -465,9 +469,12 @@ temperature = 0.7
         system_prompt = build_prompt(resolved)
         → writes prompt to .strawpot/runtime/<agent_id>.prompt.md
    e. agent_id = "agent_" + uuid4()
+      workspace = .strawpot/runtime/agents/<agent_id>/
+      → stage resolved skills into workspace/.claude/skills/<slug>/SKILL.md
    f. runtime.spawn(                   # InteractiveWrapperRuntime
         agent_id=agent_id,
         working_dir=env.path,
+        agent_workspace_dir=workspace,
         role_prompt=role_prompt,
         memory_prompt=memory_prompt,
         skills_dirs=skills_dirs,
@@ -480,10 +487,10 @@ temperature = 0.7
           DENDEN_RUN_ID: run_id,
         }
       )
-      → InteractiveWrapperRuntime calls: <wrapper> build --agent-id ... --working-dir ...
-        --role-prompt ... --memory-prompt ... --task "" --skills-dir ...
-        --config '{"model": "..."}' (env vars PERMISSION_MODE, DENDEN_ADDR, etc.
-        passed as subprocess environment)
+      → InteractiveWrapperRuntime calls: <wrapper> build --agent-id ...
+        --working-dir ... --agent-workspace-dir ... --role-prompt ...
+        --memory-prompt ... --task "" --skills-dir ... --config '{"model": "..."}'
+        (env vars PERMISSION_MODE, DENDEN_ADDR, etc. passed as subprocess environment)
       → Gets back {"cmd": [...], "cwd": "..."}
       → Launches: tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
    g. Write .strawpot/runtime/session.json
@@ -506,9 +513,13 @@ Denden server dispatches to `Session._handle_delegate`:
 4. Build prompt:
    system_prompt = context.build_prompt(resolved)
    → reads SKILL.md bodies (deps first) + ROLE.md body
-5. Spawn in session worktree (shared — no new worktree):
+5. Create agent workspace:
+   workspace = .strawpot/runtime/agents/<agent_id>/
+   → stage resolved skills into workspace/.claude/skills/<slug>/SKILL.md
+6. Spawn in session worktree (shared — no new worktree):
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
+     agent_workspace_dir=workspace,
      role_prompt=role_prompt, memory_prompt=memory_prompt,
      skills_dirs=skills_dirs, roles_dirs=roles_dirs,
      task=task_text,
@@ -517,10 +528,10 @@ Denden server dispatches to `Session._handle_delegate`:
           DENDEN_PARENT_AGENT_ID, DENDEN_RUN_ID}
    )
    → WrapperRuntime calls wrapper CLI with standard protocol args
-6. Wait:
+7. Wait:
    result = runtime.wait(handle)
    (blocks — denden threadpool allows concurrent delegates)
-7. Return:
+8. Return:
    ok_response(request_id, delegate_result=DelegateResult(summary=result.summary))
 ```
 
@@ -558,6 +569,27 @@ flows back through denden.
 
 Dependencies come first (topological order from resolver), role last.
 Only the markdown body is included — frontmatter is stripped.
+
+When the agent has delegatable roles, a delegation section is appended:
+
+```
+---
+
+## Delegation
+
+You can delegate tasks to the following roles:
+- **backend-engineer**: Handles backend API implementation
+- **test-writer**: Writes and maintains test suites
+
+Each role is described in `roles/<role-name>/ROLE.md`. Read the ROLE.md
+file to learn more about the role before delegating. Use the `denden`
+skill to request delegation.
+```
+
+Only the role name and description (from ROLE.md frontmatter) are included
+in the prompt — the full ROLE.md content is available on disk at
+`roles/<role-name>/ROLE.md` (symlinked by the wrapper) for the agent to
+read on demand.
 
 ---
 
@@ -790,12 +822,22 @@ setup:
 build:
   Protocol arg             → Claude Code flag
   ─────────────────────────────────────────────
+  --agent-workspace-dir DIR → creates <DIR>/claude/ folder (required)
   --role-prompt TEXT    \
-  --memory-prompt TEXT  /→ write to file → --system-prompt FILE
+  --memory-prompt TEXT  /→ write to <DIR>/claude/prompt.md → --system-prompt FILE
   --task TEXT              → -p TEXT (omit if empty = interactive)
   --config JSON            → extract "model" → --model MODEL
-  --skills-dir DIR         → glob *.md → --append-system-prompt FILE (each)
+  --skills-dir DIR         → symlink to <DIR>/claude/.claude/skills/<name>/
+  --roles-dir DIR          → symlink to <DIR>/claude/roles/<name>/
   PERMISSION_MODE env      → --permission-mode VALUE (passed through directly)
+  (all)                    → --add-dir <DIR>/claude (single add-dir for all)
+
+  The wrapper creates a claude/ folder inside agent-workspace-dir and stages
+  everything there: prompt file, skill symlinks, role symlinks.  This single
+  directory is passed as --add-dir so Claude Code discovers .claude/skills/
+  natively within it.  Role symlinks are placed at claude/roles/<name>/ so the
+  agent can read ROLE.md files on demand (the prompt only contains descriptions,
+  not full content).
 
   Returns: {"cmd": ["claude", ...], "cwd": "..."} without executing.
   WrapperRuntime then launches the command via Popen and manages PID/logs.

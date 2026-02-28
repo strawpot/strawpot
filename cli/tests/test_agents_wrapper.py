@@ -175,6 +175,7 @@ def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
     handle = rt.spawn(
         agent_id="a1",
         working_dir=str(tmp_path),
+        agent_workspace_dir=str(tmp_path / "workspace"),
         role_prompt="You are a coder.",
         memory_prompt="Previous context.",
         skills_dirs=["/skills/a"],
@@ -229,6 +230,7 @@ def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="role text",
         memory_prompt="memory text",
         skills_dirs=["/s1", "/s2"],
@@ -246,6 +248,7 @@ def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
     # Protocol args
     assert cmd[cmd.index("--agent-id") + 1] == "a1"
     assert cmd[cmd.index("--working-dir") + 1] == "/w"
+    assert cmd[cmd.index("--agent-workspace-dir") + 1] == "/tmp/workspace"
     assert cmd[cmd.index("--role-prompt") + 1] == "role text"
     assert cmd[cmd.index("--memory-prompt") + 1] == "memory text"
     assert cmd[cmd.index("--task") + 1] == "do stuff"
@@ -279,6 +282,7 @@ def test_spawn_no_skills_or_roles(tmp_path, monkeypatch):
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="",
         memory_prompt="",
         skills_dirs=[],
@@ -301,6 +305,7 @@ def test_spawn_build_failure(monkeypatch):
         rt.spawn(
             agent_id="a1",
             working_dir="/w",
+            agent_workspace_dir="/tmp/workspace",
             role_prompt="",
             memory_prompt="",
             skills_dirs=[],
@@ -320,6 +325,7 @@ def test_spawn_build_invalid_json(monkeypatch):
         rt.spawn(
             agent_id="a1",
             working_dir="/w",
+            agent_workspace_dir="/tmp/workspace",
             role_prompt="",
             memory_prompt="",
             skills_dirs=[],

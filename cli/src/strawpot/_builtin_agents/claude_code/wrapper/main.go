@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -64,14 +63,15 @@ func cmdSetup() {
 // ---------------------------------------------------------------------------
 
 type buildArgs struct {
-	AgentID      string
-	WorkingDir   string
-	RolePrompt   string
-	MemoryPrompt string
-	Task         string
-	Config       string
-	SkillsDirs   []string
-	RolesDirs    []string
+	AgentID           string
+	WorkingDir        string
+	AgentWorkspaceDir string
+	RolePrompt        string
+	MemoryPrompt      string
+	Task              string
+	Config            string
+	SkillsDirs        []string
+	RolesDirs         []string
 }
 
 func parseBuildArgs(args []string) buildArgs {
@@ -89,6 +89,9 @@ func parseBuildArgs(args []string) buildArgs {
 		case "--working-dir":
 			i++
 			ba.WorkingDir = args[i]
+		case "--agent-workspace-dir":
+			i++
+			ba.AgentWorkspaceDir = args[i]
 		case "--role-prompt":
 			i++
 			ba.RolePrompt = args[i]
@@ -121,14 +124,22 @@ func cmdBuild(args []string) {
 		config = map[string]interface{}{}
 	}
 
-	// Write system prompt file
-	runtimeDir := filepath.Join(ba.WorkingDir, ".strawpot", "runtime")
-	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create runtime dir: %v\n", err)
+	// Validate required args
+	if ba.AgentWorkspaceDir == "" {
+		fmt.Fprintln(os.Stderr, "Error: --agent-workspace-dir is required")
 		os.Exit(1)
 	}
 
-	promptFile := filepath.Join(runtimeDir, ba.AgentID+"-prompt.md")
+	// Create claude/ folder structure inside agent workspace dir.
+	// This becomes the single --add-dir for Claude Code.
+	claudeDir := filepath.Join(ba.AgentWorkspaceDir, "claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create claude dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write prompt file into claude/
+	promptFile := filepath.Join(claudeDir, "prompt.md")
 	var parts []string
 	if ba.RolePrompt != "" {
 		parts = append(parts, ba.RolePrompt)
@@ -139,6 +150,40 @@ func cmdBuild(args []string) {
 	if err := os.WriteFile(promptFile, []byte(strings.Join(parts, "\n\n")), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write prompt file: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Symlink each skills-dir into claude/.claude/skills/<name>/
+	if len(ba.SkillsDirs) > 0 {
+		skillsTarget := filepath.Join(claudeDir, ".claude", "skills")
+		if err := os.MkdirAll(skillsTarget, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create skills dir: %v\n", err)
+			os.Exit(1)
+		}
+		for _, d := range ba.SkillsDirs {
+			name := filepath.Base(d)
+			link := filepath.Join(skillsTarget, name)
+			if err := os.Symlink(d, link); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to symlink skill %s: %v\n", name, err)
+				os.Exit(1)
+			}
+		}
+	}
+
+	// Symlink each roles-dir into claude/roles/<name>/
+	if len(ba.RolesDirs) > 0 {
+		rolesTarget := filepath.Join(claudeDir, "roles")
+		if err := os.MkdirAll(rolesTarget, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create roles dir: %v\n", err)
+			os.Exit(1)
+		}
+		for _, d := range ba.RolesDirs {
+			name := filepath.Base(d)
+			link := filepath.Join(rolesTarget, name)
+			if err := os.Symlink(d, link); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to symlink role %s: %v\n", name, err)
+				os.Exit(1)
+			}
+		}
 	}
 
 	// Build claude command
@@ -158,18 +203,9 @@ func cmdBuild(args []string) {
 		cmd = append(cmd, "--permission-mode", pm)
 	}
 
-	// Append skill prompts (sorted glob of *.md files)
-	for _, skillsDir := range ba.SkillsDirs {
-		pattern := filepath.Join(skillsDir, "*.md")
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			continue
-		}
-		sort.Strings(matches)
-		for _, m := range matches {
-			cmd = append(cmd, "--append-system-prompt", m)
-		}
-	}
+	// Single --add-dir pointing to the claude/ folder.
+	// Claude Code discovers .claude/skills/ within it natively.
+	cmd = append(cmd, "--add-dir", claudeDir)
 
 	// Output JSON
 	result := map[string]interface{}{
