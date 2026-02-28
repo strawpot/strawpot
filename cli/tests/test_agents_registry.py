@@ -221,7 +221,11 @@ def test_validate_agent_missing_tool(monkeypatch):
         tools={
             "sometool": {
                 "description": "A tool",
-                "install": {"macos": "brew install sometool", "linux": "apt install sometool"},
+                "install": {
+                    "macos": "brew install sometool",
+                    "linux": "apt install sometool",
+                    "windows": "choco install sometool",
+                },
             }
         },
     )
