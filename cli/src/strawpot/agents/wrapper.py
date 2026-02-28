@@ -11,8 +11,10 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
+from strawpot._process import is_pid_alive
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.agents.registry import AgentSpec
 
@@ -35,7 +37,7 @@ class WrapperRuntime:
         self.spec = spec
         self.name = spec.name
         self._runtime_dir = runtime_dir or os.path.join(
-            os.environ.get("TMPDIR", "/tmp"), "strawpot"
+            tempfile.gettempdir(), "strawpot"
         )
 
     # ------------------------------------------------------------------
@@ -110,16 +112,7 @@ class WrapperRuntime:
         except (FileNotFoundError, ValueError):
             return None
 
-    @staticmethod
-    def _is_process_alive(pid: int) -> bool:
-        """Check whether a process is still running."""
-        try:
-            os.kill(pid, 0)
-            return True
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True  # process exists but we can't signal it
+    _is_process_alive = staticmethod(is_pid_alive)
 
     # ------------------------------------------------------------------
     # AgentRuntime interface
@@ -187,7 +180,7 @@ class WrapperRuntime:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
         full_env = {**os.environ, **env} if env else None
-        with open(log_path, "w") as log_fh:
+        with open(log_path, "w", encoding="utf-8") as log_fh:
             proc = subprocess.Popen(
                 agent_cmd,
                 cwd=cwd,
@@ -229,7 +222,7 @@ class WrapperRuntime:
         log_path = self._log_file(handle.agent_id)
         output = ""
         if os.path.exists(log_path):
-            with open(log_path) as f:
+            with open(log_path, encoding="utf-8") as f:
                 output = f.read()
 
         return AgentResult(
@@ -246,10 +239,16 @@ class WrapperRuntime:
         return self._is_process_alive(pid)
 
     def kill(self, handle: AgentHandle) -> None:
-        """Forcefully terminate the agent process via SIGTERM."""
+        """Forcefully terminate the agent process.
+
+        On Unix this sends SIGTERM. On Windows this calls TerminateProcess
+        (Python maps ``signal.SIGTERM`` to ``TerminateProcess``).
+        """
         pid = handle.pid or self._read_pid(handle.agent_id)
         if pid is not None:
             try:
                 os.kill(pid, signal.SIGTERM)
             except ProcessLookupError:
-                pass
+                pass  # already exited
+            except PermissionError:
+                pass  # Windows: race with process exit or access denied

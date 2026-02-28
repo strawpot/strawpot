@@ -28,6 +28,7 @@ def _git(args: list[str], cwd: str) -> subprocess.CompletedProcess:
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
 
 

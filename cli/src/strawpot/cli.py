@@ -11,6 +11,7 @@ from pathlib import Path
 import click
 
 from strawpot import __version__
+from strawpot._process import is_pid_alive
 from strawpot.config import get_strawpot_home, load_config
 
 
@@ -88,27 +89,6 @@ def show_config():
     click.echo(f"agents:               {config.agents}")
 
 
-def _is_pid_alive(pid: int) -> bool:
-    """Check if a process is still running (cross-platform)."""
-    if sys.platform == "win32":
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        SYNCHRONIZE = 0x00100000
-        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            return True
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # process exists but we can't signal it
-    return True
-
-
 def _sessions_dir() -> Path:
     """Return the sessions directory, searching CWD then global."""
     local = Path.cwd() / ".strawpot" / "runtime" / "sessions"
@@ -120,7 +100,7 @@ def _sessions_dir() -> Path:
 def _load_session(path: Path) -> dict | None:
     """Load and return a session JSON file, or None if invalid."""
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -166,7 +146,7 @@ def sessions():
             continue
         run_id = data.get("run_id", path.stem)
         pid = data.get("pid")
-        alive = _is_pid_alive(pid) if pid else False
+        alive = is_pid_alive(pid) if pid else False
         status = "running" if alive else "stale"
         isolation = data.get("isolation", "?")
         runtime = data.get("runtime", "?")
@@ -203,7 +183,7 @@ def agents(session_id):
         runtime = info.get("runtime", "?")
         parent = info.get("parent") or "-"
         pid = info.get("pid")
-        alive = _is_pid_alive(pid) if pid else False
+        alive = is_pid_alive(pid) if pid else False
         status = "running" if alive else "exited"
         click.echo(f"{agent_id:<20} {role:<16} {runtime:<14} {parent:<20} {status:<8}")
 
