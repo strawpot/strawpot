@@ -24,7 +24,7 @@ SAMPLE_AGENT_MD = dedent("""\
       version: "1.2.3"
       strawpot:
         wrapper:
-          script: wrapper.py
+          command: test-agent-cli
         tools:
             sometool:
               description: A tool
@@ -55,7 +55,6 @@ def _write_agent(base: Path, name: str, content: str) -> Path:
     agent_dir = base / name
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "AGENT.md").write_text(content)
-    (agent_dir / "wrapper.py").write_text("# fake wrapper")
     return agent_dir
 
 
@@ -69,7 +68,7 @@ def test_parse_agent_md(tmp_path):
 
     assert fm["name"] == "test-agent"
     assert fm["metadata"]["version"] == "1.2.3"
-    assert fm["metadata"]["strawpot"]["wrapper"]["script"] == "wrapper.py"
+    assert fm["metadata"]["strawpot"]["wrapper"]["command"] == "test-agent-cli"
     assert "# Test Agent" in body
 
 
@@ -90,11 +89,46 @@ def test_parse_agent_md_missing_closing(tmp_path):
 # --- _resolve_wrapper_cmd ---
 
 
-def test_resolve_wrapper_cmd_script(tmp_path):
-    (tmp_path / "wrapper.py").write_text("# fake")
-    meta = {"wrapper": {"script": "wrapper.py"}}
+def test_resolve_wrapper_cmd_bin(tmp_path, monkeypatch):
+    binary = tmp_path / "my-agent"
+    binary.write_text("#!/bin/sh\necho hi")
+    binary.chmod(0o755)
+    monkeypatch.setattr(
+        "strawpot.agents.registry._current_os", lambda: "macos"
+    )
+    meta = {"bin": {"macos": "my-agent", "linux": "my-agent"}}
     cmd = _resolve_wrapper_cmd(tmp_path, meta)
-    assert cmd == [sys.executable, str(tmp_path / "wrapper.py")]
+    assert cmd == [str(binary)]
+
+
+def test_resolve_wrapper_cmd_bin_linux(tmp_path, monkeypatch):
+    binary = tmp_path / "my-agent-linux"
+    binary.write_text("#!/bin/sh\necho hi")
+    binary.chmod(0o755)
+    monkeypatch.setattr(
+        "strawpot.agents.registry._current_os", lambda: "linux"
+    )
+    meta = {"bin": {"macos": "my-agent-darwin", "linux": "my-agent-linux"}}
+    cmd = _resolve_wrapper_cmd(tmp_path, meta)
+    assert cmd == [str(binary)]
+
+
+def test_resolve_wrapper_cmd_bin_no_os_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "strawpot.agents.registry._current_os", lambda: "windows"
+    )
+    meta = {"bin": {"macos": "my-agent", "linux": "my-agent"}}
+    with pytest.raises(ValueError, match="No binary defined for OS"):
+        _resolve_wrapper_cmd(tmp_path, meta)
+
+
+def test_resolve_wrapper_cmd_bin_not_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "strawpot.agents.registry._current_os", lambda: "macos"
+    )
+    meta = {"bin": {"macos": "missing-binary"}}
+    with pytest.raises(ValueError, match="not found"):
+        _resolve_wrapper_cmd(tmp_path, meta)
 
 
 def test_resolve_wrapper_cmd_command(monkeypatch):
@@ -148,6 +182,7 @@ def test_merge_config_no_defaults():
 
 def test_resolve_agent_project_local(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
     project_dir = tmp_path / "project"
     agents_dir = project_dir / ".strawpot" / "agents"
     _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
@@ -158,12 +193,13 @@ def test_resolve_agent_project_local(tmp_path, monkeypatch):
     assert spec.config == {"model": "gpt-4", "temperature": 0.7}
     assert spec.env_schema["API_KEY"]["required"] is True
     assert "sometool" in spec.tools
-    assert sys.executable in spec.wrapper_cmd[0]
+    assert "/usr/bin/test-agent-cli" in spec.wrapper_cmd[0]
 
 
 def test_resolve_agent_global(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
     agents_dir = global_dir / "agents"
     _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
 
@@ -176,6 +212,7 @@ def test_resolve_agent_global(tmp_path, monkeypatch):
 
 def test_resolve_agent_user_config_override(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
     project_dir = tmp_path / "project"
     agents_dir = project_dir / ".strawpot" / "agents"
     _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
@@ -202,7 +239,7 @@ def test_validate_agent_all_ok(monkeypatch):
     spec = AgentSpec(
         name="ok-agent",
         version="1.0.0",
-        wrapper_cmd=["python", "wrapper.py"],
+        wrapper_cmd=["/usr/bin/my-agent"],
         tools={"git": {"description": "version control"}},
         env_schema={"API_KEY": {"required": True}},
     )
@@ -217,7 +254,7 @@ def test_validate_agent_missing_tool(monkeypatch):
     spec = AgentSpec(
         name="tool-agent",
         version="1.0.0",
-        wrapper_cmd=["python", "wrapper.py"],
+        wrapper_cmd=["/usr/bin/my-agent"],
         tools={
             "sometool": {
                 "description": "A tool",
@@ -242,7 +279,7 @@ def test_validate_agent_missing_env(monkeypatch):
     spec = AgentSpec(
         name="env-agent",
         version="1.0.0",
-        wrapper_cmd=["python", "wrapper.py"],
+        wrapper_cmd=["/usr/bin/my-agent"],
         env_schema={
             "SECRET_KEY": {"required": True, "description": "Secret key"},
             "OPTIONAL_VAR": {"required": False, "description": "Not required"},
@@ -258,7 +295,7 @@ def test_validate_agent_no_deps():
     spec = AgentSpec(
         name="simple-agent",
         version="1.0.0",
-        wrapper_cmd=["python", "wrapper.py"],
+        wrapper_cmd=["/usr/bin/my-agent"],
     )
     result = validate_agent(spec)
     assert result.ok

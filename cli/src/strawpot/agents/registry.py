@@ -63,25 +63,55 @@ def parse_agent_md(path: Path) -> tuple[dict, str]:
     return frontmatter, body
 
 
+def _current_os() -> str:
+    """Return the OS key used in ``metadata.strawpot.bin`` and ``tools.install``."""
+    import platform
+
+    system = platform.system().lower()
+    if system == "darwin":
+        return "macos"
+    if system == "windows":
+        return "windows"
+    return "linux"
+
+
 def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
-    """Build the wrapper command from metadata.strawpot.wrapper.
+    """Build the wrapper command from metadata.strawpot.
+
+    Resolution order:
+        1. ``bin.<os>`` — compiled binary relative to agent folder,
+           keyed by OS (``macos``, ``linux``, ``windows``).
+        2. ``wrapper.command`` — external CLI on PATH.
 
     Args:
         agent_dir: Directory containing the AGENT.md.
         strawpot_meta: The ``metadata.strawpot`` dict from frontmatter.
 
     Returns:
-        Command list, e.g. ``[sys.executable, "/path/to/wrapper.py"]``.
+        Command list, e.g. ``["/path/to/binary"]``.
 
     Raises:
         ValueError: If wrapper config is missing or command not found on PATH.
     """
-    wrapper = strawpot_meta.get("wrapper", {})
-    script = wrapper.get("script")
-    command = wrapper.get("command")
+    # 1. Compiled binary (metadata.strawpot.bin.<os>)
+    bin_map = strawpot_meta.get("bin")
+    if bin_map and isinstance(bin_map, dict):
+        os_key = _current_os()
+        bin_name = bin_map.get(os_key)
+        if bin_name is None:
+            raise ValueError(
+                f"No binary defined for OS {os_key!r} in metadata.strawpot.bin"
+            )
+        binary_path = agent_dir / bin_name
+        if not binary_path.exists():
+            raise ValueError(
+                f"Agent binary not found: {binary_path}"
+            )
+        return [str(binary_path)]
 
-    if script:
-        return [sys.executable, str(agent_dir / script)]
+    # 2. External CLI on PATH (metadata.strawpot.wrapper.command)
+    wrapper = strawpot_meta.get("wrapper", {})
+    command = wrapper.get("command")
 
     if command:
         resolved = shutil.which(command)
@@ -92,7 +122,8 @@ def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
         return [resolved]
 
     raise ValueError(
-        f"AGENT.md must define metadata.strawpot.wrapper.script or .command"
+        "AGENT.md must define metadata.strawpot.bin.<os> "
+        "or metadata.strawpot.wrapper.command"
     )
 
 

@@ -53,16 +53,19 @@ src/strawpot/
     protocol.py            # AgentRuntime protocol, AgentHandle, AgentResult
     registry.py            # Discover AGENT.md, validate config, resolve wrapper
     wrapper.py             # WrapperRuntime — calls any wrapper CLI via subprocess
+    interactive.py         # InteractiveWrapperRuntime — wraps WrapperRuntime with tmux
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
     worktree.py            # GitWorktreeIsolator
   _builtin_agents/         # Ships with strawpot
     claude_code/
-      AGENT.md             # Built-in Claude Code wrapper manifest
-      wrapper.py           # Built-in wrapper script
+      AGENT.md             # Built-in Claude Code agent manifest
+      wrapper/             # Go source for wrapper binary
+        main.go
+        go.mod
 ```
 
-11 source files + 1 built-in agent. No agent-specific code in the core.
+12 source files + 1 built-in agent. No agent-specific code in the core.
 
 ---
 
@@ -108,7 +111,8 @@ class AgentResult:
 
 class AgentRuntime(Protocol):
     name: str
-    def spawn(self, *, agent_id, working_dir, system_prompt, task, env) -> AgentHandle: ...
+    def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt,
+              skills_dirs, roles_dirs, task, env) -> AgentHandle: ...
     def wait(self, handle: AgentHandle, timeout: float | None = None) -> AgentResult: ...
     def is_alive(self, handle: AgentHandle) -> bool: ...
     def kill(self, handle: AgentHandle) -> None: ...
@@ -122,41 +126,44 @@ Agent-specific logic lives entirely in wrapper CLIs, never in strawpot.
 
 ### Agent Wrapper Protocol
 
-Every agent wrapper CLI must implement four subcommands with these standard
-protocol args. The wrapper translates them to the underlying agent's native
-flags.
+Every agent wrapper CLI must implement two subcommands: `setup` and `build`.
+The wrapper is a pure translation layer — it maps StrawPot protocol args to
+the underlying agent's native CLI flags. Process lifecycle (spawn, wait,
+alive, kill) is handled internally by `WrapperRuntime` in strawpot core.
 
-**Protocol args** (required by all wrappers):
+**Protocol args** (passed to `build`):
 
 | Arg | Description |
 |---|---|
 | `--agent-id ID` | Unique agent identifier |
 | `--working-dir DIR` | Session worktree path |
-| `--system-prompt FILE` | Path to system prompt markdown |
+| `--role-prompt TEXT` | Role system prompt text |
+| `--memory-prompt TEXT` | Memory context text |
 | `--task TEXT` | Task text (empty string = interactive) |
-| `--skills-dir DIR` | Path to resolved skills directory |
-| `--approval-mode MODE` | `force` \| `suggest` \| `auto` |
+| `--skills-dir DIR` | Path to resolved skills directory (repeatable) |
+| `--roles-dir DIR` | Path to resolved roles directory (repeatable) |
 | `--config JSON` | Agent-specific extras as JSON blob |
-| `--env KEY=VAL` | Additional env vars (repeatable) |
+
+Additional environment variables (e.g. `PERMISSION_MODE`, `DENDEN_ADDR`) are
+passed as subprocess environment variables, not CLI args.
 
 **Subcommands:**
 
 ```
-<wrapper> spawn  <protocol args>
-  → stdout JSON: {"pid": 1234, "metadata": {"session": "strawpot-ab12"}}
+<wrapper> setup
+  → interactive (stdin/stdout attached), exit code 0 = success
 
-<wrapper> wait   --agent-id ID [--timeout SECS]
-  → stdout JSON: {"summary": "...", "output": "...", "exit_code": 0}
-
-<wrapper> alive  --agent-id ID
-  → stdout JSON: {"alive": true}
-
-<wrapper> kill   --agent-id ID
-  → stdout JSON: {"killed": true}
+<wrapper> build  <protocol args>
+  → stdout JSON: {"cmd": ["claude", "-p", "task", ...], "cwd": "/path"}
+  (returns the translated agent command without executing it)
 ```
 
-The wrapper CLI can be named anything — `claude-agent`, `my-codex-wrapper`,
-`openhands-runner`. The `AGENT.md` manifest declares which command to call.
+`WrapperRuntime` calls `build` to get the translated command, then launches
+it via `Popen` and manages PID/log files internally.
+`InteractiveWrapperRuntime` also calls `build`, then wraps the command in tmux.
+
+The wrapper CLI can be a compiled binary (Go, Rust) or an external CLI on PATH.
+The `AGENT.md` manifest declares which to call.
 
 ### Agent Manifest (`AGENT.md`)
 
@@ -168,26 +175,24 @@ config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 ```yaml
 ---
 name: claude-code
-description: Claude Code agent via tmux
+description: Claude Code agent
 metadata:
   version: "0.1.0"
   strawpot:
-    wrapper:
-      # Bundled script (relative to agent folder):
-      script: wrapper.py
-      # OR external CLI on PATH:
-      # command: claude-agent
+    # Compiled binary (relative to agent folder, keyed by OS):
+    bin:
+      macos: strawpot_claude_code
+      linux: strawpot_claude_code
+    # OR external CLI on PATH:
+    # wrapper:
+    #   command: claude-agent
     tools:
-        tmux:
-          description: Terminal multiplexer
-          install:
-            macos: brew install tmux
-            linux: apt install tmux
         claude:
           description: Claude Code CLI
           install:
             macos: npm install -g @anthropic-ai/claude-code
             linux: npm install -g @anthropic-ai/claude-code
+            windows: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string
@@ -195,22 +200,22 @@ metadata:
         description: Claude model
     env:
       ANTHROPIC_API_KEY:
-        required: true
-        description: Anthropic API key
+        required: false
+        description: Anthropic API key (optional if using Plus/Max plan)
 ---
 
 # Claude Code Agent
 
-Runs Claude Code in tmux sessions. Supports interactive and non-interactive
+Runs Claude Code as a subprocess. Supports interactive and non-interactive
 modes, custom model selection, and skill-based prompt augmentation.
 ```
 
 Two wrapper delivery modes:
 
-- `script: wrapper.py` — bundled in the agent folder, strawpot runs it
-  as `python <agent_dir>/wrapper.py spawn ...`. Zero install, just download
-  the folder.
-- `command: claude-agent` — external CLI on PATH, installed however the
+- `bin.<os>: name` — compiled binary in the agent folder, keyed by OS
+  (`macos`, `linux`, `windows`). StrawPot runs it as
+  `<agent_dir>/<name> build ...`. Fast startup, no runtime dependency.
+- `wrapper.command: name` — external CLI on PATH, installed however the
   provider wants (pip, cargo, npm, brew).
 
 ### Agent Registry (`agents/registry.py`)
@@ -237,37 +242,86 @@ def resolve_agent(name: str, project_dir: str) -> AgentSpec:
 
 ### WrapperRuntime (`agents/wrapper.py`)
 
-Single generic runtime that delegates to any wrapper CLI:
+Single generic runtime that calls `<wrapper> build` for translation and
+manages process lifecycle internally:
 
 ```python
 class WrapperRuntime:
-    """Implements AgentRuntime by calling wrapper CLI subcommands."""
+    """Implements AgentRuntime by calling <wrapper> build then managing processes."""
 
-    def __init__(self, spec: AgentSpec): ...
+    def __init__(self, spec: AgentSpec, runtime_dir: str | None = None): ...
 
-    def spawn(self, *, agent_id, working_dir, system_prompt, task, env) -> AgentHandle:
-        cmd = [*self.spec.wrapper_cmd, "spawn",
-               "--agent-id", agent_id,
-               "--working-dir", working_dir,
-               "--system-prompt", system_prompt,
-               "--task", task,
-               "--skills-dir", env.get("SKILLS_DIR", ""),
-               "--approval-mode", env.get("APPROVAL_MODE", "suggest"),
-               "--config", json.dumps(self.spec.config)]
-        result = subprocess.run(cmd, capture_output=True)
-        data = json.loads(result.stdout)
-        return AgentHandle(agent_id=agent_id, pid=data.get("pid"),
-                           runtime_name=self.spec.name, metadata=data.get("metadata", {}))
+    def setup(self) -> bool:
+        # Runs interactively (stdin/stdout attached) for one-time auth/config
+        cmd = [*self.spec.wrapper_cmd, "setup"]
+        result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        return result.returncode == 0
+
+    def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt,
+              skills_dirs, roles_dirs, task, env) -> AgentHandle:
+        # 1. Call <wrapper> build to get translated command
+        args = ["build", "--agent-id", agent_id, "--working-dir", working_dir,
+                "--role-prompt", role_prompt, "--memory-prompt", memory_prompt,
+                "--task", task, "--config", json.dumps(self.spec.config)]
+        for d in skills_dirs: args += ["--skills-dir", d]
+        for d in roles_dirs:  args += ["--roles-dir", d]
+        data = self._run_subcommand(args, extra_env=env)
+        # 2. Launch via Popen
+        proc = subprocess.Popen(data["cmd"], cwd=data["cwd"], ...)
+        # 3. Write PID file
+        self._write_pid(agent_id, proc.pid)
+        return AgentHandle(agent_id=agent_id, pid=proc.pid, ...)
 
     def wait(self, handle, timeout=None) -> AgentResult:
-        cmd = [*self.spec.wrapper_cmd, "wait", "--agent-id", handle.agent_id]
-        if timeout: cmd += ["--timeout", str(timeout)]
-        result = subprocess.run(cmd, capture_output=True)
-        data = json.loads(result.stdout)
-        return AgentResult(**data)
+        # Poll PID with os.kill(pid, 0) until process exits, read log file
+        ...
+
+    def is_alive(self, handle) -> bool:
+        # Check PID from handle or PID file
+        ...
+
+    def kill(self, handle) -> None:
+        # Send SIGTERM to PID
+        ...
 ```
 
+The wrapper CLI only needs `setup` + `build`. Process lifecycle (Popen,
+PID tracking, polling, SIGTERM) is handled generically by WrapperRuntime.
 No agent-specific code. One class handles all agents.
+
+### InteractiveWrapperRuntime (`agents/interactive.py`)
+
+Wraps any `WrapperRuntime` with tmux for interactive sessions (orchestrator).
+Sub-agents use `WrapperRuntime` directly (non-interactive, `-p` mode).
+
+```python
+class InteractiveWrapperRuntime:
+    """Wraps a WrapperRuntime with tmux session management."""
+
+    def __init__(self, inner: WrapperRuntime): ...
+
+    def spawn(self, ...) -> AgentHandle:
+        # 1. Call <wrapper> build → {"cmd": [...], "cwd": "..."}
+        # 2. tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
+        # 3. Return AgentHandle with session in metadata
+
+    def wait(self, handle, timeout=None) -> AgentResult:
+        # Poll tmux has-session, capture-pane on exit
+
+    def is_alive(self, handle) -> bool:
+        # tmux has-session
+
+    def kill(self, handle) -> None:
+        # tmux kill-session
+
+    def attach(self, handle) -> None:
+        # tmux attach-session (not part of AgentRuntime protocol)
+```
+
+tmux is a session-level concern in strawpot core, not an agent-specific one.
+The orchestrator needs an interactive terminal; sub-agents do not. This
+separation keeps wrappers simple — they only translate protocol args to
+native flags without managing session infrastructure.
 
 ### Isolator (`isolation/protocol.py`)
 
@@ -282,7 +336,7 @@ class IsolatedEnv:
 
 class Isolator(Protocol):
     def create(self, *, session_id: str, base_dir: str) -> IsolatedEnv: ...
-    def cleanup(self, env: IsolatedEnv) -> None: ...
+    def cleanup(self, env: IsolatedEnv, *, base_dir: str) -> None: ...
 ```
 
 Implementations:
@@ -387,15 +441,16 @@ temperature = 0.7
      have been installed via `strawpot install agent`, this is a safety net)
    → validates metadata.strawpot.env: prompt user for missing required env vars
      interactively (set in process env for this session only, not persisted)
-4. runtime = WrapperRuntime(agent_spec)                     # generic, works for any agent
+4. wrapper = WrapperRuntime(agent_spec)                      # generic, works for any agent
+   runtime = InteractiveWrapperRuntime(wrapper)              # wraps with tmux for orchestrator
 5. isolator = resolve_isolator(config.isolation)             # none | worktree | docker
-6. session = Session(config, runtime, isolator)
+6. session = Session(config, wrapper, runtime, isolator)
 7. session.start():
    a. run_id = "run_" + uuid4()
    b. Create isolated env (or use CWD directly):
       env = isolator.create(session_id=run_id, base_dir=working_dir)
       → isolation=none:     env.path = working_dir (no-op)
-      → isolation=worktree: git worktree add .strawpot/worktrees/<run_id> ...
+      → isolation=worktree: git worktree add <STRAWPOT_HOME>/worktrees/<hash>/<run_id> ...
       All agents will work in env.path from here on.
    c. Start DenDenServer(addr=config.denden_addr)
       - If port was explicitly provided (--port flag): fail with error if taken
@@ -410,22 +465,29 @@ temperature = 0.7
         system_prompt = build_prompt(resolved)
         → writes prompt to .strawpot/runtime/<agent_id>.prompt.md
    e. agent_id = "agent_" + uuid4()
-   f. runtime.spawn(
+   f. runtime.spawn(                   # InteractiveWrapperRuntime
         agent_id=agent_id,
         working_dir=env.path,
-        system_prompt=prompt_file,       # path to written prompt
+        role_prompt=role_prompt,
+        memory_prompt=memory_prompt,
+        skills_dirs=skills_dirs,
+        roles_dirs=roles_dirs,
         task="",                         # interactive mode
         env={
+          PERMISSION_MODE: config.permission_mode,
           DENDEN_ADDR: config.denden_addr,
           DENDEN_AGENT_ID: agent_id,
           DENDEN_RUN_ID: run_id,
         }
       )
-      → WrapperRuntime calls: <wrapper> spawn --agent-id ... --working-dir ...
-        --system-prompt ... --task "" --skills-dir ... --approval-mode ...
-        --config '{"model": "..."}' --env DENDEN_ADDR=... --env DENDEN_AGENT_ID=...
+      → InteractiveWrapperRuntime calls: <wrapper> build --agent-id ... --working-dir ...
+        --role-prompt ... --memory-prompt ... --task "" --skills-dir ...
+        --config '{"model": "..."}' (env vars PERMISSION_MODE, DENDEN_ADDR, etc.
+        passed as subprocess environment)
+      → Gets back {"cmd": [...], "cwd": "..."}
+      → Launches: tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
    g. Write .strawpot/runtime/session.json
-   h. Attach user to tmux session (if wrapper metadata includes session name)
+   h. runtime.attach(handle)          # attach user to tmux session
 ```
 
 ### Delegate Request
@@ -446,8 +508,13 @@ Denden server dispatches to `Session._handle_delegate`:
    → reads SKILL.md bodies (deps first) + ROLE.md body
 5. Spawn in session worktree (shared — no new worktree):
    handle = runtime.spawn(
-     agent_id, self.worktree.path, system_prompt_file, task_text,
-     env={DENDEN_ADDR, DENDEN_AGENT_ID, DENDEN_PARENT_AGENT_ID, DENDEN_RUN_ID}
+     agent_id=agent_id, working_dir=self.env.path,
+     role_prompt=role_prompt, memory_prompt=memory_prompt,
+     skills_dirs=skills_dirs, roles_dirs=roles_dirs,
+     task=task_text,
+     env={PERMISSION_MODE: "auto",    # sub-agents run non-interactively
+          DENDEN_ADDR, DENDEN_AGENT_ID,
+          DENDEN_PARENT_AGENT_ID, DENDEN_RUN_ID}
    )
    → WrapperRuntime calls wrapper CLI with standard protocol args
 6. Wait:
@@ -577,13 +644,12 @@ Agents install to `$STRAWPOT_HOME/agents/<name>/` (default: `~/.strawpot/agents/
 ```
 ~/.strawpot/agents/
   claude_code/
-    AGENT.md          # manifest: wrapper config, params, env, install prereqs
-    wrapper.py        # bundled wrapper script (if script= mode)
+    AGENT.md               # manifest: wrapper config, params, env, install prereqs
+    strawpot_claude_code   # compiled wrapper binary (bin.<os> mode)
   codex/
-    AGENT.md
-    wrapper.py
+    AGENT.md               # may point to external CLI via wrapper.command
   my_custom_agent/
-    AGENT.md          # may point to external CLI via command=
+    AGENT.md
 ```
 
 Project-local agents can also be placed at `.strawpot/agents/<name>/` and take
@@ -600,9 +666,9 @@ strawpot install agent claude_code:
   2. Read AGENT.md metadata.strawpot.tools
   3. Detect current OS (platform.system() → macos/linux/windows)
   4. For each command: shutil.which(cmd)
-     → found: ✓ tmux
-     → missing: ✗ claude — not found
-       Install with: npm install -g @anthropic-ai/claude-code  (from metadata.strawpot.tools.claude.install.macos)
+     → found: ✓ claude
+     → missing: ✗ some-tool — not found
+       Install with: npm install -g some-tool  (from metadata.strawpot.tools.some-tool.install.macos)
   5. If any missing: warn (don't block install — user may install later)
 ```
 
@@ -629,9 +695,6 @@ Missing tools:
   ✗ claude (required by: claude_code)
     Install: npm install -g @anthropic-ai/claude-code
 
-  ✗ tmux (required by: claude_code)
-    Install: brew install tmux
-
 Install missing tools? [y/N]
 ```
 
@@ -640,32 +703,31 @@ it appears once. The `--yes` flag skips the confirmation prompt.
 
 ### Writing a Wrapper
 
-A wrapper is any CLI that implements the four subcommands (`spawn`, `wait`,
-`alive`, `kill`) with the standard protocol args. Minimal example in Python:
+A wrapper is any CLI that implements two subcommands: `setup` (interactive
+auth) and `build` (translate protocol args to native agent command). Process
+lifecycle is handled by `WrapperRuntime` — wrappers never manage processes.
+
+Minimal example in Python:
 
 ```python
 #!/usr/bin/env python3
-"""Minimal wrapper — runs a command in a subprocess."""
-import argparse, json, subprocess, os
+"""Minimal wrapper — translates protocol args to agent CLI."""
+import argparse, json, sys
 
-def spawn(args):
-    proc = subprocess.Popen(
-        [args.config["command"], args.task],
-        cwd=args.working_dir,
-        env={**os.environ, **dict(e.split("=", 1) for e in args.env)},
-    )
-    print(json.dumps({"pid": proc.pid, "metadata": {}}))
+def setup(args):
+    # Run interactive auth flow for the underlying agent
+    ...
 
-def wait(args):
-    pid = int(open(f"/tmp/strawpot-{args.agent_id}.pid").read())
-    os.waitpid(pid, 0)
-    print(json.dumps({"summary": "done", "output": "", "exit_code": 0}))
-
-# ... alive, kill similarly
+def build(args):
+    cmd = [args.config["command"]]
+    if args.task:
+        cmd += ["--task", args.task]
+    print(json.dumps({"cmd": cmd, "cwd": args.working_dir}))
 ```
 
 Wrapper authors only need to care about translating protocol args to their
-agent's native interface. StrawPot handles everything else.
+agent's native interface. StrawPot handles everything else — launching
+the process, tracking PIDs, waiting for completion, and cleanup.
 
 ---
 
@@ -679,23 +741,20 @@ runtime and as a reference implementation for wrapper authors.
 ```yaml
 ---
 name: claude-code
-description: Claude Code agent via tmux
+description: Claude Code agent
 metadata:
   version: "0.1.0"
   strawpot:
-    wrapper:
-      script: wrapper.py
+    bin:
+      macos: strawpot_claude_code
+      linux: strawpot_claude_code
     tools:
-        tmux:
-          description: Terminal multiplexer
-          install:
-            macos: brew install tmux
-            linux: apt install tmux
         claude:
           description: Claude Code CLI
           install:
             macos: npm install -g @anthropic-ai/claude-code
             linux: npm install -g @anthropic-ai/claude-code
+            windows: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string
@@ -703,43 +762,46 @@ metadata:
         description: Claude model
     env:
       ANTHROPIC_API_KEY:
-        required: true
-        description: Anthropic API key
+        required: false
+        description: Anthropic API key (optional if using Plus/Max plan)
 ---
 
 # Claude Code Agent
 
-Runs Claude Code in tmux sessions. Supports interactive and non-interactive
+Runs Claude Code as a subprocess. Supports interactive and non-interactive
 modes, custom model selection, and skill-based prompt augmentation.
 ```
 
-### `wrapper.py`
+### Go binary wrapper
 
-The wrapper translates standard protocol args to Claude Code CLI flags:
+The wrapper is a compiled Go binary — a pure translation layer that maps
+StrawPot protocol args to `claude` CLI flags. Using Go eliminates Python
+cold-start overhead since the wrapper runs on every agent spawn. It does NOT
+manage processes or session infrastructure — that is handled by
+`WrapperRuntime` and `InteractiveWrapperRuntime` in strawpot core.
+
+Source: `wrapper/main.go` (built to `strawpot_claude_code` binary).
 
 ```
-spawn:
-  1. Read --config JSON → extract model
-  2. Read --skills-dir → glob SKILL.md files → --append-system-prompt for each
-  3. Read --approval-mode → map to --permission-mode
-  4. Build claude command:
-     - Interactive (task=""): claude --system-prompt <file> [--model M]
-     - Non-interactive:      claude -p "<task>" --system-prompt <file> [--model M]
-  5. tmux new-session -d -s strawpot-<agent_id[:8]> -c <working_dir> <cmd>
-  6. stdout: {"pid": <tmux server pid>, "metadata": {"session": "strawpot-ab12"}}
+setup:
+  Locate claude on PATH, run "claude /login" interactively.
+  Exit code 0 = success.
 
-wait:
-  Poll tmux has-session until session exits. Capture pane output.
-  stdout: {"summary": "...", "output": "...", "exit_code": 0}
+build:
+  Protocol arg             → Claude Code flag
+  ─────────────────────────────────────────────
+  --role-prompt TEXT    \
+  --memory-prompt TEXT  /→ write to file → --system-prompt FILE
+  --task TEXT              → -p TEXT (omit if empty = interactive)
+  --config JSON            → extract "model" → --model MODEL
+  --skills-dir DIR         → glob *.md → --append-system-prompt FILE (each)
+  PERMISSION_MODE env      → --permission-mode VALUE (passed through directly)
 
-alive:
-  tmux has-session -t <session> → {"alive": true|false}
-
-kill:
-  tmux kill-session -t <session> → {"killed": true}
+  Returns: {"cmd": ["claude", ...], "cwd": "..."} without executing.
+  WrapperRuntime then launches the command via Popen and manages PID/logs.
 ```
 
-This is the only place that knows about `claude` CLI flags or tmux.
+This is the only place that knows about `claude` CLI flags.
 StrawPot core never imports or references it directly — the registry
 discovers it via `AGENT.md`.
 
@@ -759,7 +821,7 @@ Only one session allowed at a time — `session.json` acts as a lock.
 create(session_id, base_dir):
   return IsolatedEnv(path=base_dir, branch=None)
 
-cleanup(env):
+cleanup(env, base_dir):
   pass  # no-op
 ```
 
@@ -771,33 +833,26 @@ or when the user manages their own branching.
 Creates one git worktree per session. Multiple concurrent sessions are
 safe — each gets its own branch.
 
+Worktrees are stored outside the project tree under `STRAWPOT_HOME` to
+avoid interfering with IDEs, file watchers, and gitignore.
+
 ```
-create(session_id, base_dir, config):
-  if not is_git_repo(base_dir):
-    git init                             # auto-init for non-git projects
-    git add -A && git commit -m "strawpot: initial snapshot"
+create(session_id, base_dir):
+  if not is_git_repo(base_dir): raise ValueError
 
-  # Pull latest from remote before branching
-  has_remote = git remote get-url origin (success?)
-  if has_remote:
-    match config.pull_before_session:
-      "auto":   git pull origin <current_branch>
-      "always": git pull origin <current_branch>
-      "never":  skip
-      "prompt": ask user → pull or skip
-
-  path = .strawpot/worktrees/<session_id>
-  branch = strawpot/<session_id[:12]>
+  path = <STRAWPOT_HOME>/worktrees/<project_hash>/<session_id>
+  branch = strawpot/<session_id>
   git worktree add <path> -b <branch>
   return IsolatedEnv(path, branch)
 
-cleanup(env):
+cleanup(env, base_dir):
   # see Session Cleanup below — strategy determines local merge vs PR
   git worktree remove <path> --force
   git branch -D <branch>   # only if local strategy + user chose discard
 ```
 
-`.strawpot/worktrees/` is gitignored.
+Pull-before-session and merge strategy are handled by session.py, not here.
+The isolator only manages worktree creation and removal.
 
 ### DockerIsolator (future)
 
@@ -997,7 +1052,7 @@ All sessions write to `.strawpot/runtime/sessions/<run_id>.json`.
   "runtime": "claude_code",
   "denden_addr": "127.0.0.1:9700",
   "denden_pid": 12345,
-  "worktree": ".strawpot/worktrees/run_abc123",
+  "worktree": "~/.strawpot/worktrees/<project_hash>/run_abc123",
   "worktree_branch": "strawpot/run_abc123",
   "base_branch": "main",
   "started_at": "2026-02-27T10:00:00Z",
@@ -1084,7 +1139,7 @@ tree — role, runtime, parent, pid, and whether each agent is still alive.
 2. `agents/protocol.py` + `isolation/protocol.py` — types
 3. `agents/registry.py` — discover `AGENT.md`, validate env, merge config
 4. `agents/wrapper.py` — `WrapperRuntime` (calls wrapper CLI via subprocess)
-5. `_builtin_agents/claude_code/` — `AGENT.md` + `wrapper.py`
+5. `_builtin_agents/claude_code/` — `AGENT.md` + Go wrapper binary
 6. `isolation/worktree.py`
 7. `context.py`
 8. `delegation.py`

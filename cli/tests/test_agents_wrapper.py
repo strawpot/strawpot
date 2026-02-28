@@ -1,8 +1,10 @@
-"""Tests for strawpot.agents.wrapper."""
+"""Tests for strawpot.agents.wrapper (WrapperRuntime with internal PID management)."""
 
 import json
+import os
+import signal
 import subprocess
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -44,18 +46,135 @@ def test_wrapper_name():
     assert rt.name == "my-agent"
 
 
+# --- PID helpers ---
+
+
+def test_pid_file(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    assert rt._pid_file("abc123") == str(tmp_path / "abc123.pid")
+
+
+def test_log_file(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    assert rt._log_file("abc123") == str(tmp_path / "abc123.log")
+
+
+def test_write_and_read_pid(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt._write_pid("agent01", 42)
+    assert rt._read_pid("agent01") == 42
+
+
+def test_read_pid_missing(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    assert rt._read_pid("nonexistent") is None
+
+
+def test_read_pid_invalid(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    pid_path = tmp_path / "bad.pid"
+    pid_path.write_text("not-a-number")
+    assert rt._read_pid("bad") is None
+
+
+def test_is_process_alive_true(monkeypatch):
+    monkeypatch.setattr("os.kill", lambda pid, sig: None)
+    assert WrapperRuntime._is_process_alive(12345) is True
+
+
+def test_is_process_alive_false(monkeypatch):
+    def fake_kill(pid, sig):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr("os.kill", fake_kill)
+    assert WrapperRuntime._is_process_alive(12345) is False
+
+
+def test_is_process_alive_permission_error(monkeypatch):
+    def fake_kill(pid, sig):
+        raise PermissionError()
+
+    monkeypatch.setattr("os.kill", fake_kill)
+    assert WrapperRuntime._is_process_alive(12345) is True
+
+
+# --- _run_subcommand ---
+
+
+def test_run_subcommand_success(monkeypatch):
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **kw: _mock_run('{"key": "value"}'),
+    )
+    rt = WrapperRuntime(_make_spec())
+    result = rt._run_subcommand(["build", "--flag", "val"])
+    assert result == {"key": "value"}
+
+
+def test_run_subcommand_failure(monkeypatch):
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **kw: _mock_run("", returncode=1, stderr="wrapper crashed"),
+    )
+    rt = WrapperRuntime(_make_spec())
+    with pytest.raises(RuntimeError, match="failed.*exit 1"):
+        rt._run_subcommand(["build"])
+
+
+def test_run_subcommand_invalid_json(monkeypatch):
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **kw: _mock_run("not json at all"),
+    )
+    rt = WrapperRuntime(_make_spec())
+    with pytest.raises(RuntimeError, match="invalid JSON"):
+        rt._run_subcommand(["build"])
+
+
+def test_run_subcommand_passes_env(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return _mock_run('{}')
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    rt = WrapperRuntime(_make_spec())
+    rt._run_subcommand(["build"], extra_env={"MY_VAR": "hello"})
+    assert captured["env"]["MY_VAR"] == "hello"
+
+
 # --- spawn ---
 
 
-def test_spawn_returns_handle(monkeypatch):
-    monkeypatch.setattr(
-        "subprocess.run",
-        lambda *a, **kw: _mock_run('{"pid": 42, "metadata": {"session": "s1"}}'),
-    )
-    rt = WrapperRuntime(_make_spec())
+def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
+    """spawn calls <wrapper> build, then launches via Popen."""
+    build_captured = {}
+    popen_captured = {}
+
+    def fake_run(cmd, **kwargs):
+        build_captured["cmd"] = cmd
+        build_captured["env"] = kwargs.get("env")
+        return _mock_run(json.dumps({
+            "cmd": ["claude", "-p", "fix bug"],
+            "cwd": str(tmp_path),
+        }))
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 54321
+
+    def fake_popen(cmd, **kwargs):
+        popen_captured["cmd"] = cmd
+        popen_captured["cwd"] = kwargs.get("cwd")
+        return mock_proc
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
     handle = rt.spawn(
         agent_id="a1",
-        working_dir="/work",
+        working_dir=str(tmp_path),
         role_prompt="You are a coder.",
         memory_prompt="Previous context.",
         skills_dirs=["/skills/a"],
@@ -63,27 +182,50 @@ def test_spawn_returns_handle(monkeypatch):
         task="fix bug",
         env={"DENDEN_ADDR": "127.0.0.1:9700"},
     )
+
+    # Handle
     assert isinstance(handle, AgentHandle)
     assert handle.agent_id == "a1"
     assert handle.runtime_name == "test-agent"
-    assert handle.pid == 42
-    assert handle.metadata == {"session": "s1"}
+    assert handle.pid == 54321
+
+    # Build was called with correct args
+    cmd = build_captured["cmd"]
+    assert cmd[0] == "/usr/bin/fake-wrapper"
+    assert cmd[1] == "build"
+    assert "--agent-id" in cmd
+    assert cmd[cmd.index("--agent-id") + 1] == "a1"
+    assert cmd[cmd.index("--task") + 1] == "fix bug"
+
+    # Env was passed to build
+    assert build_captured["env"]["DENDEN_ADDR"] == "127.0.0.1:9700"
+
+    # Popen was called with the translated command
+    assert popen_captured["cmd"] == ["claude", "-p", "fix bug"]
+    assert popen_captured["cwd"] == str(tmp_path)
+
+    # PID file was written
+    assert rt._read_pid("a1") == 54321
 
 
-def test_spawn_builds_correct_args(monkeypatch):
+def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
+    """spawn passes all protocol args to <wrapper> build."""
     captured = {}
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        captured["kwargs"] = kwargs
-        return _mock_run('{"pid": 1}')
+        return _mock_run(json.dumps({"cmd": ["agent"], "cwd": "/w"}))
 
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda cmd, **kw: MagicMock(pid=1)
+    )
+
     spec = _make_spec(
         wrapper_cmd=["/bin/wrap", "--verbose"],
         config={"model": "claude-sonnet-4-6", "temperature": 0.5},
     )
-    rt = WrapperRuntime(spec)
+    rt = WrapperRuntime(spec, runtime_dir=str(tmp_path))
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
@@ -92,16 +234,16 @@ def test_spawn_builds_correct_args(monkeypatch):
         skills_dirs=["/s1", "/s2"],
         roles_dirs=["/r1"],
         task="do stuff",
-        env={"K1": "V1", "K2": "V2"},
+        env={"K1": "V1"},
     )
+
     cmd = captured["cmd"]
     # Wrapper command prefix
     assert cmd[0] == "/bin/wrap"
     assert cmd[1] == "--verbose"
     # Subcommand
-    assert cmd[2] == "spawn"
+    assert cmd[2] == "build"
     # Protocol args
-    assert "--agent-id" in cmd
     assert cmd[cmd.index("--agent-id") + 1] == "a1"
     assert cmd[cmd.index("--working-dir") + 1] == "/w"
     assert cmd[cmd.index("--role-prompt") + 1] == "role text"
@@ -119,22 +261,21 @@ def test_spawn_builds_correct_args(monkeypatch):
     roles_indices = [i for i, v in enumerate(cmd) if v == "--roles-dir"]
     assert len(roles_indices) == 1
     assert cmd[roles_indices[0] + 1] == "/r1"
-    # Env vars passed via subprocess env, not CLI args
-    assert "--env" not in cmd
-    sub_env = captured["kwargs"]["env"]
-    assert sub_env["K1"] == "V1"
-    assert sub_env["K2"] == "V2"
 
 
-def test_spawn_no_skills_or_roles(monkeypatch):
+def test_spawn_no_skills_or_roles(tmp_path, monkeypatch):
     captured = {}
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        return _mock_run('{"pid": 1}')
+        return _mock_run(json.dumps({"cmd": ["agent"], "cwd": "/w"}))
 
     monkeypatch.setattr("subprocess.run", fake_run)
-    rt = WrapperRuntime(_make_spec())
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda cmd, **kw: MagicMock(pid=1)
+    )
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
@@ -150,7 +291,7 @@ def test_spawn_no_skills_or_roles(monkeypatch):
     assert "--roles-dir" not in cmd
 
 
-def test_spawn_failure(monkeypatch):
+def test_spawn_build_failure(monkeypatch):
     monkeypatch.setattr(
         "subprocess.run",
         lambda *a, **kw: _mock_run("", returncode=1, stderr="wrapper crashed"),
@@ -169,7 +310,7 @@ def test_spawn_failure(monkeypatch):
         )
 
 
-def test_spawn_invalid_json(monkeypatch):
+def test_spawn_build_invalid_json(monkeypatch):
     monkeypatch.setattr(
         "subprocess.run",
         lambda *a, **kw: _mock_run("not json at all"),
@@ -191,93 +332,173 @@ def test_spawn_invalid_json(monkeypatch):
 # --- wait ---
 
 
-def test_wait_returns_result(monkeypatch):
+def test_wait_polls_until_exit(tmp_path, monkeypatch):
+    """wait polls PID until process exits, then reads log file."""
+    poll_count = 0
+
+    def fake_is_alive(pid):
+        nonlocal poll_count
+        poll_count += 1
+        return poll_count < 3  # alive for 2 polls, then dead
+
     monkeypatch.setattr(
-        "subprocess.run",
-        lambda *a, **kw: _mock_run(
-            '{"summary": "done", "output": "log output", "exit_code": 0}'
-        ),
+        WrapperRuntime, "_is_process_alive", staticmethod(fake_is_alive)
     )
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent", pid=42)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    # Write a log file
+    log_path = tmp_path / "wait01.log"
+    log_path.write_text("captured output")
+
+    handle = AgentHandle(agent_id="wait01", runtime_name="test-agent", pid=999)
     result = rt.wait(handle)
+
     assert isinstance(result, AgentResult)
-    assert result.summary == "done"
-    assert result.output == "log output"
+    assert result.summary == "Agent completed"
+    assert result.output == "captured output"
     assert result.exit_code == 0
+    assert poll_count == 3
 
 
-def test_wait_with_timeout(monkeypatch):
-    captured = {}
+def test_wait_with_timeout(tmp_path, monkeypatch):
+    """wait respects timeout and stops polling."""
+    monkeypatch.setattr(
+        WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: True)
+    )
 
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        captured["kwargs"] = kwargs
-        return _mock_run('{"summary": "done", "output": "", "exit_code": 0}')
+    elapsed = {"value": 0.0}
 
-    monkeypatch.setattr("subprocess.run", fake_run)
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent")
-    rt.wait(handle, timeout=60.0)
-    assert "--timeout" in captured["cmd"]
-    assert captured["cmd"][captured["cmd"].index("--timeout") + 1] == "60.0"
-    # subprocess.run itself should have timeout=None (wrapper handles it)
-    assert captured["kwargs"]["timeout"] is None
+    def fake_sleep(secs):
+        elapsed["value"] += secs
+
+    monkeypatch.setattr("time.sleep", fake_sleep)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    (tmp_path / "tmout01.log").write_text("")
+
+    handle = AgentHandle(agent_id="tmout01", runtime_name="test-agent", pid=999)
+    result = rt.wait(handle, timeout=2.0)
+
+    assert result.summary == "Agent completed"
+    # Should have stopped after timeout
+    assert elapsed["value"] >= 2.0
 
 
-def test_wait_without_timeout(monkeypatch):
-    captured = {}
+def test_wait_reads_pid_from_file(tmp_path, monkeypatch):
+    """wait can read PID from file if not in handle."""
+    monkeypatch.setattr(
+        WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: False)
+    )
 
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        return _mock_run('{"summary": "ok", "output": "", "exit_code": 0}')
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt._write_pid("wait02", 888)
+    (tmp_path / "wait02.log").write_text("some output")
 
-    monkeypatch.setattr("subprocess.run", fake_run)
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent")
-    rt.wait(handle)
-    assert "--timeout" not in captured["cmd"]
+    handle = AgentHandle(agent_id="wait02", runtime_name="test-agent")  # no pid
+    result = rt.wait(handle)
+
+    assert result.output == "some output"
+
+
+def test_wait_no_pid(tmp_path):
+    """wait without PID still returns output if log exists."""
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    (tmp_path / "nopid.log").write_text("some output")
+
+    handle = AgentHandle(agent_id="nopid", runtime_name="test-agent")
+    result = rt.wait(handle)
+
+    assert result.output == "some output"
 
 
 # --- is_alive ---
 
 
-def test_is_alive_true(monkeypatch):
+def test_is_alive_true(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "subprocess.run",
-        lambda *a, **kw: _mock_run('{"alive": true}'),
+        WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: True)
     )
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent")
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="a1", runtime_name="test-agent", pid=123)
     assert rt.is_alive(handle) is True
 
 
-def test_is_alive_false(monkeypatch):
+def test_is_alive_false(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "subprocess.run",
-        lambda *a, **kw: _mock_run('{"alive": false}'),
+        WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: False)
     )
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent")
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="a1", runtime_name="test-agent", pid=123)
+    assert rt.is_alive(handle) is False
+
+
+def test_is_alive_reads_pid_from_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: True)
+    )
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt._write_pid("a2", 456)
+    handle = AgentHandle(agent_id="a2", runtime_name="test-agent")  # no pid
+    assert rt.is_alive(handle) is True
+
+
+def test_is_alive_no_pid(tmp_path):
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="missing", runtime_name="test-agent")
     assert rt.is_alive(handle) is False
 
 
 # --- kill ---
 
 
-def test_kill(monkeypatch):
-    captured = {}
+def test_kill_sends_sigterm(tmp_path, monkeypatch):
+    killed_pids = []
 
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        return _mock_run('{"killed": true}')
+    def fake_kill(pid, sig):
+        killed_pids.append((pid, sig))
 
-    monkeypatch.setattr("subprocess.run", fake_run)
-    rt = WrapperRuntime(_make_spec())
-    handle = AgentHandle(agent_id="a1", runtime_name="test-agent")
+    monkeypatch.setattr("os.kill", fake_kill)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="k1", runtime_name="test-agent", pid=777)
+    rt.kill(handle)
+
+    assert killed_pids == [(777, signal.SIGTERM)]
+
+
+def test_kill_reads_pid_from_file(tmp_path, monkeypatch):
+    killed_pids = []
+
+    def fake_kill(pid, sig):
+        killed_pids.append((pid, sig))
+
+    monkeypatch.setattr("os.kill", fake_kill)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt._write_pid("k2", 888)
+    handle = AgentHandle(agent_id="k2", runtime_name="test-agent")  # no pid
+    rt.kill(handle)
+
+    assert killed_pids == [(888, signal.SIGTERM)]
+
+
+def test_kill_no_pid(tmp_path):
+    """kill with no PID does nothing (no error)."""
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="missing", runtime_name="test-agent")
     rt.kill(handle)  # should not raise
-    assert "kill" in captured["cmd"]
-    assert captured["cmd"][captured["cmd"].index("--agent-id") + 1] == "a1"
+
+
+def test_kill_process_already_gone(tmp_path, monkeypatch):
+    def fake_kill(pid, sig):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr("os.kill", fake_kill)
+
+    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    handle = AgentHandle(agent_id="k3", runtime_name="test-agent", pid=999)
+    rt.kill(handle)  # should not raise
 
 
 # --- setup ---
