@@ -99,6 +99,7 @@ jobs:
         run: pyinstaller --onefile --name ${{ matrix.asset_name }} src/strawpot/__main__.py
 
       - name: Upload to GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

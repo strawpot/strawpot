@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -88,7 +89,17 @@ def show_config():
 
 
 def _is_pid_alive(pid: int) -> bool:
-    """Check if a process is still running."""
+    """Check if a process is still running (cross-platform)."""
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        SYNCHRONIZE = 0x00100000
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -204,8 +215,13 @@ def agents(session_id):
 
 def _strawhub(*args: str) -> None:
     """Run a strawhub CLI command, passing through stdout/stderr."""
+    cmd = shutil.which("strawhub")
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        sys.exit(1)
     result = subprocess.run(
-        ["strawhub", *args],
+        [cmd, *args],
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
