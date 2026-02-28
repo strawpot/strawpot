@@ -3,6 +3,7 @@ name = "strawpot"
 version = "0.1.0"
 description = "Lightweight CLI for agent orchestration"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "click>=8.1",
 ]
@@ -13,10 +14,12 @@ strawpot = "strawpot.cli:cli"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 where = ["src"]
