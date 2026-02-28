@@ -2,7 +2,22 @@
 
 from pathlib import Path
 
-from strawhub.frontmatter import parse_frontmatter
+import yaml
+
+
+def parse_frontmatter(text: str) -> dict:
+    """Parse YAML frontmatter delimited by ``---`` from markdown text.
+
+    Returns:
+        dict with ``frontmatter`` (parsed YAML dict) and ``body`` (remaining text).
+    """
+    if not text.startswith("---"):
+        return {"frontmatter": {}, "body": text}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {"frontmatter": {}, "body": text}
+    fm = yaml.safe_load(parts[1]) or {}
+    return {"frontmatter": fm, "body": parts[2]}
 
 
 def build_prompt(
