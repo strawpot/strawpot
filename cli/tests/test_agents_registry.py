@@ -8,10 +8,12 @@ import pytest
 
 from strawpot.agents.registry import (
     AgentSpec,
+    ValidationResult,
     _merge_config,
     _resolve_wrapper_cmd,
     parse_agent_md,
     resolve_agent,
+    validate_agent,
 )
 
 SAMPLE_AGENT_MD = dedent("""\
@@ -189,3 +191,80 @@ def test_resolve_agent_not_found(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
     with pytest.raises(FileNotFoundError, match="Agent not found"):
         resolve_agent("nonexistent", str(tmp_path))
+
+
+# --- validate_agent ---
+
+
+def test_validate_agent_all_ok(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
+    monkeypatch.setenv("API_KEY", "secret")
+    spec = AgentSpec(
+        name="ok-agent",
+        version="1.0.0",
+        wrapper_cmd=["python", "wrapper.py"],
+        tools={"git": {"description": "version control"}},
+        env_schema={"API_KEY": {"required": True}},
+    )
+    result = validate_agent(spec)
+    assert result.ok
+    assert result.missing_tools == []
+    assert result.missing_env == []
+
+
+def test_validate_agent_missing_tool(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda c: None)
+    spec = AgentSpec(
+        name="tool-agent",
+        version="1.0.0",
+        wrapper_cmd=["python", "wrapper.py"],
+        tools={
+            "sometool": {
+                "description": "A tool",
+                "install": {
+                    "macos": "brew install sometool",
+                    "linux": "apt install sometool",
+                    "windows": "choco install sometool",
+                },
+            }
+        },
+    )
+    result = validate_agent(spec)
+    assert not result.ok
+    assert len(result.missing_tools) == 1
+    name, hint = result.missing_tools[0]
+    assert name == "sometool"
+    assert hint is not None  # platform-specific hint
+
+
+def test_validate_agent_missing_env(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    spec = AgentSpec(
+        name="env-agent",
+        version="1.0.0",
+        wrapper_cmd=["python", "wrapper.py"],
+        env_schema={
+            "SECRET_KEY": {"required": True, "description": "Secret key"},
+            "OPTIONAL_VAR": {"required": False, "description": "Not required"},
+        },
+    )
+    result = validate_agent(spec)
+    assert not result.ok
+    assert "SECRET_KEY" in result.missing_env
+    assert "OPTIONAL_VAR" not in result.missing_env
+
+
+def test_validate_agent_no_deps():
+    spec = AgentSpec(
+        name="simple-agent",
+        version="1.0.0",
+        wrapper_cmd=["python", "wrapper.py"],
+    )
+    result = validate_agent(spec)
+    assert result.ok
+
+
+def test_validation_result_ok_property():
+    assert ValidationResult().ok
+    assert not ValidationResult(missing_tools=[("x", None)]).ok
+    assert not ValidationResult(missing_env=["Y"]).ok
