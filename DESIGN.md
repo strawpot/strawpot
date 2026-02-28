@@ -49,14 +49,15 @@ src/strawpot/
   session.py               # Session lifecycle — owns denden server + agent registry
   delegation.py            # Delegate handler — policy → resolve → spawn → wait
   context.py               # Build system prompt from resolved role + skills
+  _process.py              # Cross-platform process utilities (is_pid_alive)
   agents/
     protocol.py            # AgentRuntime protocol, AgentHandle, AgentResult
     registry.py            # Discover AGENT.md, validate config, resolve wrapper
     wrapper.py             # WrapperRuntime — calls any wrapper CLI via subprocess
-    interactive.py         # InteractiveWrapperRuntime — wraps WrapperRuntime with tmux
+    interactive.py         # InteractiveWrapperRuntime (tmux) + DirectWrapperRuntime (fallback)
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
-    worktree.py            # GitWorktreeIsolator
+    worktree.py            # WorktreeIsolator
   _builtin_agents/         # Ships with strawpot
     claude_code/
       AGENT.md             # Built-in Claude Code agent manifest
@@ -65,7 +66,7 @@ src/strawpot/
         go.mod
 ```
 
-12 source files + 1 built-in agent. No agent-specific code in the core.
+13 source files + 1 built-in agent. No agent-specific code in the core.
 
 ---
 
@@ -77,9 +78,10 @@ name = "strawpot"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "denden",
-    "strawhub",
     "click>=8.1",
+    "pyyaml>=6.0",
+    "strawhub",
+    "denden-server",
 ]
 
 [project.scripts]
@@ -87,7 +89,9 @@ strawpot = "strawpot.cli:cli"
 ```
 
 Config uses `tomllib` (stdlib 3.11+). IDs use `uuid` (stdlib). Subprocesses
-use `subprocess` (stdlib). No other deps.
+use `subprocess` (stdlib). The denden project has two packages: the `denden`
+binary (distributed as a GitHub release) and `denden-server` (PyPI package)
+which provides the `DenDenServer` Python class used by session.py.
 
 ---
 
@@ -232,13 +236,16 @@ class AgentSpec:
     wrapper_cmd: list[str]   # e.g. ["python", "/path/to/wrapper.py"]
     config: dict             # merged from AGENT.md defaults + user config
     env_schema: dict         # required env vars from metadata.strawpot.env
+    tools: dict              # required tools from metadata.strawpot.tools
 
-def resolve_agent(name: str, project_dir: str) -> AgentSpec:
+def resolve_agent(name: str, project_dir: str, agent_config: dict | None = None) -> AgentSpec:
     """
     Resolution order:
     1. .strawpot/agents/<name>/AGENT.md    (project-local)
     2. ~/.strawpot/agents/<name>/AGENT.md  (global install)
     3. built-in _builtin_agents/<name>/    (ships with strawpot)
+
+    agent_config merges user overrides (from config.agents[name]) into spec.config.
     """
 ```
 
@@ -327,6 +334,38 @@ The orchestrator needs an interactive terminal; sub-agents do not. This
 separation keeps wrappers simple — they only translate protocol args to
 native flags without managing session infrastructure.
 
+### DirectWrapperRuntime (`agents/interactive.py`)
+
+Cross-platform fallback for interactive sessions when tmux is not available.
+Runs the agent process directly attached to the current terminal via `Popen`
+with stdin/stdout/stderr inherited. No detach/reattach capability.
+
+```python
+class DirectWrapperRuntime:
+    """Cross-platform fallback — no tmux required."""
+
+    def __init__(self, inner: WrapperRuntime): ...
+
+    def spawn(self, ...) -> AgentHandle:
+        # 1. Call <wrapper> build → {"cmd": [...], "cwd": "..."}
+        # 2. Popen(cmd, cwd=cwd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+
+    def wait(self, handle, timeout=None) -> AgentResult:
+        # proc.wait(timeout=timeout)
+
+    def is_alive(self, handle) -> bool:
+        # proc.poll() is None
+
+    def kill(self, handle) -> None:
+        # proc.terminate()
+
+    def attach(self, handle) -> None:
+        # proc.wait() — no-op if already terminal-attached
+```
+
+The CLI auto-selects the runtime via `shutil.which("tmux")`:
+tmux found → `InteractiveWrapperRuntime`, otherwise → `DirectWrapperRuntime`.
+
 ### Isolator (`isolation/protocol.py`)
 
 Creates one isolated environment per **session** (not per agent).
@@ -346,7 +385,8 @@ class Isolator(Protocol):
 Implementations:
 - `NoneIsolator` — returns `base_dir` as-is, cleanup is a no-op.
   Agents work directly in the project directory.
-- `GitWorktreeIsolator` — `git init` if needed, creates a worktree per session.
+- `WorktreeIsolator` — creates a worktree per session. Raises `ValueError`
+  if the project is not already a git repo.
 - Future: `DockerIsolator`.
 
 ### Config (`config.py`)
@@ -360,6 +400,8 @@ class StrawPotConfig:
     orchestrator_role: str = "orchestrator"
     allowed_roles: list[str] | None = None   # None = all
     max_depth: int = 3
+    permission_mode: str = "default"   # orchestrator permission mode
+    agent_timeout: int | None = None   # sub-agent timeout in seconds (None = no limit)
     agents: dict[str, dict] = field(default_factory=dict)  # per-agent extras
     merge_strategy: str = "auto"       # auto | local | pr
     pull_before_session: str = "prompt" # auto | always | never | prompt
@@ -410,10 +452,12 @@ addr = "127.0.0.1:9700"
 
 [orchestrator]
 role = "team-lead"           # strawhub role slug (default: "orchestrator")
+permission_mode = "default"  # orchestrator permission mode (sub-agents always "auto")
 
 [policy]
 allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
+agent_timeout = 300          # sub-agent timeout in seconds (omit for no limit)
 
 [session]
 merge_strategy = "auto"          # auto | local | pr
@@ -439,14 +483,15 @@ temperature = 0.7
 ```
 1. working_dir = os.getcwd()
 2. config = load_config(working_dir)
-3. agent_spec = resolve_agent(config.runtime, working_dir)  # registry lookup
+3. agent_spec = resolve_agent(config.runtime, working_dir, config.agents.get(config.runtime))
    → merges config.agents[name] into spec.config
    → validates metadata.strawpot.tools (fail if missing — should
      have been installed via `strawpot install agent`, this is a safety net)
    → validates metadata.strawpot.env: prompt user for missing required env vars
      interactively (set in process env for this session only, not persisted)
 4. wrapper = WrapperRuntime(agent_spec)                      # generic, works for any agent
-   runtime = InteractiveWrapperRuntime(wrapper)              # wraps with tmux for orchestrator
+   runtime = InteractiveWrapperRuntime(wrapper)              # tmux available → tmux session
+          or DirectWrapperRuntime(wrapper)                   # no tmux → direct terminal attach
 5. isolator = resolve_isolator(config.isolation)             # none | worktree | docker
 6. session = Session(config, wrapper, runtime, isolator)
 7. session.start():
@@ -464,13 +509,12 @@ temperature = 0.7
       - server.on_delegate(self._handle_delegate)
       - server.on_ask_user(self._handle_ask_user)
       - run in background thread
-   d. Resolve orchestrator role + skills:
+   d. Resolve orchestrator role + build prompt:
         resolved = resolve(config.orchestrator_role, kind="role")
-        system_prompt = build_prompt(resolved)
-        → writes prompt to .strawpot/runtime/<agent_id>.prompt.md
+        role_prompt = build_prompt(resolved)
    e. agent_id = "agent_" + uuid4()
-      workspace = .strawpot/runtime/agents/<agent_id>/
-      → stage resolved skills into workspace/.claude/skills/<slug>/SKILL.md
+      workspace, skills_dirs, roles_dirs = create_workspace(runtime_dir, agent_id, resolved)
+      → stage resolved skills into workspace
    f. runtime.spawn(                   # InteractiveWrapperRuntime
         agent_id=agent_id,
         working_dir=env.path,
@@ -481,7 +525,7 @@ temperature = 0.7
         roles_dirs=roles_dirs,
         task="",                         # interactive mode
         env={
-          PERMISSION_MODE: config.permission_mode,
+          PERMISSION_MODE: config.permission_mode,  # from global config
           DENDEN_ADDR: config.denden_addr,
           DENDEN_AGENT_ID: agent_id,
           DENDEN_RUN_ID: run_id,
@@ -493,7 +537,7 @@ temperature = 0.7
         (env vars PERMISSION_MODE, DENDEN_ADDR, etc. passed as subprocess environment)
       → Gets back {"cmd": [...], "cwd": "..."}
       → Launches: tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
-   g. Write .strawpot/runtime/session.json
+   g. Write .strawpot/runtime/sessions/<run_id>.json
    h. runtime.attach(handle)          # attach user to tmux session
 ```
 
@@ -510,12 +554,22 @@ Denden server dispatches to `Session._handle_delegate`:
 3. Resolve:
    resolved = strawhub.resolver.resolve(role_slug, kind="role")
    → {slug, version, path, dependencies: [{slug, kind, path}, ...]}
+   Build delegatable roles list for the sub-agent:
+   → excludes the current role (can't self-delegate)
+   → excludes the requester role (can't delegate back to parent)
+   → only includes roles in allowed_roles with resolvable directories
 4. Build prompt:
-   system_prompt = context.build_prompt(resolved)
+   system_prompt = context.build_prompt(resolved,
+     delegatable_roles=..., requester_role=parent_role)
    → reads SKILL.md bodies (deps first) + ROLE.md body
+   → appends Delegation section (delegatable roles, if any)
+   → appends Requester section (parent role that delegated the task)
 5. Create agent workspace:
    workspace = .strawpot/runtime/agents/<agent_id>/
-   → stage resolved skills into workspace/.claude/skills/<slug>/SKILL.md
+   → stage resolved skills/roles into workspace/ via symlink
+     (falls back to shutil.copytree on Windows or permission errors)
+   → also resolve requester's role path into workspace/roles/
+     so the sub-agent can read the requester's ROLE.md on demand
 6. Spawn in session worktree (shared — no new worktree):
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
@@ -523,14 +577,16 @@ Denden server dispatches to `Session._handle_delegate`:
      role_prompt=role_prompt, memory_prompt=memory_prompt,
      skills_dirs=skills_dirs, roles_dirs=roles_dirs,
      task=task_text,
-     env={PERMISSION_MODE: "auto",    # sub-agents run non-interactively
+     env={PERMISSION_MODE: "auto",    # sub-agents always run non-interactively
           DENDEN_ADDR, DENDEN_AGENT_ID,
           DENDEN_PARENT_AGENT_ID, DENDEN_RUN_ID}
    )
    → WrapperRuntime calls wrapper CLI with standard protocol args
 7. Wait:
-   result = runtime.wait(handle)
-   (blocks — denden threadpool allows concurrent delegates)
+   result = runtime.wait(handle, timeout=config.agent_timeout)
+   (blocks — sequential DAG, one sub-agent at a time)
+   → on timeout: runtime.kill(handle), return error response
+     "Agent timed out after {timeout}s" to parent
 8. Return:
    ok_response(request_id, delegate_result=DelegateResult(summary=result.summary))
 ```
@@ -590,6 +646,24 @@ Only the role name and description (from ROLE.md frontmatter) are included
 in the prompt — the full ROLE.md content is available on disk at
 `roles/<role-name>/ROLE.md` (symlinked by the wrapper) for the agent to
 read on demand.
+
+When the task was delegated by a parent agent, a requester section is appended:
+
+```
+---
+
+## Requester
+
+This task was delegated to you by **orchestrator**. If you need task
+clarification or domain knowledge, use the `denden` skill to ask your
+requester.
+
+Do NOT use `denden` to send your final results back. When your task is
+complete, write your output to stdout.
+```
+
+The requester's ROLE.md is also made available on disk at
+`roles/<requester-role>/ROLE.md` so the sub-agent can read it on demand.
 
 ---
 
@@ -851,13 +925,14 @@ discovers it via `AGENT.md`.
 
 ## Isolation Implementations
 
-`none` and `docker` work with any directory. `worktree` requires git but
-will `git init` if the project is not already a git repo.
+`none` and `docker` work with any directory. `worktree` requires a git
+repository — raises `ValueError` if the project is not a git repo.
 
 ### NoneIsolator (default)
 
 Agents work directly in the project directory. No setup, no cleanup.
-Only one session allowed at a time — `session.json` acts as a lock.
+Multiple concurrent sessions are allowed — each writes its own session file
+under `sessions/<run_id>.json`.
 
 ```
 create(session_id, base_dir):
@@ -870,7 +945,7 @@ cleanup(env, base_dir):
 Simplest option — good for single-agent sessions, non-coding workflows,
 or when the user manages their own branching.
 
-### GitWorktreeIsolator (`isolation/worktree.py`)
+### WorktreeIsolator (`isolation/worktree.py`)
 
 Creates one git worktree per session. Multiple concurrent sessions are
 safe — each gets its own branch.
@@ -1093,7 +1168,6 @@ All sessions write to `.strawpot/runtime/sessions/<run_id>.json`.
   "isolation": "worktree",
   "runtime": "claude_code",
   "denden_addr": "127.0.0.1:9700",
-  "denden_pid": 12345,
   "worktree": "~/.strawpot/worktrees/<project_hash>/run_abc123",
   "worktree_branch": "strawpot/run_abc123",
   "base_branch": "main",
@@ -1124,6 +1198,138 @@ All sessions write to `.strawpot/runtime/sessions/<run_id>.json`.
   configured port was taken and auto-assigned (see port auto-resolution).
 - `agents` — updated live as agents are spawned/completed. Each entry
   tracks role, runtime, parent chain, and process ID.
+
+---
+
+## Logging
+
+StrawPot writes structured JSONL logs per session for debugging and Web GUI
+consumption. Agent stdout/stderr is captured separately by WrapperRuntime.
+
+### Session Log
+
+One file per session: `.strawpot/runtime/logs/<run_id>.jsonl`
+
+Each line is a JSON object:
+
+```json
+{"ts": "2026-02-27T10:00:00Z", "level": "info", "event": "session_started", "run_id": "run_abc123", "msg": "Session started", "data": {"isolation": "worktree", "runtime": "claude_code"}}
+{"ts": "2026-02-27T10:00:01Z", "level": "info", "event": "agent_spawned", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Spawned orchestrator", "data": {"role": "orchestrator"}}
+{"ts": "2026-02-27T10:01:00Z", "level": "info", "event": "delegate_request", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Delegation requested", "data": {"role": "implementer", "task": "implement auth"}}
+{"ts": "2026-02-27T10:05:00Z", "level": "error", "event": "agent_timeout", "run_id": "run_abc123", "agent_id": "agent_abc", "msg": "Agent timed out after 300s"}
+```
+
+### Event Types
+
+| Event | Level | Description |
+|---|---|---|
+| `session_started` | info | Session created, isolation env ready |
+| `session_stopped` | info | Clean shutdown completed |
+| `denden_started` | info | gRPC server bound to address |
+| `denden_stopped` | info | gRPC server shut down |
+| `agent_spawned` | info | Agent process launched |
+| `agent_completed` | info | Agent exited normally |
+| `agent_timeout` | error | Agent killed after timeout |
+| `agent_killed` | warn | Agent force-killed (Ctrl+C or cleanup) |
+| `delegate_request` | info | Delegation request received |
+| `delegate_denied` | warn | Policy denied delegation (role/depth) |
+| `delegate_result` | info | Delegation completed with result |
+| `cleanup_started` | info | Session cleanup in progress |
+| `cleanup_merge` | info | Merge strategy applied (local/pr) |
+| `cleanup_conflict` | warn | Patch conflicts detected |
+| `crash_recovery` | warn | Stale session detected and cleaned up |
+
+### Fields
+
+| Field | Required | Description |
+|---|---|---|
+| `ts` | yes | ISO 8601 timestamp (UTC) |
+| `level` | yes | `info`, `warn`, or `error` |
+| `event` | yes | Machine-readable event type |
+| `run_id` | yes | Session run ID |
+| `agent_id` | no | Agent ID (when event relates to an agent) |
+| `msg` | yes | Human-readable message |
+| `data` | no | Structured payload (event-specific) |
+
+### Agent Output
+
+WrapperRuntime captures agent stdout/stderr to per-agent log files:
+`.strawpot/runtime/<agent_id>.log`
+
+These are raw text logs from the underlying agent process (e.g. Claude Code
+output), not structured JSONL. The Web GUI can display them alongside the
+session log for a complete picture.
+
+### Retention
+
+Session logs are preserved after cleanup for history tracking. The Web GUI
+reads these for session history and replay. Old logs can be pruned manually
+or by a future retention policy.
+
+---
+
+## Role Manifest (`ROLE.md`)
+
+Roles follow the same [Agent Skills](https://agentskills.io) open format —
+YAML frontmatter (`name`, `description`) + markdown body. The body contains
+the role's system prompt (instructions for the agent). StrawPot-specific
+config lives under `metadata.strawpot`:
+
+```yaml
+---
+name: implementer
+description: "Writes code to implement features and fix bugs"
+metadata:
+  version: "1.0.0"
+  tags: [coding, implementation]
+  author: strawpot
+  strawpot:
+    dependencies:
+      skills:
+        - git-workflow
+        - code-review
+      roles:
+        - fixer
+    default_model:
+      provider: claude_session
+      id: claude-opus-4-6
+    tools:
+        pytest:
+          description: Python test runner
+          install:
+            macos: pip install pytest
+            linux: pip install pytest
+---
+
+# Implementer
+
+You are an implementer. Given a task, write clean code that follows the
+project's conventions...
+```
+
+| Key | Required | Description |
+|---|---|---|
+| `name` | yes | Unique slug for the role |
+| `description` | yes | One-line summary (used in delegation prompt) |
+| `metadata.version` | no | Semver version string |
+| `metadata.tags` | no | Category tags for discovery |
+| `metadata.author` | no | Creator/organization name |
+| `metadata.strawpot.dependencies.skills` | no | Skill dependencies (resolved by strawhub) |
+| `metadata.strawpot.dependencies.roles` | no | Delegatable sub-roles (shown in delegation section of prompt) |
+| `metadata.strawpot.default_model` | no | Preferred model for this role |
+| `metadata.strawpot.tools` | no | Required tools with per-OS install instructions |
+
+Dependency version specifiers: `slug` (latest), `slug==X.Y.Z` (exact),
+`slug>=X.Y.Z` (minimum), `slug^X.Y.Z` (compatible — same major).
+
+The markdown body (after frontmatter) is used as the role's system prompt
+content. Only the body is included in the agent's prompt — frontmatter is
+stripped by `context.py`.
+
+Roles can declare other roles as dependencies via `metadata.strawpot.dependencies.roles`.
+These are the roles the agent is allowed to delegate to. The delegation section
+of the prompt lists these roles with their `name` and `description` from
+frontmatter.
 
 ---
 
@@ -1177,6 +1383,8 @@ tree — role, runtime, parent, pid, and whether each agent is still alive.
 
 ## Implementation Order
 
+### Phase 1 — Core (complete)
+
 1. `config.py` — add `agents: dict` field, parse `[agents.*]` sections
 2. `agents/protocol.py` + `isolation/protocol.py` — types
 3. `agents/registry.py` — discover `AGENT.md`, validate env, merge config
@@ -1186,7 +1394,55 @@ tree — role, runtime, parent, pid, and whether each agent is still alive.
 7. `context.py`
 8. `delegation.py`
 9. `session.py`
-10. `cli.py` + `__main__.py` — add `install/uninstall agent` passthrough
+10. `cli.py` + `__main__.py` — wire `start` command, add strawhub passthrough
+    (`install`, `uninstall`, `search`, `list`, `install-tools`)
+
+### Phase 2 — Session Lifecycle
+
+11. `session.py` cleanup — worktree merge strategies (local/pr/auto), patch
+    application (`git apply` vs `patch`), conflict resolution prompts
+12. `session.py` crash recovery — detect stale sessions on `strawpot start`,
+    run cleanup for dead-pid sessions before starting new one
+13. `cli.py` signal handling — single Ctrl+C cancels current task and kills
+    sub-agents, double Ctrl+C quits immediately
+14. `cli.py` noninteractive mode — `strawpot start --task "..."` runs
+    orchestrator with a task string instead of interactive terminal
+15. `delegation.py` retry policy — validate sub-agent output against
+    requester's expected format, retry on invalid output (configurable
+    max retries)
+16. `session.py` denden port auto-resolution — if configured port is taken,
+    bind to port 0 (OS assigns free port); record actual bound addr in
+    session file and pass to agents via `DENDEN_ADDR` env var
+
+### Phase 3 — Web GUI
+
+17. Central management platform — project management, multi-session
+    monitoring, session history tracking, agent tree visualization,
+    denden status, EM replay
+
+### Phase 4 — Memory
+
+18. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
+    `ControlSignal`, `DumpReceipt` types
+19. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
+    validate deps (same pattern as agent registry)
+20. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
+    after wait in the delegation flow
+21. `config.py` — add `memory` and `memory_config` fields
+
+### Phase 5 — Docker Isolation
+
+22. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
+    (container create, patch export, cleanup)
+23. `session.py` cleanup — docker merge strategies (local/pr), patch
+    extraction from container via `docker exec git diff`
+
+### Phase 6 — Ecosystem & Extensibility
+
+24. Hooks — pre/post spawn, pre/post cleanup extension points
+25. Community agents — documentation + strawhub publishing flow
+26. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
+27. Cron jobs — invoke orchestrator periodically or conditionally
 
 ---
 
@@ -1391,13 +1647,75 @@ strawpot uninstall memory <slug>   →  strawhub uninstall memory <slug>
 
 ---
 
-## Future Extensions
+## Web GUI (Planned)
 
-- **Docker isolation** — `DockerIsolator` implementing the same protocol
-- **Community agents** — anyone can publish a agent cli to strawhub registry
-- **Agent providers** — third-party providers ship CLIs that implement the strawpot agent cli protocol
-- **Memory providers** — vector-DB backed, cloud-synced, or team-shared memory implementations
-- **Automation inputs** — GitHub issue watcher, email, Telegram → feed tasks to orchestrator
-- **Web GUI** — read session state + denden status, display agent tree + EM replay
-- **Hooks** - support hooks
-- **Cron Jobs** - support cron jobs to invoke orchestrator periodically or conditonally
+Central management platform for strawpot. Runs as a local web server that
+reads strawpot runtime state and provides a dashboard for managing projects,
+monitoring sessions, and reviewing history.
+
+### Architecture
+
+```
+Browser
+  │
+  ▼
+Web Server (FastAPI)          ← strawpot-gui package
+  │
+  ├─ reads .strawpot/runtime/sessions/*.json    (live session state)
+  ├─ reads .strawpot/runtime/logs/*.jsonl        (session logs)
+  ├─ reads .strawpot/runtime/<agent_id>.log       (agent output)
+  ├─ connects to denden gRPC server              (live status)
+  └─ reads EM event store                        (when memory is configured)
+```
+
+The GUI is a separate installable package (`pip install strawpot-gui`), not
+bundled with the core CLI. It has no write access to strawpot state — it is
+a read-only observer that renders existing runtime data.
+
+### Features
+
+**Project Management**
+- Register projects (directories with `.strawpot/config.toml`)
+- View project config and installed agents/skills/roles
+- Quick-launch sessions from the GUI
+
+**Session Monitoring**
+- Real-time dashboard of active sessions across all registered projects
+- Agent tree visualization — hierarchy, roles, status (running/exited)
+- Live denden status — connected agents, pending requests
+- Session log stream — tail JSONL logs in real time
+
+**Session History**
+- Browse past sessions with timestamps, duration, isolation mode
+- View session logs and agent output for completed sessions
+- Filter by project, date range, role, or outcome
+
+**EM Replay** (when memory is configured)
+- Timeline view of event memory for a session
+- Step through agent spawns, tool calls, and results
+- Visualize delegation chains and agent communication
+
+### Data Sources
+
+The GUI reads existing runtime artifacts — no new data formats needed:
+
+| Data | Source | Format |
+|---|---|---|
+| Active sessions | `.strawpot/runtime/sessions/*.json` | JSON |
+| Session logs | `.strawpot/runtime/logs/*.jsonl` | JSONL |
+| Agent output | `.strawpot/runtime/<agent_id>.log` | Text |
+| Denden status | gRPC connection to running server | Live |
+| Event memory | Memory provider store | Provider-specific |
+| Project config | `.strawpot/config.toml` | TOML |
+
+### CLI Integration
+
+```
+strawpot gui                         # start web server on localhost:9800
+strawpot gui --port 9801             # custom port
+strawpot gui --host 0.0.0.0         # bind to all interfaces
+```
+
+The `gui` command is a thin launcher — available only when `strawpot-gui` is
+installed. If not installed, `strawpot gui` prints an install hint and exits.
+

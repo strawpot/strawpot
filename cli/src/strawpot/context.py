@@ -90,7 +90,11 @@ def _build_requester_section(role_slug: str) -> str:
         "## Requester\n"
         "\n"
         f"This task was delegated to you by **{role_slug}**. "
-        "Use the `denden` skill to communicate back to your requester."
+        "If you need task clarification or domain knowledge, use the "
+        "`denden` skill to ask your requester.\n"
+        "\n"
+        "Do NOT use `denden` to send your final results back. "
+        "When your task is complete, write your output to stdout."
     )
 
 

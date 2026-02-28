@@ -1,6 +1,7 @@
 """Delegate handler — policy check, resolve, build prompt, spawn, wait."""
 
 import os
+import shutil
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -57,7 +58,15 @@ def _check_policy(
         raise PolicyDenied("DENY_DEPTH_LIMIT")
 
 
-def _create_workspace(
+def _link_or_copy(src: str, dst: str) -> None:
+    """Symlink src to dst, falling back to copy on Windows or permission errors."""
+    try:
+        os.symlink(src, dst, target_is_directory=True)
+    except OSError:
+        shutil.copytree(src, dst)
+
+
+def create_workspace(
     runtime_dir: str,
     agent_id: str,
     resolved: dict,
@@ -82,11 +91,11 @@ def _create_workspace(
         slug = dep["slug"]
         if dep["kind"] == "skill":
             dest = os.path.join(skills_dir, slug)
-            os.symlink(dep["path"], dest, target_is_directory=True)
+            _link_or_copy(dep["path"], dest)
             skills_dirs.append(dest)
         elif dep["kind"] == "role":
             dest = os.path.join(roles_dir, slug)
-            os.symlink(dep["path"], dest, target_is_directory=True)
+            _link_or_copy(dep["path"], dest)
             roles_dirs.append(dest)
 
     return workspace, skills_dirs, roles_dirs
@@ -96,18 +105,23 @@ def _build_delegatable_roles(
     config: StrawPotConfig,
     current_role: str,
     resolve_role_dirs: Callable[[str], str | None],
+    requester_role: str | None = None,
 ) -> list[tuple[str, str]]:
     """Build list of (slug, description) for roles the sub-agent can delegate to.
 
-    Excludes the current role. Only includes roles in allowed_roles (if set)
-    that have resolvable directories.
+    Excludes the current role and the requester role. Only includes roles
+    in allowed_roles (if set) that have resolvable directories.
     """
     if config.allowed_roles is None:
         return []
 
+    skip = {current_role}
+    if requester_role:
+        skip.add(requester_role)
+
     roles: list[tuple[str, str]] = []
     for slug in config.allowed_roles:
-        if slug == current_role:
+        if slug in skip:
             continue
         role_dir = resolve_role_dirs(slug)
         if role_dir is None:
@@ -164,7 +178,8 @@ def handle_delegate(
 
     # 3. Build delegatable roles for the sub-agent
     delegatable = _build_delegatable_roles(
-        config, request.role_slug, resolve_role_dirs
+        config, request.role_slug, resolve_role_dirs,
+        requester_role=request.parent_role,
     )
 
     # 4. Build prompt
@@ -176,9 +191,17 @@ def handle_delegate(
 
     # 5. Create workspace and stage skills
     agent_id = f"agent_{uuid.uuid4().hex[:12]}"
-    workspace, skills_dirs, roles_dirs = _create_workspace(
+    workspace, skills_dirs, roles_dirs = create_workspace(
         runtime_dir, agent_id, resolved
     )
+
+    # 5b. Also resolve requester's role path into roles_dirs
+    requester_role_dir = resolve_role_dirs(request.parent_role)
+    if requester_role_dir is not None:
+        dest = os.path.join(workspace, "roles", request.parent_role)
+        if not os.path.exists(dest):
+            _link_or_copy(requester_role_dir, dest)
+            roles_dirs.append(dest)
 
     # 6. Spawn
     env = {
@@ -202,7 +225,18 @@ def handle_delegate(
     )
 
     # 7. Wait
-    result: AgentResult = runtime.wait(handle)
+    result: AgentResult = runtime.wait(
+        handle, timeout=config.agent_timeout
+    )
+
+    # 7b. Handle timeout — kill agent if still alive
+    if config.agent_timeout is not None and runtime.is_alive(handle):
+        runtime.kill(handle)
+        return DelegateResult(
+            summary=f"Agent timed out after {config.agent_timeout}s",
+            output=result.output,
+            exit_code=1,
+        )
 
     # 8. Return
     return DelegateResult(

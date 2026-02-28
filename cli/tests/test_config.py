@@ -13,6 +13,8 @@ def test_defaults():
     assert config.orchestrator_role == "orchestrator"
     assert config.allowed_roles is None
     assert config.max_depth == 3
+    assert config.permission_mode == "default"
+    assert config.agent_timeout is None
     assert config.agents == {}
     assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
@@ -89,10 +91,12 @@ def test_load_config_full(tmp_path, monkeypatch):
         "\n"
         "[orchestrator]\n"
         'role = "team-lead"\n'
+        'permission_mode = "plan"\n'
         "\n"
         "[policy]\n"
         'allowed_roles = ["implementer", "reviewer"]\n'
         "max_depth = 5\n"
+        "agent_timeout = 300\n"
         "\n"
         "[session]\n"
         'merge_strategy = "pr"\n'
@@ -110,6 +114,8 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.orchestrator_role == "team-lead"
     assert config.allowed_roles == ["implementer", "reviewer"]
     assert config.max_depth == 5
+    assert config.permission_mode == "plan"
+    assert config.agent_timeout == 300
     assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
     assert config.merge_strategy == "pr"
     assert config.pull_before_session == "auto"

@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+_skip_no_tmux = pytest.mark.skipif(
+    sys.platform == "win32", reason="tmux not available on Windows"
+)
+
 from strawpot.agents.interactive import (
     DirectWrapperRuntime,
     InteractiveWrapperRuntime,
@@ -57,6 +61,7 @@ def test_session_name_short():
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_spawn_calls_build_then_tmux(monkeypatch):
     """spawn calls <wrapper> build, then launches tmux new-session."""
     inner = _make_inner()
@@ -114,6 +119,7 @@ def test_spawn_calls_build_then_tmux(monkeypatch):
     assert handle.metadata["session"] == "strawpot-abc12345"
 
 
+@_skip_no_tmux
 def test_spawn_uses_cwd_from_build(monkeypatch):
     """spawn passes cwd from build response to tmux -c."""
     inner = _make_inner()
@@ -148,6 +154,7 @@ def test_spawn_uses_cwd_from_build(monkeypatch):
     assert tmux_cmd[cwd_idx] == "/custom/path"
 
 
+@_skip_no_tmux
 def test_spawn_falls_back_to_working_dir(monkeypatch):
     """When build doesn't return cwd, uses working_dir."""
     inner = _make_inner()
@@ -181,6 +188,7 @@ def test_spawn_falls_back_to_working_dir(monkeypatch):
     assert tmux_cmd[cwd_idx] == "/fallback"
 
 
+@_skip_no_tmux
 def test_spawn_tmux_failure_raises(monkeypatch):
     """spawn raises RuntimeError if tmux new-session fails."""
     inner = _make_inner()
@@ -206,6 +214,7 @@ def test_spawn_tmux_failure_raises(monkeypatch):
         )
 
 
+@_skip_no_tmux
 def test_spawn_passes_env(monkeypatch):
     """spawn merges env into subprocess environment."""
     inner = _make_inner()
@@ -241,6 +250,7 @@ def test_spawn_passes_env(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_wait_polls_until_session_exits(monkeypatch):
     """wait polls tmux has-session until it returns non-zero."""
     poll_count = 0
@@ -273,6 +283,7 @@ def test_wait_polls_until_session_exits(monkeypatch):
     assert poll_count == 3
 
 
+@_skip_no_tmux
 def test_wait_with_timeout(monkeypatch):
     """wait respects timeout and stops polling."""
     elapsed = {"value": 0.0}
@@ -308,6 +319,7 @@ def test_wait_with_timeout(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_is_alive_true(monkeypatch):
     monkeypatch.setattr(
         "subprocess.run",
@@ -324,6 +336,7 @@ def test_is_alive_true(monkeypatch):
     assert runtime.is_alive(handle) is True
 
 
+@_skip_no_tmux
 def test_is_alive_false(monkeypatch):
     monkeypatch.setattr(
         "subprocess.run",
@@ -345,6 +358,7 @@ def test_is_alive_false(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_kill_sends_tmux_kill_session(monkeypatch):
     calls = []
 
@@ -373,6 +387,7 @@ def test_kill_sends_tmux_kill_session(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_attach_calls_tmux_attach(monkeypatch):
     calls = []
 
@@ -401,6 +416,7 @@ def test_attach_calls_tmux_attach(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_tmux
 def test_session_from_metadata(monkeypatch):
     """is_alive uses session from metadata, not derived from agent_id."""
     calls = []

@@ -47,6 +47,12 @@ class InteractiveWrapperRuntime:
     2. Launches that command inside a tmux session.
     3. Manages the tmux session lifecycle (wait, alive, kill).
 
+    .. note::
+
+        Requires tmux (macOS / Linux only).  On Windows and environments
+        without tmux, use ``DirectWrapperRuntime`` instead.  The CLI
+        auto-selects the appropriate runtime via ``shutil.which("tmux")``.
+
     Attributes:
         name: Agent name (delegated from the inner runtime).
     """
