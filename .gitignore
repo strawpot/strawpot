@@ -42,6 +42,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Built wrapper binaries
+cli/src/strawpot/_builtin_agents/*/strawpot_*
+
 # StrawPot runtime (per-project, not committed)
 .strawpot/runtime/
 .strawpot/worktrees/

@@ -1,11 +1,12 @@
 ---
 name: claude-code
-description: Claude Code agent via tmux
+description: Claude Code agent
 metadata:
   version: "0.1.0"
   strawpot:
-    wrapper:
-      script: wrapper.py
+    bin:
+      macos: strawpot_claude_code
+      linux: strawpot_claude_code
     tools:
       claude:
         description: Claude Code CLI
@@ -26,5 +27,5 @@ metadata:
 
 # Claude Code Agent
 
-Runs Claude Code in tmux sessions. Supports interactive and non-interactive
+Runs Claude Code as a subprocess. Supports interactive and non-interactive
 modes, custom model selection, and skill-based prompt augmentation.
