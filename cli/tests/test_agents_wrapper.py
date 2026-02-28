@@ -78,6 +78,7 @@ def test_read_pid_invalid(tmp_path):
 
 
 def test_is_process_alive_true(monkeypatch):
+    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
     monkeypatch.setattr("os.kill", lambda pid, sig: None)
     assert WrapperRuntime._is_process_alive(12345) is True
 
@@ -86,6 +87,7 @@ def test_is_process_alive_false(monkeypatch):
     def fake_kill(pid, sig):
         raise ProcessLookupError()
 
+    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
     monkeypatch.setattr("os.kill", fake_kill)
     assert WrapperRuntime._is_process_alive(12345) is False
 
@@ -94,6 +96,7 @@ def test_is_process_alive_permission_error(monkeypatch):
     def fake_kill(pid, sig):
         raise PermissionError()
 
+    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
     monkeypatch.setattr("os.kill", fake_kill)
     assert WrapperRuntime._is_process_alive(12345) is True
 
