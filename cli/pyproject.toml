@@ -2,12 +2,31 @@
 name = "strawpot"
 version = "0.1.0"
 description = "Lightweight CLI for agent orchestration"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{name = "StrawPot Contributors"}]
+keywords = ["agent", "orchestration", "cli", "multi-agent", "grpc"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "click>=8.1",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/strawpot/strawpot"
+Repository = "https://github.com/strawpot/strawpot"
+Issues = "https://github.com/strawpot/strawpot/issues"
 
 [project.scripts]
 strawpot = "strawpot.cli:cli"
