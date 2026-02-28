@@ -1,5 +1,6 @@
 """Agent registry — discover AGENT.md manifests and resolve to AgentSpec."""
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -8,6 +9,25 @@ from pathlib import Path
 import yaml
 
 from strawpot.config import get_strawpot_home
+
+
+@dataclass
+class ValidationResult:
+    """Result of validating an AgentSpec's external dependencies.
+
+    Attributes:
+        missing_tools: Tool names that are not found on PATH,
+            each paired with an optional install hint.
+        missing_env: Required environment variable names that are not set.
+    """
+
+    missing_tools: list[tuple[str, str | None]] = field(default_factory=list)
+    missing_env: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        """True if no issues were found."""
+        return not self.missing_tools and not self.missing_env
 
 
 @dataclass
@@ -148,3 +168,36 @@ def resolve_agent(
         env_schema=env_schema,
         tools=tools,
     )
+
+
+def validate_agent(spec: AgentSpec) -> ValidationResult:
+    """Validate that an agent's external dependencies are satisfied.
+
+    Checks:
+        - Each tool declared in ``spec.tools`` is found on PATH via
+          ``shutil.which``.
+        - Each env var marked ``required: true`` in ``spec.env_schema``
+          is set in the current environment.
+
+    Args:
+        spec: A resolved AgentSpec.
+
+    Returns:
+        ValidationResult with any missing tools or env vars.
+    """
+    result = ValidationResult()
+
+    for tool_name, tool_meta in spec.tools.items():
+        if shutil.which(tool_name) is None:
+            install_hint = (tool_meta.get("install", {}) or {}).get(
+                "macos" if sys.platform == "darwin"
+                else "windows" if sys.platform == "win32"
+                else "linux"
+            )
+            result.missing_tools.append((tool_name, install_hint))
+
+    for var_name, var_meta in spec.env_schema.items():
+        if var_meta.get("required") and var_name not in os.environ:
+            result.missing_env.append(var_name)
+
+    return result
