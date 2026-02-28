@@ -278,3 +278,35 @@ def test_kill(monkeypatch):
     rt.kill(handle)  # should not raise
     assert "kill" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("--agent-id") + 1] == "a1"
+
+
+# --- setup ---
+
+
+def test_setup_success(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        r = _mock_run("")
+        r.returncode = 0
+        return r
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    rt = WrapperRuntime(_make_spec())
+    assert rt.setup() is True
+    assert captured["cmd"] == ["/usr/bin/fake-wrapper", "setup"]
+    # setup runs interactively — no capture_output
+    assert "capture_output" not in captured["kwargs"]
+
+
+def test_setup_failure(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        r = _mock_run("")
+        r.returncode = 1
+        return r
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    rt = WrapperRuntime(_make_spec())
+    assert rt.setup() is False
