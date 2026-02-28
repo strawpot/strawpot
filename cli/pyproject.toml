@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
     "click>=8.1",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
