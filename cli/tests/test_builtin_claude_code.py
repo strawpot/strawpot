@@ -53,6 +53,11 @@ def test_agent_md_params():
 def test_resolve_builtin_agent(tmp_path, monkeypatch):
     """Registry finds the built-in agent as last fallback."""
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    # Mock wrapper resolution — binary may not be built on CI
+    monkeypatch.setattr(
+        "strawpot.agents.registry._resolve_wrapper_cmd",
+        lambda agent_dir, _meta: [str(agent_dir / "strawpot_claude_code")],
+    )
     spec = resolve_agent("claude_code", str(tmp_path))
     assert spec.name == "claude-code"
     assert spec.version == "0.1.0"
