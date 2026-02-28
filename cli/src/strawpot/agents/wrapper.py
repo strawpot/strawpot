@@ -1,13 +1,15 @@
 """WrapperRuntime — implements AgentRuntime by calling wrapper CLI subcommands.
 
-Every agent wrapper must expose four subcommands (spawn, wait, alive, kill)
-that accept protocol args and return JSON on stdout.  WrapperRuntime is the
+Every agent wrapper must expose five subcommands (setup, spawn, wait, alive,
+kill).  ``setup`` runs interactively for one-time auth/config; the rest
+accept protocol args and return JSON on stdout.  WrapperRuntime is the
 single, generic glue between StrawPot and any conforming wrapper CLI.
 """
 
 import json
 import os
 import subprocess
+import sys
 
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.agents.registry import AgentSpec
@@ -81,6 +83,25 @@ class WrapperRuntime:
     # ------------------------------------------------------------------
     # AgentRuntime interface
     # ------------------------------------------------------------------
+
+    def setup(self) -> bool:
+        """Run one-time interactive setup via ``<wrapper> setup``.
+
+        Unlike other subcommands, ``setup`` runs with stdin/stdout
+        attached to the terminal so the user can interact (e.g. OAuth
+        login flow).  No JSON is expected — only the exit code matters.
+
+        Returns:
+            True if setup succeeded (exit code 0), False otherwise.
+        """
+        cmd = [*self.spec.wrapper_cmd, "setup"]
+        result = subprocess.run(
+            cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        return result.returncode == 0
 
     def spawn(
         self,
