@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "cli/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    defaults:
+      run:
+        working-directory: cli
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        id: version
+        run: |
+          LATEST=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST" ]; then
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+            echo "tag=v0.1.0" >> "$GITHUB_OUTPUT"
+          else
+            MAJOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f1)
+            MINOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f2)
+            PATCH=$(echo "$LATEST" | sed 's/v//' | cut -d. -f3)
+            NEW_PATCH=$((PATCH + 1))
+            echo "version=${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
+            echo "tag=v${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update version
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"${{ steps.version.outputs.version }}\"/" src/strawpot/__init__.py
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: cli/dist/
+
+      - name: Tag release
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+  build-binaries:
+    name: Build binary (${{ matrix.os }})
+    needs: publish-pypi
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cli
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_name: strawpot-linux-amd64
+          - os: macos-latest
+            asset_name: strawpot-darwin-amd64
+          - os: windows-latest
+            asset_name: strawpot-windows-amd64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build binary
+        run: pyinstaller --onefile --name ${{ matrix.asset_name }} src/strawpot/__main__.py
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ needs.publish-pypi.outputs.tag }}" \
+            --title "${{ needs.publish-pypi.outputs.tag }}" \
+            --generate-notes \
+            || true
+          gh release upload "${{ needs.publish-pypi.outputs.tag }}" \
+            dist/${{ matrix.asset_name }} \
+            --clobber

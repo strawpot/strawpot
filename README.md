@@ -16,10 +16,25 @@ strawpot start --role team-lead
    from StrawHub and spawns sub-agents in the same worktree
 5. On exit, cleans up everything automatically
 
+## Repository Structure
+
+```
+cli/          Python CLI package (strawpot)
+web/          Web GUI (planned)
+DESIGN.md     Architecture & design document
+```
+
 ## Install
 
 ```
 pip install strawpot
+```
+
+Or from source:
+
+```
+cd cli
+pip install -e ".[dev]"
 ```
 
 ## Usage

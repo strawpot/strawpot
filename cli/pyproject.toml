@@ -15,6 +15,7 @@ strawpot = "strawpot.cli:cli"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
+    "pyinstaller>=6.0",
 ]
 
 [tool.pytest.ini_options]
