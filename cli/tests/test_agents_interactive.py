@@ -1,4 +1,4 @@
-"""Tests for strawpot.agents.interactive (InteractiveWrapperRuntime)."""
+"""Tests for strawpot.agents.interactive (InteractiveWrapperRuntime, DirectWrapperRuntime)."""
 
 import json
 import subprocess
@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from strawpot.agents.interactive import (
+    DirectWrapperRuntime,
     InteractiveWrapperRuntime,
     _session_name,
     _tmux,
@@ -420,3 +421,274 @@ def test_session_from_metadata(monkeypatch):
     runtime.is_alive(handle)
 
     assert "custom-session" in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# DirectWrapperRuntime
+# ---------------------------------------------------------------------------
+
+
+def _spawn_kwargs(**overrides):
+    """Default kwargs for DirectWrapperRuntime.spawn."""
+    defaults = dict(
+        agent_id="d001",
+        working_dir="/project",
+        agent_workspace_dir="/tmp/workspace",
+        role_prompt="",
+        memory_prompt="",
+        skills_dirs=[],
+        roles_dirs=[],
+        task="do something",
+        env={},
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+def test_direct_spawn_calls_build_then_popen(monkeypatch):
+    """spawn calls <wrapper> build, then launches subprocess.Popen."""
+    inner = _make_inner()
+    inner._run_subcommand.return_value = {
+        "cmd": ["claude", "-p", "do something"],
+        "cwd": "/project",
+    }
+
+    popen_calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.pid = 42
+            popen_calls.append((cmd, kwargs))
+
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
+
+    runtime = DirectWrapperRuntime(inner)
+    handle = runtime.spawn(**_spawn_kwargs())
+
+    # Verify build was called
+    build_call = inner._run_subcommand.call_args
+    args = build_call[0][0]
+    assert args[0] == "build"
+    assert "--agent-id" in args
+    assert "--task" in args
+
+    # Verify Popen was called with the command from build
+    assert len(popen_calls) == 1
+    cmd, kwargs = popen_calls[0]
+    assert cmd == ["claude", "-p", "do something"]
+    assert kwargs["cwd"] == "/project"
+
+    # Handle
+    assert handle.agent_id == "d001"
+    assert handle.pid == 42
+    assert handle.metadata == {}
+
+
+def test_direct_spawn_uses_cwd_from_build(monkeypatch):
+    """spawn passes cwd from build response to Popen."""
+    inner = _make_inner()
+    inner._run_subcommand.return_value = {
+        "cmd": ["claude"],
+        "cwd": "/custom/path",
+    }
+
+    popen_calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.pid = 1
+            popen_calls.append((cmd, kwargs))
+
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
+
+    runtime = DirectWrapperRuntime(inner)
+    runtime.spawn(**_spawn_kwargs())
+
+    assert popen_calls[0][1]["cwd"] == "/custom/path"
+
+
+def test_direct_spawn_falls_back_to_working_dir(monkeypatch):
+    """When build doesn't return cwd, uses working_dir."""
+    inner = _make_inner()
+    inner._run_subcommand.return_value = {"cmd": ["claude"]}
+
+    popen_calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.pid = 1
+            popen_calls.append((cmd, kwargs))
+
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
+
+    runtime = DirectWrapperRuntime(inner)
+    runtime.spawn(**_spawn_kwargs(working_dir="/fallback"))
+
+    assert popen_calls[0][1]["cwd"] == "/fallback"
+
+
+def test_direct_spawn_passes_env(monkeypatch):
+    """spawn merges env into subprocess environment."""
+    inner = _make_inner()
+    inner._run_subcommand.return_value = {"cmd": ["claude"], "cwd": "/p"}
+
+    popen_calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.pid = 1
+            popen_calls.append((cmd, kwargs))
+
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
+
+    runtime = DirectWrapperRuntime(inner)
+    runtime.spawn(**_spawn_kwargs(env={"ANTHROPIC_API_KEY": "sk-test"}))
+
+    env = popen_calls[0][1]["env"]
+    assert env["ANTHROPIC_API_KEY"] == "sk-test"
+
+
+def test_direct_wait_blocks_until_exit():
+    """wait blocks on proc.wait() and returns result."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    proc.returncode = 0
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    result = runtime.wait(handle)
+
+    proc.wait.assert_called_once_with(timeout=None)
+    assert result.summary == "Session ended"
+    assert result.exit_code == 0
+
+
+def test_direct_wait_with_timeout():
+    """wait passes timeout to proc.wait()."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    proc.wait.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=5)
+    proc.returncode = None
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    result = runtime.wait(handle, timeout=5.0)
+
+    proc.wait.assert_called_once_with(timeout=5.0)
+    assert result.exit_code == 0  # returns 0 when returncode is None
+
+
+def test_direct_wait_unknown_agent():
+    """wait returns default result for unknown agent_id."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    handle = AgentHandle(
+        agent_id="unknown", runtime_name="claude-code", pid=None, metadata={},
+    )
+    result = runtime.wait(handle)
+
+    assert result.summary == "Session ended"
+
+
+def test_direct_is_alive_true():
+    """is_alive returns True when process is running."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    proc.poll.return_value = None  # still running
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    assert runtime.is_alive(handle) is True
+
+
+def test_direct_is_alive_false_exited():
+    """is_alive returns False when process has exited."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    proc.poll.return_value = 0  # exited
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    assert runtime.is_alive(handle) is False
+
+
+def test_direct_is_alive_false_unknown():
+    """is_alive returns False for unknown agent_id."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    handle = AgentHandle(
+        agent_id="unknown", runtime_name="claude-code", pid=None, metadata={},
+    )
+    assert runtime.is_alive(handle) is False
+
+
+def test_direct_kill_terminates():
+    """kill calls proc.terminate()."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    runtime.kill(handle)
+
+    proc.terminate.assert_called_once()
+
+
+def test_direct_kill_unknown_noop():
+    """kill is a no-op for unknown agent_id."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    handle = AgentHandle(
+        agent_id="unknown", runtime_name="claude-code", pid=None, metadata={},
+    )
+    runtime.kill(handle)  # should not raise
+
+
+def test_direct_attach_waits():
+    """attach blocks on proc.wait()."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    runtime.attach(handle)
+
+    proc.wait.assert_called_once()
+
+
+def test_direct_attach_unknown_noop():
+    """attach is a no-op for unknown agent_id."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    handle = AgentHandle(
+        agent_id="unknown", runtime_name="claude-code", pid=None, metadata={},
+    )
+    runtime.attach(handle)  # should not raise

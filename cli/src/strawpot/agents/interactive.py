@@ -1,11 +1,15 @@
-"""InteractiveWrapperRuntime — wraps any WrapperRuntime with tmux.
+"""Interactive runtimes — terminal-attached orchestrator sessions.
 
 Used only for the orchestrator agent that needs an interactive terminal
 session.  Sub-agents (delegated tasks) use WrapperRuntime directly.
 
-The runtime calls the wrapper's ``build`` subcommand to get the translated
-agent command, then launches it inside a tmux session.  This keeps tmux
-as a session-level concern in StrawPot core, not an agent-specific one.
+Two implementations are provided:
+
+* **InteractiveWrapperRuntime** — wraps any WrapperRuntime with tmux.
+  Supports detach/reattach but requires tmux (macOS / Linux only).
+* **DirectWrapperRuntime** — cross-platform fallback that runs the agent
+  process directly attached to the current terminal.  No detach/reattach,
+  but works everywhere including Windows and minimal containers.
 """
 
 import json
@@ -182,3 +186,116 @@ class InteractiveWrapperRuntime:
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
+
+
+class DirectWrapperRuntime:
+    """Cross-platform fallback for interactive sessions.
+
+    Runs the agent process directly attached to the current terminal
+    via ``subprocess.Popen``.  No detach/reattach capability, but works
+    on all platforms (Windows, Linux, macOS) without tmux.
+
+    Attributes:
+        name: Agent name (delegated from the inner runtime).
+    """
+
+    def __init__(self, inner: WrapperRuntime) -> None:
+        self.inner = inner
+        self.name = inner.name
+        self._procs: dict[str, subprocess.Popen] = {}
+
+    def spawn(
+        self,
+        *,
+        agent_id: str,
+        working_dir: str,
+        agent_workspace_dir: str,
+        role_prompt: str,
+        memory_prompt: str,
+        skills_dirs: list[str],
+        roles_dirs: list[str],
+        task: str,
+        env: dict[str, str],
+    ) -> AgentHandle:
+        """Start the agent attached to the current terminal.
+
+        Calls ``<wrapper> build`` to get the agent command, then launches
+        it with stdin/stdout/stderr inherited from the parent process.
+        """
+        # 1. Call <wrapper> build to get the translated command
+        args: list[str] = [
+            "build",
+            "--agent-id", agent_id,
+            "--working-dir", working_dir,
+            "--agent-workspace-dir", agent_workspace_dir,
+            "--role-prompt", role_prompt,
+            "--memory-prompt", memory_prompt,
+            "--task", task,
+            "--config", json.dumps(self.inner.spec.config),
+        ]
+        for d in skills_dirs:
+            args += ["--skills-dir", d]
+        for d in roles_dirs:
+            args += ["--roles-dir", d]
+
+        data = self.inner._run_subcommand(args, extra_env=env)
+        agent_cmd = data["cmd"]
+        cwd = data.get("cwd", working_dir)
+
+        # 2. Launch directly with terminal attached
+        full_env = {**os.environ, **env} if env else None
+        proc = subprocess.Popen(
+            agent_cmd,
+            cwd=cwd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            env=full_env,
+        )
+        self._procs[agent_id] = proc
+
+        return AgentHandle(
+            agent_id=agent_id,
+            runtime_name=self.name,
+            pid=proc.pid,
+            metadata={},
+        )
+
+    def wait(
+        self, handle: AgentHandle, timeout: float | None = None
+    ) -> AgentResult:
+        """Block until the process exits."""
+        proc = self._procs.get(handle.agent_id)
+        if proc is None:
+            return AgentResult(summary="Session ended")
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            pass
+        return AgentResult(
+            summary="Session ended",
+            exit_code=proc.returncode if proc.returncode is not None else 0,
+        )
+
+    def is_alive(self, handle: AgentHandle) -> bool:
+        """Check whether the process is still running."""
+        proc = self._procs.get(handle.agent_id)
+        if proc is None:
+            return False
+        return proc.poll() is None
+
+    def kill(self, handle: AgentHandle) -> None:
+        """Terminate the process."""
+        proc = self._procs.get(handle.agent_id)
+        if proc is not None:
+            proc.terminate()
+
+    def attach(self, handle: AgentHandle) -> None:
+        """Wait for the process to complete.
+
+        Unlike tmux attach, this is a no-op if the process is already
+        running with the terminal attached.  It simply blocks until exit.
+        """
+        proc = self._procs.get(handle.agent_id)
+        if proc is not None:
+            proc.wait()

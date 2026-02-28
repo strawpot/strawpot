@@ -184,10 +184,10 @@ def test_go_build_with_skills_dir(tmp_path):
     assert len(add_dir_indices) == 1
     assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
 
-    # Symlink exists at claude/.claude/skills/my_skill -> skills_dir
+    # Skill linked (symlink) or copied (Windows fallback)
     link = claude_dir / ".claude" / "skills" / "my_skill"
-    assert link.is_symlink()
-    assert link.resolve() == skills_dir.resolve()
+    assert link.exists()
+    assert (link / "SKILL.md").read_text() == "skill content"
 
 
 @needs_binary
@@ -221,10 +221,10 @@ def test_go_build_with_roles_dir(tmp_path):
     assert len(add_dir_indices) == 1
     assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
 
-    # Symlink exists at claude/roles/my_role -> roles_dir
+    # Role linked (symlink) or copied (Windows fallback)
     link = claude_dir / "roles" / "my_role"
-    assert link.is_symlink()
-    assert link.resolve() == roles_dir.resolve()
+    assert link.exists()
+    assert (link / "ROLE.md").read_text() == "role content"
 
 
 @needs_binary

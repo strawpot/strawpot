@@ -10,6 +10,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,6 +116,36 @@ func parseBuildArgs(args []string) buildArgs {
 	return ba
 }
 
+// linkOrCopy creates a symlink from dst pointing to src.  If symlinking fails
+// (common on Windows without Developer Mode), it falls back to copying the
+// directory tree.
+func linkOrCopy(src, dst string) error {
+	err := os.Symlink(src, dst)
+	if err == nil {
+		return nil
+	}
+	return copyDir(src, dst)
+}
+
+// copyDir recursively copies a directory tree from src to dst.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, relPath)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+}
+
 func cmdBuild(args []string) {
 	ba := parseBuildArgs(args)
 
@@ -162,8 +193,8 @@ func cmdBuild(args []string) {
 		for _, d := range ba.SkillsDirs {
 			name := filepath.Base(d)
 			link := filepath.Join(skillsTarget, name)
-			if err := os.Symlink(d, link); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to symlink skill %s: %v\n", name, err)
+			if err := linkOrCopy(d, link); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to link skill %s: %v\n", name, err)
 				os.Exit(1)
 			}
 		}
@@ -179,8 +210,8 @@ func cmdBuild(args []string) {
 		for _, d := range ba.RolesDirs {
 			name := filepath.Base(d)
 			link := filepath.Join(rolesTarget, name)
-			if err := os.Symlink(d, link); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to symlink role %s: %v\n", name, err)
+			if err := linkOrCopy(d, link); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to link role %s: %v\n", name, err)
 				os.Exit(1)
 			}
 		}
