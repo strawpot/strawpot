@@ -23,6 +23,7 @@ def parse_frontmatter(text: str) -> dict:
 def build_prompt(
     resolved: dict,
     delegatable_roles: list[tuple[str, str]] | None = None,
+    requester_role: str | None = None,
 ) -> str:
     """Build a system prompt from a resolved role and its dependencies.
 
@@ -33,11 +34,15 @@ def build_prompt(
         delegatable_roles: optional list of (slug, description) tuples.
             When provided, a Delegation section is appended listing
             roles the agent can delegate to via denden.
+        requester_role: optional slug of the role that delegated this task.
+            When provided, a Requester section is appended so the agent
+            can communicate back via denden.
 
     Returns:
         System prompt string: skills first (resolver order), role last,
         frontmatter stripped, sections separated by ``---``.
         If delegatable_roles is provided, a Delegation section follows.
+        If requester_role is provided, a Requester section follows.
     """
     sections: list[str] = []
 
@@ -52,6 +57,9 @@ def build_prompt(
 
     if delegatable_roles:
         sections.append(_build_delegation_section(delegatable_roles))
+
+    if requester_role:
+        sections.append(_build_requester_section(requester_role))
 
     return "\n---\n\n".join(sections)
 
@@ -74,6 +82,16 @@ def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
     )
     lines.append("skill to request delegation.")
     return "\n".join(lines)
+
+
+def _build_requester_section(role_slug: str) -> str:
+    """Build the requester section identifying who delegated this task."""
+    return (
+        "## Requester\n"
+        "\n"
+        f"This task was delegated to you by **{role_slug}**. "
+        "Use the `denden` skill to communicate back to your requester."
+    )
 
 
 def read_role_description(role_path: str) -> str:

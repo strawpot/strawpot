@@ -1394,8 +1394,10 @@ strawpot uninstall memory <slug>   →  strawhub uninstall memory <slug>
 ## Future Extensions
 
 - **Docker isolation** — `DockerIsolator` implementing the same protocol
-- **Community agent wrappers** — anyone can publish a wrapper to strawhub registry
-- **Agent providers** — third-party providers ship CLIs that implement the wrapper protocol
+- **Community agents** — anyone can publish a agent cli to strawhub registry
+- **Agent providers** — third-party providers ship CLIs that implement the strawpot agent cli protocol
 - **Memory providers** — vector-DB backed, cloud-synced, or team-shared memory implementations
 - **Automation inputs** — GitHub issue watcher, email, Telegram → feed tasks to orchestrator
 - **Web GUI** — read session state + denden status, display agent tree + EM replay
+- **Hooks** - support hooks
+- **Cron Jobs** - support cron jobs to invoke orchestrator periodically or conditonally

@@ -331,6 +331,72 @@ def test_delegation_section_exact_format(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Requester section
+# ---------------------------------------------------------------------------
+
+
+def test_requester_section_appended(tmp_path):
+    """Requester section is appended when requester_role is provided."""
+    role_path = _write_role(tmp_path, "implementer", "You implement.")
+
+    resolved = {
+        "slug": "implementer",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, requester_role="team-lead")
+
+    assert "\n---\n\n## Requester" in result
+    assert "**team-lead**" in result
+    assert "denden" in result
+
+
+def test_requester_after_delegation(tmp_path):
+    """Requester section comes after delegation section."""
+    role_path = _write_role(tmp_path, "lead", "You lead.")
+
+    resolved = {
+        "slug": "lead",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        delegatable_roles=[("fixer", "Fixes bugs")],
+        requester_role="orchestrator",
+    )
+
+    delegation_pos = result.index("## Delegation")
+    requester_pos = result.index("## Requester")
+    assert delegation_pos < requester_pos
+
+
+def test_no_requester_when_none(tmp_path):
+    """No requester section when requester_role is None."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, requester_role=None)
+    assert "Requester" not in result
+
+
+# ---------------------------------------------------------------------------
 # read_role_description
 # ---------------------------------------------------------------------------
 
