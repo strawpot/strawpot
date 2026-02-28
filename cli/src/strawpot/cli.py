@@ -1,4 +1,4 @@
-"""Strawpot CLI — agent orchestration commands + strawhub passthrough."""
+"""StrawPot CLI — agent orchestration commands + strawhub passthrough."""
 
 import json
 import os
@@ -17,7 +17,7 @@ from strawpot.config import get_strawpot_home, load_config
 @click.group()
 @click.version_option(version=__version__)
 def cli():
-    """Strawpot — lightweight agent orchestration."""
+    """StrawPot — lightweight agent orchestration."""
 
 
 # ---------------------------------------------------------------------------

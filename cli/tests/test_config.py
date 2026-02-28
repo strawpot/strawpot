@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from strawpot.config import StrawpotConfig, get_strawpot_home, load_config
+from strawpot.config import StrawPotConfig, get_strawpot_home, load_config
 
 
 def test_defaults():
-    config = StrawpotConfig()
+    config = StrawPotConfig()
     assert config.runtime == "claude_code"
     assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
