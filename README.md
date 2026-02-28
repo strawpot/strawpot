@@ -1,7 +1,7 @@
 # StrawPot
 
 Lightweight CLI for agent orchestration. StrawPot connects
-[Denden](https://github.com/user/denden) (gRPC agent-to-orchestrator transport)
+[Denden](https://github.com/strawpot/denden) (gRPC agent-to-orchestrator transport)
 and [StrawHub](https://strawhub.dev) (skill & role registry) to run multi-agent
 sessions (e.g. coding, research, ops) in isolated environments.
 
