@@ -1,20 +1,9 @@
-# StrawPot
+# StrawPot CLI
 
 Lightweight CLI for agent orchestration. StrawPot connects
 [Denden](https://github.com/strawpot/denden) (gRPC agent-to-orchestrator transport)
 and [StrawHub](https://strawhub.dev) (skill & role registry) to run multi-agent
-sessions (e.g. coding, research, ops) in isolated environments.
-
-```
-strawpot start --role team-lead
-```
-
-1. Creates a git worktree for the session
-2. Starts a Denden gRPC server
-3. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
-4. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills
-   from StrawHub and spawns sub-agents in the same worktree
-5. On exit, cleans up everything automatically
+sessions in isolated environments.
 
 ## Install
 
@@ -61,4 +50,8 @@ allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
 ```
 
-See the [repository](https://github.com/strawpot/strawpot) for architecture details.
+## Links
+
+- [Repository](https://github.com/strawpot/strawpot) — full project docs and architecture
+- [StrawHub](https://strawhub.dev) — skill & role registry
+- [Denden](https://github.com/strawpot/denden) — gRPC transport layer
