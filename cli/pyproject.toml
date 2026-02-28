@@ -2,7 +2,7 @@
 name = "strawpot"
 version = "0.1.0"
 description = "Lightweight CLI for agent orchestration"
-readme = {file = "../README.md", content-type = "text/markdown"}
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "StrawPot Contributors"}]
