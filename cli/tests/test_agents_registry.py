@@ -1,0 +1,191 @@
+"""Tests for strawpot.agents.registry."""
+
+import sys
+from pathlib import Path
+from textwrap import dedent
+
+import pytest
+
+from strawpot.agents.registry import (
+    AgentSpec,
+    _merge_config,
+    _resolve_wrapper_cmd,
+    parse_agent_md,
+    resolve_agent,
+)
+
+SAMPLE_AGENT_MD = dedent("""\
+    ---
+    name: test-agent
+    description: A test agent
+    metadata:
+      version: "1.2.3"
+      strawpot:
+        wrapper:
+          script: wrapper.py
+        tools:
+            sometool:
+              description: A tool
+              install:
+                macos: brew install sometool
+        params:
+          model:
+            type: string
+            default: gpt-4
+            description: Model to use
+          temperature:
+            type: float
+            default: 0.7
+        env:
+          API_KEY:
+            required: true
+            description: API key
+    ---
+
+    # Test Agent
+
+    This is the body.
+""")
+
+
+def _write_agent(base: Path, name: str, content: str) -> Path:
+    """Helper to write an AGENT.md in the expected directory structure."""
+    agent_dir = base / name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "AGENT.md").write_text(content)
+    (agent_dir / "wrapper.py").write_text("# fake wrapper")
+    return agent_dir
+
+
+# --- parse_agent_md ---
+
+
+def test_parse_agent_md(tmp_path):
+    path = tmp_path / "AGENT.md"
+    path.write_text(SAMPLE_AGENT_MD)
+    fm, body = parse_agent_md(path)
+
+    assert fm["name"] == "test-agent"
+    assert fm["metadata"]["version"] == "1.2.3"
+    assert fm["metadata"]["strawpot"]["wrapper"]["script"] == "wrapper.py"
+    assert "# Test Agent" in body
+
+
+def test_parse_agent_md_no_frontmatter(tmp_path):
+    path = tmp_path / "AGENT.md"
+    path.write_text("# Just markdown\n\nNo frontmatter here.")
+    with pytest.raises(ValueError, match="missing frontmatter"):
+        parse_agent_md(path)
+
+
+def test_parse_agent_md_missing_closing(tmp_path):
+    path = tmp_path / "AGENT.md"
+    path.write_text("---\nname: broken\n")
+    with pytest.raises(ValueError, match="missing closing"):
+        parse_agent_md(path)
+
+
+# --- _resolve_wrapper_cmd ---
+
+
+def test_resolve_wrapper_cmd_script(tmp_path):
+    (tmp_path / "wrapper.py").write_text("# fake")
+    meta = {"wrapper": {"script": "wrapper.py"}}
+    cmd = _resolve_wrapper_cmd(tmp_path, meta)
+    assert cmd == [sys.executable, str(tmp_path / "wrapper.py")]
+
+
+def test_resolve_wrapper_cmd_command(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
+    meta = {"wrapper": {"command": "my-agent"}}
+    cmd = _resolve_wrapper_cmd(Path("/dummy"), meta)
+    assert cmd == ["/usr/bin/my-agent"]
+
+
+def test_resolve_wrapper_cmd_command_not_found(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda c: None)
+    meta = {"wrapper": {"command": "missing-agent"}}
+    with pytest.raises(ValueError, match="not found on PATH"):
+        _resolve_wrapper_cmd(Path("/dummy"), meta)
+
+
+def test_resolve_wrapper_cmd_missing():
+    with pytest.raises(ValueError, match="must define"):
+        _resolve_wrapper_cmd(Path("/dummy"), {})
+
+
+# --- _merge_config ---
+
+
+def test_merge_config_defaults_only():
+    params = {
+        "model": {"type": "string", "default": "gpt-4"},
+        "temperature": {"type": "float", "default": 0.7},
+    }
+    result = _merge_config(params, {})
+    assert result == {"model": "gpt-4", "temperature": 0.7}
+
+
+def test_merge_config_user_overrides():
+    params = {
+        "model": {"type": "string", "default": "gpt-4"},
+        "temperature": {"type": "float", "default": 0.7},
+    }
+    result = _merge_config(params, {"model": "claude-sonnet-4-6", "extra": True})
+    assert result == {"model": "claude-sonnet-4-6", "temperature": 0.7, "extra": True}
+
+
+def test_merge_config_no_defaults():
+    params = {"model": {"type": "string", "description": "no default"}}
+    result = _merge_config(params, {"model": "gpt-4"})
+    assert result == {"model": "gpt-4"}
+
+
+# --- resolve_agent ---
+
+
+def test_resolve_agent_project_local(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    project_dir = tmp_path / "project"
+    agents_dir = project_dir / ".strawpot" / "agents"
+    _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
+
+    spec = resolve_agent("myagent", str(project_dir))
+    assert spec.name == "test-agent"
+    assert spec.version == "1.2.3"
+    assert spec.config == {"model": "gpt-4", "temperature": 0.7}
+    assert spec.env_schema["API_KEY"]["required"] is True
+    assert "sometool" in spec.tools
+    assert sys.executable in spec.wrapper_cmd[0]
+
+
+def test_resolve_agent_global(tmp_path, monkeypatch):
+    global_dir = tmp_path / "global"
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+    agents_dir = global_dir / "agents"
+    _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
+
+    project_dir = tmp_path / "empty_project"
+    project_dir.mkdir()
+
+    spec = resolve_agent("myagent", str(project_dir))
+    assert spec.name == "test-agent"
+
+
+def test_resolve_agent_user_config_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    project_dir = tmp_path / "project"
+    agents_dir = project_dir / ".strawpot" / "agents"
+    _write_agent(agents_dir, "myagent", SAMPLE_AGENT_MD)
+
+    spec = resolve_agent(
+        "myagent", str(project_dir), user_config={"model": "claude-opus-4-6"}
+    )
+    assert spec.config["model"] == "claude-opus-4-6"
+    assert spec.config["temperature"] == 0.7  # default preserved
+
+
+def test_resolve_agent_not_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    with pytest.raises(FileNotFoundError, match="Agent not found"):
+        resolve_agent("nonexistent", str(tmp_path))
