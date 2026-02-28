@@ -1,31 +1,37 @@
 """Tests for strawpot.isolation.protocol."""
 
+import tempfile
+
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 
 
 def test_isolated_env_defaults():
-    env = IsolatedEnv(path="/tmp/work")
-    assert env.path == "/tmp/work"
+    path = tempfile.gettempdir()
+    env = IsolatedEnv(path=path)
+    assert env.path == path
     assert env.branch is None
 
 
 def test_isolated_env_with_branch():
-    env = IsolatedEnv(path="/tmp/work", branch="strawpot/run_abc")
-    assert env.path == "/tmp/work"
+    path = tempfile.gettempdir()
+    env = IsolatedEnv(path=path, branch="strawpot/run_abc")
+    assert env.path == path
     assert env.branch == "strawpot/run_abc"
 
 
-def test_none_isolator_create():
+def test_none_isolator_create(tmp_path):
     isolator = NoneIsolator()
-    env = isolator.create(session_id="run_123", base_dir="/home/user/project")
-    assert env.path == "/home/user/project"
+    base = str(tmp_path / "project")
+    env = isolator.create(session_id="run_123", base_dir=base)
+    assert env.path == base
     assert env.branch is None
 
 
-def test_none_isolator_cleanup():
+def test_none_isolator_cleanup(tmp_path):
     isolator = NoneIsolator()
-    env = IsolatedEnv(path="/home/user/project")
-    isolator.cleanup(env, base_dir="/home/user/project")  # should not raise
+    base = str(tmp_path / "project")
+    env = IsolatedEnv(path=base)
+    isolator.cleanup(env, base_dir=base)  # should not raise
 
 
 def test_none_isolator_satisfies_protocol():

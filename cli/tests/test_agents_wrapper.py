@@ -4,9 +4,14 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+
+_skip_win = pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix signal semantics"
+)
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.agents.registry import AgentSpec
@@ -77,12 +82,14 @@ def test_read_pid_invalid(tmp_path):
     assert rt._read_pid("bad") is None
 
 
+@_skip_win
 def test_is_process_alive_true(monkeypatch):
     monkeypatch.setattr("strawpot._process.sys.platform", "linux")
     monkeypatch.setattr("os.kill", lambda pid, sig: None)
     assert WrapperRuntime._is_process_alive(12345) is True
 
 
+@_skip_win
 def test_is_process_alive_false(monkeypatch):
     def fake_kill(pid, sig):
         raise ProcessLookupError()
@@ -92,6 +99,7 @@ def test_is_process_alive_false(monkeypatch):
     assert WrapperRuntime._is_process_alive(12345) is False
 
 
+@_skip_win
 def test_is_process_alive_permission_error(monkeypatch):
     def fake_kill(pid, sig):
         raise PermissionError()
@@ -461,6 +469,7 @@ def test_is_alive_no_pid(tmp_path):
 # --- kill ---
 
 
+@_skip_win
 def test_kill_sends_sigterm(tmp_path, monkeypatch):
     killed_pids = []
 
@@ -476,6 +485,7 @@ def test_kill_sends_sigterm(tmp_path, monkeypatch):
     assert killed_pids == [(777, signal.SIGTERM)]
 
 
+@_skip_win
 def test_kill_reads_pid_from_file(tmp_path, monkeypatch):
     killed_pids = []
 
@@ -499,6 +509,7 @@ def test_kill_no_pid(tmp_path):
     rt.kill(handle)  # should not raise
 
 
+@_skip_win
 def test_kill_process_already_gone(tmp_path, monkeypatch):
     def fake_kill(pid, sig):
         raise ProcessLookupError()

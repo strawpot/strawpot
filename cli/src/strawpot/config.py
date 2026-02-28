@@ -35,6 +35,8 @@ class StrawPotConfig:
     orchestrator_role: str = "orchestrator"
     allowed_roles: list[str] | None = None
     max_depth: int = 3
+    permission_mode: str = "default"
+    agent_timeout: int | None = None
     agents: dict[str, dict] = field(default_factory=dict)
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
@@ -63,12 +65,16 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     orch = data.get("orchestrator", {})
     if "role" in orch:
         config.orchestrator_role = orch["role"]
+    if "permission_mode" in orch:
+        config.permission_mode = orch["permission_mode"]
 
     policy = data.get("policy", {})
     if "allowed_roles" in policy:
         config.allowed_roles = policy["allowed_roles"]
     if "max_depth" in policy:
         config.max_depth = policy["max_depth"]
+    if "agent_timeout" in policy:
+        config.agent_timeout = policy["agent_timeout"]
 
     agents = data.get("agents", {})
     for name, agent_data in agents.items():

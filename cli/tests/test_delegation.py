@@ -13,7 +13,7 @@ from strawpot.delegation import (
     PolicyDenied,
     _build_delegatable_roles,
     _check_policy,
-    _create_workspace,
+    create_workspace,
     handle_delegate,
 )
 
@@ -125,7 +125,7 @@ class TestCreateWorkspace:
         runtime_dir = str(tmp_path / "runtime")
         resolved = {"dependencies": []}
 
-        workspace, skills, roles = _create_workspace(
+        workspace, skills, roles = create_workspace(
             runtime_dir, "agent_1", resolved
         )
 
@@ -150,7 +150,7 @@ class TestCreateWorkspace:
             ],
         }
 
-        workspace, skills_dirs, roles_dirs = _create_workspace(
+        workspace, skills_dirs, roles_dirs = create_workspace(
             runtime_dir, "agent_1", resolved
         )
 
@@ -179,7 +179,7 @@ class TestCreateWorkspace:
             ],
         }
 
-        workspace, skills_dirs, roles_dirs = _create_workspace(
+        workspace, skills_dirs, roles_dirs = create_workspace(
             runtime_dir, "agent_1", resolved
         )
 
@@ -214,7 +214,7 @@ class TestCreateWorkspace:
             ],
         }
 
-        _, skills_dirs, roles_dirs = _create_workspace(
+        _, skills_dirs, roles_dirs = create_workspace(
             runtime_dir, "agent_1", resolved
         )
 
@@ -260,6 +260,30 @@ class TestBuildDelegatableRoles:
             lambda s: rev_dir if s == "reviewer" else None,
         )
         assert result == [("reviewer", "Reviews code")]
+
+    def test_excludes_requester_role(self, tmp_path):
+        """Requester role is excluded from delegatable list."""
+        base = str(tmp_path)
+        impl_dir = _write_role(base, "implementer", description="Writes code")
+        orch_dir = _write_role(base, "orchestrator", description="Orchestrates")
+
+        config = _make_config(
+            allowed_roles=["implementer", "orchestrator", "reviewer"]
+        )
+
+        def resolve(s):
+            if s == "implementer":
+                return impl_dir
+            if s == "orchestrator":
+                return orch_dir
+            return None
+
+        result = _build_delegatable_roles(
+            config, "reviewer", resolve, requester_role="orchestrator"
+        )
+        slugs = [slug for slug, _ in result]
+        assert "orchestrator" not in slugs
+        assert "implementer" in slugs
 
     def test_skips_unresolvable_roles(self):
         """Roles that can't be resolved are skipped."""
@@ -418,6 +442,77 @@ class TestSpawnAndWait:
         assert kw["env"]["PERMISSION_MODE"] == "auto"
         assert "DENDEN_AGENT_ID" in kw["env"]
 
+    def test_requester_role_dir_included(self, tmp_path):
+        """roles_dirs includes the requester's role path when resolvable."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime()
+
+        handle_delegate(
+            request=_make_request(parent_role="orchestrator"),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            runtime_dir=str(tmp_path / "runtime"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: orch_dir if s == "orchestrator" else None,
+        )
+
+        kw = runtime.spawn.call_args.kwargs
+        assert len(kw["roles_dirs"]) == 1
+        assert kw["roles_dirs"][0].endswith(os.sep + "orchestrator")
+        assert os.path.isfile(os.path.join(kw["roles_dirs"][0], "ROLE.md"))
+
+    def test_requester_role_dir_not_duplicated(self, tmp_path):
+        """If requester's role is already in dependencies, it's not added twice."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [
+                {
+                    "slug": "orchestrator",
+                    "kind": "role",
+                    "path": orch_dir,
+                    "version": "1.0",
+                    "source": "local",
+                },
+            ],
+        }
+
+        runtime = _mock_runtime()
+
+        handle_delegate(
+            request=_make_request(parent_role="orchestrator"),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            runtime_dir=str(tmp_path / "runtime"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: orch_dir if s == "orchestrator" else None,
+        )
+
+        kw = runtime.spawn.call_args.kwargs
+        # Only one entry — the dependency symlink; requester not duplicated
+        assert len(kw["roles_dirs"]) == 1
+
     def test_result_mapped_to_delegate_result(self, tmp_path):
         """AgentResult fields map to DelegateResult."""
         base = str(tmp_path / "registry")
@@ -478,7 +573,68 @@ class TestSpawnAndWait:
         )
 
         spawn_handle = runtime.spawn.return_value
-        runtime.wait.assert_called_once_with(spawn_handle)
+        runtime.wait.assert_called_once_with(spawn_handle, timeout=None)
+
+    def test_timeout_kills_agent(self, tmp_path):
+        """When agent_timeout is set and agent is still alive, kill and return timeout result."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime()
+        runtime.is_alive.return_value = True  # simulate still alive after wait
+
+        result = handle_delegate(
+            request=_make_request(),
+            config=_make_config(agent_timeout=60),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            runtime_dir=str(tmp_path / "runtime"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        spawn_handle = runtime.spawn.return_value
+        runtime.wait.assert_called_once_with(spawn_handle, timeout=60)
+        runtime.kill.assert_called_once_with(spawn_handle)
+        assert result.exit_code == 1
+        assert "timed out" in result.summary
+
+    def test_no_timeout_skips_kill(self, tmp_path):
+        """When agent_timeout is None, agent is not killed after wait."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime()
+
+        handle_delegate(
+            request=_make_request(),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            runtime_dir=str(tmp_path / "runtime"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        runtime.kill.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
