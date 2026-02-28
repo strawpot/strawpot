@@ -1410,36 +1410,39 @@ tree — role, runtime, parent, pid, and whether each agent is still alive.
 15. `delegation.py` retry policy — validate sub-agent output against
     requester's expected format, retry on invalid output (configurable
     max retries)
+16. `session.py` denden port auto-resolution — if configured port is taken,
+    bind to port 0 (OS assigns free port); record actual bound addr in
+    session file and pass to agents via `DENDEN_ADDR` env var
 
 ### Phase 3 — Web GUI
 
-16. Central management platform — project management, multi-session
+17. Central management platform — project management, multi-session
     monitoring, session history tracking, agent tree visualization,
     denden status, EM replay
 
 ### Phase 4 — Memory
 
-17. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
+18. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
     `ControlSignal`, `DumpReceipt` types
-18. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
+19. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
     validate deps (same pattern as agent registry)
-19. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
+20. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
     after wait in the delegation flow
-20. `config.py` — add `memory` and `memory_config` fields
+21. `config.py` — add `memory` and `memory_config` fields
 
 ### Phase 5 — Docker Isolation
 
-21. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
+22. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
     (container create, patch export, cleanup)
-22. `session.py` cleanup — docker merge strategies (local/pr), patch
+23. `session.py` cleanup — docker merge strategies (local/pr), patch
     extraction from container via `docker exec git diff`
 
 ### Phase 6 — Ecosystem & Extensibility
 
-23. Hooks — pre/post spawn, pre/post cleanup extension points
-24. Community agents — documentation + strawhub publishing flow
-25. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
-26. Cron jobs — invoke orchestrator periodically or conditionally
+24. Hooks — pre/post spawn, pre/post cleanup extension points
+25. Community agents — documentation + strawhub publishing flow
+26. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
+27. Cron jobs — invoke orchestrator periodically or conditionally
 
 ---
 
