@@ -78,6 +78,7 @@ def test_spawn_calls_build_then_tmux(monkeypatch):
     handle = runtime.spawn(
         agent_id="abc12345",
         working_dir="/project",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="You are a coder.",
         memory_prompt="Context.",
         skills_dirs=[],
@@ -132,6 +133,7 @@ def test_spawn_uses_cwd_from_build(monkeypatch):
     runtime.spawn(
         agent_id="cwd001",
         working_dir="/project",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="",
         memory_prompt="",
         skills_dirs=[],
@@ -164,6 +166,7 @@ def test_spawn_falls_back_to_working_dir(monkeypatch):
     runtime.spawn(
         agent_id="fb001",
         working_dir="/fallback",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="",
         memory_prompt="",
         skills_dirs=[],
@@ -192,6 +195,7 @@ def test_spawn_tmux_failure_raises(monkeypatch):
         runtime.spawn(
             agent_id="fail01",
             working_dir="/p",
+            agent_workspace_dir="/tmp/workspace",
             role_prompt="",
             memory_prompt="",
             skills_dirs=[],
@@ -219,6 +223,7 @@ def test_spawn_passes_env(monkeypatch):
     runtime.spawn(
         agent_id="env001",
         working_dir="/p",
+        agent_workspace_dir="/tmp/workspace",
         role_prompt="",
         memory_prompt="",
         skills_dirs=[],

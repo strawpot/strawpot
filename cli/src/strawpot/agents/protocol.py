@@ -34,6 +34,7 @@ class AgentRuntime(Protocol):
         *,
         agent_id: str,
         working_dir: str,
+        agent_workspace_dir: str,
         role_prompt: str,
         memory_prompt: str,
         skills_dirs: list[str],
@@ -46,6 +47,8 @@ class AgentRuntime(Protocol):
         Args:
             agent_id: Unique identifier for this agent instance.
             working_dir: Session worktree path (shared by all agents).
+            agent_workspace_dir: Dedicated temp workspace for this agent
+                (prompt files, staged skills, scratch data).
             role_prompt: Role instructions text (body of ROLE.md).
             memory_prompt: Memory context text from memory.get ("" if none).
             skills_dirs: Directories containing resolved SKILL.md files.

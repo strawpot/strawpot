@@ -76,11 +76,13 @@ needs_binary = pytest.mark.skipif(
 @needs_binary
 def test_go_build_returns_command_json(tmp_path):
     """Go binary build returns JSON with cmd and cwd."""
+    workspace = tmp_path / "workspace"
     result = subprocess.run(
         [
             str(GO_BINARY), "build",
             "--agent-id", "build001",
             "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
             "--role-prompt", "You are a coder.",
             "--memory-prompt", "Previous context.",
             "--task", "fix the bug",
@@ -98,16 +100,21 @@ def test_go_build_returns_command_json(tmp_path):
     assert cmd[cmd.index("-p") + 1] == "fix the bug"
     assert "--model" in cmd
     assert cmd[cmd.index("--model") + 1] == "claude-opus-4-6"
+    # --add-dir points to claude/ subfolder
+    assert "--add-dir" in cmd
+    assert cmd[cmd.index("--add-dir") + 1] == str(workspace / "claude")
 
 
 @needs_binary
 def test_go_build_interactive_mode(tmp_path):
     """When task is empty, claude is run without -p flag."""
+    workspace = tmp_path / "workspace"
     result = subprocess.run(
         [
             str(GO_BINARY), "build",
             "--agent-id", "build002",
             "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
             "--task", "",
             "--config", "{}",
         ],
@@ -124,12 +131,14 @@ def test_go_build_permission_mode(tmp_path):
     """PERMISSION_MODE env var is passed through to --permission-mode."""
     import os
 
+    workspace = tmp_path / "workspace"
     env = {**os.environ, "PERMISSION_MODE": "auto"}
     result = subprocess.run(
         [
             str(GO_BINARY), "build",
             "--agent-id", "build003",
             "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
             "--task", "work",
             "--config", "{}",
         ],
@@ -146,18 +155,18 @@ def test_go_build_permission_mode(tmp_path):
 
 @needs_binary
 def test_go_build_with_skills_dir(tmp_path):
-    """Skills .md files from --skills-dir are passed as --append-system-prompt."""
-    skills_dir = tmp_path / "skills"
+    """--skills-dir directories are symlinked into claude/.claude/skills/."""
+    workspace = tmp_path / "workspace"
+    skills_dir = tmp_path / "my_skill"
     skills_dir.mkdir()
-    (skills_dir / "coding.md").write_text("# Coding skill")
-    (skills_dir / "review.md").write_text("# Review skill")
-    (skills_dir / "not-a-skill.txt").write_text("ignored")
+    (skills_dir / "SKILL.md").write_text("skill content")
 
     result = subprocess.run(
         [
             str(GO_BINARY), "build",
             "--agent-id", "build005",
             "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
             "--task", "work",
             "--config", "{}",
             "--skills-dir", str(skills_dir),
@@ -169,23 +178,65 @@ def test_go_build_with_skills_dir(tmp_path):
     out = json.loads(result.stdout)
     cmd = out["cmd"]
 
-    append_indices = [
-        i for i, v in enumerate(cmd) if v == "--append-system-prompt"
-    ]
-    appended_files = [cmd[i + 1] for i in append_indices]
-    assert len(appended_files) == 2
-    assert any("coding.md" in f for f in appended_files)
-    assert any("review.md" in f for f in appended_files)
+    # Single --add-dir pointing to claude/
+    claude_dir = workspace / "claude"
+    add_dir_indices = [i for i, v in enumerate(cmd) if v == "--add-dir"]
+    assert len(add_dir_indices) == 1
+    assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
+
+    # Symlink exists at claude/.claude/skills/my_skill -> skills_dir
+    link = claude_dir / ".claude" / "skills" / "my_skill"
+    assert link.is_symlink()
+    assert link.resolve() == skills_dir.resolve()
+
+
+@needs_binary
+def test_go_build_with_roles_dir(tmp_path):
+    """--roles-dir directories are symlinked into claude/roles/."""
+    workspace = tmp_path / "workspace"
+    roles_dir = tmp_path / "my_role"
+    roles_dir.mkdir()
+    (roles_dir / "ROLE.md").write_text("role content")
+
+    result = subprocess.run(
+        [
+            str(GO_BINARY), "build",
+            "--agent-id", "build007",
+            "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
+            "--task", "work",
+            "--config", "{}",
+            "--roles-dir", str(roles_dir),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    out = json.loads(result.stdout)
+    cmd = out["cmd"]
+
+    # Single --add-dir pointing to claude/
+    claude_dir = workspace / "claude"
+    add_dir_indices = [i for i, v in enumerate(cmd) if v == "--add-dir"]
+    assert len(add_dir_indices) == 1
+    assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
+
+    # Symlink exists at claude/roles/my_role -> roles_dir
+    link = claude_dir / "roles" / "my_role"
+    assert link.is_symlink()
+    assert link.resolve() == roles_dir.resolve()
 
 
 @needs_binary
 def test_go_build_prompt_file(tmp_path):
-    """System prompt file is written with role + memory prompts."""
+    """System prompt file is written into agent workspace dir."""
+    workspace = tmp_path / "workspace"
     result = subprocess.run(
         [
             str(GO_BINARY), "build",
             "--agent-id", "build006",
             "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
             "--role-prompt", "Role text here.",
             "--memory-prompt", "Memory text here.",
             "--task", "do work",
@@ -196,8 +247,26 @@ def test_go_build_prompt_file(tmp_path):
     )
     assert result.returncode == 0
 
-    prompt_file = tmp_path / ".strawpot" / "runtime" / "build006-prompt.md"
+    prompt_file = workspace / "claude" / "prompt.md"
     assert prompt_file.exists()
     content = prompt_file.read_text()
     assert "Role text here." in content
     assert "Memory text here." in content
+
+
+@needs_binary
+def test_go_build_requires_agent_workspace_dir(tmp_path):
+    """Build fails if --agent-workspace-dir is not provided."""
+    result = subprocess.run(
+        [
+            str(GO_BINARY), "build",
+            "--agent-id", "build008",
+            "--working-dir", str(tmp_path),
+            "--task", "work",
+            "--config", "{}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "agent-workspace-dir" in result.stderr
