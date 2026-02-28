@@ -21,7 +21,7 @@ _DEFAULT_PR_COMMAND = "gh pr create --base {base_branch} --head {session_branch}
 
 
 @dataclass
-class StrawpotConfig:
+class StrawPotConfig:
     runtime: str = "claude_code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
@@ -42,7 +42,7 @@ def _read_toml(path: Path) -> dict:
         return tomllib.load(f)
 
 
-def _apply(config: StrawpotConfig, data: dict) -> None:
+def _apply(config: StrawPotConfig, data: dict) -> None:
     """Apply a parsed TOML dict onto a config, mutating in place."""
     if "runtime" in data:
         config.runtime = data["runtime"]
@@ -76,13 +76,13 @@ def _apply(config: StrawpotConfig, data: dict) -> None:
         config.pr_command = session["pr_command"]
 
 
-def load_config(project_dir: Path | None = None) -> StrawpotConfig:
+def load_config(project_dir: Path | None = None) -> StrawPotConfig:
     """Load config merging: defaults < global < project-level.
 
     Global: $STRAWPOT_HOME/config.toml (default ~/.strawpot/config.toml)
     Project: <project_dir>/.strawpot/config.toml
     """
-    config = StrawpotConfig()
+    config = StrawPotConfig()
 
     # Global config
     global_path = get_strawpot_home() / "config.toml"

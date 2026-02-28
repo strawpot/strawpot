@@ -1,6 +1,6 @@
-# Strawpot — Design
+# StrawPot — Design
 
-Lightweight CLI for agent orchestration. Strawpot is the glue between
+Lightweight CLI for agent orchestration. StrawPot is the glue between
 [Denden](https://github.com/user/denden) (gRPC agent ↔ orchestrator transport)
 and [StrawHub](https://strawhub.dev) (skill & role registry).
 
@@ -18,7 +18,7 @@ strawpot start          ← CLI entry point, CWD = working dir
       │                     runtime is user's choice, default: claude_code
       │  denden send '{"delegate": ...}'
       ▼
-    Strawpot handles delegate:
+    StrawPot handles delegate:
       1. Policy check (role allowed? depth limit?)
       2. Resolve role + skills (strawhub.resolver)
       3. Spawn sub-agent in the session worktree (shared)
@@ -162,7 +162,7 @@ The wrapper CLI can be named anything — `claude-agent`, `my-codex-wrapper`,
 
 Agents follow the same [Agent Skills](https://agentskills.io) open format as
 skills — YAML frontmatter (`name`, `description`) + markdown body. The body
-describes the agent's capabilities for LLM discovery. Strawpot-specific
+describes the agent's capabilities for LLM discovery. StrawPot-specific
 config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 
 ```yaml
@@ -295,7 +295,7 @@ Implementations:
 
 ```python
 @dataclass
-class StrawpotConfig:
+class StrawPotConfig:
     runtime: str = "claude_code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
@@ -497,7 +497,7 @@ Only the markdown body is included — frontmatter is stripped.
 ## Skill Manifest (`SKILL.md`)
 
 Skills follow the [Agent Skills](https://agentskills.io) open format — YAML
-frontmatter + markdown body. Strawpot-specific extensions live under
+frontmatter + markdown body. StrawPot-specific extensions live under
 `metadata.strawpot` to stay spec-compliant:
 
 ```yaml
@@ -549,7 +549,7 @@ providers (`MEMORY.md`). All use YAML frontmatter with `metadata.strawpot`.
 
 ## Skill, Role, Agent & Memory Management
 
-Strawpot delegates all package management to the `strawhub` CLI.
+StrawPot delegates all package management to the `strawhub` CLI.
 Agents and memory providers are package types alongside skills and roles.
 No wrapper, no reimplementation — just passthrough:
 
@@ -606,7 +606,7 @@ strawpot install agent claude_code:
   5. If any missing: warn (don't block install — user may install later)
 ```
 
-Each command entry has per-OS install instructions. Strawpot detects the
+Each command entry has per-OS install instructions. StrawPot detects the
 current platform and shows the appropriate instruction. If the current OS
 has no entry, the warning omits the install hint.
 
@@ -665,7 +665,7 @@ def wait(args):
 ```
 
 Wrapper authors only need to care about translating protocol args to their
-agent's native interface. Strawpot handles everything else.
+agent's native interface. StrawPot handles everything else.
 
 ---
 
@@ -740,7 +740,7 @@ kill:
 ```
 
 This is the only place that knows about `claude` CLI flags or tmux.
-Strawpot core never imports or references it directly — the registry
+StrawPot core never imports or references it directly — the registry
 discovers it via `AGENT.md`.
 
 ---
@@ -859,7 +859,7 @@ Cleanup strategy is determined by `merge_strategy` config:
 
 **Local strategy** (no remote, or `merge_strategy = "local"`):
 
-Changes live on a local branch. Strawpot generates a patch from the
+Changes live on a local branch. StrawPot generates a patch from the
 session branch against the base branch and applies it.
 
 ```
@@ -929,7 +929,7 @@ session.stop():
 
 ### Patch Application
 
-Strawpot picks the right tool based on the host directory:
+StrawPot picks the right tool based on the host directory:
 
 ```
 if is_git_repo(host_dir):
@@ -970,7 +970,7 @@ Conflict: 2 files changed on both sides since session started.
 After any choice, the worktree is removed and the branch is deleted
 (worktree), or the container is removed (docker).
 
-Strawpot does not provide manual merge resolution. The three options
+StrawPot does not provide manual merge resolution. The three options
 cover the common cases; for anything more nuanced the user can use
 `isolation=none` and manage merges themselves.
 
@@ -1130,7 +1130,7 @@ Delegate flow (updated):
 
 ### `memory.get` — Before Every Agent
 
-Strawpot calls the memory provider to retrieve relevant context before
+StrawPot calls the memory provider to retrieve relevant context before
 building the agent's prompt.
 
 ```
@@ -1161,7 +1161,7 @@ decides what context is relevant.
 
 ### `memory.dump` — After Every Agent
 
-Strawpot calls the memory provider to record what happened.
+StrawPot calls the memory provider to record what happened.
 
 ```
 Inputs:
@@ -1211,7 +1211,7 @@ Same pattern as agent wrappers — a CLI that implements a contract:
 
 Memory providers follow the same [Agent Skills](https://agentskills.io) open
 format — YAML frontmatter (`name`, `description`) + markdown body. The body
-describes the provider's capabilities and storage approach. Strawpot-specific
+describes the provider's capabilities and storage approach. StrawPot-specific
 config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 
 ```yaml
