@@ -1444,21 +1444,21 @@ alive.
     bind to port 0 (OS assigns free port); record actual bound addr in
     session file and pass to agents via `DENDEN_ADDR` env var
 
-### Phase 3 — Web GUI
+### Phase 3 — Memory
 
-17. Central management platform — project management, multi-session
+17. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
+    `ControlSignal`, `DumpReceipt` types
+18. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
+    validate deps (same pattern as agent registry)
+19. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
+    after wait in the delegation flow
+20. `config.py` — add `memory` and `memory_config` fields
+
+### Phase 4 — Web GUI
+
+21. Central management platform — project management, multi-session
     monitoring, session history tracking, agent tree visualization,
     denden status, EM replay
-
-### Phase 4 — Memory
-
-18. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
-    `ControlSignal`, `DumpReceipt` types
-19. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
-    validate deps (same pattern as agent registry)
-20. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
-    after wait in the delegation flow
-21. `config.py` — add `memory` and `memory_config` fields
 
 ### Phase 5 — Docker Isolation
 
