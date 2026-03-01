@@ -3,6 +3,7 @@
 ## Git workflow
 
 - **Never push directly to `main`.** Always create a new branch and open a PR.
+- Use the branch naming convention `claude/<branch-name>`.
 - Do not bypass branch protection rules or skip required checks.
 
 ## After completing any code change
