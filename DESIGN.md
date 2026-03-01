@@ -1469,10 +1469,10 @@ alive.
 
 ### Phase 6 — Ecosystem & Extensibility
 
-24. Hooks — pre/post spawn, pre/post cleanup extension points
-25. Community agents — documentation + strawhub publishing flow
+24. Community agents — documentation + strawhub publishing flow
+25. Cron jobs — invoke orchestrator periodically or conditionally
 26. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
-27. Cron jobs — invoke orchestrator periodically or conditionally
+27. Hooks — pre/post spawn, pre/post cleanup extension points
 
 ---
 
