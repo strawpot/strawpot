@@ -11,7 +11,6 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 
 from strawpot._process import is_pid_alive
@@ -26,19 +25,23 @@ class WrapperRuntime:
     registry).  ``build`` is called to translate protocol args to the agent's
     native command; the process is then launched and tracked internally.
 
+    PID and log files are stored inside the agent workspace directory under
+    the session: ``<session_dir>/agents/<agent_id>/.pid`` and ``.log``.
+
     Attributes:
         name: Agent name from the spec (satisfies ``AgentRuntime.name``).
         spec: The resolved AgentSpec.
+        session_dir: Session directory.  Must be set before calling
+            :meth:`spawn`.  Typically set by :class:`~strawpot.session.Session`
+            after generating the run ID.
     """
 
     def __init__(
-        self, spec: AgentSpec, runtime_dir: str | None = None
+        self, spec: AgentSpec, session_dir: str | None = None
     ) -> None:
         self.spec = spec
         self.name = spec.name
-        self._runtime_dir = runtime_dir or os.path.join(
-            tempfile.gettempdir(), "strawpot"
-        )
+        self.session_dir = session_dir
 
     # ------------------------------------------------------------------
     # Internal helpers — wrapper CLI
@@ -92,16 +95,17 @@ class WrapperRuntime:
 
     def _pid_file(self, agent_id: str) -> str:
         """Path to the PID file for the given agent."""
-        return os.path.join(self._runtime_dir, f"{agent_id}.pid")
+        return os.path.join(self.session_dir, "agents", agent_id, ".pid")
 
     def _log_file(self, agent_id: str) -> str:
         """Path to the output log file for the given agent."""
-        return os.path.join(self._runtime_dir, f"{agent_id}.log")
+        return os.path.join(self.session_dir, "agents", agent_id, ".log")
 
     def _write_pid(self, agent_id: str, pid: int) -> None:
         """Write PID to the PID file."""
-        os.makedirs(self._runtime_dir, exist_ok=True)
-        with open(self._pid_file(agent_id), "w") as f:
+        pid_path = self._pid_file(agent_id)
+        os.makedirs(os.path.dirname(pid_path), exist_ok=True)
+        with open(pid_path, "w") as f:
             f.write(str(pid))
 
     def _read_pid(self, agent_id: str) -> int | None:

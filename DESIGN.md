@@ -258,7 +258,7 @@ manages process lifecycle internally:
 class WrapperRuntime:
     """Implements AgentRuntime by calling <wrapper> build then managing processes."""
 
-    def __init__(self, spec: AgentSpec, runtime_dir: str | None = None): ...
+    def __init__(self, spec: AgentSpec, session_dir: str | None = None): ...
 
     def setup(self) -> bool:
         # Runs interactively (stdin/stdout attached) for one-time auth/config
@@ -513,8 +513,10 @@ temperature = 0.7
         resolved = resolve(config.orchestrator_role, kind="role")
         role_prompt = build_prompt(resolved)
    e. agent_id = "agent_" + uuid4()
-      workspace, skills_dirs, roles_dirs = create_workspace(runtime_dir, agent_id, resolved)
-      → stage resolved skills into workspace
+      skills_dirs, roles_dirs = stage_role(session_dir, agent_id, resolved)
+      → session-level staging: copies ROLE.md, symlinks transitive skills + direct role deps
+      workspace = create_agent_workspace(session_dir, agent_id)
+      → per-agent scratch directory
    f. runtime.spawn(                   # InteractiveWrapperRuntime
         agent_id=agent_id,
         working_dir=env.path,
@@ -537,7 +539,7 @@ temperature = 0.7
         (env vars PERMISSION_MODE, DENDEN_ADDR, etc. passed as subprocess environment)
       → Gets back {"cmd": [...], "cwd": "..."}
       → Launches: tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
-   g. Write .strawpot/runtime/sessions/<run_id>.json
+   g. Write .strawpot/sessions/<run_id>/session.json
    h. runtime.attach(handle)          # attach user to tmux session
 ```
 
@@ -564,12 +566,15 @@ Denden server dispatches to `Session._handle_delegate`:
    → reads SKILL.md bodies (deps first) + ROLE.md body
    → appends Delegation section (delegatable roles, if any)
    → appends Requester section (parent role that delegated the task)
-5. Create agent workspace:
-   workspace = .strawpot/runtime/agents/<agent_id>/
-   → stage resolved skills/roles into workspace/ via symlink
+5. Stage role + create workspace:
+   skills_dirs, roles_dirs = stage_role(session_dir, resolved)
+   → session-level (idempotent): copies ROLE.md into session_dir/roles/<slug>/,
+     symlinks transitive skill deps into skills/, direct role deps into roles/
      (falls back to shutil.copytree on Windows or permission errors)
-   → also resolve requester's role path into workspace/roles/
+   → also appends requester's installed role path to roles_dirs
      so the sub-agent can read the requester's ROLE.md on demand
+   workspace = create_agent_workspace(session_dir, agent_id)
+   → per-agent scratch directory at session_dir/agents/<agent_id>/
 6. Spawn in session worktree (shared — no new worktree):
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
@@ -723,21 +728,26 @@ providers (`MEMORY.md`). All use YAML frontmatter with `metadata.strawpot`.
 ## Skill, Role, Agent & Memory Management
 
 StrawPot delegates all package management to the `strawhub` CLI.
-Agents and memory providers are package types alongside skills and roles.
-No wrapper, no reimplementation — just passthrough:
+Currently strawhub manages skills and roles. Agent and memory provider
+package types are planned future additions to strawhub.
+
+Rather than redefining each strawhub option, strawpot passes through
+all arguments directly — any flags strawhub supports work automatically:
 
 ```
-strawpot install skill <slug>     →  strawhub install skill <slug>
-strawpot install role <slug>      →  strawhub install role <slug>
-strawpot install agent <slug>     →  strawhub install agent <slug>
-strawpot install memory <slug>    →  strawhub install memory <slug>
-strawpot uninstall skill <slug>   →  strawhub uninstall skill <slug>
-strawpot uninstall role <slug>    →  strawhub uninstall role <slug>
-strawpot uninstall agent <slug>   →  strawhub uninstall agent <slug>
-strawpot uninstall memory <slug>  →  strawhub uninstall memory <slug>
-strawpot search <query>           →  strawhub search <query>
-strawpot list                     →  strawhub list
-strawpot install-tools            →  strawhub install-tools
+strawpot install [...]            →  strawhub install [...]
+strawpot uninstall [...]          →  strawhub uninstall [...]
+strawpot update [...]             →  strawhub update [...]
+strawpot search [...]             →  strawhub search [...]
+strawpot list [...]               →  strawhub list [...]
+strawpot info [...]               →  strawhub info [...]
+strawpot init [...]               →  strawhub init [...]
+strawpot install-tools [...]      →  strawhub install-tools [...]
+strawpot resolve [...]            →  strawhub resolve [...]
+strawpot publish [...]            →  strawhub publish [...]
+strawpot login [...]              →  strawhub login [...]
+strawpot logout [...]             →  strawhub logout [...]
+strawpot whoami [...]             →  strawhub whoami [...]
 ```
 
 At runtime (delegation), strawpot calls `strawhub.resolver.resolve()` directly
@@ -763,12 +773,11 @@ precedence over global installs.
 
 ### Install-time Prerequisite Validation
 
-When `strawpot install` runs (passthrough to strawhub), strawpot reads the
-installed manifest and validates `metadata.strawpot.tools`:
+When an agent is installed, its manifest `metadata.strawpot.tools` is validated:
 
 ```
-strawpot install agent claude_code:
-  1. strawhub install agent claude_code  → downloads to ~/.strawpot/agents/claude_code/
+Agent install example (claude_code):
+  1. Agent package downloaded to ~/.strawpot/agents/claude_code/
   2. Read AGENT.md metadata.strawpot.tools
   3. Detect current OS (platform.system() → macos/linux/windows)
   4. For each command: shutil.which(cmd)
@@ -932,7 +941,7 @@ repository — raises `ValueError` if the project is not a git repo.
 
 Agents work directly in the project directory. No setup, no cleanup.
 Multiple concurrent sessions are allowed — each writes its own session file
-under `sessions/<run_id>.json`.
+under `sessions/<run_id>/session.json`.
 
 ```
 create(session_id, base_dir):
@@ -999,9 +1008,9 @@ cleanup(env):
 
 ## Session Tracking
 
-`.strawpot/runtime/sessions/` holds one JSON file per active session
-(`<run_id>.json`). Multiple concurrent sessions are allowed for all
-isolation modes. For `none`, concurrent sessions write to the same
+`.strawpot/sessions/<run_id>/` holds one directory per active session,
+with `session.json` inside. Multiple concurrent sessions are allowed for
+all isolation modes. For `none`, concurrent sessions write to the same
 directory — overlapping changes are the user's responsibility.
 
 ---
@@ -1019,7 +1028,7 @@ Nothing to do. Changes are already in the project directory.
 session.stop():
   1. Kill remaining sub-agents
   2. Stop denden server
-  3. Remove session file
+  3. Remove session directory
 ```
 
 ### `isolation = worktree`
@@ -1042,7 +1051,7 @@ session.stop():
   4. Apply patch to base_branch: git apply --check <patch>
      → no conflicts: apply, remove worktree + delete branch
      → conflicts detected: show conflicting files, prompt user (see below)
-  5. Remove session file
+  5. Remove session directory
 ```
 
 **PR strategy** (remote detected, or `merge_strategy = "pr"`):
@@ -1058,7 +1067,7 @@ session.stop():
   5. Create PR: <pr_command> with {base_branch} and {session_branch} expanded
      e.g. gh pr create --base main --head strawpot/run_abc123
   6. Remove worktree (keep branch — it's on remote)
-  7. Remove session file
+  7. Remove session directory
   → User reviews & merges PR on GitHub/GitLab
   → User pulls main when ready
 ```
@@ -1080,7 +1089,7 @@ session.stop():
      → no conflicts: apply, remove container
      → conflicts detected: show conflicting files, prompt user (see below)
   5. docker rm <container>
-  6. Remove session file
+  6. Remove session directory
 ```
 
 **PR strategy** (host has remote):
@@ -1096,7 +1105,7 @@ session.stop():
   7. Create PR: <pr_command>
   8. git checkout <base_branch>   # return to original branch
   9. docker rm <container>
-  10. Remove session file
+  10. Remove session directory
 ```
 
 ### Patch Application
@@ -1156,10 +1165,24 @@ same cleanup flow before starting a new session.
 
 ## Session State
 
-Written to `.strawpot/runtime/` (gitignored) for crash recovery, debugging,
-and the `strawpot sessions` / `strawpot agents` commands.
+Written to `.strawpot/sessions/<run_id>/` (gitignored) for crash recovery,
+debugging, and the `strawpot sessions` / `strawpot agents` commands.
 
-All sessions write to `.strawpot/runtime/sessions/<run_id>.json`.
+Each session writes to `.strawpot/sessions/<run_id>/session.json`.
+Staged roles, agent workspaces, PID files, and agent logs all live under
+the same session directory:
+
+```
+.strawpot/sessions/<run_id>/
+  session.json                    # session state
+  roles/<slug>/                   # staged roles (session-level, shared)
+    ROLE.md                       # copied from installed path
+    skills/<dep_slug>/            # symlinked transitive skill deps
+    roles/<dep_slug>/             # symlinked direct role deps
+  agents/<agent_id>/              # per-agent workspace
+    .pid                          # PID file (WrapperRuntime)
+    .log                          # agent output log (WrapperRuntime)
+```
 
 ```json
 {
@@ -1208,7 +1231,7 @@ consumption. Agent stdout/stderr is captured separately by WrapperRuntime.
 
 ### Session Log
 
-One file per session: `.strawpot/runtime/logs/<run_id>.jsonl`
+One file per session: `.strawpot/sessions/<run_id>/session.jsonl`
 
 Each line is a JSON object:
 
@@ -1254,7 +1277,7 @@ Each line is a JSON object:
 ### Agent Output
 
 WrapperRuntime captures agent stdout/stderr to per-agent log files:
-`.strawpot/runtime/<agent_id>.log`
+`.strawpot/sessions/<run_id>/agents/<agent_id>/.log`
 
 These are raw text logs from the underlying agent process (e.g. Claude Code
 output), not structured JSONL. The Web GUI can display them alongside the
@@ -1345,18 +1368,20 @@ strawpot sessions                    # list all running sessions
 strawpot agents <session_id>         # list agents for a session
 strawpot config
 
-# Passthrough to strawhub CLI:
-strawpot install skill <slug>
-strawpot install role <slug>
-strawpot install agent <slug>
-strawpot install memory <slug>
-strawpot uninstall skill <slug>
-strawpot uninstall role <slug>
-strawpot uninstall agent <slug>
-strawpot uninstall memory <slug>
-strawpot search <query>
-strawpot list
-strawpot install-tools
+# Passthrough to strawhub CLI (all args forwarded):
+strawpot install [...]           # install from strawpot.toml or specific package
+strawpot uninstall [...]         # remove a skill or role
+strawpot update [...]            # update packages to latest
+strawpot search [...]            # search the registry
+strawpot list [...]              # browse the registry
+strawpot info [...]              # show package details
+strawpot init [...]              # create strawpot.toml from installed packages
+strawpot install-tools [...]     # install system tools declared by packages
+strawpot resolve [...]           # resolve slug to installed path
+strawpot publish [...]           # publish to registry
+strawpot login [...]             # authenticate with registry
+strawpot logout [...]            # remove stored credentials
+strawpot whoami [...]            # show current user
 ```
 
 `--runtime NAME` accepts any agent name resolvable by the registry (project-local,
@@ -1371,13 +1396,15 @@ runs the cleanup flow (see Session Cleanup). For local strategy, the user is
 prompted for conflict resolution. For PR strategy, the branch is pushed and
 a PR is created automatically.
 
-`sessions` reads all session files from `.strawpot/runtime/sessions/`,
-checks if each process is still alive (via `pid`), and displays a table of
-running sessions with run_id, isolation mode, runtime, denden port, and
-uptime. Stale sessions (dead pid) are marked accordingly.
+`sessions` reads all session directories from `.strawpot/sessions/`,
+loads `session.json` from each, checks if each process is still alive (via
+`pid`), and displays a table of running sessions with run_id, isolation mode,
+runtime, denden port, and uptime. Stale sessions (dead pid) are marked
+accordingly.
 
-`agents <session_id>` reads a specific session file and displays the agent
-tree — role, runtime, parent, pid, and whether each agent is still alive.
+`agents <session_id>` reads a specific session's `session.json` and displays
+the agent tree — role, runtime, parent, pid, and whether each agent is still
+alive.
 
 ---
 
@@ -1640,6 +1667,9 @@ Memory is optional. When no provider is configured, strawpot skips the
 
 ### Installation
 
+Memory providers will be installable via strawhub once the `memory` package
+type is added (planned strawhub addition):
+
 ```
 strawpot install memory <slug>     →  strawhub install memory <slug>
 strawpot uninstall memory <slug>   →  strawhub uninstall memory <slug>
@@ -1661,9 +1691,9 @@ Browser
   ▼
 Web Server (FastAPI)          ← strawpot-gui package
   │
-  ├─ reads .strawpot/runtime/sessions/*.json    (live session state)
-  ├─ reads .strawpot/runtime/logs/*.jsonl        (session logs)
-  ├─ reads .strawpot/runtime/<agent_id>.log       (agent output)
+  ├─ reads .strawpot/sessions/*/session.json     (live session state)
+  ├─ reads .strawpot/sessions/*/session.jsonl    (session logs)
+  ├─ reads .strawpot/sessions/*/agents/*/.log    (agent output)
   ├─ connects to denden gRPC server              (live status)
   └─ reads EM event store                        (when memory is configured)
 ```
@@ -1701,9 +1731,9 @@ The GUI reads existing runtime artifacts — no new data formats needed:
 
 | Data | Source | Format |
 |---|---|---|
-| Active sessions | `.strawpot/runtime/sessions/*.json` | JSON |
-| Session logs | `.strawpot/runtime/logs/*.jsonl` | JSONL |
-| Agent output | `.strawpot/runtime/<agent_id>.log` | Text |
+| Active sessions | `.strawpot/sessions/*/session.json` | JSON |
+| Session logs | `.strawpot/sessions/*/session.jsonl` | JSONL |
+| Agent output | `.strawpot/sessions/*/agents/*/.log` | Text |
 | Denden status | gRPC connection to running server | Live |
 | Event memory | Memory provider store | Provider-specific |
 | Project config | `.strawpot/config.toml` | TOML |
