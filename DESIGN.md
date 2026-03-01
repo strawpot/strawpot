@@ -116,7 +116,7 @@ class AgentResult:
 class AgentRuntime(Protocol):
     name: str
     def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
-              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              role_prompt, memory_prompt, skills_dir, roles_dirs,
               task, env) -> AgentHandle: ...
     def wait(self, handle: AgentHandle, timeout: float | None = None) -> AgentResult: ...
     def is_alive(self, handle: AgentHandle) -> bool: ...
@@ -146,8 +146,8 @@ alive, kill) is handled internally by `WrapperRuntime` in strawpot core.
 | `--role-prompt TEXT` | Role system prompt text |
 | `--memory-prompt TEXT` | Memory context text |
 | `--task TEXT` | Task text (empty string = interactive) |
-| `--skills-dir DIR` | Path to resolved skills directory (repeatable) |
-| `--roles-dir DIR` | Path to resolved roles directory (repeatable) |
+| `--skills-dir DIR` | Parent directory containing staged skill subdirectories |
+| `--roles-dir DIR` | Parent directory containing staged role subdirectories (repeatable) |
 | `--config JSON` | Agent-specific extras as JSON blob |
 
 Additional environment variables (e.g. `PERMISSION_MODE`, `DENDEN_ADDR`) are
@@ -267,14 +267,14 @@ class WrapperRuntime:
         return result.returncode == 0
 
     def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
-              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              role_prompt, memory_prompt, skills_dir, roles_dirs,
               task, env) -> AgentHandle:
         # 1. Call <wrapper> build to get translated command
         args = ["build", "--agent-id", agent_id, "--working-dir", working_dir,
                 "--agent-workspace-dir", agent_workspace_dir,
                 "--role-prompt", role_prompt, "--memory-prompt", memory_prompt,
-                "--task", task, "--config", json.dumps(self.spec.config)]
-        for d in skills_dirs: args += ["--skills-dir", d]
+                "--task", task, "--config", json.dumps(self.spec.config),
+                "--skills-dir", skills_dir]
         for d in roles_dirs:  args += ["--roles-dir", d]
         data = self._run_subcommand(args, extra_env=env)
         # 2. Launch via Popen
@@ -513,8 +513,8 @@ temperature = 0.7
         resolved = resolve(config.orchestrator_role, kind="role")
         role_prompt = build_prompt(resolved)
    e. agent_id = "agent_" + uuid4()
-      skills_dirs, roles_dirs = stage_role(session_dir, agent_id, resolved)
-      → session-level staging: copies ROLE.md, symlinks transitive skills + direct role deps
+      skills_dir, roles_dir = stage_role(session_dir, resolved)
+      → session-level staging (idempotent): copies ROLE.md, symlinks transitive skills + direct role deps
       workspace = create_agent_workspace(session_dir, agent_id)
       → per-agent scratch directory
    f. runtime.spawn(                   # InteractiveWrapperRuntime
@@ -523,8 +523,8 @@ temperature = 0.7
         agent_workspace_dir=workspace,
         role_prompt=role_prompt,
         memory_prompt=memory_prompt,
-        skills_dirs=skills_dirs,
-        roles_dirs=roles_dirs,
+        skills_dir=skills_dir,
+        roles_dirs=[roles_dir],
         task="",                         # interactive mode
         env={
           PERMISSION_MODE: config.permission_mode,  # from global config
@@ -567,20 +567,22 @@ Denden server dispatches to `Session._handle_delegate`:
    → appends Delegation section (delegatable roles, if any)
    → appends Requester section (parent role that delegated the task)
 5. Stage role + create workspace:
-   skills_dirs, roles_dirs = stage_role(session_dir, resolved)
+   skills_dir, roles_dir = stage_role(session_dir, resolved)
    → session-level (idempotent): copies ROLE.md into session_dir/roles/<slug>/,
      symlinks transitive skill deps into skills/, direct role deps into roles/
      (falls back to shutil.copytree on Windows or permission errors)
-   → also appends requester's installed role path to roles_dirs
-     so the sub-agent can read the requester's ROLE.md on demand
+   roles_dirs = [roles_dir]
+   → if requester role is resolvable, symlink into
+     session_dir/requester_roles/<agent_id>/<parent_role>/
+     and append that dir to roles_dirs (per-agent, avoids leak into shared staged dir)
    workspace = create_agent_workspace(session_dir, agent_id)
-   → per-agent scratch directory at session_dir/agents/<agent_id>/
+   → per-agent scratch directory at session_dir/agents/<agent_id>/ (clean — no pre-placed files)
 6. Spawn in session worktree (shared — no new worktree):
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
      agent_workspace_dir=workspace,
      role_prompt=role_prompt, memory_prompt=memory_prompt,
-     skills_dirs=skills_dirs, roles_dirs=roles_dirs,
+     skills_dir=skills_dir, roles_dirs=roles_dirs,
      task=task_text,
      env={PERMISSION_MODE: "auto",    # sub-agents always run non-interactively
           DENDEN_ADDR, DENDEN_AGENT_ID,
@@ -905,22 +907,21 @@ setup:
 build:
   Protocol arg             → Claude Code flag
   ─────────────────────────────────────────────
-  --agent-workspace-dir DIR → creates <DIR>/claude/ folder (required)
+  --agent-workspace-dir DIR → uses DIR directly as --add-dir (required)
   --role-prompt TEXT    \
-  --memory-prompt TEXT  /→ write to <DIR>/claude/prompt.md → --system-prompt FILE
+  --memory-prompt TEXT  /→ write to <DIR>/prompt.md → --system-prompt FILE
   --task TEXT              → -p TEXT (omit if empty = interactive)
   --config JSON            → extract "model" → --model MODEL
-  --skills-dir DIR         → symlink to <DIR>/claude/.claude/skills/<name>/
-  --roles-dir DIR          → symlink to <DIR>/claude/roles/<name>/
+  --skills-dir DIR         → symlink children to <DIR>/.claude/skills/<name>/
+  --roles-dir DIR          → symlink children to <DIR>/roles/<name>/ (repeatable, skips existing)
   PERMISSION_MODE env      → --permission-mode VALUE (passed through directly)
-  (all)                    → --add-dir <DIR>/claude (single add-dir for all)
+  (all)                    → --add-dir DIR (single add-dir for all)
 
-  The wrapper creates a claude/ folder inside agent-workspace-dir and stages
-  everything there: prompt file, skill symlinks, role symlinks.  This single
-  directory is passed as --add-dir so Claude Code discovers .claude/skills/
-  natively within it.  Role symlinks are placed at claude/roles/<name>/ so the
-  agent can read ROLE.md files on demand (the prompt only contains descriptions,
-  not full content).
+  The agent workspace dir is used directly as --add-dir.  Skills are placed at
+  .claude/skills/<name>/ so Claude Code discovers them natively.  Role symlinks
+  are placed at roles/<name>/ so the agent can read ROLE.md files on demand
+  (the prompt only contains descriptions, not full content).  When multiple
+  --roles-dir flags are given, children are merged; duplicates are skipped.
 
   Returns: {"cmd": ["claude", ...], "cwd": "..."} without executing.
   WrapperRuntime then launches the command via Popen and manages PID/logs.
@@ -1175,11 +1176,13 @@ the same session directory:
 ```
 .strawpot/sessions/<run_id>/
   session.json                    # session state
-  roles/<slug>/                   # staged roles (session-level, shared)
+  roles/<slug>/                   # staged roles (session-level, shared, idempotent)
     ROLE.md                       # copied from installed path
     skills/<dep_slug>/            # symlinked transitive skill deps
     roles/<dep_slug>/             # symlinked direct role deps
-  agents/<agent_id>/              # per-agent workspace
+  requester_roles/<agent_id>/     # per-agent requester role (avoids leak into shared dir)
+    <parent_role>/                # symlinked to installed path
+  agents/<agent_id>/              # per-agent scratch workspace (clean)
     .pid                          # PID file (WrapperRuntime)
     .log                          # agent output log (WrapperRuntime)
 ```
