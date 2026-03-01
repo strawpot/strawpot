@@ -13,8 +13,12 @@ from strawpot.delegation import (
     PolicyDenied,
     _build_delegatable_roles,
     _check_policy,
-    create_workspace,
+    _collect_transitive_skills,
+    _parse_role_deps,
+    _parse_skill_deps,
+    create_agent_workspace,
     handle_delegate,
+    stage_role,
 )
 
 
@@ -23,21 +27,75 @@ from strawpot.delegation import (
 # ---------------------------------------------------------------------------
 
 
-def _write_skill(base, slug, body="Skill body."):
+def _write_skill(base, slug, body="Skill body.", deps=None):
+    """Write a SKILL.md file.
+
+    Args:
+        base: Base directory (skill will be at base/skills/<slug>/).
+        slug: Skill slug.
+        body: Markdown body.
+        deps: Optional list of skill dependency slugs for frontmatter.
+    """
     d = os.path.join(base, "skills", slug)
     os.makedirs(d, exist_ok=True)
+    if deps:
+        deps_yaml = "\n".join(f"      - {s}" for s in deps)
+        fm = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: test\n"
+            f"metadata:\n"
+            f"  strawpot:\n"
+            f"    dependencies:\n"
+            f"{deps_yaml}\n"
+            f"---\n"
+        )
+    else:
+        fm = f"---\nname: {slug}\ndescription: test\n---\n"
     with open(os.path.join(d, "SKILL.md"), "w") as f:
-        f.write(f"---\nname: {slug}\ndescription: test\n---\n{body}\n")
+        f.write(fm + body + "\n")
     return d
 
 
-def _write_role(base, slug, body="Role body.", description="test"):
+def _write_role(base, slug, body="Role body.", description="test",
+                skill_deps=None, role_deps=None):
+    """Write a ROLE.md file.
+
+    Args:
+        base: Base directory (role will be at base/roles/<slug>/).
+        slug: Role slug.
+        body: Markdown body.
+        description: Role description.
+        skill_deps: Optional list of skill dependency slugs.
+        role_deps: Optional list of role dependency slugs.
+    """
     d = os.path.join(base, "roles", slug)
     os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, "ROLE.md"), "w") as f:
-        f.write(
-            f"---\nname: {slug}\ndescription: {description}\n---\n{body}\n"
+    if skill_deps or role_deps:
+        deps_lines = []
+        if skill_deps:
+            deps_lines.append("      skills:")
+            for s in skill_deps:
+                deps_lines.append(f"        - {s}")
+        if role_deps:
+            deps_lines.append("      roles:")
+            for r in role_deps:
+                deps_lines.append(f"        - {r}")
+        deps_yaml = "\n".join(deps_lines)
+        fm = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: {description}\n"
+            f"metadata:\n"
+            f"  strawpot:\n"
+            f"    dependencies:\n"
+            f"{deps_yaml}\n"
+            f"---\n"
         )
+    else:
+        fm = f"---\nname: {slug}\ndescription: {description}\n---\n"
+    with open(os.path.join(d, "ROLE.md"), "w") as f:
+        f.write(fm + body + "\n")
     return d
 
 
@@ -116,110 +174,279 @@ class TestCheckPolicy:
 
 
 # ---------------------------------------------------------------------------
-# Workspace staging
+# Frontmatter parsing
 # ---------------------------------------------------------------------------
 
 
-class TestCreateWorkspace:
-    def test_workspace_directory_created(self, tmp_path):
-        runtime_dir = str(tmp_path / "runtime")
-        resolved = {"dependencies": []}
+class TestParseRoleDeps:
+    def test_no_deps(self, tmp_path):
+        """Role without deps returns empty lists."""
+        role_path = _write_role(str(tmp_path), "basic")
+        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        assert skill_slugs == []
+        assert role_slugs == []
 
-        workspace, skills, roles = create_workspace(
-            runtime_dir, "agent_1", resolved
+    def test_skill_deps(self, tmp_path):
+        """Parses skill dependencies from frontmatter."""
+        role_path = _write_role(
+            str(tmp_path), "impl", skill_deps=["git-workflow", "testing"]
         )
+        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        assert skill_slugs == ["git-workflow", "testing"]
+        assert role_slugs == []
 
-        assert os.path.isdir(workspace)
-        assert workspace == os.path.join(runtime_dir, "agents", "agent_1")
+    def test_role_deps(self, tmp_path):
+        """Parses role dependencies from frontmatter."""
+        role_path = _write_role(
+            str(tmp_path), "orchestrator",
+            role_deps=["reviewer", "implementer"],
+        )
+        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        assert skill_slugs == []
+        assert role_slugs == ["reviewer", "implementer"]
 
-    def test_skills_staged(self, tmp_path):
-        """Skill directories are symlinked into the workspace."""
+    def test_mixed_deps(self, tmp_path):
+        """Parses both skill and role deps."""
+        role_path = _write_role(
+            str(tmp_path), "lead",
+            skill_deps=["testing"],
+            role_deps=["reviewer"],
+        )
+        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        assert skill_slugs == ["testing"]
+        assert role_slugs == ["reviewer"]
+
+    def test_version_specifiers_stripped(self, tmp_path):
+        """Version specifiers are stripped from slugs."""
+        role_path = _write_role(
+            str(tmp_path), "impl", skill_deps=["git-workflow ^1.0"]
+        )
+        skill_slugs, _ = _parse_role_deps(role_path)
+        assert skill_slugs == ["git-workflow"]
+
+    def test_no_role_md(self, tmp_path):
+        """Missing ROLE.md returns empty lists."""
+        d = str(tmp_path / "roles" / "missing")
+        os.makedirs(d, exist_ok=True)
+        skill_slugs, role_slugs = _parse_role_deps(d)
+        assert skill_slugs == []
+        assert role_slugs == []
+
+
+class TestParseSkillDeps:
+    def test_no_deps(self, tmp_path):
+        """Skill without deps returns empty list."""
+        skill_path = _write_skill(str(tmp_path), "basic")
+        assert _parse_skill_deps(skill_path) == []
+
+    def test_with_deps(self, tmp_path):
+        """Parses skill dependencies."""
+        skill_path = _write_skill(
+            str(tmp_path), "testing", deps=["git-workflow"]
+        )
+        assert _parse_skill_deps(skill_path) == ["git-workflow"]
+
+    def test_no_skill_md(self, tmp_path):
+        """Missing SKILL.md returns empty list."""
+        d = str(tmp_path / "skills" / "missing")
+        os.makedirs(d, exist_ok=True)
+        assert _parse_skill_deps(d) == []
+
+
+# ---------------------------------------------------------------------------
+# Transitive skill collection
+# ---------------------------------------------------------------------------
+
+
+class TestCollectTransitiveSkills:
+    def test_direct_only(self, tmp_path):
+        """Collects directly listed skills."""
         base = str(tmp_path / "registry")
-        skill_path = _write_skill(base, "git-workflow", "Use git.")
-        runtime_dir = str(tmp_path / "runtime")
+        skill_a = _write_skill(base, "skill-a")
+
+        all_deps = [
+            {"slug": "skill-a", "kind": "skill", "path": skill_a},
+        ]
+
+        result = _collect_transitive_skills(["skill-a"], all_deps)
+        assert len(result) == 1
+        assert result[0]["slug"] == "skill-a"
+
+    def test_transitive(self, tmp_path):
+        """Collects transitive skill deps via SKILL.md frontmatter."""
+        base = str(tmp_path / "registry")
+        skill_b = _write_skill(base, "skill-b")
+        skill_a = _write_skill(base, "skill-a", deps=["skill-b"])
+
+        all_deps = [
+            {"slug": "skill-a", "kind": "skill", "path": skill_a},
+            {"slug": "skill-b", "kind": "skill", "path": skill_b},
+        ]
+
+        result = _collect_transitive_skills(["skill-a"], all_deps)
+        slugs = [d["slug"] for d in result]
+        assert "skill-a" in slugs
+        assert "skill-b" in slugs
+        # Leaves first (topological order)
+        assert slugs.index("skill-b") < slugs.index("skill-a")
+
+    def test_excludes_skills_from_roles(self, tmp_path):
+        """Does not include skills that are only reachable through roles."""
+        base = str(tmp_path / "registry")
+        skill_a = _write_skill(base, "skill-a")
+        skill_from_role = _write_skill(base, "skill-from-role")
+
+        all_deps = [
+            {"slug": "skill-a", "kind": "skill", "path": skill_a},
+            {"slug": "skill-from-role", "kind": "skill", "path": skill_from_role},
+            {"slug": "sub-role", "kind": "role", "path": "/some/path"},
+        ]
+
+        # Only skill-a is a direct dep; skill-from-role belongs to sub-role
+        result = _collect_transitive_skills(["skill-a"], all_deps)
+        slugs = [d["slug"] for d in result]
+        assert "skill-a" in slugs
+        assert "skill-from-role" not in slugs
+
+    def test_unknown_slug_ignored(self):
+        """Unknown slugs are silently ignored."""
+        result = _collect_transitive_skills(["nonexistent"], [])
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Role staging
+# ---------------------------------------------------------------------------
+
+
+class TestStageRole:
+    def test_creates_role_directory(self, tmp_path):
+        """stage_role creates the role directory with ROLE.md."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "You implement things.")
+        session_dir = str(tmp_path / "session")
 
         resolved = {
+            "slug": "implementer",
+            "path": role_path,
+            "dependencies": [],
+        }
+
+        stage_role(session_dir, resolved)
+
+        staged_dir = os.path.join(session_dir, "roles", "implementer")
+        assert os.path.isdir(staged_dir)
+        assert os.path.isfile(os.path.join(staged_dir, "ROLE.md"))
+
+    def test_stages_transitive_skills(self, tmp_path):
+        """Transitive skill deps are symlinked into skills/."""
+        base = str(tmp_path / "registry")
+        skill_b = _write_skill(base, "skill-b", "Base skill.")
+        skill_a = _write_skill(base, "skill-a", "Top skill.", deps=["skill-b"])
+        role_path = _write_role(base, "implementer", skill_deps=["skill-a"])
+        session_dir = str(tmp_path / "session")
+
+        resolved = {
+            "slug": "implementer",
+            "path": role_path,
             "dependencies": [
-                {
-                    "slug": "git-workflow",
-                    "kind": "skill",
-                    "path": skill_path,
-                    "version": "1.0",
-                    "source": "local",
-                },
+                {"slug": "skill-a", "kind": "skill", "path": skill_a,
+                 "version": "1.0", "source": "local"},
+                {"slug": "skill-b", "kind": "skill", "path": skill_b,
+                 "version": "1.0", "source": "local"},
             ],
         }
 
-        workspace, skills_dirs, roles_dirs = create_workspace(
-            runtime_dir, "agent_1", resolved
-        )
+        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
 
-        assert len(skills_dirs) == 1
-        assert os.path.islink(skills_dirs[0]) or os.path.isdir(skills_dirs[0])
-        staged = os.path.join(skills_dirs[0], "SKILL.md")
-        assert os.path.isfile(staged)
-        with open(staged) as f:
-            assert "Use git." in f.read()
+        assert len(skills_dirs) == 2
+        slugs = [os.path.basename(d) for d in skills_dirs]
+        assert "skill-a" in slugs
+        assert "skill-b" in slugs
+        for d in skills_dirs:
+            assert os.path.isfile(os.path.join(d, "SKILL.md"))
 
-    def test_role_deps_symlinked(self, tmp_path):
-        """Role dependencies are symlinked into workspace/roles/."""
+    def test_stages_direct_role_deps(self, tmp_path):
+        """Direct role deps are symlinked into roles/."""
         base = str(tmp_path / "registry")
-        role_path = _write_role(base, "reviewer")
-        runtime_dir = str(tmp_path / "runtime")
+        reviewer_path = _write_role(base, "reviewer", "You review.")
+        role_path = _write_role(base, "orchestrator", role_deps=["reviewer"])
+        session_dir = str(tmp_path / "session")
 
         resolved = {
+            "slug": "orchestrator",
+            "path": role_path,
             "dependencies": [
-                {
-                    "slug": "reviewer",
-                    "kind": "role",
-                    "path": role_path,
-                    "version": "1.0",
-                    "source": "local",
-                },
+                {"slug": "reviewer", "kind": "role", "path": reviewer_path,
+                 "version": "1.0", "source": "local"},
             ],
         }
 
-        workspace, skills_dirs, roles_dirs = create_workspace(
-            runtime_dir, "agent_1", resolved
-        )
+        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
 
-        assert len(skills_dirs) == 0
         assert len(roles_dirs) == 1
-        assert os.path.islink(roles_dirs[0]) or os.path.isdir(roles_dirs[0])
+        assert os.path.basename(roles_dirs[0]) == "reviewer"
         assert os.path.isfile(os.path.join(roles_dirs[0], "ROLE.md"))
 
-    def test_mixed_dependencies(self, tmp_path):
-        """Both skill and role dependencies are handled correctly."""
+    def test_idempotent(self, tmp_path):
+        """Second call returns same paths without re-creating."""
         base = str(tmp_path / "registry")
-        skill_path = _write_skill(base, "testing", "Test things.")
-        role_path = _write_role(base, "reviewer")
-        runtime_dir = str(tmp_path / "runtime")
+        role_path = _write_role(base, "implementer")
+        session_dir = str(tmp_path / "session")
 
         resolved = {
+            "slug": "implementer",
+            "path": role_path,
+            "dependencies": [],
+        }
+
+        r1 = stage_role(session_dir, resolved)
+        r2 = stage_role(session_dir, resolved)
+        assert r1 == r2
+
+    def test_excludes_skills_from_dependent_roles(self, tmp_path):
+        """Skills from dependent roles are NOT included."""
+        base = str(tmp_path / "registry")
+        sub_skill = _write_skill(base, "sub-skill", "Sub skill.")
+        _write_role(base, "sub-role", skill_deps=["sub-skill"])
+        own_skill = _write_skill(base, "own-skill", "Own skill.")
+        role_path = _write_role(
+            base, "main-role",
+            skill_deps=["own-skill"],
+            role_deps=["sub-role"],
+        )
+        session_dir = str(tmp_path / "session")
+
+        resolved = {
+            "slug": "main-role",
+            "path": role_path,
             "dependencies": [
-                {
-                    "slug": "testing",
-                    "kind": "skill",
-                    "path": skill_path,
-                    "version": "1.0",
-                    "source": "local",
-                },
-                {
-                    "slug": "reviewer",
-                    "kind": "role",
-                    "path": role_path,
-                    "version": "1.0",
-                    "source": "local",
-                },
+                {"slug": "own-skill", "kind": "skill", "path": own_skill,
+                 "version": "1.0", "source": "local"},
+                {"slug": "sub-skill", "kind": "skill", "path": sub_skill,
+                 "version": "1.0", "source": "local"},
+                {"slug": "sub-role", "kind": "role",
+                 "path": os.path.join(base, "roles", "sub-role"),
+                 "version": "1.0", "source": "local"},
             ],
         }
 
-        _, skills_dirs, roles_dirs = create_workspace(
-            runtime_dir, "agent_1", resolved
-        )
+        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
 
-        assert len(skills_dirs) == 1
-        assert len(roles_dirs) == 1
+        skill_slugs = [os.path.basename(d) for d in skills_dirs]
+        assert "own-skill" in skill_slugs
+        assert "sub-skill" not in skill_slugs
+
+        role_slugs = [os.path.basename(d) for d in roles_dirs]
+        assert "sub-role" in role_slugs
+
+
+class TestCreateAgentWorkspace:
+    def test_creates_directory(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        workspace = create_agent_workspace(session_dir, "agent_1")
+        assert os.path.isdir(workspace)
+        assert workspace == os.path.join(session_dir, "agents", "agent_1")
 
 
 # ---------------------------------------------------------------------------
@@ -315,14 +542,14 @@ class TestPromptBuilding:
         }
 
         runtime = _mock_runtime()
-        runtime_dir = str(tmp_path / "runtime")
+        session_dir = str(tmp_path / "session")
 
         handle_delegate(
             request=_make_request(),
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=runtime_dir,
+            session_dir=session_dir,
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -354,7 +581,7 @@ class TestPromptBuilding:
             config=config,
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: rev_dir if s == "reviewer" else None,
         )
@@ -384,7 +611,7 @@ class TestPromptBuilding:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -427,7 +654,7 @@ class TestSpawnAndWait:
             config=_make_config(denden_addr="127.0.0.1:9999"),
             runtime=runtime,
             working_dir=working,
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -464,7 +691,7 @@ class TestSpawnAndWait:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: orch_dir if s == "orchestrator" else None,
         )
@@ -475,10 +702,13 @@ class TestSpawnAndWait:
         assert os.path.isfile(os.path.join(kw["roles_dirs"][0], "ROLE.md"))
 
     def test_requester_role_dir_not_duplicated(self, tmp_path):
-        """If requester's role is already in dependencies, it's not added twice."""
+        """If requester's role is already in staged deps, it's not added twice."""
         base = str(tmp_path / "registry")
-        role_path = _write_role(base, "implementer", "Implement.")
         orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
+        role_path = _write_role(
+            base, "implementer", "Implement.",
+            role_deps=["orchestrator"],
+        )
 
         resolved = {
             "slug": "implementer",
@@ -504,14 +734,18 @@ class TestSpawnAndWait:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: orch_dir if s == "orchestrator" else None,
         )
 
         kw = runtime.spawn.call_args.kwargs
-        # Only one entry — the dependency symlink; requester not duplicated
-        assert len(kw["roles_dirs"]) == 1
+        # Only one entry for orchestrator — staged dep; requester not duplicated
+        orch_entries = [
+            d for d in kw["roles_dirs"]
+            if os.path.basename(d) == "orchestrator"
+        ]
+        assert len(orch_entries) == 1
 
     def test_result_mapped_to_delegate_result(self, tmp_path):
         """AgentResult fields map to DelegateResult."""
@@ -536,7 +770,7 @@ class TestSpawnAndWait:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -567,7 +801,7 @@ class TestSpawnAndWait:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -597,7 +831,7 @@ class TestSpawnAndWait:
             config=_make_config(agent_timeout=60),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -629,7 +863,7 @@ class TestSpawnAndWait:
             config=_make_config(),
             runtime=runtime,
             working_dir=str(tmp_path / "work"),
-            runtime_dir=str(tmp_path / "runtime"),
+            session_dir=str(tmp_path / "session"),
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -653,7 +887,7 @@ class TestHandleDelegatePolicyDenial:
                 config=_make_config(allowed_roles=["implementer"]),
                 runtime=runtime,
                 working_dir=str(tmp_path),
-                runtime_dir=str(tmp_path / "runtime"),
+                session_dir=str(tmp_path / "session"),
                 resolve_role=lambda slug, kind="role": {},
                 resolve_role_dirs=lambda s: None,
             )
@@ -670,7 +904,7 @@ class TestHandleDelegatePolicyDenial:
                 config=_make_config(max_depth=3),
                 runtime=runtime,
                 working_dir=str(tmp_path),
-                runtime_dir=str(tmp_path / "runtime"),
+                session_dir=str(tmp_path / "session"),
                 resolve_role=lambda slug, kind="role": {},
                 resolve_role_dirs=lambda s: None,
             )
@@ -685,11 +919,12 @@ class TestHandleDelegatePolicyDenial:
 
 class TestIntegration:
     def test_full_flow(self, tmp_path):
-        """Full delegation flow: resolve → prompt → workspace → spawn → wait → result."""
+        """Full delegation flow: resolve → prompt → stage → spawn → wait → result."""
         base = str(tmp_path / "registry")
         skill_path = _write_skill(base, "testing", "Write tests.")
         role_path = _write_role(
-            base, "implementer", "You implement features."
+            base, "implementer", "You implement features.",
+            skill_deps=["testing"],
         )
 
         resolved = {
@@ -711,7 +946,7 @@ class TestIntegration:
 
         runtime = _mock_runtime(summary="Feature implemented", output="LGTM")
         working = str(tmp_path / "worktree")
-        runtime_dir = str(tmp_path / "runtime")
+        session_dir = str(tmp_path / "session")
 
         result = handle_delegate(
             request=_make_request(
@@ -724,7 +959,7 @@ class TestIntegration:
             config=_make_config(denden_addr="127.0.0.1:9700"),
             runtime=runtime,
             working_dir=working,
-            runtime_dir=runtime_dir,
+            session_dir=session_dir,
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
         )
@@ -743,8 +978,10 @@ class TestIntegration:
         assert "Write tests." in kw["role_prompt"]
         assert "You implement features." in kw["role_prompt"]
 
-        # Workspace created with symlinked skill
+        # Agent workspace created
         assert os.path.isdir(kw["agent_workspace_dir"])
+
+        # Staged skill is accessible
         assert len(kw["skills_dirs"]) == 1
         assert os.path.isfile(
             os.path.join(kw["skills_dirs"][0], "SKILL.md")

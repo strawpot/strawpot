@@ -12,7 +12,14 @@ import click
 
 from strawpot import __version__
 from strawpot._process import is_pid_alive
+from strawpot.agents.interactive import (
+    DirectWrapperRuntime,
+    InteractiveWrapperRuntime,
+)
+from strawpot.agents.registry import resolve_agent, validate_agent
+from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, load_config
+from strawpot.session import Session, resolve_isolator
 
 
 @click.group()
@@ -70,7 +77,67 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port):
     if host or port:
         current_host, current_port = config.denden_addr.rsplit(":", 1)
         config.denden_addr = f"{host or current_host}:{port or current_port}"
-    click.echo("strawpot start: not yet implemented")
+
+    working_dir = str(Path.cwd())
+
+    # 1. Resolve agent spec
+    try:
+        spec = resolve_agent(
+            config.runtime, working_dir, config.agents.get(config.runtime)
+        )
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    # 2. Validate agent dependencies
+    validation = validate_agent(spec)
+    if validation.missing_tools:
+        click.echo("Missing required tools:", err=True)
+        for tool, hint in validation.missing_tools:
+            msg = f"  - {tool}"
+            if hint:
+                msg += f"  (install: {hint})"
+            click.echo(msg, err=True)
+        sys.exit(1)
+
+    for var in validation.missing_env:
+        value = click.prompt(f"Enter value for {var}")
+        os.environ[var] = value
+
+    # 3. Build runtimes (session_dir set later by Session.start())
+    wrapper = WrapperRuntime(spec)
+    if shutil.which("tmux"):
+        rt = InteractiveWrapperRuntime(wrapper)
+    else:
+        rt = DirectWrapperRuntime(wrapper)
+
+    # 4. Isolator
+    isolator = resolve_isolator(config.isolation)
+
+    # 5. Resolver callables (lazy import strawhub)
+    def _resolve_role(slug, kind="role"):
+        from strawhub.resolver import resolve
+
+        return resolve(slug, kind=kind)
+
+    def _resolve_role_dirs(slug):
+        from strawhub.resolver import resolve
+
+        try:
+            return resolve(slug, kind="role").get("path")
+        except Exception:
+            return None
+
+    # 6. Create and run session
+    session = Session(
+        config=config,
+        wrapper=wrapper,
+        runtime=rt,
+        isolator=isolator,
+        resolve_role=_resolve_role,
+        resolve_role_dirs=_resolve_role_dirs,
+    )
+    session.start(working_dir)
 
 
 @cli.command(name="config")
@@ -81,8 +148,10 @@ def show_config():
     click.echo(f"isolation:            {config.isolation}")
     click.echo(f"denden_addr:          {config.denden_addr}")
     click.echo(f"orchestrator_role:    {config.orchestrator_role}")
+    click.echo(f"permission_mode:      {config.permission_mode}")
     click.echo(f"allowed_roles:        {config.allowed_roles}")
     click.echo(f"max_depth:            {config.max_depth}")
+    click.echo(f"agent_timeout:        {config.agent_timeout}")
     click.echo(f"merge_strategy:       {config.merge_strategy}")
     click.echo(f"pull_before_session:  {config.pull_before_session}")
     click.echo(f"pr_command:           {config.pr_command}")
@@ -91,10 +160,10 @@ def show_config():
 
 def _sessions_dir() -> Path:
     """Return the sessions directory, searching CWD then global."""
-    local = Path.cwd() / ".strawpot" / "runtime" / "sessions"
+    local = Path.cwd() / ".strawpot" / "sessions"
     if local.is_dir():
         return local
-    return get_strawpot_home() / "runtime" / "sessions"
+    return get_strawpot_home() / "sessions"
 
 
 def _load_session(path: Path) -> dict | None:
@@ -131,7 +200,7 @@ def sessions():
         click.echo("No sessions found.")
         return
 
-    session_files = sorted(sessions_path.glob("*.json"))
+    session_files = sorted(sessions_path.glob("*/session.json"))
     if not session_files:
         click.echo("No sessions found.")
         return
@@ -144,7 +213,7 @@ def sessions():
         data = _load_session(path)
         if data is None:
             continue
-        run_id = data.get("run_id", path.stem)
+        run_id = data.get("run_id", path.parent.name)
         pid = data.get("pid")
         alive = is_pid_alive(pid) if pid else False
         status = "running" if alive else "stale"
@@ -160,7 +229,7 @@ def sessions():
 def agents(session_id):
     """List agents running in a session."""
     sessions_path = _sessions_dir()
-    session_file = sessions_path / f"{session_id}.json"
+    session_file = sessions_path / session_id / "session.json"
     if not session_file.is_file():
         click.echo(f"Session not found: {session_id}")
         sys.exit(1)
@@ -209,30 +278,38 @@ def _strawhub(*args: str) -> None:
     sys.exit(result.returncode)
 
 
-@cli.command()
-@click.argument("kind", type=click.Choice(["skill", "role", "agent", "memory"]))
-@click.argument("slug")
-def install(kind, slug):
-    """Install a skill, role, agent, or memory provider from StrawHub."""
-    _strawhub("install", kind, slug)
+def _make_passthrough(strawhub_cmd: str, help_text: str):
+    """Create a click command that forwards all args to strawhub."""
+
+    @click.command(
+        name=strawhub_cmd,
+        help=help_text,
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    )
+    @click.pass_context
+    def cmd(ctx):
+        _strawhub(strawhub_cmd, *ctx.args)
+
+    return cmd
 
 
-@cli.command()
-@click.argument("kind", type=click.Choice(["skill", "role", "agent", "memory"]))
-@click.argument("slug")
-def uninstall(kind, slug):
-    """Uninstall a skill, role, agent, or memory provider."""
-    _strawhub("uninstall", kind, slug)
+# Package management
+cli.add_command(_make_passthrough("install", "Install skills or roles from StrawHub."))
+cli.add_command(_make_passthrough("uninstall", "Uninstall a skill or role."))
+cli.add_command(_make_passthrough("update", "Update installed packages to latest versions."))
+cli.add_command(_make_passthrough("init", "Create strawpot.toml from installed packages."))
+cli.add_command(_make_passthrough("install-tools", "Install system tools declared by packages."))
 
+# Discovery
+cli.add_command(_make_passthrough("search", "Search the StrawHub registry."))
+cli.add_command(_make_passthrough("list", "Browse skills and roles on the registry."))
+cli.add_command(_make_passthrough("info", "Show detailed information about a package."))
+cli.add_command(_make_passthrough("resolve", "Resolve a slug to its installed path."))
 
-@cli.command()
-@click.argument("query")
-def search(query):
-    """Search StrawHub for skills, roles, agents, and memory providers."""
-    _strawhub("search", query)
+# Publishing
+cli.add_command(_make_passthrough("publish", "Publish a skill or role to StrawHub."))
 
-
-@cli.command(name="list")
-def list_installed():
-    """List installed packages."""
-    _strawhub("list")
+# Authentication
+cli.add_command(_make_passthrough("login", "Authenticate with the StrawHub registry."))
+cli.add_command(_make_passthrough("logout", "Remove stored StrawHub credentials."))
+cli.add_command(_make_passthrough("whoami", "Show current authenticated user."))

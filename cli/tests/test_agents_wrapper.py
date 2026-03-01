@@ -55,30 +55,35 @@ def test_wrapper_name():
 
 
 def test_pid_file(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    assert rt._pid_file("abc123") == str(tmp_path / "abc123.pid")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    assert rt._pid_file("abc123") == str(
+        tmp_path / "agents" / "abc123" / ".pid"
+    )
 
 
 def test_log_file(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    assert rt._log_file("abc123") == str(tmp_path / "abc123.log")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    assert rt._log_file("abc123") == str(
+        tmp_path / "agents" / "abc123" / ".log"
+    )
 
 
 def test_write_and_read_pid(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt._write_pid("agent01", 42)
     assert rt._read_pid("agent01") == 42
 
 
 def test_read_pid_missing(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     assert rt._read_pid("nonexistent") is None
 
 
 def test_read_pid_invalid(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    pid_path = tmp_path / "bad.pid"
-    pid_path.write_text("not-a-number")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    pid_dir = tmp_path / "agents" / "bad"
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    (pid_dir / ".pid").write_text("not-a-number")
     assert rt._read_pid("bad") is None
 
 
@@ -182,7 +187,7 @@ def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
     monkeypatch.setattr("subprocess.run", fake_run)
     monkeypatch.setattr("subprocess.Popen", fake_popen)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = rt.spawn(
         agent_id="a1",
         working_dir=str(tmp_path),
@@ -237,7 +242,7 @@ def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
         wrapper_cmd=["/bin/wrap", "--verbose"],
         config={"model": "claude-sonnet-4-6", "temperature": 0.5},
     )
-    rt = WrapperRuntime(spec, runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(spec, session_dir=str(tmp_path))
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
@@ -289,7 +294,7 @@ def test_spawn_no_skills_or_roles(tmp_path, monkeypatch):
         "subprocess.Popen", lambda cmd, **kw: MagicMock(pid=1)
     )
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt.spawn(
         agent_id="a1",
         working_dir="/w",
@@ -363,10 +368,11 @@ def test_wait_polls_until_exit(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("time.sleep", lambda _: None)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    # Write a log file
-    log_path = tmp_path / "wait01.log"
-    log_path.write_text("captured output")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    # Write a log file at the expected path
+    log_dir = tmp_path / "agents" / "wait01"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / ".log").write_text("captured output")
 
     handle = AgentHandle(agent_id="wait01", runtime_name="test-agent", pid=999)
     result = rt.wait(handle)
@@ -391,8 +397,10 @@ def test_wait_with_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr("time.sleep", fake_sleep)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    (tmp_path / "tmout01.log").write_text("")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    log_dir = tmp_path / "agents" / "tmout01"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / ".log").write_text("")
 
     handle = AgentHandle(agent_id="tmout01", runtime_name="test-agent", pid=999)
     result = rt.wait(handle, timeout=2.0)
@@ -408,9 +416,11 @@ def test_wait_reads_pid_from_file(tmp_path, monkeypatch):
         WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: False)
     )
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt._write_pid("wait02", 888)
-    (tmp_path / "wait02.log").write_text("some output")
+    log_dir = tmp_path / "agents" / "wait02"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / ".log").write_text("some output")
 
     handle = AgentHandle(agent_id="wait02", runtime_name="test-agent")  # no pid
     result = rt.wait(handle)
@@ -420,8 +430,10 @@ def test_wait_reads_pid_from_file(tmp_path, monkeypatch):
 
 def test_wait_no_pid(tmp_path):
     """wait without PID still returns output if log exists."""
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
-    (tmp_path / "nopid.log").write_text("some output")
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    log_dir = tmp_path / "agents" / "nopid"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / ".log").write_text("some output")
 
     handle = AgentHandle(agent_id="nopid", runtime_name="test-agent")
     result = rt.wait(handle)
@@ -436,7 +448,7 @@ def test_is_alive_true(tmp_path, monkeypatch):
     monkeypatch.setattr(
         WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: True)
     )
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="a1", runtime_name="test-agent", pid=123)
     assert rt.is_alive(handle) is True
 
@@ -445,7 +457,7 @@ def test_is_alive_false(tmp_path, monkeypatch):
     monkeypatch.setattr(
         WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: False)
     )
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="a1", runtime_name="test-agent", pid=123)
     assert rt.is_alive(handle) is False
 
@@ -454,14 +466,14 @@ def test_is_alive_reads_pid_from_file(tmp_path, monkeypatch):
     monkeypatch.setattr(
         WrapperRuntime, "_is_process_alive", staticmethod(lambda pid: True)
     )
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt._write_pid("a2", 456)
     handle = AgentHandle(agent_id="a2", runtime_name="test-agent")  # no pid
     assert rt.is_alive(handle) is True
 
 
 def test_is_alive_no_pid(tmp_path):
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="missing", runtime_name="test-agent")
     assert rt.is_alive(handle) is False
 
@@ -478,7 +490,7 @@ def test_kill_sends_sigterm(tmp_path, monkeypatch):
 
     monkeypatch.setattr("os.kill", fake_kill)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="k1", runtime_name="test-agent", pid=777)
     rt.kill(handle)
 
@@ -494,7 +506,7 @@ def test_kill_reads_pid_from_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr("os.kill", fake_kill)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt._write_pid("k2", 888)
     handle = AgentHandle(agent_id="k2", runtime_name="test-agent")  # no pid
     rt.kill(handle)
@@ -504,7 +516,7 @@ def test_kill_reads_pid_from_file(tmp_path, monkeypatch):
 
 def test_kill_no_pid(tmp_path):
     """kill with no PID does nothing (no error)."""
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="missing", runtime_name="test-agent")
     rt.kill(handle)  # should not raise
 
@@ -516,7 +528,7 @@ def test_kill_process_already_gone(tmp_path, monkeypatch):
 
     monkeypatch.setattr("os.kill", fake_kill)
 
-    rt = WrapperRuntime(_make_spec(), runtime_dir=str(tmp_path))
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="k3", runtime_name="test-agent", pid=999)
     rt.kill(handle)  # should not raise
 

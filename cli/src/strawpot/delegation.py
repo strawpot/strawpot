@@ -5,10 +5,11 @@ import shutil
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.config import StrawPotConfig
-from strawpot.context import build_prompt, read_role_description
+from strawpot.context import build_prompt, parse_frontmatter, read_role_description
 
 
 class DelegationError(Exception):
@@ -66,39 +67,200 @@ def _link_or_copy(src: str, dst: str) -> None:
         shutil.copytree(src, dst)
 
 
-def create_workspace(
-    runtime_dir: str,
-    agent_id: str,
-    resolved: dict,
-) -> tuple[str, list[str], list[str]]:
-    """Create agent workspace and stage resolved skills/roles.
+# ---------------------------------------------------------------------------
+# Frontmatter dependency parsing
+# ---------------------------------------------------------------------------
+
+
+def _parse_role_deps(role_path: str) -> tuple[list[str], list[str]]:
+    """Parse ROLE.md frontmatter to extract direct skill and role dep slugs.
 
     Returns:
-        (workspace_dir, skills_dirs, roles_dirs)
+        (skill_slugs, role_slugs) — slug strings with version specifiers stripped.
     """
-    workspace = os.path.join(runtime_dir, "agents", agent_id)
-    os.makedirs(workspace, exist_ok=True)
+    role_md = Path(role_path) / "ROLE.md"
+    if not role_md.exists():
+        return [], []
+    text = role_md.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    deps = (
+        fm.get("metadata", {}).get("strawpot", {}).get("dependencies", {})
+    )
+    if not isinstance(deps, dict):
+        return [], []
 
-    skills_dir = os.path.join(workspace, "skills")
-    roles_dir = os.path.join(workspace, "roles")
-    os.makedirs(skills_dir, exist_ok=True)
-    os.makedirs(roles_dir, exist_ok=True)
+    skill_specs = deps.get("skills", [])
+    role_specs = deps.get("roles", [])
+    skill_slugs = [spec.split()[0] for spec in skill_specs]
+    role_slugs = [spec.split()[0] for spec in role_specs]
+    return skill_slugs, role_slugs
 
+
+def _parse_skill_deps(skill_path: str) -> list[str]:
+    """Parse SKILL.md frontmatter to extract direct skill dep slugs.
+
+    In SKILL.md, ``metadata.strawpot.dependencies`` is a flat list of skill slugs.
+    """
+    skill_md = Path(skill_path) / "SKILL.md"
+    if not skill_md.exists():
+        return []
+    text = skill_md.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    deps = (
+        fm.get("metadata", {}).get("strawpot", {}).get("dependencies", [])
+    )
+    if not isinstance(deps, list):
+        return []
+    return [spec.split()[0] for spec in deps]
+
+
+# ---------------------------------------------------------------------------
+# Session-level role staging
+# ---------------------------------------------------------------------------
+
+
+def _collect_transitive_skills(
+    direct_skill_slugs: list[str],
+    all_deps: list[dict],
+) -> list[dict]:
+    """Collect transitive skill dependencies for a role's own skills.
+
+    DFS through SKILL.md frontmatters starting from *direct_skill_slugs*.
+    Uses *all_deps* as a path lookup.  Only skills reachable through the
+    skill dependency chain are included — skills from dependent roles are
+    excluded.
+
+    Returns:
+        List of dep dicts in topological order (leaves first).
+    """
+    skill_lookup: dict[str, dict] = {}
+    for dep in all_deps:
+        if dep["kind"] == "skill":
+            skill_lookup[dep["slug"]] = dep
+
+    collected: dict[str, dict] = {}
+    visited: set[str] = set()
+
+    def _dfs(slug: str) -> None:
+        if slug in visited:
+            return
+        visited.add(slug)
+        dep = skill_lookup.get(slug)
+        if dep is None:
+            return
+        child_slugs = _parse_skill_deps(dep["path"])
+        for child in child_slugs:
+            _dfs(child)
+        collected[slug] = dep
+
+    for slug in direct_skill_slugs:
+        _dfs(slug)
+
+    return list(collected.values())
+
+
+def _read_staged_paths(
+    role_stage_dir: str,
+) -> tuple[list[str], list[str]]:
+    """Reconstruct skills_dirs and roles_dirs from an already-staged role dir."""
     skills_dirs: list[str] = []
     roles_dirs: list[str] = []
 
-    for dep in resolved.get("dependencies", []):
-        slug = dep["slug"]
-        if dep["kind"] == "skill":
-            dest = os.path.join(skills_dir, slug)
-            _link_or_copy(dep["path"], dest)
-            skills_dirs.append(dest)
-        elif dep["kind"] == "role":
-            dest = os.path.join(roles_dir, slug)
-            _link_or_copy(dep["path"], dest)
-            roles_dirs.append(dest)
+    skills_dir = os.path.join(role_stage_dir, "skills")
+    if os.path.isdir(skills_dir):
+        for name in sorted(os.listdir(skills_dir)):
+            path = os.path.join(skills_dir, name)
+            if os.path.isdir(path):
+                skills_dirs.append(path)
 
-    return workspace, skills_dirs, roles_dirs
+    roles_dir = os.path.join(role_stage_dir, "roles")
+    if os.path.isdir(roles_dir):
+        for name in sorted(os.listdir(roles_dir)):
+            path = os.path.join(roles_dir, name)
+            if os.path.isdir(path):
+                roles_dirs.append(path)
+
+    return skills_dirs, roles_dirs
+
+
+def stage_role(
+    session_dir: str,
+    resolved: dict,
+) -> tuple[list[str], list[str]]:
+    """Stage a resolved role into the session directory.
+
+    Creates::
+
+        session_dir/roles/<slug>/
+            ROLE.md                  — copied from installed path
+            skills/<dep_slug>/       — symlinked (transitive skill deps only)
+            roles/<dep_slug>/        — symlinked (direct role deps only)
+
+    Idempotent: if the directory already exists, returns paths from the
+    existing staging without re-creating.
+
+    Returns:
+        (skills_dirs, roles_dirs)
+    """
+    slug = resolved["slug"]
+    role_stage_dir = os.path.join(session_dir, "roles", slug)
+
+    if os.path.isdir(role_stage_dir):
+        return _read_staged_paths(role_stage_dir)
+
+    os.makedirs(role_stage_dir, exist_ok=True)
+
+    # Copy ROLE.md from installed path
+    src_role_md = os.path.join(resolved["path"], "ROLE.md")
+    dst_role_md = os.path.join(role_stage_dir, "ROLE.md")
+    shutil.copy2(src_role_md, dst_role_md)
+
+    # Parse direct dependencies from frontmatter
+    direct_skill_slugs, direct_role_slugs = _parse_role_deps(resolved["path"])
+    all_deps = resolved.get("dependencies", [])
+
+    # Stage transitive skill deps (for this role's own skills only)
+    skill_deps = _collect_transitive_skills(direct_skill_slugs, all_deps)
+    skills_dir = os.path.join(role_stage_dir, "skills")
+    os.makedirs(skills_dir, exist_ok=True)
+    skills_dirs: list[str] = []
+    for dep in skill_deps:
+        dest = os.path.join(skills_dir, dep["slug"])
+        _link_or_copy(dep["path"], dest)
+        skills_dirs.append(dest)
+
+    # Stage direct role deps only (symlink to installed paths)
+    role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
+    roles_sub_dir = os.path.join(role_stage_dir, "roles")
+    os.makedirs(roles_sub_dir, exist_ok=True)
+    roles_dirs: list[str] = []
+    for role_slug in direct_role_slugs:
+        dep = role_lookup.get(role_slug)
+        if dep is None:
+            continue
+        dest = os.path.join(roles_sub_dir, role_slug)
+        _link_or_copy(dep["path"], dest)
+        roles_dirs.append(dest)
+
+    return skills_dirs, roles_dirs
+
+
+def create_agent_workspace(session_dir: str, agent_id: str) -> str:
+    """Create a per-agent workspace under the session directory.
+
+    Returns:
+        Path to the agent workspace directory.
+    """
+    workspace = os.path.join(session_dir, "agents", agent_id)
+    os.makedirs(workspace, exist_ok=True)
+    return workspace
+
+
+# ---------------------------------------------------------------------------
+# Delegatable roles
+# ---------------------------------------------------------------------------
 
 
 def _build_delegatable_roles(
@@ -131,34 +293,40 @@ def _build_delegatable_roles(
     return roles
 
 
+# ---------------------------------------------------------------------------
+# Delegate handler
+# ---------------------------------------------------------------------------
+
+
 def handle_delegate(
     *,
     request: DelegateRequest,
     config: StrawPotConfig,
     runtime: AgentRuntime,
     working_dir: str,
-    runtime_dir: str,
+    session_dir: str,
     resolve_role: Callable[..., dict],
     resolve_role_dirs: Callable[[str], str | None],
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
-    Steps (DESIGN.md §Delegate Request):
+    Steps:
       1. Policy check (allowed_roles, max_depth)
       2. Resolve role + skills via resolver
       3. Build delegatable roles list for sub-agent
       4. Build system prompt
-      5. Create agent workspace, stage skills
-      6. Spawn sub-agent
-      7. Wait for completion
-      8. Return result
+      5. Stage role (session-level, idempotent)
+      6. Create agent workspace
+      7. Spawn sub-agent
+      8. Wait for completion
+      9. Return result
 
     Args:
         request: The delegation request.
         config: Merged StrawPot configuration.
         runtime: Agent runtime (WrapperRuntime) for spawning.
         working_dir: Session worktree path (shared by all agents).
-        runtime_dir: Base directory for agent workspaces and runtime files.
+        session_dir: Session directory for staging and workspaces.
         resolve_role: Callable to resolve a role slug to a resolved dict.
             Signature: (slug, kind="role") -> dict.
         resolve_role_dirs: Callable that maps a role slug to its directory
@@ -189,21 +357,23 @@ def handle_delegate(
         requester_role=request.parent_role,
     )
 
-    # 5. Create workspace and stage skills
-    agent_id = f"agent_{uuid.uuid4().hex[:12]}"
-    workspace, skills_dirs, roles_dirs = create_workspace(
-        runtime_dir, agent_id, resolved
-    )
+    # 5. Stage role (session-level, idempotent)
+    skills_dirs, roles_dirs = stage_role(session_dir, resolved)
 
-    # 5b. Also resolve requester's role path into roles_dirs
+    # 5b. Add requester role path to roles_dirs
     requester_role_dir = resolve_role_dirs(request.parent_role)
     if requester_role_dir is not None:
-        dest = os.path.join(workspace, "roles", request.parent_role)
-        if not os.path.exists(dest):
-            _link_or_copy(requester_role_dir, dest)
-            roles_dirs.append(dest)
+        already_present = any(
+            os.path.basename(d) == request.parent_role for d in roles_dirs
+        )
+        if not already_present:
+            roles_dirs = [*roles_dirs, requester_role_dir]
 
-    # 6. Spawn
+    # 6. Create agent workspace
+    agent_id = f"agent_{uuid.uuid4().hex[:12]}"
+    workspace = create_agent_workspace(session_dir, agent_id)
+
+    # 7. Spawn
     env = {
         "DENDEN_ADDR": config.denden_addr,
         "DENDEN_AGENT_ID": agent_id,
@@ -224,12 +394,12 @@ def handle_delegate(
         env=env,
     )
 
-    # 7. Wait
+    # 8. Wait
     result: AgentResult = runtime.wait(
         handle, timeout=config.agent_timeout
     )
 
-    # 7b. Handle timeout — kill agent if still alive
+    # 8b. Handle timeout — kill agent if still alive
     if config.agent_timeout is not None and runtime.is_alive(handle):
         runtime.kill(handle)
         return DelegateResult(
@@ -238,7 +408,7 @@ def handle_delegate(
             exit_code=1,
         )
 
-    # 8. Return
+    # 9. Return
     return DelegateResult(
         summary=result.summary,
         output=result.output,
