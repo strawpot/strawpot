@@ -37,7 +37,7 @@ class AgentRuntime(Protocol):
         agent_workspace_dir: str,
         role_prompt: str,
         memory_prompt: str,
-        skills_dirs: list[str],
+        skills_dir: str,
         roles_dirs: list[str],
         task: str,
         env: dict[str, str],
@@ -51,8 +51,10 @@ class AgentRuntime(Protocol):
                 (prompt files, staged skills, scratch data).
             role_prompt: Role instructions text (body of ROLE.md).
             memory_prompt: Memory context text from memory.get ("" if none).
-            skills_dirs: Directories containing resolved SKILL.md files.
-            roles_dirs: Directories containing available roles for delegation.
+            skills_dir: Directory containing staged skill subdirectories.
+            roles_dirs: Directories containing staged role subdirectories.
+                Typically includes the role's own deps dir and optionally
+                the requester role dir.
             task: Task text. Empty string means interactive mode.
             env: Additional environment variables (DENDEN_ADDR, etc.).
         """

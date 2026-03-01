@@ -194,7 +194,7 @@ def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
         agent_workspace_dir=str(tmp_path / "workspace"),
         role_prompt="You are a coder.",
         memory_prompt="Previous context.",
-        skills_dirs=["/skills/a"],
+        skills_dir="/skills",
         roles_dirs=["/roles"],
         task="fix bug",
         env={"DENDEN_ADDR": "127.0.0.1:9700"},
@@ -249,7 +249,7 @@ def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
         agent_workspace_dir="/tmp/workspace",
         role_prompt="role text",
         memory_prompt="memory text",
-        skills_dirs=["/s1", "/s2"],
+        skills_dir="/s1",
         roles_dirs=["/r1"],
         task="do stuff",
         env={"K1": "V1"},
@@ -271,18 +271,13 @@ def test_spawn_builds_correct_protocol_args(tmp_path, monkeypatch):
     # Config as JSON
     config_json = cmd[cmd.index("--config") + 1]
     assert json.loads(config_json) == {"model": "claude-sonnet-4-6", "temperature": 0.5}
-    # Multiple --skills-dir
-    skills_indices = [i for i, v in enumerate(cmd) if v == "--skills-dir"]
-    assert len(skills_indices) == 2
-    assert cmd[skills_indices[0] + 1] == "/s1"
-    assert cmd[skills_indices[1] + 1] == "/s2"
-    # Single --roles-dir
-    roles_indices = [i for i, v in enumerate(cmd) if v == "--roles-dir"]
-    assert len(roles_indices) == 1
-    assert cmd[roles_indices[0] + 1] == "/r1"
+    # --skills-dir and --roles-dir flags
+    assert cmd[cmd.index("--skills-dir") + 1] == "/s1"
+    assert cmd[cmd.index("--roles-dir") + 1] == "/r1"
 
 
-def test_spawn_no_skills_or_roles(tmp_path, monkeypatch):
+def test_spawn_passes_dir_flags(tmp_path, monkeypatch):
+    """spawn always passes --skills-dir and --roles-dir flags."""
     captured = {}
 
     def fake_run(cmd, **kwargs):
@@ -301,14 +296,14 @@ def test_spawn_no_skills_or_roles(tmp_path, monkeypatch):
         agent_workspace_dir="/tmp/workspace",
         role_prompt="",
         memory_prompt="",
-        skills_dirs=[],
-        roles_dirs=[],
+        skills_dir="/session/roles/impl/skills",
+        roles_dirs=["/session/roles/impl/roles"],
         task="",
         env={},
     )
     cmd = captured["cmd"]
-    assert "--skills-dir" not in cmd
-    assert "--roles-dir" not in cmd
+    assert cmd[cmd.index("--skills-dir") + 1] == "/session/roles/impl/skills"
+    assert cmd[cmd.index("--roles-dir") + 1] == "/session/roles/impl/roles"
 
 
 def test_spawn_build_failure(monkeypatch):
@@ -324,7 +319,7 @@ def test_spawn_build_failure(monkeypatch):
             agent_workspace_dir="/tmp/workspace",
             role_prompt="",
             memory_prompt="",
-            skills_dirs=[],
+            skills_dir="",
             roles_dirs=[],
             task="",
             env={},
@@ -344,7 +339,7 @@ def test_spawn_build_invalid_json(monkeypatch):
             agent_workspace_dir="/tmp/workspace",
             role_prompt="",
             memory_prompt="",
-            skills_dirs=[],
+            skills_dir="",
             roles_dirs=[],
             task="",
             env={},

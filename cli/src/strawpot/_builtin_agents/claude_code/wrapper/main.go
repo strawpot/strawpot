@@ -71,7 +71,7 @@ type buildArgs struct {
 	MemoryPrompt      string
 	Task              string
 	Config            string
-	SkillsDirs        []string
+	SkillsDir         string
 	RolesDirs         []string
 }
 
@@ -107,7 +107,7 @@ func parseBuildArgs(args []string) buildArgs {
 			ba.Config = args[i]
 		case "--skills-dir":
 			i++
-			ba.SkillsDirs = append(ba.SkillsDirs, args[i])
+			ba.SkillsDir = args[i]
 		case "--roles-dir":
 			i++
 			ba.RolesDirs = append(ba.RolesDirs, args[i])
@@ -161,16 +161,14 @@ func cmdBuild(args []string) {
 		os.Exit(1)
 	}
 
-	// Create claude/ folder structure inside agent workspace dir.
-	// This becomes the single --add-dir for Claude Code.
-	claudeDir := filepath.Join(ba.AgentWorkspaceDir, "claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create claude dir: %v\n", err)
+	// Use agent workspace dir directly as the --add-dir for Claude Code.
+	if err := os.MkdirAll(ba.AgentWorkspaceDir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create workspace dir: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Write prompt file into claude/
-	promptFile := filepath.Join(claudeDir, "prompt.md")
+	// Write prompt file into workspace
+	promptFile := filepath.Join(ba.AgentWorkspaceDir, "prompt.md")
 	var parts []string
 	if ba.RolePrompt != "" {
 		parts = append(parts, ba.RolePrompt)
@@ -183,35 +181,55 @@ func cmdBuild(args []string) {
 		os.Exit(1)
 	}
 
-	// Symlink each skills-dir into claude/.claude/skills/<name>/
-	if len(ba.SkillsDirs) > 0 {
-		skillsTarget := filepath.Join(claudeDir, ".claude", "skills")
-		if err := os.MkdirAll(skillsTarget, 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create skills dir: %v\n", err)
-			os.Exit(1)
-		}
-		for _, d := range ba.SkillsDirs {
-			name := filepath.Base(d)
-			link := filepath.Join(skillsTarget, name)
-			if err := linkOrCopy(d, link); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to link skill %s: %v\n", name, err)
+	// Symlink each subdirectory in skills-dir into .claude/skills/<name>/
+	if ba.SkillsDir != "" {
+		entries, err := os.ReadDir(ba.SkillsDir)
+		if err == nil && len(entries) > 0 {
+			skillsTarget := filepath.Join(ba.AgentWorkspaceDir, ".claude", "skills")
+			if err := os.MkdirAll(skillsTarget, 0o755); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create skills dir: %v\n", err)
 				os.Exit(1)
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				src := filepath.Join(ba.SkillsDir, entry.Name())
+				link := filepath.Join(skillsTarget, entry.Name())
+				if err := linkOrCopy(src, link); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to link skill %s: %v\n", entry.Name(), err)
+					os.Exit(1)
+				}
 			}
 		}
 	}
 
-	// Symlink each roles-dir into claude/roles/<name>/
-	if len(ba.RolesDirs) > 0 {
-		rolesTarget := filepath.Join(claudeDir, "roles")
+	// Symlink each subdirectory from each roles-dir into roles/<name>/
+	for _, rolesDir := range ba.RolesDirs {
+		if rolesDir == "" {
+			continue
+		}
+		entries, err := os.ReadDir(rolesDir)
+		if err != nil || len(entries) == 0 {
+			continue
+		}
+		rolesTarget := filepath.Join(ba.AgentWorkspaceDir, "roles")
 		if err := os.MkdirAll(rolesTarget, 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to create roles dir: %v\n", err)
 			os.Exit(1)
 		}
-		for _, d := range ba.RolesDirs {
-			name := filepath.Base(d)
-			link := filepath.Join(rolesTarget, name)
-			if err := linkOrCopy(d, link); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to link role %s: %v\n", name, err)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			src := filepath.Join(rolesDir, entry.Name())
+			link := filepath.Join(rolesTarget, entry.Name())
+			// Skip if already exists (e.g. pre-placed by another roles-dir)
+			if _, err := os.Lstat(link); err == nil {
+				continue
+			}
+			if err := linkOrCopy(src, link); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to link role %s: %v\n", entry.Name(), err)
 				os.Exit(1)
 			}
 		}
@@ -234,9 +252,9 @@ func cmdBuild(args []string) {
 		cmd = append(cmd, "--permission-mode", pm)
 	}
 
-	// Single --add-dir pointing to the claude/ folder.
+	// Single --add-dir pointing to the agent workspace.
 	// Claude Code discovers .claude/skills/ within it natively.
-	cmd = append(cmd, "--add-dir", claudeDir)
+	cmd = append(cmd, "--add-dir", ba.AgentWorkspaceDir)
 
 	// Output JSON
 	result := map[string]interface{}{
