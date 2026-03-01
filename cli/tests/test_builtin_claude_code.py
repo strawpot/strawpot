@@ -100,9 +100,9 @@ def test_go_build_returns_command_json(tmp_path):
     assert cmd[cmd.index("-p") + 1] == "fix the bug"
     assert "--model" in cmd
     assert cmd[cmd.index("--model") + 1] == "claude-opus-4-6"
-    # --add-dir points to claude/ subfolder
+    # --add-dir points to the workspace directly
     assert "--add-dir" in cmd
-    assert cmd[cmd.index("--add-dir") + 1] == str(workspace / "claude")
+    assert cmd[cmd.index("--add-dir") + 1] == str(workspace)
 
 
 @needs_binary
@@ -155,11 +155,14 @@ def test_go_build_permission_mode(tmp_path):
 
 @needs_binary
 def test_go_build_with_skills_dir(tmp_path):
-    """--skills-dir directories are symlinked into claude/.claude/skills/."""
+    """--skills-dir is a parent dir; children are symlinked into claude/.claude/skills/."""
     workspace = tmp_path / "workspace"
-    skills_dir = tmp_path / "my_skill"
-    skills_dir.mkdir()
-    (skills_dir / "SKILL.md").write_text("skill content")
+    # Create a parent skills dir containing a skill subdirectory
+    skills_parent = tmp_path / "staged" / "skills"
+    skills_parent.mkdir(parents=True)
+    skill_dir = skills_parent / "my_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("skill content")
 
     result = subprocess.run(
         [
@@ -169,7 +172,7 @@ def test_go_build_with_skills_dir(tmp_path):
             "--agent-workspace-dir", str(workspace),
             "--task", "work",
             "--config", "{}",
-            "--skills-dir", str(skills_dir),
+            "--skills-dir", str(skills_parent),
         ],
         capture_output=True,
         text=True,
@@ -178,25 +181,27 @@ def test_go_build_with_skills_dir(tmp_path):
     out = json.loads(result.stdout)
     cmd = out["cmd"]
 
-    # Single --add-dir pointing to claude/
-    claude_dir = workspace / "claude"
+    # Single --add-dir pointing to the workspace
     add_dir_indices = [i for i, v in enumerate(cmd) if v == "--add-dir"]
     assert len(add_dir_indices) == 1
-    assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
+    assert cmd[add_dir_indices[0] + 1] == str(workspace)
 
     # Skill linked (symlink) or copied (Windows fallback)
-    link = claude_dir / ".claude" / "skills" / "my_skill"
+    link = workspace / ".claude" / "skills" / "my_skill"
     assert link.exists()
     assert (link / "SKILL.md").read_text() == "skill content"
 
 
 @needs_binary
 def test_go_build_with_roles_dir(tmp_path):
-    """--roles-dir directories are symlinked into claude/roles/."""
+    """--roles-dir is a parent dir; children are symlinked into claude/roles/."""
     workspace = tmp_path / "workspace"
-    roles_dir = tmp_path / "my_role"
-    roles_dir.mkdir()
-    (roles_dir / "ROLE.md").write_text("role content")
+    # Create a parent roles dir containing a role subdirectory
+    roles_parent = tmp_path / "staged" / "roles"
+    roles_parent.mkdir(parents=True)
+    role_dir = roles_parent / "my_role"
+    role_dir.mkdir()
+    (role_dir / "ROLE.md").write_text("role content")
 
     result = subprocess.run(
         [
@@ -206,7 +211,7 @@ def test_go_build_with_roles_dir(tmp_path):
             "--agent-workspace-dir", str(workspace),
             "--task", "work",
             "--config", "{}",
-            "--roles-dir", str(roles_dir),
+            "--roles-dir", str(roles_parent),
         ],
         capture_output=True,
         text=True,
@@ -215,16 +220,54 @@ def test_go_build_with_roles_dir(tmp_path):
     out = json.loads(result.stdout)
     cmd = out["cmd"]
 
-    # Single --add-dir pointing to claude/
-    claude_dir = workspace / "claude"
+    # Single --add-dir pointing to the workspace
     add_dir_indices = [i for i, v in enumerate(cmd) if v == "--add-dir"]
     assert len(add_dir_indices) == 1
-    assert cmd[add_dir_indices[0] + 1] == str(claude_dir)
+    assert cmd[add_dir_indices[0] + 1] == str(workspace)
 
     # Role linked (symlink) or copied (Windows fallback)
-    link = claude_dir / "roles" / "my_role"
+    link = workspace / "roles" / "my_role"
     assert link.exists()
     assert (link / "ROLE.md").read_text() == "role content"
+
+
+@needs_binary
+def test_go_build_multiple_roles_dirs(tmp_path):
+    """Multiple --roles-dir flags merge children into claude/roles/."""
+    workspace = tmp_path / "workspace"
+    # First roles dir: staged role deps
+    staged_roles = tmp_path / "staged" / "roles"
+    staged_roles.mkdir(parents=True)
+    dep_role = staged_roles / "reviewer"
+    dep_role.mkdir()
+    (dep_role / "ROLE.md").write_text("reviewer content")
+
+    # Second roles dir: requester role in workspace
+    ws_roles = tmp_path / "ws_roles"
+    ws_roles.mkdir(parents=True)
+    req_role = ws_roles / "orchestrator"
+    req_role.mkdir()
+    (req_role / "ROLE.md").write_text("orchestrator content")
+
+    result = subprocess.run(
+        [
+            str(GO_BINARY), "build",
+            "--agent-id", "build009",
+            "--working-dir", str(tmp_path),
+            "--agent-workspace-dir", str(workspace),
+            "--task", "work",
+            "--config", "{}",
+            "--roles-dir", str(staged_roles),
+            "--roles-dir", str(ws_roles),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+
+    # Both roles present
+    assert (workspace / "roles" / "reviewer" / "ROLE.md").read_text() == "reviewer content"
+    assert (workspace / "roles" / "orchestrator" / "ROLE.md").read_text() == "orchestrator content"
 
 
 @needs_binary
@@ -247,7 +290,7 @@ def test_go_build_prompt_file(tmp_path):
     )
     assert result.returncode == 0
 
-    prompt_file = workspace / "claude" / "prompt.md"
+    prompt_file = workspace / "prompt.md"
     assert prompt_file.exists()
     content = prompt_file.read_text()
     assert "Role text here." in content

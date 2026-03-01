@@ -133,7 +133,7 @@ class Session:
 
             # 4. Stage role + create agent workspace
             agent_id = f"agent_{uuid.uuid4().hex[:12]}"
-            skills_dirs, roles_dirs = stage_role(
+            skills_dir, roles_dir = stage_role(
                 self._session_dir(), resolved
             )
             workspace = create_agent_workspace(
@@ -154,8 +154,8 @@ class Session:
                 agent_workspace_dir=workspace,
                 role_prompt=role_prompt,
                 memory_prompt="",
-                skills_dirs=skills_dirs,
-                roles_dirs=roles_dirs,
+                skills_dir=skills_dir,
+                roles_dirs=[roles_dir],
                 task="",
                 env=env,
             )

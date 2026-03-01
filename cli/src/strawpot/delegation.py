@@ -163,32 +163,17 @@ def _collect_transitive_skills(
 
 def _read_staged_paths(
     role_stage_dir: str,
-) -> tuple[list[str], list[str]]:
-    """Reconstruct skills_dirs and roles_dirs from an already-staged role dir."""
-    skills_dirs: list[str] = []
-    roles_dirs: list[str] = []
-
+) -> tuple[str, str]:
+    """Return the skills and roles parent directories from an already-staged role dir."""
     skills_dir = os.path.join(role_stage_dir, "skills")
-    if os.path.isdir(skills_dir):
-        for name in sorted(os.listdir(skills_dir)):
-            path = os.path.join(skills_dir, name)
-            if os.path.isdir(path):
-                skills_dirs.append(path)
-
     roles_dir = os.path.join(role_stage_dir, "roles")
-    if os.path.isdir(roles_dir):
-        for name in sorted(os.listdir(roles_dir)):
-            path = os.path.join(roles_dir, name)
-            if os.path.isdir(path):
-                roles_dirs.append(path)
-
-    return skills_dirs, roles_dirs
+    return skills_dir, roles_dir
 
 
 def stage_role(
     session_dir: str,
     resolved: dict,
-) -> tuple[list[str], list[str]]:
+) -> tuple[str, str]:
     """Stage a resolved role into the session directory.
 
     Creates::
@@ -202,7 +187,8 @@ def stage_role(
     existing staging without re-creating.
 
     Returns:
-        (skills_dirs, roles_dirs)
+        (skills_dir, roles_dir) — parent directories containing staged
+        skill and role subdirectories.
     """
     slug = resolved["slug"]
     role_stage_dir = os.path.join(session_dir, "roles", slug)
@@ -225,26 +211,22 @@ def stage_role(
     skill_deps = _collect_transitive_skills(direct_skill_slugs, all_deps)
     skills_dir = os.path.join(role_stage_dir, "skills")
     os.makedirs(skills_dir, exist_ok=True)
-    skills_dirs: list[str] = []
     for dep in skill_deps:
         dest = os.path.join(skills_dir, dep["slug"])
         _link_or_copy(dep["path"], dest)
-        skills_dirs.append(dest)
 
     # Stage direct role deps only (symlink to installed paths)
     role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
-    roles_sub_dir = os.path.join(role_stage_dir, "roles")
-    os.makedirs(roles_sub_dir, exist_ok=True)
-    roles_dirs: list[str] = []
+    roles_dir = os.path.join(role_stage_dir, "roles")
+    os.makedirs(roles_dir, exist_ok=True)
     for role_slug in direct_role_slugs:
         dep = role_lookup.get(role_slug)
         if dep is None:
             continue
-        dest = os.path.join(roles_sub_dir, role_slug)
+        dest = os.path.join(roles_dir, role_slug)
         _link_or_copy(dep["path"], dest)
-        roles_dirs.append(dest)
 
-    return skills_dirs, roles_dirs
+    return skills_dir, roles_dir
 
 
 def create_agent_workspace(session_dir: str, agent_id: str) -> str:
@@ -358,20 +340,24 @@ def handle_delegate(
     )
 
     # 5. Stage role (session-level, idempotent)
-    skills_dirs, roles_dirs = stage_role(session_dir, resolved)
-
-    # 5b. Add requester role path to roles_dirs
-    requester_role_dir = resolve_role_dirs(request.parent_role)
-    if requester_role_dir is not None:
-        already_present = any(
-            os.path.basename(d) == request.parent_role for d in roles_dirs
-        )
-        if not already_present:
-            roles_dirs = [*roles_dirs, requester_role_dir]
+    skills_dir, roles_dir = stage_role(session_dir, resolved)
 
     # 6. Create agent workspace
     agent_id = f"agent_{uuid.uuid4().hex[:12]}"
     workspace = create_agent_workspace(session_dir, agent_id)
+
+    # 6b. Link requester role into session-level per-agent dir
+    roles_dirs = [roles_dir]
+    requester_role_dir = resolve_role_dirs(request.parent_role)
+    if requester_role_dir is not None:
+        req_roles_dir = os.path.join(
+            session_dir, "requester_roles", agent_id
+        )
+        req_dest = os.path.join(req_roles_dir, request.parent_role)
+        if not os.path.exists(req_dest):
+            os.makedirs(req_roles_dir, exist_ok=True)
+            _link_or_copy(requester_role_dir, req_dest)
+        roles_dirs.append(req_roles_dir)
 
     # 7. Spawn
     env = {
@@ -388,7 +374,7 @@ def handle_delegate(
         agent_workspace_dir=workspace,
         role_prompt=role_prompt,
         memory_prompt="",
-        skills_dirs=skills_dirs,
+        skills_dir=skills_dir,
         roles_dirs=roles_dirs,
         task=request.task_text,
         env=env,

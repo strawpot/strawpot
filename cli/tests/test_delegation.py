@@ -357,14 +357,14 @@ class TestStageRole:
             ],
         }
 
-        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
+        skills_dir, roles_dir = stage_role(session_dir, resolved)
 
-        assert len(skills_dirs) == 2
-        slugs = [os.path.basename(d) for d in skills_dirs]
-        assert "skill-a" in slugs
-        assert "skill-b" in slugs
-        for d in skills_dirs:
-            assert os.path.isfile(os.path.join(d, "SKILL.md"))
+        # skills_dir is the parent directory containing skill subdirs
+        entries = sorted(os.listdir(skills_dir))
+        assert "skill-a" in entries
+        assert "skill-b" in entries
+        for slug in ["skill-a", "skill-b"]:
+            assert os.path.isfile(os.path.join(skills_dir, slug, "SKILL.md"))
 
     def test_stages_direct_role_deps(self, tmp_path):
         """Direct role deps are symlinked into roles/."""
@@ -382,11 +382,12 @@ class TestStageRole:
             ],
         }
 
-        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
+        skills_dir, roles_dir = stage_role(session_dir, resolved)
 
-        assert len(roles_dirs) == 1
-        assert os.path.basename(roles_dirs[0]) == "reviewer"
-        assert os.path.isfile(os.path.join(roles_dirs[0], "ROLE.md"))
+        # roles_dir is the parent directory containing role subdirs
+        entries = sorted(os.listdir(roles_dir))
+        assert "reviewer" in entries
+        assert os.path.isfile(os.path.join(roles_dir, "reviewer", "ROLE.md"))
 
     def test_idempotent(self, tmp_path):
         """Second call returns same paths without re-creating."""
@@ -431,14 +432,14 @@ class TestStageRole:
             ],
         }
 
-        skills_dirs, roles_dirs = stage_role(session_dir, resolved)
+        skills_dir, roles_dir = stage_role(session_dir, resolved)
 
-        skill_slugs = [os.path.basename(d) for d in skills_dirs]
-        assert "own-skill" in skill_slugs
-        assert "sub-skill" not in skill_slugs
+        skill_entries = os.listdir(skills_dir)
+        assert "own-skill" in skill_entries
+        assert "sub-skill" not in skill_entries
 
-        role_slugs = [os.path.basename(d) for d in roles_dirs]
-        assert "sub-role" in role_slugs
+        role_entries = os.listdir(roles_dir)
+        assert "sub-role" in role_entries
 
 
 class TestCreateAgentWorkspace:
@@ -670,7 +671,45 @@ class TestSpawnAndWait:
         assert "DENDEN_AGENT_ID" in kw["env"]
 
     def test_requester_role_dir_included(self, tmp_path):
-        """roles_dirs includes the requester's role path when resolvable."""
+        """Requester role is symlinked into session-level requester_roles dir."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime()
+        session_dir = str(tmp_path / "session")
+
+        handle_delegate(
+            request=_make_request(parent_role="orchestrator"),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=session_dir,
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: orch_dir if s == "orchestrator" else None,
+        )
+
+        kw = runtime.spawn.call_args.kwargs
+        roles_dirs = kw["roles_dirs"]
+        # Two roles dirs: staged deps + session-level requester
+        assert len(roles_dirs) == 2
+        # Second dir is under session_dir/requester_roles/<agent_id>/
+        req_roles_dir = roles_dirs[1]
+        assert req_roles_dir.startswith(os.path.join(session_dir, "requester_roles"))
+        assert os.path.isdir(os.path.join(req_roles_dir, "orchestrator"))
+        assert os.path.isfile(os.path.join(req_roles_dir, "orchestrator", "ROLE.md"))
+
+    def test_requester_role_not_in_staged_dir(self, tmp_path):
+        """Requester role is NOT placed in the shared staged roles dir."""
         base = str(tmp_path / "registry")
         role_path = _write_role(base, "implementer", "Implement.")
         orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
@@ -697,18 +736,16 @@ class TestSpawnAndWait:
         )
 
         kw = runtime.spawn.call_args.kwargs
-        assert len(kw["roles_dirs"]) == 1
-        assert kw["roles_dirs"][0].endswith(os.sep + "orchestrator")
-        assert os.path.isfile(os.path.join(kw["roles_dirs"][0], "ROLE.md"))
+        roles_dirs = kw["roles_dirs"]
+        # First dir is the staged roles dir — should NOT contain the requester
+        staged_roles_dir = roles_dirs[0]
+        assert not os.path.exists(os.path.join(staged_roles_dir, "orchestrator"))
 
-    def test_requester_role_dir_not_duplicated(self, tmp_path):
-        """If requester's role is already in staged deps, it's not added twice."""
+    def test_requester_role_not_in_agent_workspace(self, tmp_path):
+        """Requester role is NOT placed in the agent workspace dir."""
         base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
         orch_dir = _write_role(base, "orchestrator", "Orchestrate.")
-        role_path = _write_role(
-            base, "implementer", "Implement.",
-            role_deps=["orchestrator"],
-        )
 
         resolved = {
             "slug": "implementer",
@@ -716,15 +753,7 @@ class TestSpawnAndWait:
             "version": "1.0",
             "path": role_path,
             "source": "local",
-            "dependencies": [
-                {
-                    "slug": "orchestrator",
-                    "kind": "role",
-                    "path": orch_dir,
-                    "version": "1.0",
-                    "source": "local",
-                },
-            ],
+            "dependencies": [],
         }
 
         runtime = _mock_runtime()
@@ -740,12 +769,38 @@ class TestSpawnAndWait:
         )
 
         kw = runtime.spawn.call_args.kwargs
-        # Only one entry for orchestrator — staged dep; requester not duplicated
-        orch_entries = [
-            d for d in kw["roles_dirs"]
-            if os.path.basename(d) == "orchestrator"
-        ]
-        assert len(orch_entries) == 1
+        # Agent workspace should be clean (no roles/ subdirectory)
+        workspace = kw["agent_workspace_dir"]
+        assert not os.path.exists(os.path.join(workspace, "roles"))
+
+    def test_no_requester_role_single_roles_dir(self, tmp_path):
+        """When requester role is not resolvable, only staged dir is passed."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime()
+
+        handle_delegate(
+            request=_make_request(parent_role="orchestrator"),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        kw = runtime.spawn.call_args.kwargs
+        assert len(kw["roles_dirs"]) == 1
 
     def test_result_mapped_to_delegate_result(self, tmp_path):
         """AgentResult fields map to DelegateResult."""
@@ -981,14 +1036,10 @@ class TestIntegration:
         # Agent workspace created
         assert os.path.isdir(kw["agent_workspace_dir"])
 
-        # Staged skill is accessible
-        assert len(kw["skills_dirs"]) == 1
-        assert os.path.isfile(
-            os.path.join(kw["skills_dirs"][0], "SKILL.md")
-        )
-        assert os.path.islink(kw["skills_dirs"][0]) or os.path.isdir(
-            kw["skills_dirs"][0]
-        )
+        # Staged skill is accessible inside skills_dir
+        skills_dir = kw["skills_dir"]
+        assert os.path.isdir(skills_dir)
+        assert os.path.isfile(os.path.join(skills_dir, "testing", "SKILL.md"))
 
         # Task and env
         assert kw["task"] == "Add login page"
