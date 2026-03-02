@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from strawpot.merge import (
     _apply_patch_all,
     _apply_patch_skip,
     _check_patch,
+    _ensure_patch_available,
     _generate_patch,
     _prompt_conflict_resolution,
     merge_local,
@@ -467,6 +469,16 @@ class TestMergePR:
         assert result.pr_url == "https://github.com/pr/1"
         assert result.strategy == "pr"
 
+        # PR command should be tokenized via shlex (no shell=True)
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args[0] == [
+            "gh", "pr", "create",
+            "--base", "main",
+            "--head", "strawpot/run_abc",
+        ]
+        assert "shell" not in call_kwargs
+
     @patch("strawpot.merge._git")
     def test_push_fails(self, mock_git):
         """Push failure returns error."""
@@ -559,3 +571,63 @@ class TestMergePR:
 
         assert result.success
         assert result.pr_url is None
+
+    @patch("strawpot.merge._git")
+    @patch("strawpot.merge.subprocess.run")
+    def test_pr_command_shlex_tokenization(self, mock_run, mock_git):
+        """Complex pr_command with quoted args is tokenized correctly."""
+        mock_git.side_effect = [
+            MagicMock(stdout="", returncode=0),  # status
+            MagicMock(returncode=0, stderr=""),  # push
+        ]
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="https://pr/2\n", stderr=""
+        )
+
+        merge_pr(
+            base_branch="main",
+            session_branch="strawpot/run_x",
+            worktree_dir="/fake/wt",
+            base_dir="/fake/base",
+            pr_command='my-tool --title "PR for {session_branch}" --base {base_branch}',
+            echo=lambda x: None,
+        )
+
+        call_args = mock_run.call_args[0][0]
+        assert call_args == [
+            "my-tool",
+            "--title", "PR for strawpot/run_x",
+            "--base", "main",
+        ]
+
+
+
+# ---------------------------------------------------------------------------
+# _ensure_patch_available
+# ---------------------------------------------------------------------------
+
+
+class TestEnsurePatchAvailable:
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/patch")
+    def test_patch_found(self, _mock):
+        """No error when patch is on PATH."""
+        _ensure_patch_available()  # should not raise
+
+    @patch("strawpot.merge.shutil.which", return_value=None)
+    def test_patch_not_found(self, _mock):
+        """RuntimeError when patch is missing."""
+        with pytest.raises(RuntimeError, match="patch.*required"):
+            _ensure_patch_available()
+
+    @patch("strawpot.merge._is_git_repo", return_value=False)
+    @patch("strawpot.merge.shutil.which", return_value=None)
+    @patch("strawpot.merge._generate_patch", return_value="diff content\n")
+    def test_merge_local_checks_patch(self, _mock_gen, _mock_which, _mock_git):
+        """merge_local raises RuntimeError for non-git dir when patch is missing."""
+        with pytest.raises(RuntimeError, match="patch.*required"):
+            merge_local(
+                base_branch="main",
+                session_branch="strawpot/run_x",
+                worktree_dir="/fake/wt",
+                base_dir="/fake/base",
+            )

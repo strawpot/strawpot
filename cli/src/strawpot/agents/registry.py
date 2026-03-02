@@ -2,7 +2,6 @@
 
 import os
 import shutil
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -70,8 +69,6 @@ def _current_os() -> str:
     system = platform.system().lower()
     if system == "darwin":
         return "macos"
-    if system == "windows":
-        return "windows"
     return "linux"
 
 
@@ -80,7 +77,7 @@ def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
 
     Resolution order:
         1. ``bin.<os>`` — compiled binary relative to agent folder,
-           keyed by OS (``macos``, ``linux``, ``windows``).
+           keyed by OS (``macos``, ``linux``).
         2. ``wrapper.command`` — external CLI on PATH.
 
     Args:
@@ -221,9 +218,7 @@ def validate_agent(spec: AgentSpec) -> ValidationResult:
     for tool_name, tool_meta in spec.tools.items():
         if shutil.which(tool_name) is None:
             install_hint = (tool_meta.get("install", {}) or {}).get(
-                "macos" if sys.platform == "darwin"
-                else "windows" if sys.platform == "win32"
-                else "linux"
+                _current_os()
             )
             result.missing_tools.append((tool_name, install_hint))
 
