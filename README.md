@@ -1,5 +1,11 @@
 # StrawPot
 
+<p align="center">
+  <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
+  <a href="https://discord.gg/buEbvEMC"><img src="https://img.shields.io/discord/1476285531464929505?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
+
 Lightweight CLI for agent orchestration. StrawPot connects
 [Denden](https://github.com/strawpot/denden) (gRPC agent-to-orchestrator transport)
 and [StrawHub](https://strawhub.dev) (skill & role registry) to run multi-agent
