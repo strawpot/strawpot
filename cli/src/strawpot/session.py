@@ -6,7 +6,6 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -242,7 +241,7 @@ class Session:
         self._env: IsolatedEnv | None = None
         self._working_dir: str | None = None
         self._server: DenDenServer | None = None
-        self._server_thread: threading.Thread | None = None
+        self._denden_addr: str | None = None
         self._orchestrator_handle: AgentHandle | None = None
         self._agents: dict[str, AgentHandle] = {}
         self._agent_info: dict[str, dict] = {}
@@ -298,7 +297,7 @@ class Session:
             # 5. Spawn orchestrator (interactive mode)
             env = {
                 "PERMISSION_MODE": self.config.permission_mode,
-                "DENDEN_ADDR": self.config.denden_addr,
+                "DENDEN_ADDR": self._denden_addr,
                 "DENDEN_AGENT_ID": agent_id,
                 "DENDEN_RUN_ID": self._run_id,
             }
@@ -510,21 +509,36 @@ class Session:
     # ------------------------------------------------------------------
 
     def _start_denden_server(self) -> None:
-        """Create and start the denden gRPC server in a daemon thread."""
+        """Create and start the denden gRPC server.
+
+        Tries the configured address first.  If binding fails (port in
+        use), falls back to port 0 (OS-assigned free port).  The actual
+        bound address is stored in ``self._denden_addr``.
+        """
         self._server = DenDenServer(addr=self.config.denden_addr)
         self._server.on_delegate(self._handle_delegate)
         self._server.on_ask_user(self._handle_ask_user)
 
-        self._server_thread = threading.Thread(
-            target=self._server.run, daemon=True
-        )
-        self._server_thread.start()
+        try:
+            self._server.start()
+        except RuntimeError:
+            host = self.config.denden_addr.rsplit(":", 1)[0]
+            logger.info(
+                "Port %s in use, falling back to OS-assigned port",
+                self.config.denden_addr,
+            )
+            self._server = DenDenServer(addr=f"{host}:0")
+            self._server.on_delegate(self._handle_delegate)
+            self._server.on_ask_user(self._handle_ask_user)
+            self._server.start()
+
+        self._denden_addr = self._server.bound_addr
 
     def _stop_denden_server(self) -> None:
         """Stop the denden gRPC server."""
-        if self._server and self._server._server:
+        if self._server is not None:
             try:
-                self._server._server.stop(grace=5)
+                self._server.stop(grace=5)
             except Exception:
                 logger.debug("Failed to stop denden server", exc_info=True)
 
@@ -561,6 +575,7 @@ class Session:
                 session_dir=self._session_dir(),
                 resolve_role=self._resolve_role,
                 resolve_role_dirs=self._resolve_role_dirs,
+                denden_addr=self._denden_addr,
             )
             return ok_response(
                 request.request_id,
@@ -631,7 +646,7 @@ class Session:
             "working_dir": self._working_dir,
             "isolation": self.config.isolation,
             "runtime": self.config.runtime,
-            "denden_addr": self.config.denden_addr,
+            "denden_addr": self._denden_addr,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
             "agents": {},

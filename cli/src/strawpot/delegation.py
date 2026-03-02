@@ -308,6 +308,7 @@ def handle_delegate(
     session_dir: str,
     resolve_role: Callable[..., dict],
     resolve_role_dirs: Callable[[str], str | None],
+    denden_addr: str | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -332,6 +333,8 @@ def handle_delegate(
             Signature: (slug, kind="role") -> dict.
         resolve_role_dirs: Callable that maps a role slug to its directory
             path (or None if not resolvable). Used to build delegatable roles.
+        denden_addr: Actual bound denden address. If provided, takes
+            precedence over ``config.denden_addr``.
 
     Returns:
         DelegateResult with summary and output from the sub-agent.
@@ -386,7 +389,7 @@ def handle_delegate(
 
         # 7. Spawn
         env = {
-            "DENDEN_ADDR": config.denden_addr,
+            "DENDEN_ADDR": denden_addr or config.denden_addr,
             "DENDEN_AGENT_ID": agent_id,
             "DENDEN_PARENT_AGENT_ID": request.parent_agent_id,
             "DENDEN_RUN_ID": request.run_id,
