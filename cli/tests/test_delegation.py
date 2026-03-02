@@ -712,6 +712,57 @@ class TestSpawnAndWait:
         assert kw["env"]["PERMISSION_MODE"] == "auto"
         assert "DENDEN_AGENT_ID" in kw["env"]
 
+    def test_denden_addr_override(self, tmp_path):
+        """When denden_addr is provided, it overrides config.denden_addr."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+        runtime = _mock_runtime()
+        handle_delegate(
+            request=_make_request(),
+            config=_make_config(denden_addr="127.0.0.1:9999"),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+            denden_addr="127.0.0.1:55555",
+        )
+        kw = runtime.spawn.call_args.kwargs
+        assert kw["env"]["DENDEN_ADDR"] == "127.0.0.1:55555"
+
+    def test_denden_addr_falls_back_to_config(self, tmp_path):
+        """When denden_addr is not provided, config.denden_addr is used."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+        runtime = _mock_runtime()
+        handle_delegate(
+            request=_make_request(),
+            config=_make_config(denden_addr="127.0.0.1:9999"),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+        kw = runtime.spawn.call_args.kwargs
+        assert kw["env"]["DENDEN_ADDR"] == "127.0.0.1:9999"
+
     def test_requester_role_dir_included(self, tmp_path):
         """Requester role is symlinked into session-level requester_roles dir."""
         base = str(tmp_path / "registry")

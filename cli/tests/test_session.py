@@ -160,6 +160,7 @@ class TestStartFlow:
     @patch("strawpot.session.DenDenServer")
     def test_creates_isolation_env(self, mock_server_cls, tmp_path):
         """start() calls isolator.create with correct args."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
@@ -173,7 +174,8 @@ class TestStartFlow:
 
     @patch("strawpot.session.DenDenServer")
     def test_starts_denden_server(self, mock_server_cls, tmp_path):
-        """start() creates and starts a DenDenServer."""
+        """start() creates and starts a DenDenServer via start() (non-blocking)."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
@@ -184,10 +186,12 @@ class TestStartFlow:
         server_instance = mock_server_cls.return_value
         server_instance.on_delegate.assert_called_once()
         server_instance.on_ask_user.assert_called_once()
+        server_instance.start.assert_called_once()
 
     @patch("strawpot.session.DenDenServer")
     def test_spawns_orchestrator(self, mock_server_cls, tmp_path):
         """start() spawns the orchestrator with interactive mode (task='')."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -208,6 +212,7 @@ class TestStartFlow:
     @patch("strawpot.session.DenDenServer")
     def test_writes_session_file(self, mock_server_cls, tmp_path):
         """start() writes session state JSON file."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
@@ -222,6 +227,7 @@ class TestStartFlow:
     @patch("strawpot.session.DenDenServer")
     def test_attaches_to_orchestrator(self, mock_server_cls, tmp_path):
         """start() calls runtime.attach() which blocks."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -233,6 +239,53 @@ class TestStartFlow:
 
         runtime.attach.assert_called_once()
 
+    @patch("strawpot.session.DenDenServer")
+    def test_port_fallback_on_bind_failure(self, mock_server_cls, tmp_path):
+        """If start() raises RuntimeError (port taken), retry with port 0."""
+        first_server = MagicMock()
+        first_server.start.side_effect = RuntimeError("failed to bind")
+        second_server = MagicMock()
+        second_server.bound_addr = "127.0.0.1:54321"
+        mock_server_cls.side_effect = [first_server, second_server]
+
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        session = _make_session(tmp_path, isolator=isolator)
+
+        session.start(str(tmp_path))
+
+        assert mock_server_cls.call_count == 2
+        # Second call should use port 0
+        second_call_kwargs = mock_server_cls.call_args_list[1]
+        assert second_call_kwargs == ({"addr": "127.0.0.1:0"},)
+        assert session._denden_addr == "127.0.0.1:54321"
+
+    @patch("strawpot.session.DenDenServer")
+    def test_actual_addr_in_orchestrator_env(self, mock_server_cls, tmp_path):
+        """Orchestrator env receives actual bound addr, not config addr."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:54321"
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, isolator=isolator, runtime=runtime)
+
+        session.start(str(tmp_path))
+
+        kw = runtime.spawn.call_args.kwargs
+        assert kw["env"]["DENDEN_ADDR"] == "127.0.0.1:54321"
+
+    @patch("strawpot.session.DenDenServer")
+    def test_actual_addr_in_session_file(self, mock_server_cls, tmp_path):
+        """Session file stores actual bound addr, not config addr."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:54321"
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        session = _make_session(tmp_path, isolator=isolator)
+
+        session.start(str(tmp_path))
+
+        assert session._session_data["denden_addr"] == "127.0.0.1:54321"
+
 
 # ---------------------------------------------------------------------------
 # Stop / cleanup
@@ -242,21 +295,21 @@ class TestStartFlow:
 class TestStop:
     @patch("strawpot.session.DenDenServer")
     def test_stops_denden_server(self, mock_server_cls, tmp_path):
-        """stop() stops the denden gRPC server."""
+        """stop() stops the denden gRPC server via public stop() method."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
 
         session.start(str(tmp_path))
 
-        # The server's internal _server.stop should have been called
         server_instance = mock_server_cls.return_value
-        if server_instance._server:
-            server_instance._server.stop.assert_called()
+        server_instance.stop.assert_called_once_with(grace=5)
 
     @patch("strawpot.session.DenDenServer")
     def test_calls_isolator_cleanup(self, mock_server_cls, tmp_path):
         """stop() calls isolator.cleanup()."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
@@ -268,6 +321,7 @@ class TestStop:
     @patch("strawpot.session.DenDenServer")
     def test_removes_session_dir(self, mock_server_cls, tmp_path):
         """stop() removes the entire session directory."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         session = _make_session(tmp_path, isolator=isolator)
@@ -427,6 +481,7 @@ class TestHandleDelegate:
         session._env = IsolatedEnv(path=str(tmp_path))
         session._working_dir = str(tmp_path)
         session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
         session._register_agent(
             "agent_orch", role="orchestrator", parent_id=None
         )
@@ -436,6 +491,33 @@ class TestHandleDelegate:
         mock_handle.assert_called_once()
         mock_ok.assert_called_once()
         assert result == "ok"
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    def test_passes_denden_addr_to_handle_delegate(
+        self, mock_ok, mock_handle, tmp_path
+    ):
+        """_handle_delegate passes actual denden_addr to handle_delegate()."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(
+            summary="Done", output="ok", exit_code=0
+        )
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:54321"
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        session._handle_delegate(self._make_denden_request())
+
+        call_kwargs = mock_handle.call_args.kwargs
+        assert call_kwargs["denden_addr"] == "127.0.0.1:54321"
 
     @patch("strawpot.session.handle_delegate")
     @patch("strawpot.session.denied_response")
@@ -448,6 +530,7 @@ class TestHandleDelegate:
         session._env = IsolatedEnv(path=str(tmp_path))
         session._working_dir = str(tmp_path)
         session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
         session._register_agent(
             "agent_orch", role="orchestrator", parent_id=None
         )
@@ -470,6 +553,7 @@ class TestHandleDelegate:
         session._env = IsolatedEnv(path=str(tmp_path))
         session._working_dir = str(tmp_path)
         session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
         session._register_agent(
             "agent_orch", role="orchestrator", parent_id=None
         )
@@ -991,6 +1075,7 @@ class TestSignalHandling:
         """Signal handler is installed before attach and restored after stop."""
         import signal
 
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1007,6 +1092,7 @@ class TestSignalHandling:
     @patch("strawpot.session.DenDenServer")
     def test_stop_runs_after_shutdown(self, mock_server_cls, tmp_path):
         """stop() runs via finally block after shutdown kills orchestrator."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1029,6 +1115,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_spawn_receives_task(self, mock_server_cls, tmp_path):
         """spawn() receives the task string when --task is given."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1044,6 +1131,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_wait_called_instead_of_attach(self, mock_server_cls, tmp_path):
         """Noninteractive mode calls wait() instead of attach()."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1059,6 +1147,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_attach_called_when_no_task(self, mock_server_cls, tmp_path):
         """Interactive mode (no task) calls attach() as before."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1074,6 +1163,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_nonzero_exit_code(self, mock_server_cls, tmp_path):
         """sys.exit() is called with the agent's nonzero exit code."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1092,6 +1182,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_zero_exit_code_no_sys_exit(self, mock_server_cls, tmp_path):
         """No sys.exit() on success (exit code 0)."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1110,6 +1201,7 @@ class TestNoninteractiveMode:
         """Signal handler is installed and restored in noninteractive mode."""
         import signal
 
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
@@ -1126,6 +1218,7 @@ class TestNoninteractiveMode:
     @patch("strawpot.session.DenDenServer")
     def test_stop_runs_after_task_completes(self, mock_server_cls, tmp_path):
         """stop() runs via finally block after task completion."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
