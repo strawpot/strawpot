@@ -27,7 +27,7 @@ from strawpot.merge import (
 
 def _init_repo(path):
     """Initialize a git repo with an initial commit."""
-    subprocess.run(["git", "init", str(path)], capture_output=True, check=True)
+    subprocess.run(["git", "init", "-b", "main", str(path)], capture_output=True, check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
         cwd=str(path),
