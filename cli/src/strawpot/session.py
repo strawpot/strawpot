@@ -177,7 +177,7 @@ class Session:
             self.stop()
 
     def stop(self) -> None:
-        """Clean up the session: kill agents, stop server, remove isolation."""
+        """Clean up the session: kill agents, stop server, merge changes, remove isolation."""
         # 1. Kill remaining sub-agents
         for agent_id, handle in self._agents.items():
             if handle is self._orchestrator_handle:
@@ -191,17 +191,91 @@ class Session:
         # 2. Stop denden server
         self._stop_denden_server()
 
-        # 3. Isolator cleanup
+        # 3. Merge session changes (worktree isolation only)
+        delete_branch = True
+        if self._env and self._env.branch and self._working_dir:
+            try:
+                delete_branch = self._merge_session_changes()
+            except Exception:
+                logger.debug("Merge failed", exc_info=True)
+
+        # 4. Isolator cleanup
         if self._env and self._working_dir:
             try:
-                self.isolator.cleanup(
-                    self._env, base_dir=self._working_dir
-                )
+                if isinstance(self.isolator, WorktreeIsolator):
+                    self.isolator.cleanup(
+                        self._env,
+                        base_dir=self._working_dir,
+                        delete_branch=delete_branch,
+                    )
+                else:
+                    self.isolator.cleanup(
+                        self._env, base_dir=self._working_dir
+                    )
             except Exception:
                 logger.debug("Isolator cleanup failed", exc_info=True)
 
-        # 4. Remove session directory (includes session.json, agent workspaces, staged roles)
+        # 5. Remove session directory (includes session.json, agent workspaces, staged roles)
         self._remove_session_dir()
+
+    # ------------------------------------------------------------------
+    # Merge strategies
+    # ------------------------------------------------------------------
+
+    def _merge_session_changes(self) -> bool:
+        """Run the configured merge strategy for worktree isolation.
+
+        Must be called *before* isolator cleanup (the worktree needs to
+        exist for patch generation).
+
+        Returns:
+            ``True`` if the branch should be deleted during cleanup,
+            ``False`` if it should be kept (PR strategy).
+        """
+        from strawpot.merge import merge_local, merge_pr, resolve_strategy
+
+        base_branch = self._session_data.get("base_branch")
+        session_branch = self._session_data.get("worktree_branch")
+
+        if not base_branch or not session_branch:
+            logger.debug(
+                "Missing branch info, skipping merge "
+                "(base=%s, session=%s)",
+                base_branch,
+                session_branch,
+            )
+            return True
+
+        strategy = resolve_strategy(
+            self.config.merge_strategy, self._working_dir
+        )
+
+        try:
+            if strategy == "local":
+                result = merge_local(
+                    base_branch=base_branch,
+                    session_branch=session_branch,
+                    worktree_dir=self._env.path,
+                    base_dir=self._working_dir,
+                )
+                logger.info("Local merge: %s", result.message)
+                return True  # always delete branch for local strategy
+
+            if strategy == "pr":
+                result = merge_pr(
+                    base_branch=base_branch,
+                    session_branch=session_branch,
+                    worktree_dir=self._env.path,
+                    base_dir=self._working_dir,
+                    pr_command=self.config.pr_command,
+                )
+                logger.info("PR merge: %s", result.message)
+                return False  # keep branch — it's on remote
+
+        except Exception:
+            logger.debug("Merge failed", exc_info=True)
+
+        return True  # fallback: delete branch
 
     # ------------------------------------------------------------------
     # Denden server

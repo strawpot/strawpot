@@ -260,6 +260,112 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
+# Merge integration in stop()
+# ---------------------------------------------------------------------------
+
+
+class TestStopMerge:
+    def test_calls_merge_for_worktree(self, tmp_path):
+        """stop() calls _merge_session_changes when env has a branch."""
+        session = _make_session(tmp_path)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_merge_wt"
+        session._env = IsolatedEnv(
+            path=str(tmp_path / "wt"), branch="strawpot/run_merge_wt"
+        )
+        session._session_data = {
+            "base_branch": "main",
+            "worktree_branch": "strawpot/run_merge_wt",
+        }
+
+        with patch.object(session, "_merge_session_changes", return_value=True) as mock_merge:
+            session.stop()
+
+        mock_merge.assert_called_once()
+
+    def test_skips_merge_for_none_isolation(self, tmp_path):
+        """stop() does not call _merge_session_changes when env has no branch."""
+        session = _make_session(tmp_path)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_merge_none"
+        session._env = IsolatedEnv(path=str(tmp_path))
+
+        with patch.object(session, "_merge_session_changes") as mock_merge:
+            session.stop()
+
+        mock_merge.assert_not_called()
+
+    def test_delete_branch_false_for_pr(self, tmp_path):
+        """When merge returns False, cleanup receives delete_branch=False."""
+        from strawpot.isolation.worktree import WorktreeIsolator
+
+        wt_isolator = MagicMock(spec=WorktreeIsolator)
+        wt_isolator.cleanup.return_value = None
+        session = _make_session(tmp_path, isolator=wt_isolator)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_pr"
+        session._env = IsolatedEnv(
+            path=str(tmp_path / "wt"), branch="strawpot/run_pr"
+        )
+        session._session_data = {
+            "base_branch": "main",
+            "worktree_branch": "strawpot/run_pr",
+        }
+
+        with patch.object(session, "_merge_session_changes", return_value=False):
+            session.stop()
+
+        wt_isolator.cleanup.assert_called_once()
+        call_kwargs = wt_isolator.cleanup.call_args.kwargs
+        assert call_kwargs["delete_branch"] is False
+
+    def test_delete_branch_true_for_local(self, tmp_path):
+        """When merge returns True, cleanup receives delete_branch=True."""
+        from strawpot.isolation.worktree import WorktreeIsolator
+
+        wt_isolator = MagicMock(spec=WorktreeIsolator)
+        wt_isolator.cleanup.return_value = None
+        session = _make_session(tmp_path, isolator=wt_isolator)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_local"
+        session._env = IsolatedEnv(
+            path=str(tmp_path / "wt"), branch="strawpot/run_local"
+        )
+        session._session_data = {
+            "base_branch": "main",
+            "worktree_branch": "strawpot/run_local",
+        }
+
+        with patch.object(session, "_merge_session_changes", return_value=True):
+            session.stop()
+
+        wt_isolator.cleanup.assert_called_once()
+        call_kwargs = wt_isolator.cleanup.call_args.kwargs
+        assert call_kwargs["delete_branch"] is True
+
+    def test_merge_failure_still_cleans_up(self, tmp_path):
+        """If merge raises an exception, isolator.cleanup still runs."""
+        session = _make_session(tmp_path)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_fail"
+        session._env = IsolatedEnv(
+            path=str(tmp_path / "wt"), branch="strawpot/run_fail"
+        )
+        session._session_data = {
+            "base_branch": "main",
+            "worktree_branch": "strawpot/run_fail",
+        }
+
+        with patch.object(
+            session, "_merge_session_changes", side_effect=RuntimeError("boom")
+        ):
+            # Should not raise
+            session.stop()
+
+        session.isolator.cleanup.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Delegate handler
 # ---------------------------------------------------------------------------
 
