@@ -11,7 +11,7 @@ from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.config import StrawPotConfig
 from strawpot.delegation import PolicyDenied
 from strawpot.isolation.protocol import IsolatedEnv, NoneIsolator
-from strawpot.session import Session, resolve_isolator
+from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,28 @@ def _make_resolved(tmp_path, slug="orchestrator", body="You orchestrate."):
         "source": "local",
         "dependencies": [],
     }
+
+
+def _write_stale_session(tmp_path, run_id, **overrides):
+    """Write a session.json file with the given run_id and a dead PID."""
+    session_dir = os.path.join(
+        str(tmp_path), ".strawpot", "sessions", run_id
+    )
+    os.makedirs(session_dir, exist_ok=True)
+    data = {
+        "run_id": run_id,
+        "working_dir": str(tmp_path),
+        "isolation": "none",
+        "runtime": "claude_code",
+        "denden_addr": "127.0.0.1:9700",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "pid": 99999999,  # almost certainly dead
+        "agents": {},
+    }
+    data.update(overrides)
+    with open(os.path.join(session_dir, "session.json"), "w") as f:
+        json.dump(data, f)
+    return session_dir
 
 
 def _make_session(tmp_path, **overrides):
@@ -603,4 +625,184 @@ class TestSessionStateFile:
         )
         assert os.path.isdir(session_dir)
         session._remove_session_dir()
+        assert not os.path.exists(session_dir)
+
+
+# ---------------------------------------------------------------------------
+# Crash recovery
+# ---------------------------------------------------------------------------
+
+
+class TestRecoverStaleSessions:
+    def test_no_sessions_dir(self, tmp_path):
+        """No .strawpot/sessions/ directory — returns empty list."""
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+        assert result == []
+
+    def test_empty_sessions_dir(self, tmp_path):
+        """Empty sessions directory — returns empty list."""
+        os.makedirs(os.path.join(str(tmp_path), ".strawpot", "sessions"))
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+        assert result == []
+
+    def test_stale_none_isolation(self, tmp_path):
+        """Stale session with isolation=none — removes session dir."""
+        session_dir = _write_stale_session(tmp_path, "run_stale1")
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == ["run_stale1"]
+        assert not os.path.exists(session_dir)
+
+    def test_running_session_skipped(self, tmp_path):
+        """Session with a live PID is not recovered."""
+        session_dir = _write_stale_session(
+            tmp_path, "run_alive", pid=os.getpid()
+        )
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == []
+        assert os.path.exists(session_dir)
+
+    def test_different_working_dir_skipped(self, tmp_path):
+        """Session from a different project directory is skipped."""
+        session_dir = _write_stale_session(
+            tmp_path, "run_other", working_dir="/some/other/project"
+        )
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == []
+        assert os.path.exists(session_dir)
+
+    def test_corrupt_session_json_skipped(self, tmp_path):
+        """Corrupt session.json is skipped without crashing."""
+        session_dir = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "run_corrupt"
+        )
+        os.makedirs(session_dir, exist_ok=True)
+        with open(os.path.join(session_dir, "session.json"), "w") as f:
+            f.write("NOT JSON")
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == []
+
+    def test_multiple_stale_sessions(self, tmp_path):
+        """Multiple stale sessions are all recovered."""
+        dir1 = _write_stale_session(tmp_path, "run_a")
+        dir2 = _write_stale_session(tmp_path, "run_b")
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert sorted(result) == ["run_a", "run_b"]
+        assert not os.path.exists(dir1)
+        assert not os.path.exists(dir2)
+
+    @patch("strawpot.session._recover_merge", return_value=True)
+    @patch("strawpot.session.WorktreeIsolator")
+    def test_stale_worktree_runs_merge_and_cleanup(
+        self, mock_wt_cls, mock_merge, tmp_path
+    ):
+        """Stale worktree session runs merge + isolator cleanup."""
+        wt_path = str(tmp_path / "worktrees" / "run_wt")
+        os.makedirs(wt_path)
+        session_dir = _write_stale_session(
+            tmp_path,
+            "run_wt",
+            isolation="worktree",
+            worktree=wt_path,
+            worktree_branch="strawpot/run_wt",
+            base_branch="main",
+        )
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == ["run_wt"]
+        mock_merge.assert_called_once()
+        mock_wt_cls.return_value.cleanup.assert_called_once()
+        cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
+        assert cleanup_kwargs["delete_branch"] is True
+        assert not os.path.exists(session_dir)
+
+    @patch("strawpot.session._recover_merge", return_value=False)
+    @patch("strawpot.session.WorktreeIsolator")
+    def test_worktree_pr_strategy_keeps_branch(
+        self, mock_wt_cls, mock_merge, tmp_path
+    ):
+        """PR strategy merge returns False — branch is kept."""
+        wt_path = str(tmp_path / "worktrees" / "run_pr")
+        os.makedirs(wt_path)
+        _write_stale_session(
+            tmp_path,
+            "run_pr",
+            isolation="worktree",
+            worktree=wt_path,
+            worktree_branch="strawpot/run_pr",
+            base_branch="main",
+        )
+
+        recover_stale_sessions(str(tmp_path), _make_config())
+
+        cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
+        assert cleanup_kwargs["delete_branch"] is False
+
+    def test_worktree_missing_branch_info_skips_merge(self, tmp_path):
+        """Worktree session without branch info skips merge, still cleans up."""
+        wt_path = str(tmp_path / "worktrees" / "run_noinfo")
+        os.makedirs(wt_path)
+        session_dir = _write_stale_session(
+            tmp_path,
+            "run_noinfo",
+            isolation="worktree",
+            worktree=wt_path,
+            # no worktree_branch or base_branch
+        )
+
+        with patch("strawpot.session.WorktreeIsolator") as mock_wt_cls:
+            result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == ["run_noinfo"]
+        mock_wt_cls.return_value.cleanup.assert_called_once()
+        assert not os.path.exists(session_dir)
+
+    def test_worktree_dir_missing_skips_merge(self, tmp_path):
+        """Worktree dir already removed — skips merge, still cleans up."""
+        session_dir = _write_stale_session(
+            tmp_path,
+            "run_gone",
+            isolation="worktree",
+            worktree=str(tmp_path / "gone"),
+            worktree_branch="strawpot/run_gone",
+            base_branch="main",
+        )
+
+        with patch("strawpot.session.WorktreeIsolator") as mock_wt_cls:
+            result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == ["run_gone"]
+        # Cleanup still called even though worktree is missing (idempotent)
+        mock_wt_cls.return_value.cleanup.assert_called_once()
+        assert not os.path.exists(session_dir)
+
+    @patch("strawpot.session.WorktreeIsolator")
+    def test_isolator_cleanup_failure_still_removes_dir(
+        self, mock_wt_cls, tmp_path
+    ):
+        """If isolator cleanup raises, session dir is still removed."""
+        wt_path = str(tmp_path / "worktrees" / "run_fail")
+        os.makedirs(wt_path)
+        mock_wt_cls.return_value.cleanup.side_effect = RuntimeError("git fail")
+        session_dir = _write_stale_session(
+            tmp_path,
+            "run_fail",
+            isolation="worktree",
+            worktree=wt_path,
+            worktree_branch="strawpot/run_fail",
+        )
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        assert result == ["run_fail"]
         assert not os.path.exists(session_dir)
