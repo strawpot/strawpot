@@ -1018,3 +1018,122 @@ class TestSignalHandling:
             session.start(str(tmp_path))
 
         mock_stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Noninteractive mode (--task)
+# ---------------------------------------------------------------------------
+
+
+class TestNoninteractiveMode:
+    @patch("strawpot.session.DenDenServer")
+    def test_spawn_receives_task(self, mock_server_cls, tmp_path):
+        """spawn() receives the task string when --task is given."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="fix the bug"
+        )
+
+        session.start(str(tmp_path))
+
+        kw = runtime.spawn.call_args.kwargs
+        assert kw["task"] == "fix the bug"
+
+    @patch("strawpot.session.DenDenServer")
+    def test_wait_called_instead_of_attach(self, mock_server_cls, tmp_path):
+        """Noninteractive mode calls wait() instead of attach()."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="do something"
+        )
+
+        session.start(str(tmp_path))
+
+        runtime.wait.assert_called_once()
+        runtime.attach.assert_not_called()
+
+    @patch("strawpot.session.DenDenServer")
+    def test_attach_called_when_no_task(self, mock_server_cls, tmp_path):
+        """Interactive mode (no task) calls attach() as before."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime
+        )
+
+        session.start(str(tmp_path))
+
+        runtime.attach.assert_called_once()
+        runtime.wait.assert_not_called()
+
+    @patch("strawpot.session.DenDenServer")
+    def test_nonzero_exit_code(self, mock_server_cls, tmp_path):
+        """sys.exit() is called with the agent's nonzero exit code."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        runtime.wait.return_value = AgentResult(
+            summary="Failed", exit_code=1
+        )
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="fail"
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            session.start(str(tmp_path))
+
+        assert exc_info.value.code == 1
+
+    @patch("strawpot.session.DenDenServer")
+    def test_zero_exit_code_no_sys_exit(self, mock_server_cls, tmp_path):
+        """No sys.exit() on success (exit code 0)."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        runtime.wait.return_value = AgentResult(
+            summary="Done", exit_code=0
+        )
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="succeed"
+        )
+
+        # Should not raise SystemExit
+        session.start(str(tmp_path))
+
+    @patch("strawpot.session.DenDenServer")
+    def test_signal_handler_still_installed(self, mock_server_cls, tmp_path):
+        """Signal handler is installed and restored in noninteractive mode."""
+        import signal
+
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="a task"
+        )
+
+        original = signal.getsignal(signal.SIGINT)
+        session.start(str(tmp_path))
+        restored = signal.getsignal(signal.SIGINT)
+
+        assert restored is original
+
+    @patch("strawpot.session.DenDenServer")
+    def test_stop_runs_after_task_completes(self, mock_server_cls, tmp_path):
+        """stop() runs via finally block after task completion."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="a task"
+        )
+
+        with patch.object(session, "stop") as mock_stop:
+            session.start(str(tmp_path))
+
+        mock_stop.assert_called_once()
