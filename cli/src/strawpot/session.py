@@ -26,10 +26,13 @@ from strawpot.context import build_prompt
 from strawpot.delegation import (
     DelegateRequest,
     PolicyDenied,
+    _format_memory_prompt,
     create_agent_workspace,
     handle_delegate,
     stage_role,
 )
+from strawpot.memory.protocol import MemoryProvider
+from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 from strawpot.isolation.worktree import WorktreeIsolator
 
@@ -247,6 +250,7 @@ class Session:
         self._agent_info: dict[str, dict] = {}
         self._session_file: str | None = None
         self._session_data: dict = {}
+        self._memory_provider: MemoryProvider | None = None
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -276,6 +280,15 @@ class Session:
                 session_id=self._run_id, base_dir=working_dir
             )
 
+            # 1b. Resolve memory provider (if configured)
+            if self.config.memory:
+                spec = resolve_memory(
+                    self.config.memory,
+                    working_dir,
+                    self.config.memory_config,
+                )
+                self._memory_provider = load_provider(spec)
+
             # 2. Start denden server in background
             self._start_denden_server()
 
@@ -294,7 +307,20 @@ class Session:
                 self._session_dir(), agent_id
             )
 
-            # 5. Spawn orchestrator (interactive mode)
+            # 5a. Memory get for orchestrator
+            memory_prompt = ""
+            if self._memory_provider is not None:
+                get_result = self._memory_provider.get(
+                    session_id=self._run_id,
+                    agent_id=agent_id,
+                    role=self.config.orchestrator_role,
+                    behavior_ref=role_prompt,
+                    task=self.task,
+                )
+                if get_result.context_cards:
+                    memory_prompt = _format_memory_prompt(get_result)
+
+            # 5b. Spawn orchestrator (interactive mode)
             env = {
                 "PERMISSION_MODE": self.config.permission_mode,
                 "DENDEN_ADDR": self._denden_addr,
@@ -307,7 +333,7 @@ class Session:
                 working_dir=self._env.path,
                 agent_workspace_dir=workspace,
                 role_prompt=role_prompt,
-                memory_prompt="",
+                memory_prompt=memory_prompt,
                 skills_dir=skills_dir,
                 roles_dirs=[roles_dir],
                 task=self.task,
@@ -576,6 +602,7 @@ class Session:
                 resolve_role=self._resolve_role,
                 resolve_role_dirs=self._resolve_role_dirs,
                 denden_addr=self._denden_addr,
+                memory_provider=self._memory_provider,
             )
             return ok_response(
                 request.request_id,

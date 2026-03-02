@@ -11,6 +11,7 @@ from strawpot.memory.registry import (
     MemorySpec,
     _merge_config,
     _resolve_script,
+    load_provider,
     parse_memory_md,
     resolve_memory,
     validate_memory,
@@ -298,3 +299,54 @@ def test_noop_provider_dump_returns_empty():
     )
     assert receipt.em_event_ids == []
     assert receipt.deferred_items == []
+
+
+# --- load_provider ---
+
+
+def test_load_provider(tmp_path):
+    provider_code = dedent("""\
+        from strawpot.memory.protocol import DumpReceipt, GetResult
+
+        class MyProvider:
+            name = "test"
+
+            def get(self, *, session_id, agent_id, role, behavior_ref,
+                    task, budget=None, parent_agent_id=None):
+                return GetResult()
+
+            def dump(self, *, session_id, agent_id, role, behavior_ref,
+                     task, status, output, tool_trace="",
+                     parent_agent_id=None, artifacts=None):
+                return DumpReceipt()
+    """)
+    script = tmp_path / "provider.py"
+    script.write_text(provider_code)
+    spec = MemorySpec(name="test", version="1.0", script=str(script))
+
+    provider = load_provider(spec)
+    assert isinstance(provider, MemoryProvider)
+    assert provider.name == "test"
+    result = provider.get(
+        session_id="s1", agent_id="a1", role="r",
+        behavior_ref="desc", task="t",
+    )
+    assert result.context_cards == []
+
+
+def test_load_provider_no_class(tmp_path):
+    script = tmp_path / "empty.py"
+    script.write_text("# no provider class\nx = 42\n")
+    spec = MemorySpec(name="bad", version="1.0", script=str(script))
+
+    with pytest.raises(ValueError, match="No MemoryProvider"):
+        load_provider(spec)
+
+
+def test_load_provider_noop(tmp_path, monkeypatch):
+    """load_provider works with the built-in noop provider."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    spec = resolve_memory("noop", str(tmp_path))
+    provider = load_provider(spec)
+    assert isinstance(provider, MemoryProvider)
+    assert provider.name == "noop"

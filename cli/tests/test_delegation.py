@@ -11,15 +11,23 @@ from strawpot.delegation import (
     DelegateRequest,
     DelegateResult,
     PolicyDenied,
+    _agent_status,
     _build_delegatable_roles,
     _check_policy,
     _collect_transitive_skills,
+    _format_memory_prompt,
     _parse_role_deps,
     _parse_skill_deps,
     _validate_output,
     create_agent_workspace,
     handle_delegate,
     stage_role,
+)
+from strawpot.memory.protocol import (
+    ContextCard,
+    DumpReceipt,
+    GetResult,
+    MemoryKind,
 )
 
 
@@ -1355,3 +1363,168 @@ class TestIntegration:
         assert kw["env"]["DENDEN_ADDR"] == "127.0.0.1:9700"
         assert kw["env"]["DENDEN_PARENT_AGENT_ID"] == "agent_orch"
         assert kw["env"]["DENDEN_RUN_ID"] == "run_session"
+
+
+# ---------------------------------------------------------------------------
+# Memory helpers
+# ---------------------------------------------------------------------------
+
+
+class TestFormatMemoryPrompt:
+    def test_empty_cards(self):
+        result = _format_memory_prompt(GetResult())
+        assert result == ""
+
+    def test_single_card(self):
+        get_result = GetResult(
+            context_cards=[ContextCard(kind=MemoryKind.PM, content="Do X")]
+        )
+        result = _format_memory_prompt(get_result)
+        assert result == "[PM] Do X"
+
+    def test_multiple_cards(self):
+        get_result = GetResult(
+            context_cards=[
+                ContextCard(kind=MemoryKind.PM, content="instructions"),
+                ContextCard(kind=MemoryKind.SM, content="fact A"),
+                ContextCard(kind=MemoryKind.STM, content="scratch"),
+            ]
+        )
+        result = _format_memory_prompt(get_result)
+        assert "[PM] instructions" in result
+        assert "[SM] fact A" in result
+        assert "[STM] scratch" in result
+
+
+class TestAgentStatus:
+    def test_success(self):
+        result = AgentResult(summary="ok", output="done", exit_code=0)
+        assert _agent_status(result) == "success"
+
+    def test_failure(self):
+        result = AgentResult(summary="fail", output="err", exit_code=1)
+        assert _agent_status(result) == "failure"
+
+    def test_timeout(self):
+        result = AgentResult(summary="partial", output="...", exit_code=0)
+        assert _agent_status(result, timed_out=True) == "timeout"
+
+
+# ---------------------------------------------------------------------------
+# Memory integration in handle_delegate
+# ---------------------------------------------------------------------------
+
+
+def _mock_memory_provider(context_cards=None):
+    """Create a mock MemoryProvider."""
+    provider = MagicMock()
+    provider.name = "mock-memory"
+    provider.get.return_value = GetResult(
+        context_cards=context_cards or [],
+    )
+    provider.dump.return_value = DumpReceipt()
+    return provider
+
+
+class TestMemoryIntegration:
+    def _run_delegate(self, tmp_path, runtime=None, memory_provider=None,
+                      **config_overrides):
+        """Helper to run handle_delegate with minimal setup."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement things.")
+        resolved = {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+        if runtime is None:
+            runtime = _mock_runtime()
+        return handle_delegate(
+            request=_make_request(),
+            config=_make_config(**config_overrides),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+            memory_provider=memory_provider,
+        )
+
+    def test_no_memory_provider_skips_calls(self, tmp_path):
+        """When memory_provider is None, no memory calls are made."""
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=None)
+
+        # spawn still called with empty memory_prompt
+        kw = runtime.spawn.call_args.kwargs
+        assert kw["memory_prompt"] == ""
+
+    def test_memory_get_called_before_spawn(self, tmp_path):
+        """memory.get() is called and memory_prompt is populated."""
+        provider = _mock_memory_provider(
+            context_cards=[
+                ContextCard(kind=MemoryKind.PM, content="role instructions"),
+                ContextCard(kind=MemoryKind.SM, content="workspace fact"),
+            ]
+        )
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        # get was called
+        provider.get.assert_called_once()
+        get_kwargs = provider.get.call_args.kwargs
+        assert get_kwargs["role"] == "implementer"
+        assert "Implement things." in get_kwargs["behavior_ref"]
+
+        # memory_prompt in spawn contains formatted cards
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert "[PM] role instructions" in spawn_kwargs["memory_prompt"]
+        assert "[SM] workspace fact" in spawn_kwargs["memory_prompt"]
+
+    def test_memory_get_empty_cards_gives_empty_prompt(self, tmp_path):
+        """When memory.get returns no cards, memory_prompt is empty."""
+        provider = _mock_memory_provider(context_cards=[])
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert spawn_kwargs["memory_prompt"] == ""
+
+    def test_memory_dump_called_after_wait(self, tmp_path):
+        """memory.dump() is called with correct status after success."""
+        provider = _mock_memory_provider()
+        self._run_delegate(tmp_path, memory_provider=provider)
+
+        provider.dump.assert_called_once()
+        dump_kwargs = provider.dump.call_args.kwargs
+        assert dump_kwargs["status"] == "success"
+        assert dump_kwargs["role"] == "implementer"
+        assert dump_kwargs["output"] == "ok"
+
+    def test_memory_dump_on_failure(self, tmp_path):
+        """memory.dump() records failure status on non-zero exit."""
+        provider = _mock_memory_provider()
+        runtime = _mock_runtime(exit_code=1)
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        dump_kwargs = provider.dump.call_args.kwargs
+        assert dump_kwargs["status"] == "failure"
+
+    def test_memory_dump_on_timeout(self, tmp_path):
+        """memory.dump() records timeout status when agent times out."""
+        provider = _mock_memory_provider()
+        runtime = _mock_runtime()
+        runtime.is_alive.return_value = True  # simulate timeout
+
+        self._run_delegate(
+            tmp_path,
+            runtime=runtime,
+            memory_provider=provider,
+            agent_timeout=10,
+        )
+
+        dump_kwargs = provider.dump.call_args.kwargs
+        assert dump_kwargs["status"] == "timeout"

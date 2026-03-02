@@ -17,6 +17,8 @@ def test_defaults():
     assert config.agent_timeout is None
     assert config.max_delegate_retries == 0
     assert config.agents == {}
+    assert config.memory is None
+    assert config.memory_config == {}
     assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
     assert "gh pr create" in config.pr_command
@@ -77,6 +79,7 @@ def test_load_config_full(tmp_path, monkeypatch):
     (strawpot_dir / "config.toml").write_text(
         'runtime = "codex"\n'
         'isolation = "docker"\n'
+        'memory = "test-provider"\n'
         "\n"
         "[denden]\n"
         'addr = "0.0.0.0:8080"\n'
@@ -96,6 +99,9 @@ def test_load_config_full(tmp_path, monkeypatch):
         'pull_before_session = "auto"\n'
         'pr_command = "glab mr create --source {session_branch} --target {base_branch}"\n'
         "\n"
+        "[memory_config]\n"
+        'storage_dir = "/custom/mem"\n'
+        "\n"
         "[agents.claude_code]\n"
         'model = "claude-sonnet-4-6"\n'
     )
@@ -111,6 +117,8 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.agent_timeout == 300
     assert config.max_delegate_retries == 2
     assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
+    assert config.memory == "test-provider"
+    assert config.memory_config == {"storage_dir": "/custom/mem"}
     assert config.merge_strategy == "pr"
     assert config.pull_before_session == "auto"
     assert config.pr_command == "glab mr create --source {session_branch} --target {base_branch}"
@@ -160,3 +168,30 @@ def test_load_config_agents_merge(tmp_path, monkeypatch):
     assert config.agents == {
         "claude_code": {"model": "claude-sonnet-4-6", "timeout": 300}
     }
+
+
+def test_load_config_memory_merge(tmp_path, monkeypatch):
+    """Memory config from project merges with global per-key."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.toml").write_text(
+        'memory = "my-provider"\n'
+        "\n"
+        "[memory_config]\n"
+        'storage_dir = "/global/mem"\n'
+        "em_max_events = 5000\n"
+    )
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    strawpot_dir = project_dir / ".strawpot"
+    strawpot_dir.mkdir(parents=True)
+    (strawpot_dir / "config.toml").write_text(
+        "[memory_config]\n"
+        'storage_dir = "/project/mem"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.memory == "my-provider"
+    assert config.memory_config["storage_dir"] == "/project/mem"
+    assert config.memory_config["em_max_events"] == 5000

@@ -12,6 +12,7 @@ from pathlib import Path
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.config import StrawPotConfig
 from strawpot.context import build_prompt, parse_frontmatter, read_role_description
+from strawpot.memory.protocol import GetResult, MemoryProvider
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,26 @@ def _build_delegatable_roles(
 
 
 # ---------------------------------------------------------------------------
+# Memory helpers
+# ---------------------------------------------------------------------------
+
+
+def _format_memory_prompt(get_result: GetResult) -> str:
+    """Format context cards from a memory.get result into prompt text."""
+    parts = []
+    for card in get_result.context_cards:
+        parts.append(f"[{card.kind.value}] {card.content}")
+    return "\n\n".join(parts)
+
+
+def _agent_status(result: AgentResult, *, timed_out: bool = False) -> str:
+    """Map an agent result to a status string for memory.dump."""
+    if timed_out:
+        return "timeout"
+    return "success" if result.exit_code == 0 else "failure"
+
+
+# ---------------------------------------------------------------------------
 # Delegate handler
 # ---------------------------------------------------------------------------
 
@@ -309,6 +330,7 @@ def handle_delegate(
     resolve_role: Callable[..., dict],
     resolve_role_dirs: Callable[[str], str | None],
     denden_addr: str | None = None,
+    memory_provider: MemoryProvider | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -335,6 +357,8 @@ def handle_delegate(
             path (or None if not resolvable). Used to build delegatable roles.
         denden_addr: Actual bound denden address. If provided, takes
             precedence over ``config.denden_addr``.
+        memory_provider: Optional memory provider. When set, ``get()``
+            is called before spawn and ``dump()`` after wait.
 
     Returns:
         DelegateResult with summary and output from the sub-agent.
@@ -387,7 +411,21 @@ def handle_delegate(
                 _symlink(requester_role_dir, req_dest)
             roles_dirs.append(req_roles_dir)
 
-        # 7. Spawn
+        # 7a. Memory get — retrieve context before spawn
+        memory_prompt = ""
+        if memory_provider is not None:
+            get_result = memory_provider.get(
+                session_id=request.run_id,
+                agent_id=agent_id,
+                role=request.role_slug,
+                behavior_ref=role_prompt,
+                task=task_text,
+                parent_agent_id=request.parent_agent_id,
+            )
+            if get_result.context_cards:
+                memory_prompt = _format_memory_prompt(get_result)
+
+        # 7b. Spawn
         env = {
             "DENDEN_ADDR": denden_addr or config.denden_addr,
             "DENDEN_AGENT_ID": agent_id,
@@ -401,7 +439,7 @@ def handle_delegate(
             working_dir=working_dir,
             agent_workspace_dir=workspace,
             role_prompt=role_prompt,
-            memory_prompt="",
+            memory_prompt=memory_prompt,
             skills_dir=skills_dir,
             roles_dirs=roles_dirs,
             task=task_text,
@@ -411,8 +449,24 @@ def handle_delegate(
         # 8. Wait
         result = runtime.wait(handle, timeout=config.agent_timeout)
 
+        # 8a. Memory dump — record result after wait
+        timed_out = (
+            config.agent_timeout is not None and runtime.is_alive(handle)
+        )
+        if memory_provider is not None:
+            memory_provider.dump(
+                session_id=request.run_id,
+                agent_id=agent_id,
+                role=request.role_slug,
+                behavior_ref=role_prompt,
+                task=task_text,
+                status=_agent_status(result, timed_out=timed_out),
+                output=result.output,
+                parent_agent_id=request.parent_agent_id,
+            )
+
         # 8b. Handle timeout — no retry on timeout
-        if config.agent_timeout is not None and runtime.is_alive(handle):
+        if timed_out:
             runtime.kill(handle)
             return DelegateResult(
                 summary=f"Agent timed out after {config.agent_timeout}s",
