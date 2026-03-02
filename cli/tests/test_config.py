@@ -15,6 +15,7 @@ def test_defaults():
     assert config.max_depth == 3
     assert config.permission_mode == "default"
     assert config.agent_timeout is None
+    assert config.max_delegate_retries == 0
     assert config.agents == {}
     assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
@@ -88,6 +89,7 @@ def test_load_config_full(tmp_path, monkeypatch):
         'allowed_roles = ["implementer", "reviewer"]\n'
         "max_depth = 5\n"
         "agent_timeout = 300\n"
+        "max_delegate_retries = 2\n"
         "\n"
         "[session]\n"
         'merge_strategy = "pr"\n'
@@ -107,6 +109,7 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.max_depth == 5
     assert config.permission_mode == "plan"
     assert config.agent_timeout == 300
+    assert config.max_delegate_retries == 2
     assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
     assert config.merge_strategy == "pr"
     assert config.pull_before_session == "auto"

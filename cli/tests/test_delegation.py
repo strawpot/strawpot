@@ -16,6 +16,7 @@ from strawpot.delegation import (
     _collect_transitive_skills,
     _parse_role_deps,
     _parse_skill_deps,
+    _validate_output,
     create_agent_workspace,
     handle_delegate,
     stage_role,
@@ -107,6 +108,7 @@ def _make_request(**overrides):
         "parent_role": "orchestrator",
         "run_id": "run_abc",
         "depth": 0,
+        "return_format": "TEXT",
     }
     defaults.update(overrides)
     return DelegateRequest(**defaults)
@@ -171,6 +173,46 @@ class TestCheckPolicy:
         config = _make_config(max_depth=1)
         request = _make_request(depth=0)
         _check_policy(request, config)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Output format validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOutput:
+    def test_text_format_always_passes(self):
+        """TEXT format never fails validation."""
+        assert _validate_output("anything", "TEXT") is None
+        assert _validate_output("", "TEXT") is None
+        assert _validate_output("{not json", "TEXT") is None
+
+    def test_json_valid(self):
+        """Valid JSON passes validation."""
+        assert _validate_output('{"key": "value"}', "JSON") is None
+        assert _validate_output("[1, 2, 3]", "JSON") is None
+        assert _validate_output('"just a string"', "JSON") is None
+
+    def test_json_valid_with_whitespace(self):
+        """Leading/trailing whitespace is tolerated."""
+        assert _validate_output('  {"key": 1}  \n', "JSON") is None
+
+    def test_json_empty_output(self):
+        """Empty output fails JSON validation."""
+        error = _validate_output("", "JSON")
+        assert error is not None
+        assert "empty" in error.lower()
+
+    def test_json_invalid(self):
+        """Invalid JSON returns an error message."""
+        error = _validate_output("not json at all", "JSON")
+        assert error is not None
+        assert "not valid JSON" in error
+
+    def test_json_partial(self):
+        """Partial JSON fails validation."""
+        error = _validate_output('{"key": ', "JSON")
+        assert error is not None
 
 
 # ---------------------------------------------------------------------------
@@ -924,6 +966,222 @@ class TestSpawnAndWait:
         )
 
         runtime.kill.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Retry policy
+# ---------------------------------------------------------------------------
+
+
+class TestRetryPolicy:
+    """Tests for delegation retry on format validation failure."""
+
+    def _resolved(self, tmp_path):
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", "Implement.")
+        return {
+            "slug": "implementer",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+    def test_no_retry_when_text_format(self, tmp_path):
+        """TEXT format: no retry even if max_delegate_retries > 0."""
+        runtime = _mock_runtime(output="not json")
+        result = handle_delegate(
+            request=_make_request(return_format="TEXT"),
+            config=_make_config(max_delegate_retries=3),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        runtime.spawn.assert_called_once()
+        assert result.output == "not json"
+
+    def test_no_retry_when_retries_zero(self, tmp_path):
+        """Default config (retries=0): never retries."""
+        runtime = _mock_runtime(output="not json")
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=0),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        runtime.spawn.assert_called_once()
+        assert result.output == "not json"
+
+    def test_retry_on_invalid_json(self, tmp_path):
+        """JSON format with retries=1: retries once on invalid output."""
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="agent_test", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.side_effect = [
+            AgentResult(summary="Done", output="not json", exit_code=0),
+            AgentResult(summary="Done", output='{"ok": true}', exit_code=0),
+        ]
+        runtime.is_alive.return_value = False
+
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=1),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        assert runtime.spawn.call_count == 2
+        assert result.output == '{"ok": true}'
+
+    def test_retry_hint_in_task_text(self, tmp_path):
+        """On retry, task text includes [RETRY: ...] hint."""
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="agent_test", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.side_effect = [
+            AgentResult(summary="Done", output="bad", exit_code=0),
+            AgentResult(summary="Done", output='"ok"', exit_code=0),
+        ]
+        runtime.is_alive.return_value = False
+
+        handle_delegate(
+            request=_make_request(
+                return_format="JSON", task_text="Do something"
+            ),
+            config=_make_config(max_delegate_retries=1),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        second_call = runtime.spawn.call_args_list[1]
+        task = second_call.kwargs["task"]
+        assert "Do something" in task
+        assert "[RETRY:" in task
+        assert "valid JSON" in task
+
+    def test_retry_exhaustion(self, tmp_path):
+        """All retries fail: returns last attempt's result."""
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="agent_test", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.side_effect = [
+            AgentResult(summary="Done", output="bad1", exit_code=0),
+            AgentResult(summary="Done", output="bad2", exit_code=0),
+            AgentResult(summary="Done", output="bad3", exit_code=0),
+        ]
+        runtime.is_alive.return_value = False
+
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=2),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        assert runtime.spawn.call_count == 3
+        assert result.output == "bad3"
+
+    def test_fresh_agent_id_per_retry(self, tmp_path):
+        """Each retry gets a unique agent_id."""
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="agent_test", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.side_effect = [
+            AgentResult(summary="Done", output="bad", exit_code=0),
+            AgentResult(summary="Done", output='"ok"', exit_code=0),
+        ]
+        runtime.is_alive.return_value = False
+
+        handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=1),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        ids = [c.kwargs["agent_id"] for c in runtime.spawn.call_args_list]
+        assert len(ids) == 2
+        assert ids[0] != ids[1]
+
+    def test_no_retry_on_timeout(self, tmp_path):
+        """Timeout during attempt: returns immediately, no retry."""
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="agent_test", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.return_value = AgentResult(
+            summary="Done", output="partial", exit_code=0
+        )
+        runtime.is_alive.return_value = True
+
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=3, agent_timeout=60),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        runtime.spawn.assert_called_once()
+        runtime.kill.assert_called_once()
+        assert result.exit_code == 1
+        assert "timed out" in result.summary
+
+    def test_no_retry_on_nonzero_exit(self, tmp_path):
+        """Non-zero exit: returns immediately, no retry."""
+        runtime = _mock_runtime(summary="Crashed", output="error", exit_code=1)
+        runtime.is_alive.return_value = False
+
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=3),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        runtime.spawn.assert_called_once()
+        assert result.exit_code == 1
+
+    def test_valid_json_first_attempt_no_retry(self, tmp_path):
+        """Valid JSON on first attempt: returns immediately."""
+        runtime = _mock_runtime(output='{"result": 42}')
+        result = handle_delegate(
+            request=_make_request(return_format="JSON"),
+            config=_make_config(max_delegate_retries=3),
+            runtime=runtime,
+            working_dir=str(tmp_path / "work"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": self._resolved(tmp_path),
+            resolve_role_dirs=lambda s: None,
+        )
+        runtime.spawn.assert_called_once()
+        assert result.output == '{"result": 42}'
 
 
 # ---------------------------------------------------------------------------
