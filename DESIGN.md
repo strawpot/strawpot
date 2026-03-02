@@ -1601,9 +1601,7 @@ description: File-based local memory provider
 metadata:
   version: "0.1.0"
   strawpot:
-    wrapper:
-      script: wrapper.py
-      # OR: command: strawpot-memory-local
+    memory_module: provider.py
     # tools:
     #     some-tool:
     #       description: ...
