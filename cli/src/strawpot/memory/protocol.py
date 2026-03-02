@@ -50,7 +50,7 @@ class DumpReceipt:
     em_event_ids: list[str] = field(default_factory=list)
     stm_updates: list[str] = field(default_factory=list)
     sm_rm_proposals: list[str] = field(default_factory=list)
-    deferred: list[str] = field(default_factory=list)
+    deferred_items: list[str] = field(default_factory=list)
 
 
 @runtime_checkable
