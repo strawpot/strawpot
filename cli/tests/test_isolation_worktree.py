@@ -182,3 +182,35 @@ def test_multiple_sessions(tmp_path, monkeypatch):
 
     isolator.cleanup(env2, base_dir=str(tmp_path))
     assert not os.path.isdir(env2.path)
+
+
+# --- delete_branch parameter ---
+
+
+def test_cleanup_delete_branch_false(tmp_path, monkeypatch):
+    """When delete_branch=False, worktree is removed but branch is preserved."""
+    _init_repo(tmp_path)
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "strawpot_home"))
+    isolator = WorktreeIsolator()
+
+    env = isolator.create(session_id="run_keep_branch", base_dir=str(tmp_path))
+    assert env.branch in _branches(tmp_path)
+
+    isolator.cleanup(env, base_dir=str(tmp_path), delete_branch=False)
+
+    assert not os.path.isdir(env.path)
+    assert env.branch in _branches(tmp_path)
+
+
+def test_cleanup_delete_branch_true(tmp_path, monkeypatch):
+    """When delete_branch=True (default), both worktree and branch are removed."""
+    _init_repo(tmp_path)
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "strawpot_home"))
+    isolator = WorktreeIsolator()
+
+    env = isolator.create(session_id="run_del_branch", base_dir=str(tmp_path))
+
+    isolator.cleanup(env, base_dir=str(tmp_path), delete_branch=True)
+
+    assert not os.path.isdir(env.path)
+    assert env.branch not in _branches(tmp_path)

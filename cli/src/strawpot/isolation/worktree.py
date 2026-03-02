@@ -88,18 +88,26 @@ class WorktreeIsolator:
 
         return IsolatedEnv(path=worktree_path, branch=branch)
 
-    def cleanup(self, env: IsolatedEnv, *, base_dir: str) -> None:
-        """Remove the worktree and delete the branch.
+    def cleanup(
+        self,
+        env: IsolatedEnv,
+        *,
+        base_dir: str,
+        delete_branch: bool = True,
+    ) -> None:
+        """Remove the worktree and optionally delete the branch.
 
         Idempotent — safe to call even if the worktree was already removed.
 
         Args:
             env: The IsolatedEnv returned by :meth:`create`.
             base_dir: The original project root passed to :meth:`create`.
+            delete_branch: If ``False``, keep the branch (e.g. for the PR
+                strategy where the branch has been pushed to the remote).
         """
         # Remove the worktree (--force handles dirty worktrees)
         _git(["worktree", "remove", env.path, "--force"], cwd=base_dir)
 
-        # Delete the branch if set
-        if env.branch:
+        # Delete the branch if set and requested
+        if env.branch and delete_branch:
             _git(["branch", "-D", env.branch], cwd=base_dir)
