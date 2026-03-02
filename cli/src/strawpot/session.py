@@ -228,11 +228,13 @@ class Session:
         *,
         resolve_role: Callable[..., dict],
         resolve_role_dirs: Callable[[str], str | None],
+        task: str = "",
     ) -> None:
         self.config = config
         self.wrapper = wrapper
         self.runtime = runtime
         self.isolator = isolator
+        self.task = task
         self._resolve_role = resolve_role
         self._resolve_role_dirs = resolve_role_dirs
 
@@ -308,7 +310,7 @@ class Session:
                 memory_prompt="",
                 skills_dir=skills_dir,
                 roles_dirs=[roles_dir],
-                task="",
+                task=self.task,
                 env=env,
             )
             self._orchestrator_handle = handle
@@ -326,8 +328,13 @@ class Session:
             original_sigint = signal.getsignal(signal.SIGINT)
             signal.signal(signal.SIGINT, self._handle_sigint)
 
-            # 8. Attach — blocks until orchestrator exits
-            self.runtime.attach(handle)
+            # 8. Block until orchestrator exits
+            if self.task:
+                result = self.runtime.wait(handle)
+                if result.exit_code != 0:
+                    sys.exit(result.exit_code)
+            else:
+                self.runtime.attach(handle)
 
         finally:
             signal.signal(signal.SIGINT, original_sigint)

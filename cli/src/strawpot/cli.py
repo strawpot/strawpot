@@ -56,7 +56,8 @@ def cli():
 )
 @click.option("--host", default=None, help="Denden server host.")
 @click.option("--port", default=None, type=int, help="Denden server port.")
-def start(role, runtime, isolation, merge_strategy, pull, host, port):
+@click.option("--task", default=None, help="Run noninteractively with a task string.")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -111,7 +112,9 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port):
 
     # 3. Build runtimes (session_dir set later by Session.start())
     wrapper = WrapperRuntime(spec)
-    if shutil.which("tmux"):
+    if task:
+        rt = DirectWrapperRuntime(wrapper)
+    elif shutil.which("tmux"):
         rt = InteractiveWrapperRuntime(wrapper)
     else:
         rt = DirectWrapperRuntime(wrapper)
@@ -141,6 +144,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port):
         isolator=isolator,
         resolve_role=_resolve_role,
         resolve_role_dirs=_resolve_role_dirs,
+        task=task or "",
     )
     session.start(working_dir)
 
