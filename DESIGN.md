@@ -1516,13 +1516,13 @@ building the agent's prompt.
 
 ```
 Inputs:
-  worktree_id
-  agent_instance_id
-  parent_agent_instance_id    (optional)
+  session_id
+  agent_id
+  parent_agent_id             (optional)
   role
-  behavior_ref                (Agent.md / ROLE.md path)
-  task_text
-  budget                      (token budget hint)
+  behavior_ref                (loaded role description text)
+  task
+  budget                      (token budget hint, optional)
 
 Outputs:
   context_cards               (typed: PM/SM/STM/RM)
@@ -1546,15 +1546,16 @@ StrawPot calls the memory provider to record what happened.
 
 ```
 Inputs:
-  worktree_id
-  agent_instance_id
-  parent_agent_instance_id    (optional)
+  session_id
+  agent_id
+  parent_agent_id             (optional)
   role
-  task_text
-  assistant_output
-  tool_trace                  (strongly recommended)
-  artifacts                   (commit hash, patch refs, test reports)
+  behavior_ref                (loaded role description text)
+  task
   status                      (success/failure/timeout)
+  output                      (assistant output text)
+  tool_trace                  (tool call trace text, optional)
+  artifacts                   (commit hash, patch refs, etc., optional)
 
 Outputs (mandatory receipt):
   em_event_ids                (appended event IDs or count)
@@ -1571,21 +1572,19 @@ Outputs (mandatory receipt):
 
 ### Memory Provider Protocol
 
-Same pattern as agent wrappers — a CLI that implements a contract:
+Memory providers are Python modules loaded directly into the strawpot
+process (unlike agent wrappers which are CLI subprocesses). Each provider
+implements the `MemoryProvider` protocol defined in
+`strawpot.memory.protocol`:
 
-```
-<provider> get  --worktree-id ID --agent-id ID --role SLUG \
-                --behavior-ref FILE --task TEXT --budget N \
-                [--parent-agent-id ID]
-  → stdout JSON: {"context_cards": [...], "control_signals": {...},
-                   "context_hash": "...", "sources_used": [...]}
-
-<provider> dump --worktree-id ID --agent-id ID --role SLUG \
-                --task TEXT --status STATUS \
-                --output FILE --tool-trace FILE \
-                [--parent-agent-id ID] [--artifacts JSON]
-  → stdout JSON: {"em_event_ids": [...], "stm_updates": [...],
-                   "sm_rm_proposals": [...], "deferred": [...]}
+```python
+class MemoryProvider(Protocol):
+    name: str
+    def get(self, *, session_id, agent_id, role, behavior_ref,
+            task, budget=None, parent_agent_id=None) -> GetResult: ...
+    def dump(self, *, session_id, agent_id, role, behavior_ref,
+             task, status, output, tool_trace="",
+             parent_agent_id=None, artifacts=None) -> DumpReceipt: ...
 ```
 
 ### Memory Manifest (`MEMORY.md`)
@@ -1640,9 +1639,9 @@ Every event in the append-only event log:
 
 ```json
 {
-  "worktree_id": "run_abc123",
-  "agent_instance_id": "agent_xyz",
-  "parent_agent_instance_id": null,
+  "session_id": "run_abc123",
+  "agent_id": "agent_xyz",
+  "parent_agent_id": null,
   "role": "implementer",
   "event_type": "AGENT_RESULT",
   "payload": {},

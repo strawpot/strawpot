@@ -98,7 +98,7 @@ def test_dump_receipt_defaults():
     assert receipt.em_event_ids == []
     assert receipt.stm_updates == []
     assert receipt.sm_rm_proposals == []
-    assert receipt.deferred == []
+    assert receipt.deferred_items == []
 
 
 def test_dump_receipt_with_values():
@@ -106,12 +106,22 @@ def test_dump_receipt_with_values():
         em_event_ids=["ev1", "ev2"],
         stm_updates=["scratch:updated"],
         sm_rm_proposals=["add convention X"],
-        deferred=["review needed"],
+        deferred_items=["review needed"],
     )
     assert receipt.em_event_ids == ["ev1", "ev2"]
     assert receipt.stm_updates == ["scratch:updated"]
     assert receipt.sm_rm_proposals == ["add convention X"]
-    assert receipt.deferred == ["review needed"]
+    assert receipt.deferred_items == ["review needed"]
+
+
+# -- Mutable default isolation -------------------------------------------------
+
+
+def test_mutable_defaults_not_shared():
+    a = DumpReceipt()
+    b = DumpReceipt()
+    a.em_event_ids.append("x")
+    assert b.em_event_ids == []
 
 
 # -- MemoryProvider protocol ---------------------------------------------------
