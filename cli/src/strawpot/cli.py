@@ -19,7 +19,7 @@ from strawpot.agents.interactive import (
 from strawpot.agents.registry import resolve_agent, validate_agent
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, load_config
-from strawpot.session import Session, resolve_isolator
+from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
 @click.group()
@@ -79,6 +79,11 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port):
         config.denden_addr = f"{host or current_host}:{port or current_port}"
 
     working_dir = str(Path.cwd())
+
+    # 0. Recover stale sessions from previous crashes
+    recovered = recover_stale_sessions(working_dir, config)
+    for run_id in recovered:
+        click.echo(f"Recovered stale session: {run_id}")
 
     # 1. Resolve agent spec
     try:

@@ -35,6 +35,152 @@ from strawpot.isolation.worktree import WorktreeIsolator
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------
+# Crash recovery
+# ------------------------------------------------------------------
+
+
+def recover_stale_sessions(
+    working_dir: str, config: StrawPotConfig
+) -> list[str]:
+    """Detect and clean up stale sessions left behind by crashes.
+
+    Scans ``.strawpot/sessions/`` for session files whose ``pid`` is no
+    longer alive.  For each stale session the merge strategy is applied
+    (worktree isolation only) and the session directory is removed.
+
+    Called at the beginning of ``strawpot start`` so orphaned worktrees
+    and session artifacts are cleaned up before a new session starts.
+
+    Args:
+        working_dir: Project directory (CWD at invocation time).
+        config: Merged StrawPot configuration (used for merge settings).
+
+    Returns:
+        List of recovered ``run_id`` strings.
+    """
+    from strawpot._process import is_pid_alive
+
+    sessions_dir = os.path.join(working_dir, ".strawpot", "sessions")
+    if not os.path.isdir(sessions_dir):
+        return []
+
+    recovered: list[str] = []
+
+    for entry in sorted(os.listdir(sessions_dir)):
+        session_file = os.path.join(sessions_dir, entry, "session.json")
+        if not os.path.isfile(session_file):
+            continue
+
+        try:
+            with open(session_file, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            logger.debug("Skipping unreadable session file: %s", session_file)
+            continue
+
+        # Skip sessions that belong to a different project directory
+        if data.get("working_dir") != working_dir:
+            continue
+
+        pid = data.get("pid")
+        if pid is not None and is_pid_alive(pid):
+            continue  # still running
+
+        run_id = data.get("run_id", entry)
+        logger.info("Recovering stale session: %s", run_id)
+
+        # --- Merge (worktree isolation only) ---
+        delete_branch = True
+        isolation = data.get("isolation", "none")
+        if isolation == "worktree":
+            delete_branch = _recover_merge(data, working_dir, config)
+
+        # --- Isolator cleanup ---
+        if isolation == "worktree" and data.get("worktree"):
+            try:
+                env = IsolatedEnv(
+                    path=data["worktree"],
+                    branch=data.get("worktree_branch"),
+                )
+                WorktreeIsolator().cleanup(
+                    env, base_dir=working_dir, delete_branch=delete_branch
+                )
+            except Exception:
+                logger.debug(
+                    "Isolator cleanup failed for %s", run_id, exc_info=True
+                )
+
+        # --- Remove session directory ---
+        session_dir = os.path.join(sessions_dir, entry)
+        try:
+            shutil.rmtree(session_dir)
+        except OSError:
+            logger.debug("Failed to remove session dir %s", session_dir)
+
+        recovered.append(run_id)
+
+    return recovered
+
+
+def _recover_merge(
+    data: dict, working_dir: str, config: StrawPotConfig
+) -> bool:
+    """Run the merge strategy for a stale worktree session.
+
+    Returns ``True`` if the branch should be deleted, ``False`` to keep it.
+    """
+    from strawpot.merge import merge_local, merge_pr, resolve_strategy
+
+    base_branch = data.get("base_branch")
+    session_branch = data.get("worktree_branch")
+    worktree_dir = data.get("worktree")
+
+    if not base_branch or not session_branch or not worktree_dir:
+        logger.debug(
+            "Missing branch/worktree info, skipping merge for %s",
+            data.get("run_id"),
+        )
+        return True
+
+    if not os.path.isdir(worktree_dir):
+        logger.debug("Worktree directory missing, skipping merge")
+        return True
+
+    strategy = resolve_strategy(config.merge_strategy, working_dir)
+
+    try:
+        if strategy == "local":
+            result = merge_local(
+                base_branch=base_branch,
+                session_branch=session_branch,
+                worktree_dir=worktree_dir,
+                base_dir=working_dir,
+            )
+            logger.info("Recovery merge (local): %s", result.message)
+            return True
+
+        if strategy == "pr":
+            result = merge_pr(
+                base_branch=base_branch,
+                session_branch=session_branch,
+                worktree_dir=worktree_dir,
+                base_dir=working_dir,
+                pr_command=config.pr_command,
+            )
+            logger.info("Recovery merge (PR): %s", result.message)
+            return False
+    except Exception:
+        logger.debug("Recovery merge failed", exc_info=True)
+
+    return True
+
+
+# ------------------------------------------------------------------
+# Isolator resolution
+# ------------------------------------------------------------------
+
+
 def resolve_isolator(isolation: str) -> Isolator:
     """Return an Isolator instance for the given isolation mode.
 
