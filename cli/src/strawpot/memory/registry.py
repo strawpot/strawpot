@@ -1,5 +1,6 @@
 """Memory registry — discover MEMORY.md manifests and resolve to MemorySpec."""
 
+import importlib.util
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -9,6 +10,7 @@ import yaml
 
 from strawpot.agents.registry import ValidationResult, _current_os
 from strawpot.config import get_strawpot_home
+from strawpot.memory.protocol import MemoryProvider
 
 
 @dataclass
@@ -138,6 +140,46 @@ def resolve_memory(
         config=config,
         env_schema=env_schema,
         tools=tools,
+    )
+
+
+def load_provider(spec: MemorySpec) -> MemoryProvider:
+    """Dynamically load a memory provider from a MemorySpec.
+
+    Imports the script file, scans for a class that satisfies
+    ``MemoryProvider``, and returns an instance.
+
+    Args:
+        spec: A resolved MemorySpec with an absolute script path.
+
+    Returns:
+        An instance of the first class found that satisfies MemoryProvider.
+
+    Raises:
+        ValueError: If no MemoryProvider implementation is found in the script.
+    """
+    mod_spec = importlib.util.spec_from_file_location(
+        "_memory_provider", spec.script
+    )
+    mod = importlib.util.module_from_spec(mod_spec)  # type: ignore[arg-type]
+    mod_spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+    for attr_name in dir(mod):
+        attr = getattr(mod, attr_name)
+        if (
+            isinstance(attr, type)
+            and attr is not MemoryProvider
+            and issubclass(attr, object)
+        ):
+            try:
+                instance = attr()
+            except TypeError:
+                continue
+            if isinstance(instance, MemoryProvider):
+                return instance
+
+    raise ValueError(
+        f"No MemoryProvider implementation found in {spec.script}"
     )
 
 

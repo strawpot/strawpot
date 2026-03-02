@@ -32,6 +32,8 @@ class StrawPotConfig:
     agent_timeout: int | None = None
     max_delegate_retries: int = 0
     agents: dict[str, dict] = field(default_factory=dict)
+    memory: str | None = None
+    memory_config: dict[str, str] = field(default_factory=dict)
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
     pr_command: str = _DEFAULT_PR_COMMAND
@@ -75,6 +77,12 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     agents = data.get("agents", {})
     for name, agent_data in agents.items():
         config.agents.setdefault(name, {}).update(agent_data)
+
+    if "memory" in data:
+        config.memory = data["memory"]
+    memory_cfg = data.get("memory_config", {})
+    for key, value in memory_cfg.items():
+        config.memory_config[key] = value
 
     session = data.get("session", {})
     if "merge_strategy" in session:
