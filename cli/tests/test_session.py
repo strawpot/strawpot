@@ -806,3 +806,215 @@ class TestRecoverStaleSessions:
 
         assert result == ["run_fail"]
         assert not os.path.exists(session_dir)
+
+
+# ---------------------------------------------------------------------------
+# Signal handling
+# ---------------------------------------------------------------------------
+
+
+class TestSignalHandling:
+    """Tests for three-level Ctrl+C handling.
+
+    By default ``_mock_runtime().interrupt()`` returns a truthy MagicMock,
+    simulating interactive (tmux) mode where the interrupt is forwarded.
+    Tests for direct mode explicitly set ``interrupt.return_value = False``.
+    """
+
+    # -- Interactive (tmux) mode: interrupt forwarded --
+
+    def test_interactive_first_sigint_sets_interrupted(self, tmp_path):
+        """First SIGINT sets _interrupted flag but NOT _shutting_down (tmux)."""
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, runtime=runtime)
+        session._orchestrator_handle = runtime.spawn.return_value
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)
+
+        assert session._interrupted is True
+        assert session._shutting_down is False
+
+    def test_interactive_first_sigint_forwards_interrupt(self, tmp_path):
+        """First SIGINT calls runtime.interrupt() — NOT kill() (tmux)."""
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, runtime=runtime)
+        handle = runtime.spawn.return_value
+        session._orchestrator_handle = handle
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)
+
+        runtime.interrupt.assert_called_once_with(handle)
+        runtime.kill.assert_not_called()
+
+    def test_interactive_second_sigint_within_window_shuts_down(self, tmp_path):
+        """Second SIGINT within 2s kills orchestrator (tmux)."""
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, runtime=runtime)
+        handle = runtime.spawn.return_value
+        session._orchestrator_handle = handle
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.side_effect = [100.0, 101.0]
+            session._handle_sigint(None, None)  # Level 1: interrupt
+            session._handle_sigint(None, None)  # Level 2: shutdown
+
+        assert session._shutting_down is True
+        runtime.kill.assert_called_once_with(handle)
+
+    def test_interactive_second_sigint_outside_window_reinterrupts(self, tmp_path):
+        """Second SIGINT after 2s resets to Level 1 (tmux)."""
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, runtime=runtime)
+        handle = runtime.spawn.return_value
+        session._orchestrator_handle = handle
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.side_effect = [100.0, 103.0]
+            session._handle_sigint(None, None)
+            session._handle_sigint(None, None)
+
+        assert session._interrupted is True
+        assert session._shutting_down is False
+        assert runtime.interrupt.call_count == 2
+        runtime.kill.assert_not_called()
+
+    def test_interactive_full_three_levels(self, tmp_path):
+        """Full sequence: interrupt → shutdown → force quit (tmux)."""
+        runtime = _mock_runtime()
+        session = _make_session(tmp_path, runtime=runtime)
+        session._orchestrator_handle = runtime.spawn.return_value
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.side_effect = [100.0, 101.0]
+            session._handle_sigint(None, None)   # Level 1: interrupt
+            session._handle_sigint(None, None)   # Level 2: shutdown
+
+        assert session._shutting_down is True
+
+        with patch("os._exit") as mock_exit:
+            session._handle_sigint(None, None)   # Level 3: force quit
+
+        mock_exit.assert_called_once_with(1)
+
+    # -- Direct mode: interrupt not forwarded, escalate immediately --
+
+    def test_direct_first_sigint_escalates_to_shutdown(self, tmp_path):
+        """First SIGINT in direct mode skips interrupt and shuts down."""
+        runtime = _mock_runtime()
+        runtime.interrupt.return_value = False
+        session = _make_session(tmp_path, runtime=runtime)
+        handle = runtime.spawn.return_value
+        session._orchestrator_handle = handle
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)
+
+        assert session._shutting_down is True
+        runtime.kill.assert_called_once_with(handle)
+
+    def test_direct_second_sigint_force_quits(self, tmp_path):
+        """Second SIGINT in direct mode force-quits (only two levels)."""
+        runtime = _mock_runtime()
+        runtime.interrupt.return_value = False
+        session = _make_session(tmp_path, runtime=runtime)
+        session._orchestrator_handle = runtime.spawn.return_value
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)   # Level 1 → shutdown
+
+        with patch("os._exit") as mock_exit:
+            session._handle_sigint(None, None)   # Level 2 → force quit
+
+        mock_exit.assert_called_once_with(1)
+
+    # -- Common behavior (both modes) --
+
+    def test_first_sigint_no_orchestrator(self, tmp_path):
+        """First SIGINT with no orchestrator handle does not crash."""
+        session = _make_session(tmp_path)
+        session._orchestrator_handle = None
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)
+
+        assert session._interrupted is True
+        # No handle → interrupt not called → forwarded=False → shutdown
+        assert session._shutting_down is True
+
+    def test_first_sigint_interrupt_failure_escalates(self, tmp_path):
+        """If runtime.interrupt() raises, escalate to shutdown."""
+        runtime = _mock_runtime()
+        runtime.interrupt.side_effect = RuntimeError("tmux not found")
+        session = _make_session(tmp_path, runtime=runtime)
+        session._orchestrator_handle = runtime.spawn.return_value
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            session._handle_sigint(None, None)
+
+        # Exception → forwarded stays False → shutdown
+        assert session._shutting_down is True
+
+    def test_force_quit_during_shutdown(self, tmp_path):
+        """SIGINT during shutdown calls os._exit(1)."""
+        session = _make_session(tmp_path)
+        session._shutting_down = True
+
+        with patch("os._exit") as mock_exit:
+            session._handle_sigint(None, None)
+
+        mock_exit.assert_called_once_with(1)
+
+    def test_shutdown_kill_failure_still_sets_flag(self, tmp_path):
+        """If runtime.kill() fails during shutdown, _shutting_down is still set."""
+        runtime = _mock_runtime()
+        runtime.kill.side_effect = RuntimeError("tmux error")
+        session = _make_session(tmp_path, runtime=runtime)
+        session._orchestrator_handle = runtime.spawn.return_value
+
+        with patch("strawpot.session.time") as mock_time:
+            mock_time.monotonic.side_effect = [100.0, 101.0]
+            session._handle_sigint(None, None)  # Level 1
+            session._handle_sigint(None, None)  # Level 2 (kill fails)
+
+        assert session._shutting_down is True
+
+    @patch("strawpot.session.DenDenServer")
+    def test_handler_installed_and_restored(self, mock_server_cls, tmp_path):
+        """Signal handler is installed before attach and restored after stop."""
+        import signal
+
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime
+        )
+
+        original = signal.getsignal(signal.SIGINT)
+        session.start(str(tmp_path))
+        restored = signal.getsignal(signal.SIGINT)
+
+        assert restored is original
+
+    @patch("strawpot.session.DenDenServer")
+    def test_stop_runs_after_shutdown(self, mock_server_cls, tmp_path):
+        """stop() runs via finally block after shutdown kills orchestrator."""
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime
+        )
+
+        with patch.object(session, "stop") as mock_stop:
+            session.start(str(tmp_path))
+
+        mock_stop.assert_called_once()

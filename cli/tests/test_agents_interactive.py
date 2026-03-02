@@ -708,3 +708,55 @@ def test_direct_attach_unknown_noop():
         agent_id="unknown", runtime_name="claude-code", pid=None, metadata={},
     )
     runtime.attach(handle)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# interrupt
+# ---------------------------------------------------------------------------
+
+
+@_skip_no_tmux
+def test_interrupt_sends_tmux_ctrl_c(monkeypatch):
+    """interrupt() sends Ctrl+C to the tmux session via send-keys."""
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return _mock_completed()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    runtime = InteractiveWrapperRuntime(_make_inner())
+    handle = AgentHandle(
+        agent_id="int01",
+        runtime_name="claude-code",
+        pid=None,
+        metadata={"session": "strawpot-int00001"},
+    )
+    result = runtime.interrupt(handle)
+
+    assert result is True
+    assert any(
+        cmd[:2] == ["tmux", "send-keys"]
+        and "strawpot-int00001" in cmd
+        and "C-c" in cmd
+        for cmd in calls
+    )
+
+
+def test_direct_interrupt_is_noop():
+    """interrupt() is a no-op in direct mode (OS already sent SIGINT)."""
+    inner = _make_inner()
+    runtime = DirectWrapperRuntime(inner)
+
+    proc = MagicMock()
+    runtime._procs["d001"] = proc
+
+    handle = AgentHandle(
+        agent_id="d001", runtime_name="claude-code", pid=42, metadata={},
+    )
+    result = runtime.interrupt(handle)
+
+    assert result is False
+    # Verify no signals were sent to the process
+    proc.send_signal.assert_not_called()

@@ -175,6 +175,14 @@ class InteractiveWrapperRuntime:
         )
         _tmux(["kill-session", "-t", session])
 
+    def interrupt(self, handle: AgentHandle) -> bool:
+        """Forward Ctrl+C to the tmux pane."""
+        session = handle.metadata.get(
+            "session", _session_name(handle.agent_id)
+        )
+        _tmux(["send-keys", "-t", session, "C-c"])
+        return True
+
     def attach(self, handle: AgentHandle) -> None:
         """Attach the user's terminal to the tmux session.
 
@@ -293,6 +301,10 @@ class DirectWrapperRuntime:
         proc = self._procs.get(handle.agent_id)
         if proc is not None:
             proc.terminate()
+
+    def interrupt(self, handle: AgentHandle) -> bool:
+        """No-op — the agent already received SIGINT from the OS."""
+        return False
 
     def attach(self, handle: AgentHandle) -> None:
         """Wait for the process to complete.
