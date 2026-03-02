@@ -255,3 +255,7 @@ class WrapperRuntime:
                 pass  # already exited
             except PermissionError:
                 pass  # Windows: race with process exit or access denied
+
+    def interrupt(self, handle: AgentHandle) -> bool:
+        """No-op — non-interactive agents do not support interrupt."""
+        return False

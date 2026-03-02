@@ -78,3 +78,16 @@ class AgentRuntime(Protocol):
     def kill(self, handle: AgentHandle) -> None:
         """Forcefully terminate the agent process."""
         ...
+
+    def interrupt(self, handle: AgentHandle) -> bool:
+        """Send a soft interrupt to cancel the agent's current task.
+
+        Returns ``True`` if the interrupt was explicitly forwarded to the
+        agent (e.g. via ``tmux send-keys``).  Returns ``False`` if the
+        agent already received the signal from the OS (direct mode) or
+        does not support interrupt (non-interactive).
+
+        The session layer uses the return value to decide whether to
+        stay at the interrupt level or escalate directly to shutdown.
+        """
+        ...

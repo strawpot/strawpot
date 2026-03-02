@@ -50,6 +50,9 @@ def test_agent_runtime_protocol():
         def kill(self, handle):
             pass
 
+        def interrupt(self, handle):
+            pass
+
     assert isinstance(FakeRuntime(), AgentRuntime)
 
 

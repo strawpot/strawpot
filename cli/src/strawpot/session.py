@@ -3,9 +3,12 @@
 import json
 import logging
 import os
+import signal
 import shutil
 import subprocess
+import sys
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -243,6 +246,9 @@ class Session:
         self._agent_info: dict[str, dict] = {}
         self._session_file: str | None = None
         self._session_data: dict = {}
+        self._shutting_down: bool = False
+        self._interrupted: bool = False
+        self._last_sigint_time: float = 0.0
 
     # ------------------------------------------------------------------
     # Public interface
@@ -316,10 +322,15 @@ class Session:
             # 6. Write session state file
             self._write_session_file()
 
-            # 7. Attach — blocks until orchestrator exits
+            # 7. Install signal handler before blocking attach
+            original_sigint = signal.getsignal(signal.SIGINT)
+            signal.signal(signal.SIGINT, self._handle_sigint)
+
+            # 8. Attach — blocks until orchestrator exits
             self.runtime.attach(handle)
 
         finally:
+            signal.signal(signal.SIGINT, original_sigint)
             self.stop()
 
     def stop(self) -> None:
@@ -363,6 +374,70 @@ class Session:
 
         # 5. Remove session directory (includes session.json, agent workspaces, staged roles)
         self._remove_session_dir()
+
+    # ------------------------------------------------------------------
+    # Signal handling
+    # ------------------------------------------------------------------
+
+    _SIGINT_ESCALATION_WINDOW = 2.0
+
+    def _handle_sigint(self, signum, frame) -> None:
+        """Handle SIGINT (Ctrl+C) during session — three escalation levels.
+
+        1. **First press — Interrupt**: Forward interrupt to the agent
+           (cancel current task), keep the session alive.  If the runtime
+           reports that the agent already received SIGINT (direct mode),
+           escalate immediately to shutdown.
+        2. **Second press (within ~2 s) — Shutdown**: Kill the orchestrator
+           to unblock ``runtime.attach()`` so cleanup runs via ``finally``.
+        3. **Third press (during shutdown) — Force quit**: ``os._exit(1)``.
+        """
+        now = time.monotonic()
+
+        # Level 3: already shutting down → force quit
+        if self._shutting_down:
+            sys.stderr.write("\nForce quit.\n")
+            os._exit(1)
+
+        # Level 2: second Ctrl+C within window → shutdown
+        if (
+            self._interrupted
+            and (now - self._last_sigint_time) < self._SIGINT_ESCALATION_WINDOW
+        ):
+            self._shutdown_orchestrator()
+            return
+
+        # Level 1: first Ctrl+C (or re-interrupt after window expired)
+        self._interrupted = True
+        self._last_sigint_time = now
+
+        forwarded = False
+        if self._orchestrator_handle:
+            try:
+                forwarded = self.runtime.interrupt(self._orchestrator_handle)
+            except Exception:
+                pass
+
+        if forwarded:
+            # Interactive (tmux): interrupt was forwarded, wait for second Ctrl+C
+            sys.stderr.write(
+                "\nInterrupting agent... press Ctrl+C again within 2s to shut down.\n"
+            )
+        else:
+            # Direct mode: agent already got SIGINT, escalate to shutdown
+            self._shutdown_orchestrator()
+
+    def _shutdown_orchestrator(self) -> None:
+        """Kill the orchestrator and mark session as shutting down."""
+        self._shutting_down = True
+        sys.stderr.write(
+            "\nShutting down... press Ctrl+C again to force quit.\n"
+        )
+        if self._orchestrator_handle:
+            try:
+                self.runtime.kill(self._orchestrator_handle)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Merge strategies
