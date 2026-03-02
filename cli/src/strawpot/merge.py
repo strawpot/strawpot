@@ -17,6 +17,8 @@ Strategies
 
 import logging
 import os
+import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 
@@ -88,6 +90,24 @@ def resolve_strategy(strategy: str, base_dir: str) -> str:
 
 
 # ------------------------------------------------------------------
+# External tool validation
+# ------------------------------------------------------------------
+
+
+def _ensure_patch_available() -> None:
+    """Raise RuntimeError if the ``patch`` command is not on PATH.
+
+    Called before using ``patch`` for non-git directories.
+    """
+    if shutil.which("patch") is None:
+        raise RuntimeError(
+            "The 'patch' command is required for non-git directories. "
+            "Install it via your package manager "
+            "(e.g. 'apt install patch' or 'brew install gpatch')."
+        )
+
+
+# ------------------------------------------------------------------
 # Patch helpers
 # ------------------------------------------------------------------
 
@@ -122,18 +142,20 @@ def _check_patch(patch: str, cwd: str) -> list[str]:
     if not patch.strip():
         return []
 
+    patch_bytes = patch.encode("utf-8")
+
     if _is_git_repo(cwd):
         result = subprocess.run(
             ["git", "apply", "--check"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
         if result.returncode == 0:
             return []
+        stderr = result.stderr.decode("utf-8", errors="replace")
         conflicts: list[str] = []
-        for line in result.stderr.splitlines():
+        for line in stderr.splitlines():
             if "patch failed:" in line:
                 parts = line.split("patch failed:")
                 if len(parts) > 1:
@@ -143,18 +165,18 @@ def _check_patch(patch: str, cwd: str) -> list[str]:
                         conflicts.append(file_path)
         return conflicts if conflicts else ["(unknown files)"]
 
-    # Non-git host: use patch --dry-run
+    # Non-git host: use patch --dry-run.
     result = subprocess.run(
         ["patch", "--dry-run", "-p1"],
-        input=patch,
+        input=patch_bytes,
         cwd=cwd,
         capture_output=True,
-        text=True,
     )
     if result.returncode == 0:
         return []
+    stdout = result.stdout.decode("utf-8", errors="replace")
     conflicts = []
-    for line in result.stdout.splitlines():
+    for line in stdout.splitlines():
         if line.startswith("patching file "):
             fname = line.removeprefix("patching file ").strip()
             if fname not in conflicts:
@@ -168,21 +190,20 @@ def _apply_patch(patch: str, cwd: str) -> bool:
     Uses ``git apply`` for git repos, ``patch -p1`` otherwise.
     Returns ``True`` on success.
     """
+    patch_bytes = patch.encode("utf-8")
     if _is_git_repo(cwd):
         result = subprocess.run(
             ["git", "apply"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
     else:
         result = subprocess.run(
             ["patch", "-p1"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
     return result.returncode == 0
 
@@ -192,21 +213,20 @@ def _apply_patch_all(patch: str, cwd: str) -> bool:
 
     Uses ``git apply --3way`` for git repos, ``patch --force`` otherwise.
     """
+    patch_bytes = patch.encode("utf-8")
     if _is_git_repo(cwd):
         result = subprocess.run(
             ["git", "apply", "--3way"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
     else:
         result = subprocess.run(
             ["patch", "--force", "-p1"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
     return result.returncode == 0
 
@@ -217,13 +237,13 @@ def _apply_patch_skip(patch: str, cwd: str) -> bool:
     Uses ``git apply --reject`` for git repos (then cleans up ``.rej``
     files), ``patch -p1`` for non-git (skips failed hunks by default).
     """
+    patch_bytes = patch.encode("utf-8")
     if _is_git_repo(cwd):
         subprocess.run(
             ["git", "apply", "--reject"],
-            input=patch,
+            input=patch_bytes,
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
         # Clean up .rej files left by --reject
         for root, _dirs, files in os.walk(cwd):
@@ -236,10 +256,9 @@ def _apply_patch_skip(patch: str, cwd: str) -> bool:
     else:
         subprocess.run(
             ["patch", "-p1"],
-            input=patch,
+            input=patch.encode("utf-8"),
             cwd=cwd,
             capture_output=True,
-            text=True,
         )
     return True  # best-effort: non-conflicting parts applied
 
@@ -327,6 +346,9 @@ def merge_local(
             success=True,
             message="No changes to apply.",
         )
+
+    if not _is_git_repo(base_dir):
+        _ensure_patch_available()
 
     conflicts = _check_patch(patch, cwd=base_dir)
 
@@ -426,12 +448,13 @@ def merge_pr(
             base_branch=base_branch,
             session_branch=session_branch,
         )
+        tokens = shlex.split(cmd)
         pr_result = subprocess.run(
-            cmd,
-            shell=True,
+            tokens,
             cwd=base_dir,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         if pr_result.returncode == 0:
             pr_url = pr_result.stdout.strip()

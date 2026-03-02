@@ -8,12 +8,11 @@ WrapperRuntime — wrappers never manage processes.
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import time
 
-from strawpot._process import is_pid_alive
+from strawpot._process import is_pid_alive, kill_process_tree
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.agents.registry import AgentSpec
 
@@ -74,6 +73,7 @@ class WrapperRuntime:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             env=env,
         )
@@ -105,13 +105,13 @@ class WrapperRuntime:
         """Write PID to the PID file."""
         pid_path = self._pid_file(agent_id)
         os.makedirs(os.path.dirname(pid_path), exist_ok=True)
-        with open(pid_path, "w") as f:
+        with open(pid_path, "w", encoding="utf-8") as f:
             f.write(str(pid))
 
     def _read_pid(self, agent_id: str) -> int | None:
         """Read the PID from the PID file, or None if not found."""
         try:
-            with open(self._pid_file(agent_id)) as f:
+            with open(self._pid_file(agent_id), encoding="utf-8") as f:
                 return int(f.read().strip())
         except (FileNotFoundError, ValueError):
             return None
@@ -191,6 +191,7 @@ class WrapperRuntime:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 env=full_env,
+                start_new_session=True,
             )
 
         # 3. Write PID file
@@ -242,19 +243,15 @@ class WrapperRuntime:
         return self._is_process_alive(pid)
 
     def kill(self, handle: AgentHandle) -> None:
-        """Forcefully terminate the agent process.
+        """Forcefully terminate the agent and all its child processes.
 
-        On Unix this sends SIGTERM. On Windows this calls TerminateProcess
-        (Python maps ``signal.SIGTERM`` to ``TerminateProcess``).
+        Delegates to :func:`~strawpot._process.kill_process_tree` which
+        kills the process group via ``os.killpg``.
         """
         pid = handle.pid or self._read_pid(handle.agent_id)
-        if pid is not None:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass  # already exited
-            except PermissionError:
-                pass  # Windows: race with process exit or access denied
+        if pid is None:
+            return
+        kill_process_tree(pid)
 
     def interrupt(self, handle: AgentHandle) -> bool:
         """No-op — non-interactive agents do not support interrupt."""

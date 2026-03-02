@@ -59,12 +59,9 @@ def _check_policy(
         raise PolicyDenied("DENY_DEPTH_LIMIT")
 
 
-def _link_or_copy(src: str, dst: str) -> None:
-    """Symlink src to dst, falling back to copy on Windows or permission errors."""
-    try:
-        os.symlink(src, dst, target_is_directory=True)
-    except OSError:
-        shutil.copytree(src, dst)
+def _symlink(src: str, dst: str) -> None:
+    """Create a symlink from *dst* pointing to *src*."""
+    os.symlink(src, dst)
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +210,7 @@ def stage_role(
     os.makedirs(skills_dir, exist_ok=True)
     for dep in skill_deps:
         dest = os.path.join(skills_dir, dep["slug"])
-        _link_or_copy(dep["path"], dest)
+        _symlink(dep["path"], dest)
 
     # Stage direct role deps only (symlink to installed paths)
     role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
@@ -224,7 +221,7 @@ def stage_role(
         if dep is None:
             continue
         dest = os.path.join(roles_dir, role_slug)
-        _link_or_copy(dep["path"], dest)
+        _symlink(dep["path"], dest)
 
     return skills_dir, roles_dir
 
@@ -356,7 +353,7 @@ def handle_delegate(
         req_dest = os.path.join(req_roles_dir, request.parent_role)
         if not os.path.exists(req_dest):
             os.makedirs(req_roles_dir, exist_ok=True)
-            _link_or_copy(requester_role_dir, req_dest)
+            _symlink(requester_role_dir, req_dest)
         roles_dirs.append(req_roles_dir)
 
     # 7. Spawn

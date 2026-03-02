@@ -7,9 +7,9 @@ Two implementations are provided:
 
 * **InteractiveWrapperRuntime** — wraps any WrapperRuntime with tmux.
   Supports detach/reattach but requires tmux (macOS / Linux only).
-* **DirectWrapperRuntime** — cross-platform fallback that runs the agent
-  process directly attached to the current terminal.  No detach/reattach,
-  but works everywhere including Windows and minimal containers.
+* **DirectWrapperRuntime** — fallback that runs the agent process directly
+  attached to the current terminal.  No detach/reattach, but works
+  everywhere including minimal containers without tmux.
 """
 
 import json
@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 
+from strawpot._process import kill_process_tree
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.agents.wrapper import WrapperRuntime
 
@@ -28,6 +29,7 @@ def _tmux(args: list[str], **kwargs) -> subprocess.CompletedProcess:
         ["tmux", *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         **kwargs,
     )
 
@@ -49,9 +51,9 @@ class InteractiveWrapperRuntime:
 
     .. note::
 
-        Requires tmux (macOS / Linux only).  On Windows and environments
-        without tmux, use ``DirectWrapperRuntime`` instead.  The CLI
-        auto-selects the appropriate runtime via ``shutil.which("tmux")``.
+        Requires tmux.  In environments without tmux, use
+        ``DirectWrapperRuntime`` instead.  The CLI auto-selects the
+        appropriate runtime via ``shutil.which("tmux")``.
 
     Attributes:
         name: Agent name (delegated from the inner runtime).
@@ -109,7 +111,8 @@ class InteractiveWrapperRuntime:
         ]
         full_env = {**os.environ, **env} if env else None
         result = subprocess.run(
-            tmux_cmd, capture_output=True, text=True, env=full_env,
+            tmux_cmd, capture_output=True, text=True, encoding="utf-8",
+            env=full_env,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -202,11 +205,11 @@ class InteractiveWrapperRuntime:
 
 
 class DirectWrapperRuntime:
-    """Cross-platform fallback for interactive sessions.
+    """Fallback for interactive sessions without tmux.
 
     Runs the agent process directly attached to the current terminal
     via ``subprocess.Popen``.  No detach/reattach capability, but works
-    on all platforms (Windows, Linux, macOS) without tmux.
+    in minimal environments without tmux.
 
     Attributes:
         name: Agent name (delegated from the inner runtime).
@@ -297,10 +300,10 @@ class DirectWrapperRuntime:
         return proc.poll() is None
 
     def kill(self, handle: AgentHandle) -> None:
-        """Terminate the process."""
+        """Terminate the process and all its children."""
         proc = self._procs.get(handle.agent_id)
         if proc is not None:
-            proc.terminate()
+            kill_process_tree(proc.pid)
 
     def interrupt(self, handle: AgentHandle) -> bool:
         """No-op — the agent already received SIGINT from the OS."""

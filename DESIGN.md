@@ -198,7 +198,6 @@ metadata:
           install:
             macos: npm install -g @anthropic-ai/claude-code
             linux: npm install -g @anthropic-ai/claude-code
-            windows: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string
@@ -219,7 +218,7 @@ modes, custom model selection, and skill-based prompt augmentation.
 Two wrapper delivery modes:
 
 - `bin.<os>: name` — compiled binary in the agent folder, keyed by OS
-  (`macos`, `linux`, `windows`). StrawPot runs it as
+  (`macos`, `linux`). StrawPot runs it as
   `<agent_dir>/<name> build ...`. Fast startup, no runtime dependency.
 - `wrapper.command: name` — external CLI on PATH, installed however the
   provider wants (pip, cargo, npm, brew).
@@ -570,7 +569,7 @@ Denden server dispatches to `Session._handle_delegate`:
    skills_dir, roles_dir = stage_role(session_dir, resolved)
    → session-level (idempotent): copies ROLE.md into session_dir/roles/<slug>/,
      symlinks transitive skill deps into skills/, direct role deps into roles/
-     (falls back to shutil.copytree on Windows or permission errors)
+     (symlinks into session dir)
    roles_dirs = [roles_dir]
    → if requester role is resolvable, symlink into
      session_dir/requester_roles/<agent_id>/<parent_role>/
@@ -781,7 +780,7 @@ When an agent is installed, its manifest `metadata.strawpot.tools` is validated:
 Agent install example (claude_code):
   1. Agent package downloaded to ~/.strawpot/agents/claude_code/
   2. Read AGENT.md metadata.strawpot.tools
-  3. Detect current OS (platform.system() → macos/linux/windows)
+  3. Detect current OS (platform.system() → macos/linux)
   4. For each command: shutil.which(cmd)
      → found: ✓ claude
      → missing: ✗ some-tool — not found
@@ -871,7 +870,6 @@ metadata:
           install:
             macos: npm install -g @anthropic-ai/claude-code
             linux: npm install -g @anthropic-ai/claude-code
-            windows: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string

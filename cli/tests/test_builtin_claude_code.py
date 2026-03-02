@@ -186,7 +186,7 @@ def test_go_build_with_skills_dir(tmp_path):
     assert len(add_dir_indices) == 1
     assert cmd[add_dir_indices[0] + 1] == str(workspace)
 
-    # Skill linked (symlink) or copied (Windows fallback)
+    # Skill linked (symlink) or copied (fallback)
     link = workspace / ".claude" / "skills" / "my_skill"
     assert link.exists()
     assert (link / "SKILL.md").read_text() == "skill content"
@@ -225,7 +225,7 @@ def test_go_build_with_roles_dir(tmp_path):
     assert len(add_dir_indices) == 1
     assert cmd[add_dir_indices[0] + 1] == str(workspace)
 
-    # Role linked (symlink) or copied (Windows fallback)
+    # Role linked (symlink) or copied (fallback)
     link = workspace / "roles" / "my_role"
     assert link.exists()
     assert (link / "ROLE.md").read_text() == "role content"

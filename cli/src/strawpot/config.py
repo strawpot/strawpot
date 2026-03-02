@@ -1,7 +1,6 @@
 """Configuration loading — TOML files merged from global and project scopes."""
 
 import os
-import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,17 +9,11 @@ from pathlib import Path
 def get_strawpot_home() -> Path:
     """Return the global strawpot directory.
 
-    Uses STRAWPOT_HOME env var if set, otherwise:
-    - Windows: %APPDATA%\\strawpot
-    - Unix: ~/.strawpot/
+    Uses ``STRAWPOT_HOME`` env var if set, otherwise ``~/.strawpot/``.
     """
     env = os.environ.get("STRAWPOT_HOME")
     if env:
         return Path(env)
-    if sys.platform == "win32":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "strawpot"
     return Path.home() / ".strawpot"
 
 

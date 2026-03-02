@@ -13,7 +13,6 @@ metadata:
         install:
           macos: npm install -g @anthropic-ai/claude-code
           linux: npm install -g @anthropic-ai/claude-code
-          windows: npm install -g @anthropic-ai/claude-code
     params:
       model:
         type: string

@@ -23,16 +23,7 @@ def test_defaults():
 
 def test_strawpot_home_default(monkeypatch):
     monkeypatch.delenv("STRAWPOT_HOME", raising=False)
-    monkeypatch.delenv("APPDATA", raising=False)  # avoid Windows APPDATA path
     assert get_strawpot_home() == Path.home() / ".strawpot"
-
-
-def test_strawpot_home_windows_appdata(monkeypatch):
-    """On Windows, uses %APPDATA%\\strawpot when STRAWPOT_HOME is unset."""
-    monkeypatch.delenv("STRAWPOT_HOME", raising=False)
-    monkeypatch.setattr("sys.platform", "win32")
-    monkeypatch.setenv("APPDATA", "/fake/appdata")
-    assert get_strawpot_home() == Path("/fake/appdata") / "strawpot"
 
 
 def test_strawpot_home_env(monkeypatch):

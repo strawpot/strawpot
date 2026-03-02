@@ -4,18 +4,15 @@ import json
 import os
 import signal
 import subprocess
-import sys
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-_skip_win = pytest.mark.skipif(
-    sys.platform == "win32", reason="Unix signal semantics"
-)
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.agents.registry import AgentSpec
 from strawpot.agents.wrapper import WrapperRuntime
+from strawpot._process import kill_process_tree
 
 
 def _make_spec(**overrides) -> AgentSpec:
@@ -87,29 +84,29 @@ def test_read_pid_invalid(tmp_path):
     assert rt._read_pid("bad") is None
 
 
-@_skip_win
+
 def test_is_process_alive_true(monkeypatch):
-    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
+
     monkeypatch.setattr("os.kill", lambda pid, sig: None)
     assert WrapperRuntime._is_process_alive(12345) is True
 
 
-@_skip_win
+
 def test_is_process_alive_false(monkeypatch):
     def fake_kill(pid, sig):
         raise ProcessLookupError()
 
-    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
+
     monkeypatch.setattr("os.kill", fake_kill)
     assert WrapperRuntime._is_process_alive(12345) is False
 
 
-@_skip_win
+
 def test_is_process_alive_permission_error(monkeypatch):
     def fake_kill(pid, sig):
         raise PermissionError()
 
-    monkeypatch.setattr("strawpot._process.sys.platform", "linux")
+
     monkeypatch.setattr("os.kill", fake_kill)
     assert WrapperRuntime._is_process_alive(12345) is True
 
@@ -181,7 +178,7 @@ def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
 
     def fake_popen(cmd, **kwargs):
         popen_captured["cmd"] = cmd
-        popen_captured["cwd"] = kwargs.get("cwd")
+        popen_captured["kwargs"] = kwargs
         return mock_proc
 
     monkeypatch.setattr("subprocess.run", fake_run)
@@ -219,7 +216,9 @@ def test_spawn_calls_build_and_popen(tmp_path, monkeypatch):
 
     # Popen was called with the translated command
     assert popen_captured["cmd"] == ["claude", "-p", "fix bug"]
-    assert popen_captured["cwd"] == str(tmp_path)
+    assert popen_captured["kwargs"]["cwd"] == str(tmp_path)
+    # Process group isolation
+    assert popen_captured["kwargs"]["start_new_session"] is True
 
     # PID file was written
     assert rt._read_pid("a1") == 54321
@@ -476,37 +475,37 @@ def test_is_alive_no_pid(tmp_path):
 # --- kill ---
 
 
-@_skip_win
-def test_kill_sends_sigterm(tmp_path, monkeypatch):
+def test_kill_delegates_to_kill_process_tree(tmp_path, monkeypatch):
+    """kill() delegates to kill_process_tree with the correct PID."""
     killed_pids = []
 
-    def fake_kill(pid, sig):
-        killed_pids.append((pid, sig))
-
-    monkeypatch.setattr("os.kill", fake_kill)
+    monkeypatch.setattr(
+        "strawpot.agents.wrapper.kill_process_tree",
+        lambda pid: killed_pids.append(pid),
+    )
 
     rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     handle = AgentHandle(agent_id="k1", runtime_name="test-agent", pid=777)
     rt.kill(handle)
 
-    assert killed_pids == [(777, signal.SIGTERM)]
+    assert killed_pids == [777]
 
 
-@_skip_win
 def test_kill_reads_pid_from_file(tmp_path, monkeypatch):
+    """kill() reads PID from file when handle has no pid."""
     killed_pids = []
 
-    def fake_kill(pid, sig):
-        killed_pids.append((pid, sig))
-
-    monkeypatch.setattr("os.kill", fake_kill)
+    monkeypatch.setattr(
+        "strawpot.agents.wrapper.kill_process_tree",
+        lambda pid: killed_pids.append(pid),
+    )
 
     rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
     rt._write_pid("k2", 888)
     handle = AgentHandle(agent_id="k2", runtime_name="test-agent")  # no pid
     rt.kill(handle)
 
-    assert killed_pids == [(888, signal.SIGTERM)]
+    assert killed_pids == [888]
 
 
 def test_kill_no_pid(tmp_path):
@@ -516,16 +515,41 @@ def test_kill_no_pid(tmp_path):
     rt.kill(handle)  # should not raise
 
 
-@_skip_win
-def test_kill_process_already_gone(tmp_path, monkeypatch):
-    def fake_kill(pid, sig):
-        raise ProcessLookupError()
+# --- kill_process_tree (in _process.py) ---
 
-    monkeypatch.setattr("os.kill", fake_kill)
 
-    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
-    handle = AgentHandle(agent_id="k3", runtime_name="test-agent", pid=999)
-    rt.kill(handle)  # should not raise
+
+def test_kill_process_tree_unix_killpg(monkeypatch):
+    """kill_process_tree sends SIGTERM to the process group on Unix."""
+    killpg_calls = []
+
+    monkeypatch.setattr("os.getpgid", lambda pid: pid + 1000)
+    monkeypatch.setattr(
+        "os.killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))
+    )
+
+    kill_process_tree(777)
+
+    assert killpg_calls == [(1777, signal.SIGTERM)]
+
+
+
+def test_kill_process_tree_unix_fallback(monkeypatch):
+    """kill_process_tree falls back to os.kill when killpg fails."""
+    kill_calls = []
+
+    monkeypatch.setattr("os.getpgid", lambda pid: pid)
+    monkeypatch.setattr(
+        "os.killpg",
+        lambda pgid, sig: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+    monkeypatch.setattr(
+        "os.kill", lambda pid, sig: kill_calls.append((pid, sig))
+    )
+
+    kill_process_tree(555)
+
+    assert kill_calls == [(555, signal.SIGTERM)]
 
 
 # --- setup ---

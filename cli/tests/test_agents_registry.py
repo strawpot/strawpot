@@ -1,14 +1,10 @@
 """Tests for strawpot.agents.registry."""
 
-import sys
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
-_skip_win = pytest.mark.skipif(
-    sys.platform == "win32", reason="Unix shebang / chmod required"
-)
 
 from strawpot.agents.registry import (
     AgentSpec,
@@ -93,7 +89,7 @@ def test_parse_agent_md_missing_closing(tmp_path):
 # --- _resolve_wrapper_cmd ---
 
 
-@_skip_win
+
 def test_resolve_wrapper_cmd_bin(tmp_path, monkeypatch):
     binary = tmp_path / "my-agent"
     binary.write_text("#!/bin/sh\necho hi")
@@ -106,7 +102,7 @@ def test_resolve_wrapper_cmd_bin(tmp_path, monkeypatch):
     assert cmd == [str(binary)]
 
 
-@_skip_win
+
 def test_resolve_wrapper_cmd_bin_linux(tmp_path, monkeypatch):
     binary = tmp_path / "my-agent-linux"
     binary.write_text("#!/bin/sh\necho hi")
@@ -121,7 +117,7 @@ def test_resolve_wrapper_cmd_bin_linux(tmp_path, monkeypatch):
 
 def test_resolve_wrapper_cmd_bin_no_os_entry(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "strawpot.agents.registry._current_os", lambda: "windows"
+        "strawpot.agents.registry._current_os", lambda: "freebsd"
     )
     meta = {"bin": {"macos": "my-agent", "linux": "my-agent"}}
     with pytest.raises(ValueError, match="No binary defined for OS"):
@@ -267,7 +263,6 @@ def test_validate_agent_missing_tool(monkeypatch):
                 "install": {
                     "macos": "brew install sometool",
                     "linux": "apt install sometool",
-                    "windows": "choco install sometool",
                 },
             }
         },

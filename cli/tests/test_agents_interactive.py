@@ -1,6 +1,7 @@
 """Tests for strawpot.agents.interactive (InteractiveWrapperRuntime, DirectWrapperRuntime)."""
 
 import json
+import shutil
 import subprocess
 import sys
 from unittest.mock import MagicMock, call, patch
@@ -8,7 +9,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 _skip_no_tmux = pytest.mark.skipif(
-    sys.platform == "win32", reason="tmux not available on Windows"
+    not shutil.which("tmux"), reason="tmux not available"
 )
 
 from strawpot.agents.interactive import (
@@ -656,12 +657,20 @@ def test_direct_is_alive_false_unknown():
     assert runtime.is_alive(handle) is False
 
 
-def test_direct_kill_terminates():
-    """kill calls proc.terminate()."""
+def test_direct_kill_uses_kill_process_tree(monkeypatch):
+    """kill calls kill_process_tree to terminate the entire process tree."""
+    killed_pids = []
+
+    monkeypatch.setattr(
+        "strawpot.agents.interactive.kill_process_tree",
+        lambda pid: killed_pids.append(pid),
+    )
+
     inner = _make_inner()
     runtime = DirectWrapperRuntime(inner)
 
     proc = MagicMock()
+    proc.pid = 42
     runtime._procs["d001"] = proc
 
     handle = AgentHandle(
@@ -669,7 +678,7 @@ def test_direct_kill_terminates():
     )
     runtime.kill(handle)
 
-    proc.terminate.assert_called_once()
+    assert killed_pids == [42]
 
 
 def test_direct_kill_unknown_noop():

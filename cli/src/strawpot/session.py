@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import signal
-import shutil
 import subprocess
 import sys
 import threading
@@ -62,7 +61,7 @@ def recover_stale_sessions(
     Returns:
         List of recovered ``run_id`` strings.
     """
-    from strawpot._process import is_pid_alive
+    from strawpot._process import is_pid_alive, robust_rmtree
 
     sessions_dir = os.path.join(working_dir, ".strawpot", "sessions")
     if not os.path.isdir(sessions_dir):
@@ -83,7 +82,8 @@ def recover_stale_sessions(
             continue
 
         # Skip sessions that belong to a different project directory
-        if data.get("working_dir") != working_dir:
+        stored = data.get("working_dir", "")
+        if os.path.abspath(stored) != os.path.abspath(working_dir):
             continue
 
         pid = data.get("pid")
@@ -117,7 +117,7 @@ def recover_stale_sessions(
         # --- Remove session directory ---
         session_dir = os.path.join(sessions_dir, entry)
         try:
-            shutil.rmtree(session_dir)
+            robust_rmtree(session_dir)
         except OSError:
             logger.debug("Failed to remove session dir %s", session_dir)
 
@@ -270,6 +270,7 @@ class Session:
         # Set session_dir on wrapper so PID/log files go to the right place
         self.wrapper.session_dir = self._session_dir()
 
+        original_sigint = signal.getsignal(signal.SIGINT)
         try:
             # 1. Create isolated environment
             self._env = self.isolator.create(
@@ -325,7 +326,6 @@ class Session:
             self._write_session_file()
 
             # 7. Install signal handler before blocking attach
-            original_sigint = signal.getsignal(signal.SIGINT)
             signal.signal(signal.SIGINT, self._handle_sigint)
 
             # 8. Block until orchestrator exits
@@ -609,6 +609,7 @@ class Session:
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
             )
             if result.returncode == 0:
                 return result.stdout.strip() or None
@@ -649,13 +650,15 @@ class Session:
 
     def _remove_session_dir(self) -> None:
         """Remove the entire session directory."""
+        from strawpot._process import robust_rmtree
+
         if self._working_dir and self._run_id:
             session_dir = os.path.join(
                 self._working_dir, ".strawpot", "sessions", self._run_id
             )
             if os.path.isdir(session_dir):
                 try:
-                    shutil.rmtree(session_dir)
+                    robust_rmtree(session_dir)
                 except OSError:
                     logger.debug(
                         "Failed to remove session dir %s", session_dir
