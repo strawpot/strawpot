@@ -30,6 +30,7 @@ class StrawPotConfig:
     max_depth: int = 3
     permission_mode: str = "default"
     agent_timeout: int | None = None
+    max_delegate_retries: int = 0
     agents: dict[str, dict] = field(default_factory=dict)
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
@@ -68,6 +69,8 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.max_depth = policy["max_depth"]
     if "agent_timeout" in policy:
         config.agent_timeout = policy["agent_timeout"]
+    if "max_delegate_retries" in policy:
+        config.max_delegate_retries = policy["max_delegate_retries"]
 
     agents = data.get("agents", {})
     for name, agent_data in agents.items():

@@ -539,6 +539,9 @@ class Session:
         payload = request.delegate
         trace = request.trace
 
+        fmt = payload.task.return_format
+        return_format = "JSON" if fmt == denden_pb2.JSON else "TEXT"
+
         delegate_req = DelegateRequest(
             role_slug=payload.delegate_to,
             task_text=payload.task.text,
@@ -546,6 +549,7 @@ class Session:
             parent_role=self._agent_role(trace.agent_instance_id),
             run_id=trace.run_id,
             depth=self._agent_depth(trace.agent_instance_id),
+            return_format=return_format,
         )
 
         try:

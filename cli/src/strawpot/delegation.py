@@ -1,5 +1,7 @@
 """Delegate handler — policy check, resolve, build prompt, spawn, wait."""
 
+import json
+import logging
 import os
 import shutil
 import uuid
@@ -10,6 +12,8 @@ from pathlib import Path
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.config import StrawPotConfig
 from strawpot.context import build_prompt, parse_frontmatter, read_role_description
+
+logger = logging.getLogger(__name__)
 
 
 class DelegationError(Exception):
@@ -34,6 +38,7 @@ class DelegateRequest:
     parent_role: str
     run_id: str
     depth: int
+    return_format: str = "TEXT"
 
 
 @dataclass
@@ -57,6 +62,23 @@ def _check_policy(
         raise PolicyDenied("DENY_ROLE_NOT_ALLOWED")
     if request.depth + 1 > config.max_depth:
         raise PolicyDenied("DENY_DEPTH_LIMIT")
+
+
+def _validate_output(output: str, return_format: str) -> str | None:
+    """Validate agent output against the requested format.
+
+    Returns None if valid, or an error message string if not.
+    """
+    if return_format.strip().upper() != "JSON":
+        return None
+    stripped = output.strip()
+    if not stripped:
+        return "Output is empty; expected valid JSON."
+    try:
+        json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        return f"Output is not valid JSON: {exc}"
+    return None
 
 
 def _symlink(src: str, dst: str) -> None:
@@ -339,59 +361,112 @@ def handle_delegate(
     # 5. Stage role (session-level, idempotent)
     skills_dir, roles_dir = stage_role(session_dir, resolved)
 
-    # 6. Create agent workspace
-    agent_id = f"agent_{uuid.uuid4().hex[:12]}"
-    workspace = create_agent_workspace(session_dir, agent_id)
+    # 6-9. Spawn/wait loop with retry on format validation failure
+    max_attempts = 1 + config.max_delegate_retries
+    task_text = request.task_text
+    result: AgentResult | None = None
 
-    # 6b. Link requester role into session-level per-agent dir
-    roles_dirs = [roles_dir]
-    requester_role_dir = resolve_role_dirs(request.parent_role)
-    if requester_role_dir is not None:
-        req_roles_dir = os.path.join(
-            session_dir, "requester_roles", agent_id
-        )
-        req_dest = os.path.join(req_roles_dir, request.parent_role)
-        if not os.path.exists(req_dest):
-            os.makedirs(req_roles_dir, exist_ok=True)
-            _symlink(requester_role_dir, req_dest)
-        roles_dirs.append(req_roles_dir)
+    for attempt in range(max_attempts):
+        # 6. Create agent workspace (fresh per attempt)
+        agent_id = f"agent_{uuid.uuid4().hex[:12]}"
+        workspace = create_agent_workspace(session_dir, agent_id)
 
-    # 7. Spawn
-    env = {
-        "DENDEN_ADDR": config.denden_addr,
-        "DENDEN_AGENT_ID": agent_id,
-        "DENDEN_PARENT_AGENT_ID": request.parent_agent_id,
-        "DENDEN_RUN_ID": request.run_id,
-        "PERMISSION_MODE": "auto",
-    }
+        # 6b. Link requester role into session-level per-agent dir
+        roles_dirs = [roles_dir]
+        requester_role_dir = resolve_role_dirs(request.parent_role)
+        if requester_role_dir is not None:
+            req_roles_dir = os.path.join(
+                session_dir, "requester_roles", agent_id
+            )
+            req_dest = os.path.join(req_roles_dir, request.parent_role)
+            if not os.path.exists(req_dest):
+                os.makedirs(req_roles_dir, exist_ok=True)
+                _symlink(requester_role_dir, req_dest)
+            roles_dirs.append(req_roles_dir)
 
-    handle: AgentHandle = runtime.spawn(
-        agent_id=agent_id,
-        working_dir=working_dir,
-        agent_workspace_dir=workspace,
-        role_prompt=role_prompt,
-        memory_prompt="",
-        skills_dir=skills_dir,
-        roles_dirs=roles_dirs,
-        task=request.task_text,
-        env=env,
-    )
+        # 7. Spawn
+        env = {
+            "DENDEN_ADDR": config.denden_addr,
+            "DENDEN_AGENT_ID": agent_id,
+            "DENDEN_PARENT_AGENT_ID": request.parent_agent_id,
+            "DENDEN_RUN_ID": request.run_id,
+            "PERMISSION_MODE": "auto",
+        }
 
-    # 8. Wait
-    result: AgentResult = runtime.wait(
-        handle, timeout=config.agent_timeout
-    )
-
-    # 8b. Handle timeout — kill agent if still alive
-    if config.agent_timeout is not None and runtime.is_alive(handle):
-        runtime.kill(handle)
-        return DelegateResult(
-            summary=f"Agent timed out after {config.agent_timeout}s",
-            output=result.output,
-            exit_code=1,
+        handle: AgentHandle = runtime.spawn(
+            agent_id=agent_id,
+            working_dir=working_dir,
+            agent_workspace_dir=workspace,
+            role_prompt=role_prompt,
+            memory_prompt="",
+            skills_dir=skills_dir,
+            roles_dirs=roles_dirs,
+            task=task_text,
+            env=env,
         )
 
-    # 9. Return
+        # 8. Wait
+        result = runtime.wait(handle, timeout=config.agent_timeout)
+
+        # 8b. Handle timeout — no retry on timeout
+        if config.agent_timeout is not None and runtime.is_alive(handle):
+            runtime.kill(handle)
+            return DelegateResult(
+                summary=f"Agent timed out after {config.agent_timeout}s",
+                output=result.output,
+                exit_code=1,
+            )
+
+        # 8c. No retry on non-zero exit
+        if result.exit_code != 0:
+            return DelegateResult(
+                summary=result.summary,
+                output=result.output,
+                exit_code=result.exit_code,
+            )
+
+        # 8d. Validate output format
+        validation_error = _validate_output(
+            result.output, request.return_format
+        )
+        if validation_error is None:
+            return DelegateResult(
+                summary=result.summary,
+                output=result.output,
+                exit_code=result.exit_code,
+            )
+
+        # 8e. Validation failed — retry or give up
+        if attempt == max_attempts - 1:
+            logger.warning(
+                "Delegation to %s failed format validation after %d "
+                "attempt(s): %s",
+                request.role_slug,
+                max_attempts,
+                validation_error,
+            )
+            return DelegateResult(
+                summary=result.summary,
+                output=result.output,
+                exit_code=result.exit_code,
+            )
+
+        logger.info(
+            "Retrying delegation to %s (attempt %d/%d): %s",
+            request.role_slug,
+            attempt + 2,
+            max_attempts,
+            validation_error,
+        )
+        task_text = (
+            f"{request.task_text}\n\n"
+            f"[RETRY: Your previous output was not valid JSON. "
+            f"{validation_error} "
+            f"Please output valid JSON only.]"
+        )
+
+    # Defensive: should never reach here
+    assert result is not None
     return DelegateResult(
         summary=result.summary,
         output=result.output,
