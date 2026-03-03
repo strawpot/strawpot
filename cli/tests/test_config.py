@@ -43,7 +43,7 @@ def test_load_config_no_files(tmp_path):
 def test_load_config_global(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
-    (global_dir / "config.toml").write_text(
+    (global_dir / "strawpot.toml").write_text(
         '[agents.claude_code]\nmodel = "claude-opus-4-6"\n'
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
@@ -57,14 +57,13 @@ def test_load_config_project_overrides_global(tmp_path, monkeypatch):
     # Global config
     global_dir = tmp_path / "global"
     global_dir.mkdir()
-    (global_dir / "config.toml").write_text('runtime = "codex"\n')
+    (global_dir / "strawpot.toml").write_text('runtime = "codex"\n')
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     # Project config
     project_dir = tmp_path / "project"
-    strawpot_dir = project_dir / ".strawpot"
-    strawpot_dir.mkdir(parents=True)
-    (strawpot_dir / "config.toml").write_text('runtime = "openhands"\n')
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text('runtime = "openhands"\n')
 
     config = load_config(project_dir)
     assert config.runtime == "openhands"
@@ -74,9 +73,8 @@ def test_load_config_full(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
 
     project_dir = tmp_path / "project"
-    strawpot_dir = project_dir / ".strawpot"
-    strawpot_dir.mkdir(parents=True)
-    (strawpot_dir / "config.toml").write_text(
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
         'runtime = "codex"\n'
         'isolation = "docker"\n'
         'memory = "test-provider"\n'
@@ -128,7 +126,7 @@ def test_load_config_session_override(tmp_path, monkeypatch):
     """Project [session] overrides global [session] per-key."""
     global_dir = tmp_path / "global"
     global_dir.mkdir()
-    (global_dir / "config.toml").write_text(
+    (global_dir / "strawpot.toml").write_text(
         "[session]\n"
         'merge_strategy = "local"\n'
         'pull_before_session = "never"\n'
@@ -136,9 +134,8 @@ def test_load_config_session_override(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     project_dir = tmp_path / "project"
-    strawpot_dir = project_dir / ".strawpot"
-    strawpot_dir.mkdir(parents=True)
-    (strawpot_dir / "config.toml").write_text(
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
         "[session]\n"
         'merge_strategy = "pr"\n'
     )
@@ -152,15 +149,14 @@ def test_load_config_agents_merge(tmp_path, monkeypatch):
     """Agent config from project overrides global per-key, not wholesale."""
     global_dir = tmp_path / "global"
     global_dir.mkdir()
-    (global_dir / "config.toml").write_text(
+    (global_dir / "strawpot.toml").write_text(
         '[agents.claude_code]\nmodel = "claude-opus-4-6"\ntimeout = 300\n'
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     project_dir = tmp_path / "project"
-    strawpot_dir = project_dir / ".strawpot"
-    strawpot_dir.mkdir(parents=True)
-    (strawpot_dir / "config.toml").write_text(
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
         '[agents.claude_code]\nmodel = "claude-sonnet-4-6"\n'
     )
 
@@ -174,7 +170,7 @@ def test_load_config_memory_merge(tmp_path, monkeypatch):
     """Memory config from project merges with global per-key."""
     global_dir = tmp_path / "global"
     global_dir.mkdir()
-    (global_dir / "config.toml").write_text(
+    (global_dir / "strawpot.toml").write_text(
         'memory = "my-provider"\n'
         "\n"
         "[memory_config]\n"
@@ -184,9 +180,8 @@ def test_load_config_memory_merge(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     project_dir = tmp_path / "project"
-    strawpot_dir = project_dir / ".strawpot"
-    strawpot_dir.mkdir(parents=True)
-    (strawpot_dir / "config.toml").write_text(
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
         "[memory_config]\n"
         'storage_dir = "/project/mem"\n'
     )

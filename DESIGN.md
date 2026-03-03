@@ -429,8 +429,8 @@ creating a PR. Users can swap `gh` for `glab`, a custom script, etc.
 
 Loaded from (later overrides earlier):
 1. Built-in defaults
-2. `$STRAWPOT_HOME/config.toml` (global — defaults to `~/.strawpot/`)
-3. `.strawpot/config.toml` (project-level, in CWD)
+2. `$STRAWPOT_HOME/strawpot.toml` (global — defaults to `~/.strawpot/`)
+3. `strawpot.toml` (project-level, in project root)
 4. CLI flags
 
 Environment variables:
@@ -442,7 +442,7 @@ Environment variables:
 ## Config Format
 
 ```toml
-# .strawpot/config.toml
+# strawpot.toml (project root)
 runtime = "claude_code"
 isolation = "none"               # none | worktree | docker
 
@@ -1650,7 +1650,7 @@ Event types: `AGENT_STARTED`, `MEMORY_GET_USED`, `TOOL_CALL`, `TOOL_RESULT`,
 ### Config
 
 ```toml
-# .strawpot/config.toml
+# strawpot.toml (project root)
 memory = "strawpot-memory-local"   # provider name (default: none/disabled)
 
 [memory_config]
@@ -1744,7 +1744,7 @@ a read-only observer that renders existing runtime data.
 ### Features
 
 **Project Management**
-- Register projects (directories with `.strawpot/config.toml`)
+- Register projects (directories with `strawpot.toml`)
 - View project config and installed agents/skills/roles
 - Quick-launch sessions from the GUI
 
@@ -1775,7 +1775,7 @@ The GUI reads existing runtime artifacts — no new data formats needed:
 | Agent output | `.strawpot/sessions/*/agents/*/.log` | Text |
 | Denden status | gRPC connection to running server | Live |
 | Event memory | Memory provider store | Provider-specific |
-| Project config | `.strawpot/config.toml` | TOML |
+| Project config | `strawpot.toml` | TOML |
 
 ### CLI Integration
 

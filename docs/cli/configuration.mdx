@@ -10,14 +10,14 @@ StrawPot uses TOML configuration files with a layered hierarchy.
 Settings are merged in order (later overrides earlier):
 
 1. **Built-in defaults** — Sensible defaults for all options
-2. **Global config** — `~/.strawpot/config.toml` (or `$STRAWPOT_HOME/config.toml`)
-3. **Project config** — `.strawpot/config.toml` (in project root)
+2. **Global config** — `~/.strawpot/strawpot.toml` (or `$STRAWPOT_HOME/strawpot.toml`)
+3. **Project config** — `strawpot.toml` (in project root)
 4. **CLI flags** — Override everything
 
 ## Full Reference
 
 ```toml
-# .strawpot/config.toml
+# strawpot.toml (project root)
 
 # Agent runtime to use for the orchestrator
 # Options: claude_code, codex, openhands, or any custom agent name
@@ -96,8 +96,8 @@ Agent-specific environment variables (e.g. `ANTHROPIC_API_KEY`) are declared in 
 
 | Scope | Path |
 |-------|------|
-| Global | `~/.strawpot/config.toml` |
-| Project | `.strawpot/config.toml` |
+| Global | `~/.strawpot/strawpot.toml` |
+| Project | `strawpot.toml` |
 
 The global config applies to all projects. The project config is specific to the repository it lives in. CLI flags override both.
 
