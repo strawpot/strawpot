@@ -1,0 +1,113 @@
+---
+title: Roles
+description: Agent behavior definitions with model config and dependencies
+---
+
+A role defines agent behavior, model configuration, and task specialization. Roles depend on skills (for instructions) and optionally on other roles (for delegation).
+
+## Format
+
+Every role is a directory containing a `ROLE.md` file:
+
+```yaml
+---
+name: implementer
+description: "Writes code to implement features and fix bugs"
+metadata:
+  strawpot:
+    dependencies:
+      skills:
+        - git-workflow>=1.0.0
+        - code-review
+        - python-testing^2.0.0
+      roles:
+        - reviewer
+    default_model:
+      provider: claude_session
+      id: claude-opus-4-6
+---
+
+# Implementer
+
+Role instructions for the agent...
+```
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Package slug (unique identifier) |
+| `description` | One-line summary |
+
+### Optional Fields
+
+| Field | Description |
+|-------|-------------|
+| `metadata.strawpot.dependencies.skills` | List of skill dependencies |
+| `metadata.strawpot.dependencies.roles` | List of role dependencies |
+| `metadata.strawpot.default_model` | Default model configuration |
+| `metadata.strawpot.tools` | System tool requirements |
+
+## Dependencies
+
+Roles use a structured object with `skills` and `roles` sub-keys:
+
+```yaml
+metadata:
+  strawpot:
+    dependencies:
+      skills:
+        - git-workflow>=1.0.0
+        - code-review
+      roles:
+        - reviewer
+```
+
+- **Skill dependencies** provide instructions the agent follows
+- **Role dependencies** define other roles the agent can delegate to
+
+See [Dependencies](/strawhub/concepts/dependencies) for version specifier details.
+
+## Model Configuration
+
+Roles can specify a default model:
+
+```yaml
+metadata:
+  strawpot:
+    default_model:
+      provider: claude_session
+      id: claude-opus-4-6
+```
+
+This can be overridden by the user's `[agents.<name>]` config in their StrawPot configuration.
+
+## How Roles Are Used
+
+When StrawPot receives a delegation request:
+
+1. **Resolve** — Fetch the role from StrawHub with all transitive dependencies
+2. **Stage** — Place role and skill files in the agent's workspace
+3. **Build prompt** — The `ROLE.md` body becomes the system prompt, with skill instructions appended
+4. **Spawn** — Launch a sub-agent with the assembled context
+
+The agent sees:
+
+```
+<agent-workspace>/
+├── skills/
+│   ├── git-workflow/SKILL.md
+│   └── code-review/SKILL.md
+└── roles/
+    └── implementer/ROLE.md
+```
+
+## Roles vs Skills
+
+| | Skills | Roles |
+|---|--------|-------|
+| **Purpose** | Instructions and workflows | Agent behavior definition |
+| **Can depend on** | Other skills | Skills and other roles |
+| **Model config** | No | Yes |
+| **Used by** | Loaded into agent context | Assigned to agents during delegation |
+| **Namespace** | Separate from roles | Separate from skills |

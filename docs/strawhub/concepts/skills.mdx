@@ -1,0 +1,111 @@
+---
+title: Skills
+description: Markdown instruction modules for AI agents
+---
+
+A skill is a markdown instruction module that agents load into context. Skills provide reusable instructions, checklists, and workflows that any agent can follow.
+
+## Format
+
+Every skill is a directory containing a `SKILL.md` file with YAML frontmatter and a markdown body:
+
+```yaml
+---
+name: code-review
+description: "Code review checklist and structured review output"
+metadata:
+  strawpot:
+    dependencies:
+      - security-baseline
+      - git-workflow>=1.0.0
+    tools:
+      gh:
+        description: GitHub CLI
+        install:
+          macos: brew install gh
+          linux: apt install gh
+          windows: winget install GitHub.cli
+---
+
+# Code Review
+
+Step-by-step instructions for the agent...
+```
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Package slug (unique identifier, used for install/publish) |
+| `description` | One-line summary |
+
+### Optional Fields
+
+| Field | Description |
+|-------|-------------|
+| `metadata.strawpot.dependencies` | List of skill dependencies with optional version constraints |
+| `metadata.strawpot.tools` | System tool requirements with OS-specific install commands |
+
+## Dependencies
+
+Skills can depend on other skills. Dependencies are declared as a flat list:
+
+```yaml
+metadata:
+  strawpot:
+    dependencies:
+      - security-baseline          # latest version
+      - git-workflow>=1.0.0        # minimum version
+      - python-testing^2.0.0       # compatible version
+      - code-style==1.5.0          # exact version
+```
+
+See [Dependencies](/strawhub/concepts/dependencies) for version specifier details.
+
+## System Tools
+
+Skills can declare system tool requirements. During installation, the CLI checks if each tool is available on `PATH` and runs the install command for the current OS if missing.
+
+```yaml
+metadata:
+  strawpot:
+    tools:
+      gh:
+        description: GitHub CLI
+        install:
+          macos: brew install gh
+          linux: apt install gh
+          windows: winget install GitHub.cli
+      docker:
+        description: Docker
+        install:
+          macos: brew install docker
+          linux: apt install docker.io
+          windows: winget install Docker.DockerDesktop
+```
+
+Supported OS keys: `macos`, `linux`, `windows`.
+
+Use `--skip-tools` during install to opt out, or run `strawhub install-tools` later to re-check.
+
+## Supporting Files
+
+A skill directory can contain additional files alongside `SKILL.md`:
+
+- Scripts, references, examples
+- Allowed extensions: `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`
+- Max 20 files, 512 KB each
+
+## How Agents Use Skills
+
+When StrawPot spawns an agent with a role, the role's skill dependencies are staged into the agent's workspace:
+
+```
+<agent-workspace>/
+└── skills/
+    ├── git-workflow/SKILL.md
+    ├── code-review/SKILL.md
+    └── security-baseline/SKILL.md
+```
+
+The skill markdown body is included in the agent's system prompt, giving it the instructions defined by the skill author.

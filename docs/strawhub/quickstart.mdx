@@ -1,0 +1,95 @@
+---
+title: StrawHub Quickstart
+description: Install the CLI and get your first skill in 2 minutes
+---
+
+## Install the CLI
+
+```bash
+pip install strawhub
+```
+
+Requires Python 3.10+. Works on macOS, Linux, and Windows.
+
+## Install a Skill
+
+```bash
+strawhub install skill git-workflow
+```
+
+This downloads the `git-workflow` skill and any transitive dependencies to your local project directory (`.strawpot/skills/`).
+
+## Install a Role
+
+```bash
+strawhub install role implementer
+```
+
+Roles can depend on both skills and other roles. Dependencies are resolved automatically via the StrawHub API.
+
+## Search the Registry
+
+```bash
+strawhub search "code review"
+```
+
+## View Package Details
+
+```bash
+strawhub info skill git-workflow
+strawhub info role implementer
+```
+
+## Project File
+
+Create a `strawpot.toml` to declare dependencies for your project:
+
+```toml
+[skills]
+git-workflow = "^1.0.0"
+code-review = "==2.1.0"
+
+[roles]
+implementer = "^1.0.0"
+```
+
+Then install everything at once:
+
+```bash
+strawhub install
+```
+
+Or generate the file from what's already installed:
+
+```bash
+strawhub init
+```
+
+## Authentication
+
+To publish skills and roles, you need an API token:
+
+1. Sign in at [strawhub.dev](https://strawhub.dev) with GitHub
+2. Go to **Settings > API Tokens** and create a token
+3. Authenticate the CLI:
+
+```bash
+strawhub login
+# Paste your token when prompted
+```
+
+## Using with StrawPot
+
+StrawPot automatically resolves and installs skills and roles from StrawHub during orchestration sessions. You can also use the same commands through `strawpot`:
+
+```bash
+strawpot install skill git-workflow
+strawpot search "testing"
+```
+
+## Next Steps
+
+- [Skills](/strawhub/concepts/skills) — Understand how skills work
+- [Roles](/strawhub/concepts/roles) — Understand how roles work
+- [CLI Reference](/strawhub/cli/commands) — All available commands
+- [Publishing](/strawhub/publishing/guide) — Publish your own skills and roles
