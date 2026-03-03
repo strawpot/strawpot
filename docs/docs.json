@@ -49,7 +49,7 @@
     "links": [
       {
         "label": "StrawHub",
-        "url": "https://strawhub.dev"
+        "href": "https://strawhub.dev"
       }
     ]
   },
