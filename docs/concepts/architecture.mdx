@@ -1,0 +1,130 @@
+---
+title: Architecture
+description: How StrawPot, Denden, and StrawHub work together
+---
+
+# Architecture
+
+StrawPot is the orchestration layer that connects three components:
+
+- **StrawPot** — CLI that manages sessions, spawns agents, and enforces policy
+- **Denden** — gRPC server for agent-to-orchestrator communication
+- **StrawHub** — Registry for reusable skills and roles
+
+## System Overview
+
+```
+User
+ │
+ ▼
+strawpot start              ← CLI entry point
+ │
+ ├─ Isolate (optional)      ← none | worktree | docker
+ │
+ ├─ Denden gRPC server      ← listens on 127.0.0.1:9700
+ │
+ └─ Orchestrator agent       ← Claude Code / Codex / OpenHands
+      │
+      │  delegate request via Denden
+      ▼
+    StrawPot handles delegation:
+      1. Policy check (role allowed? depth limit?)
+      2. Resolve role + skills from StrawHub
+      3. Spawn sub-agent in session worktree
+      4. Wait for completion
+      5. Return result to caller
+      │
+      ├─ Sub-agent A (implementer role)
+      │    └─ can also delegate via Denden
+      │
+      └─ Sub-agent B (reviewer role)
+```
+
+All agents in a session share the same working directory. With worktree isolation, a git worktree is created per session — agents see each other's changes and cleanup is a single merge operation.
+
+## Package Structure
+
+```
+src/strawpot/
+  cli.py                   # Click CLI entry point
+  config.py                # TOML config loading
+  session.py               # Session lifecycle
+  delegation.py            # Delegate handler: policy → resolve → spawn → wait
+  context.py               # Build system prompts from roles + skills
+  merge.py                 # Merge strategies (local patch, PR)
+  _process.py              # Cross-platform process utilities
+  agents/
+    protocol.py            # AgentRuntime protocol
+    registry.py            # Agent discovery and resolution
+    wrapper.py             # WrapperRuntime (generic, works for any agent)
+    interactive.py         # tmux and direct terminal runtimes
+  isolation/
+    protocol.py            # Isolator protocol
+    worktree.py            # Git worktree isolator
+  memory/
+    protocol.py            # MemoryProvider protocol
+    registry.py            # Memory provider resolution
+  _builtin_agents/
+    claude_code/           # Built-in Claude Code agent
+```
+
+## Design Principles
+
+1. **Protocol-driven** — Everything is a protocol. Implementations are pluggable.
+2. **No agent-specific code** — The core never hardcodes Claude Code, Codex, etc.
+3. **Generic wrappers** — A single `WrapperRuntime` handles all agents via the wrapper protocol.
+4. **Shared environment** — All agents in a session work in the same directory.
+5. **Config hierarchy** — Built-in defaults < global config < project config < CLI flags.
+
+## Key Protocols
+
+### AgentRuntime
+
+The interface every agent runtime must implement:
+
+```python
+class AgentRuntime(Protocol):
+    name: str
+    def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
+              role_prompt, memory_prompt, skills_dir, roles_dirs,
+              task, env) -> AgentHandle: ...
+    def wait(self, handle, timeout=None) -> AgentResult: ...
+    def is_alive(self, handle) -> bool: ...
+    def kill(self, handle) -> None: ...
+```
+
+### Isolator
+
+Creates one isolated environment per session:
+
+```python
+class Isolator(Protocol):
+    def create(self, *, session_id, base_dir) -> IsolatedEnv: ...
+    def cleanup(self, env, *, base_dir) -> None: ...
+```
+
+### MemoryProvider
+
+Optional pluggable context retrieval:
+
+```python
+class MemoryProvider(Protocol):
+    name: str
+    def get(self, *, session_id, agent_id, role, ...) -> GetResult: ...
+    def dump(self, *, session_id, agent_id, role, ...) -> DumpReceipt: ...
+```
+
+## Agent Wrapper Protocol
+
+Every agent wrapper CLI implements two subcommands:
+
+```bash
+# One-time interactive setup (auth, config)
+<wrapper> setup
+
+# Translate protocol args to native agent command
+<wrapper> build --agent-id ID --working-dir DIR --task TEXT ...
+# Returns JSON: {"cmd": ["claude", "-p", "..."], "cwd": "/path"}
+```
+
+The wrapper is a pure translation layer. Process lifecycle (spawn, wait, kill) is handled by `WrapperRuntime` in the core — wrappers never manage processes.

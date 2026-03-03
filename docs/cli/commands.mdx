@@ -1,0 +1,143 @@
+---
+title: Commands
+description: Complete CLI command reference
+---
+
+# CLI Commands
+
+```bash
+strawpot [--version] [--help] <command>
+```
+
+## Session Management
+
+### `start`
+
+Start an orchestration session.
+
+```bash
+strawpot start [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--role ROLE` | Orchestrator role slug | From config or `orchestrator` |
+| `--runtime RUNTIME` | Agent runtime name | From config or `claude_code` |
+| `--isolation MODE` | Isolation strategy: `none`, `worktree`, `docker` | From config or `none` |
+| `--task TEXT` | Task for non-interactive mode (empty = interactive) | — |
+
+**Examples:**
+
+```bash
+# Interactive session with defaults
+strawpot start
+
+# Custom orchestrator role with worktree isolation
+strawpot start --role team-lead --isolation worktree
+
+# Non-interactive task
+strawpot start --task "Refactor the auth module"
+```
+
+### `config`
+
+Show the merged configuration (defaults + global + project + CLI).
+
+```bash
+strawpot config
+```
+
+### `sessions`
+
+List all running sessions.
+
+```bash
+strawpot sessions
+```
+
+Displays session ID, status, uptime, working directory, and Denden address for each active session.
+
+### `agents`
+
+List agents in a specific session.
+
+```bash
+strawpot agents <session_id>
+```
+
+Shows each agent's role, runtime, parent agent, and status.
+
+---
+
+## StrawHub Passthrough
+
+StrawPot delegates these commands to the `strawhub` CLI. They work identically to calling `strawhub` directly.
+
+### `install`
+
+Install a skill or role from StrawHub.
+
+```bash
+strawpot install skill <slug> [options]
+strawpot install role <slug> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--global` | Install to global directory (`~/.strawpot`) |
+| `--version VER` | Install a specific version |
+| `--force` | Force replace existing (requires `--version`) |
+| `--update` | Update to latest if already installed |
+| `--skip-tools` | Skip system tool installation |
+| `--yes` | Auto-confirm prompts |
+
+### `search`
+
+Search the StrawHub registry.
+
+```bash
+strawpot search <query> [--kind skill|role|all] [--limit N]
+```
+
+### `list`
+
+List available skills and roles.
+
+```bash
+strawpot list [--kind skills|roles|all] [--sort updated|downloads|stars]
+```
+
+### `info`
+
+Show detailed information about a package.
+
+```bash
+strawpot info skill <slug>
+strawpot info role <slug>
+```
+
+### `resolve`
+
+Resolve a package to its installed path and dependencies.
+
+```bash
+strawpot resolve skill <slug>
+strawpot resolve role <slug>
+```
+
+### `publish`
+
+Publish a skill or role to StrawHub.
+
+```bash
+strawpot publish skill [<path>]
+strawpot publish role [<path>]
+```
+
+### Authentication
+
+```bash
+strawpot login     # Authenticate with StrawHub
+strawpot logout    # Remove stored credentials
+strawpot whoami    # Show current user
+```

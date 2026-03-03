@@ -1,0 +1,104 @@
+---
+title: Delegation
+description: How agents delegate sub-tasks and how policy controls work
+---
+
+# Delegation
+
+Delegation is how agents request help from other agents. When an orchestrator needs a specialized task done, it sends a delegate request via Denden. StrawPot handles the rest.
+
+## Flow
+
+```
+Orchestrator agent
+  │
+  │  denden: {"delegate": {"role": "implementer", "task": "..."}}
+  ▼
+StrawPot delegation handler:
+  1. Policy check
+  2. Resolve role from StrawHub
+  3. Build system prompt (role + skills + memory)
+  4. Create agent workspace
+  5. Spawn sub-agent
+  6. Wait for completion
+  7. Return result to caller
+```
+
+## Policy Controls
+
+Every delegation request is checked against the session policy before proceeding:
+
+### Allowed Roles
+
+Restrict which roles agents can delegate to:
+
+```toml
+[policy]
+allowed_roles = ["implementer", "reviewer", "fixer"]
+```
+
+Set to an empty list to deny all delegations. Omit to allow all roles.
+
+### Max Depth
+
+Limit how deep delegation chains can go:
+
+```toml
+[policy]
+max_depth = 3
+```
+
+The orchestrator is at depth 0. A sub-agent it spawns is at depth 1. If that sub-agent delegates, the new agent is at depth 2. Requests exceeding `max_depth` are denied.
+
+### Agent Timeout
+
+Set a timeout for sub-agents:
+
+```toml
+[policy]
+agent_timeout = 300  # seconds
+```
+
+Omit for no timeout. The orchestrator is not subject to this timeout — only delegated sub-agents.
+
+### Max Delegate Retries
+
+Control how many times a failed delegation can be retried:
+
+```toml
+[policy]
+max_delegate_retries = 0
+```
+
+## Role Resolution
+
+When a delegation request arrives:
+
+1. **Fetch role** — StrawPot calls `strawhub resolve role <slug>` to get the role and all transitive dependencies
+2. **Stage dependencies** — Skills and roles are symlinked into the agent's workspace directory
+3. **Build prompt** — The role's `ROLE.md` body becomes the system prompt, with skill instructions appended
+
+The resolved directory structure looks like:
+
+```
+<agent-workspace>/
+├── skills/
+│   ├── git-workflow/SKILL.md
+│   └── code-review/SKILL.md
+└── roles/
+    └── implementer/ROLE.md
+```
+
+## Global Skills
+
+Roles can opt into loading global skills from `~/.strawpot/skills/`. These are automatically included alongside the role's declared dependencies, giving agents access to user-wide skill configurations.
+
+## Memory Context
+
+If a memory provider is configured, StrawPot retrieves context before spawning each sub-agent:
+
+1. Call `memory.get()` with session ID, agent ID, role, and task
+2. The provider returns context cards and optional control signals
+3. Context is injected into the agent's prompt via `--memory-prompt`
+
+After the sub-agent completes, `memory.dump()` records the result for future reference.

@@ -1,0 +1,59 @@
+---
+title: Introduction
+description: Lightweight CLI for multi-agent orchestration
+---
+
+# StrawPot
+
+StrawPot is a lightweight CLI for agent orchestration. It connects
+[Denden](https://github.com/strawpot/denden) (gRPC agent-to-orchestrator transport)
+and [StrawHub](https://strawhub.dev) (skill & role registry) to run multi-agent
+sessions in isolated environments.
+
+```bash
+strawpot start --role team-lead
+```
+
+## How It Works
+
+1. Creates a git worktree for the session
+2. Starts a Denden gRPC server
+3. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
+4. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills from StrawHub and spawns sub-agents in the same worktree
+5. On exit, cleans up everything automatically
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Agent Orchestration" icon="users">
+    Orchestrator agents delegate sub-tasks to specialized roles. Sub-agents can also delegate, up to a configurable depth limit.
+  </Card>
+  <Card title="Agent-Agnostic" icon="puzzle-piece">
+    Works with Claude Code, Codex, OpenHands, or any agent that implements the wrapper protocol. No agent-specific code in the core.
+  </Card>
+  <Card title="Session Isolation" icon="shield">
+    Each session gets its own git worktree. All agents share the same working directory. Changes are merged back via local patch or PR.
+  </Card>
+  <Card title="Skill & Role Registry" icon="book">
+    Agents load reusable skills and roles from StrawHub with automatic dependency resolution and version management.
+  </Card>
+</CardGroup>
+
+## Ecosystem
+
+| Project | Description |
+|---------|-------------|
+| [StrawPot](https://strawpot.com) | CLI orchestrator (this project) |
+| [StrawHub](https://strawhub.dev) | Public registry for skills and roles |
+| [Denden](https://github.com/strawpot/denden) | gRPC transport between agents and orchestrator |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    Install StrawPot and run your first session in 5 minutes.
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand how StrawPot, Denden, and StrawHub work together.
+  </Card>
+</CardGroup>

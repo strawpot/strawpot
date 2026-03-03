@@ -1,0 +1,91 @@
+---
+title: Claude Code
+description: Using Claude Code as a StrawPot agent
+---
+
+# Claude Code Agent
+
+Claude Code is the default agent runtime in StrawPot. It ships as a built-in agent with a pre-compiled Go wrapper.
+
+## Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed:
+  ```bash
+  npm install -g @anthropic-ai/claude-code
+  ```
+- `ANTHROPIC_API_KEY` environment variable (optional if using Claude Pro/Max plan)
+
+## Configuration
+
+```toml
+# .strawpot/config.toml
+runtime = "claude_code"
+
+[agents.claude_code]
+model = "claude-sonnet-4-6"
+```
+
+### Available Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | string | `claude-sonnet-4-6` | Claude model to use |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | No | Anthropic API key. Optional if using Plus/Max plan. |
+
+If `ANTHROPIC_API_KEY` is not set and required, StrawPot will prompt for it interactively during session startup.
+
+## How It Works
+
+The Claude Code wrapper translates StrawPot protocol args into `claude` CLI flags:
+
+- **Interactive mode** (orchestrator): Runs `claude` with the role prompt injected as system instructions
+- **Non-interactive mode** (sub-agents): Runs `claude -p <task>` with role and skill context
+
+The wrapper binary is located at `_builtin_agents/claude_code/strawpot_claude_code` and implements the standard [wrapper protocol](/agents/overview#wrapper-protocol).
+
+## Agent Manifest
+
+```yaml
+---
+name: claude-code
+description: Claude Code agent
+metadata:
+  version: "0.1.0"
+  strawpot:
+    bin:
+      macos: strawpot_claude_code
+      linux: strawpot_claude_code
+    tools:
+      claude:
+        description: Claude Code CLI
+        install:
+          macos: npm install -g @anthropic-ai/claude-code
+          linux: npm install -g @anthropic-ai/claude-code
+    params:
+      model:
+        type: string
+        default: claude-sonnet-4-6
+        description: Model to use for Claude Code
+    env:
+      ANTHROPIC_API_KEY:
+        required: false
+        description: Anthropic API key (optional if using Plus/Max plan)
+---
+```
+
+## Usage
+
+```bash
+# Start with Claude Code (default)
+strawpot start
+
+# Start with a specific model
+strawpot start  # then set in config:
+# [agents.claude_code]
+# model = "claude-opus-4-6"
+```
