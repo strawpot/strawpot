@@ -12,72 +12,45 @@
     "library": "lucide"
   },
   "navigation": {
-    "tabs": [
+    "groups": [
       {
-        "tab": "StrawPot",
-        "groups": [
-          {
-            "group": "Get Started",
-            "icon": "rocket",
-            "pages": ["index", "quickstart"]
-          },
-          {
-            "group": "Concepts",
-            "icon": "lightbulb",
-            "pages": [
-              "concepts/architecture",
-              "concepts/sessions",
-              "concepts/delegation",
-              "concepts/isolation"
-            ]
-          },
-          {
-            "group": "CLI Reference",
-            "icon": "terminal",
-            "pages": ["cli/commands", "cli/configuration"]
-          },
-          {
-            "group": "Agents",
-            "icon": "bot",
-            "pages": ["agents/overview", "agents/claude-code"]
-          }
+        "group": "Get Started",
+        "icon": "rocket",
+        "pages": ["index", "quickstart"]
+      },
+      {
+        "group": "Concepts",
+        "icon": "lightbulb",
+        "pages": [
+          "concepts/architecture",
+          "concepts/sessions",
+          "concepts/delegation",
+          "concepts/isolation"
         ]
       },
       {
-        "tab": "StrawHub",
-        "groups": [
-          {
-            "group": "Get Started",
-            "icon": "rocket",
-            "pages": ["strawhub/index", "strawhub/quickstart"]
-          },
-          {
-            "group": "Concepts",
-            "icon": "lightbulb",
-            "pages": [
-              "strawhub/concepts/skills",
-              "strawhub/concepts/roles",
-              "strawhub/concepts/dependencies"
-            ]
-          },
-          {
-            "group": "CLI Reference",
-            "icon": "terminal",
-            "pages": ["strawhub/cli/commands"]
-          },
-          {
-            "group": "Publishing",
-            "icon": "upload",
-            "pages": [
-              "strawhub/publishing/guide",
-              "strawhub/publishing/frontmatter"
-            ]
-          },
-          {
-            "group": "API Reference",
-            "icon": "code",
-            "pages": ["strawhub/api/reference"]
-          }
+        "group": "CLI Reference",
+        "icon": "terminal",
+        "pages": ["cli/commands", "cli/configuration"]
+      },
+      {
+        "group": "Agents",
+        "icon": "bot",
+        "pages": ["agents/overview", "agents/claude-code"]
+      },
+      {
+        "group": "StrawHub",
+        "icon": "package",
+        "pages": [
+          "strawhub/index",
+          "strawhub/quickstart",
+          "strawhub/concepts/skills",
+          "strawhub/concepts/roles",
+          "strawhub/concepts/dependencies",
+          "strawhub/cli/commands",
+          "strawhub/publishing/guide",
+          "strawhub/publishing/frontmatter",
+          "strawhub/api/reference"
         ]
       }
     ]
