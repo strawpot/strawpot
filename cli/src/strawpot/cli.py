@@ -110,6 +110,26 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
         value = click.prompt(f"Enter value for {var}")
         os.environ[var] = value
 
+    # 2b. Validate skill env requirements for orchestrator role
+    try:
+        from strawhub.resolver import resolve as _resolve
+
+        from strawpot.delegation import collect_skill_env, discover_global_skills, validate_skill_env
+
+        resolved = _resolve(config.orchestrator_role, kind="role")
+        global_skills = discover_global_skills(resolved)
+        skill_env = collect_skill_env(resolved, global_skills=global_skills or None)
+        skill_validation = validate_skill_env(skill_env)
+        for var in skill_validation.missing_env:
+            desc = skill_env[var].get("description", "")
+            prompt_text = f"Enter value for {var}"
+            if desc:
+                prompt_text += f" ({desc})"
+            value = click.prompt(prompt_text)
+            os.environ[var] = value
+    except Exception:
+        pass  # Role resolution failures handled by Session.start()
+
     # 3. Build runtimes (session_dir set later by Session.start())
     wrapper = WrapperRuntime(spec)
     if task:
