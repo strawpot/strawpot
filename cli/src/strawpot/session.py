@@ -28,6 +28,7 @@ from strawpot.delegation import (
     PolicyDenied,
     _format_memory_prompt,
     create_agent_workspace,
+    discover_global_skills,
     handle_delegate,
     stage_role,
 )
@@ -296,12 +297,17 @@ class Session:
             resolved = self._resolve_role(
                 self.config.orchestrator_role, kind="role"
             )
-            role_prompt = build_prompt(resolved)
+            global_skills = discover_global_skills(resolved)
+            role_prompt = build_prompt(
+                resolved,
+                global_skills=[(s, d) for s, d, _ in global_skills] or None,
+            )
 
             # 4. Stage role + create agent workspace
             agent_id = f"agent_{uuid.uuid4().hex[:12]}"
             skills_dir, roles_dir = stage_role(
-                self._session_dir(), resolved
+                self._session_dir(), resolved,
+                global_skills=global_skills or None,
             )
             workspace = create_agent_workspace(
                 self._session_dir(), agent_id

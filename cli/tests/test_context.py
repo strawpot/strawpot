@@ -1,6 +1,6 @@
 """Tests for strawpot.context."""
 
-from strawpot.context import build_prompt, read_role_description
+from strawpot.context import build_prompt, read_role_description, read_skill_description
 
 
 def _write_skill(base, slug, body):
@@ -419,3 +419,126 @@ def test_read_role_description_missing(tmp_path):
     (d / "ROLE.md").write_text("---\nname: minimal\n---\nBody.\n")
 
     assert read_role_description(str(d)) == ""
+
+
+# ---------------------------------------------------------------------------
+# read_skill_description
+# ---------------------------------------------------------------------------
+
+
+def test_read_skill_description(tmp_path):
+    """read_skill_description extracts description from SKILL.md frontmatter."""
+    d = tmp_path / "skills" / "linter"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: linter\ndescription: Checks code quality\n---\nBody.\n"
+    )
+
+    assert read_skill_description(str(d)) == "Checks code quality"
+
+
+def test_read_skill_description_missing(tmp_path):
+    """read_skill_description returns empty string if no description."""
+    d = tmp_path / "skills" / "empty"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: empty\n---\nBody.\n")
+
+    assert read_skill_description(str(d)) == ""
+
+
+def test_read_skill_description_no_file(tmp_path):
+    """read_skill_description returns empty string if SKILL.md does not exist."""
+    d = tmp_path / "skills" / "nofile"
+    d.mkdir(parents=True)
+
+    assert read_skill_description(str(d)) == ""
+
+
+# ---------------------------------------------------------------------------
+# Available Skills section
+# ---------------------------------------------------------------------------
+
+
+def test_available_skills_section_appended(tmp_path):
+    """Available Skills section is appended when global_skills is provided."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        global_skills=[
+            ("linter", "Checks code quality"),
+            ("formatter", "Formats code"),
+        ],
+    )
+
+    assert "## Available Skills" in result
+    assert "- **linter**: Checks code quality" in result
+    assert "- **formatter**: Formats code" in result
+
+
+def test_available_skills_before_delegation(tmp_path):
+    """Available Skills section appears between role body and delegation."""
+    role_path = _write_role(tmp_path, "lead", "You lead.")
+
+    resolved = {
+        "slug": "lead",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(
+        resolved,
+        global_skills=[("linter", "Checks code")],
+        delegatable_roles=[("fixer", "Fixes bugs")],
+    )
+
+    role_pos = result.index("## Role: lead")
+    skills_pos = result.index("## Available Skills")
+    delegation_pos = result.index("## Delegation")
+    assert role_pos < skills_pos < delegation_pos
+
+
+def test_no_available_skills_when_none(tmp_path):
+    """No Available Skills section when global_skills is None."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, global_skills=None)
+    assert "Available Skills" not in result
+
+
+def test_no_available_skills_when_empty(tmp_path):
+    """No Available Skills section when global_skills is empty."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [],
+    }
+
+    result = build_prompt(resolved, global_skills=[])
+    assert "Available Skills" not in result

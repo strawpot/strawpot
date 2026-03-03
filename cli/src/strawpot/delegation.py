@@ -10,8 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
-from strawpot.config import StrawPotConfig
-from strawpot.context import build_prompt, parse_frontmatter, read_role_description
+from strawpot.config import StrawPotConfig, get_strawpot_home
+from strawpot.context import (
+    build_prompt,
+    parse_frontmatter,
+    read_role_description,
+    read_skill_description,
+)
 from strawpot.memory.protocol import GetResult, MemoryProvider
 
 logger = logging.getLogger(__name__)
@@ -137,6 +142,75 @@ def _parse_skill_deps(skill_path: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Global skill discovery
+# ---------------------------------------------------------------------------
+
+
+def _check_inherit_global_skills(role_path: str) -> bool:
+    """Check if a role inherits global skills.
+
+    Reads ``metadata.strawpot.inherit_global_skills`` from ROLE.md frontmatter.
+    Defaults to ``True`` if the field is not present.
+    """
+    role_md = Path(role_path) / "ROLE.md"
+    if not role_md.exists():
+        return True
+    text = role_md.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    return fm.get("metadata", {}).get("strawpot", {}).get(
+        "inherit_global_skills", True
+    )
+
+
+def discover_global_skills(
+    resolved: dict,
+) -> list[tuple[str, str, str]]:
+    """Discover globally installed skills not already in resolved dependencies.
+
+    Scans ``~/.strawpot/skills/`` for installed skill directories.
+    Skips skills whose slug already appears in the resolved dependency list.
+    Respects the ``inherit_global_skills`` flag in ROLE.md.
+
+    Args:
+        resolved: Resolved role dict from strawhub.resolver.resolve().
+
+    Returns:
+        List of (slug, description, path) tuples for global skills.
+        Empty list if the role opts out or no global skills are found.
+    """
+    if not _check_inherit_global_skills(resolved["path"]):
+        return []
+
+    skills_dir = get_strawpot_home() / "skills"
+    if not skills_dir.is_dir():
+        return []
+
+    from strawhub.version_spec import parse_dir_name
+
+    resolved_slugs = {
+        dep["slug"]
+        for dep in resolved.get("dependencies", [])
+        if dep["kind"] == "skill"
+    }
+
+    global_skills: list[tuple[str, str, str]] = []
+    for entry in sorted(skills_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        parsed = parse_dir_name(entry.name)
+        if parsed is None:
+            continue
+        slug, _version = parsed
+        if slug in resolved_slugs:
+            continue
+        desc = read_skill_description(str(entry))
+        global_skills.append((slug, desc, str(entry)))
+
+    return global_skills
+
+
+# ---------------------------------------------------------------------------
 # Session-level role staging
 # ---------------------------------------------------------------------------
 
@@ -193,6 +267,7 @@ def _read_staged_paths(
 def stage_role(
     session_dir: str,
     resolved: dict,
+    global_skills: list[tuple[str, str, str]] | None = None,
 ) -> tuple[str, str]:
     """Stage a resolved role into the session directory.
 
@@ -201,10 +276,17 @@ def stage_role(
         session_dir/roles/<slug>/
             ROLE.md                  — copied from installed path
             skills/<dep_slug>/       — symlinked (transitive skill deps only)
+            skills/<global_slug>/    — symlinked (global skills, if not already present)
             roles/<dep_slug>/        — symlinked (direct role deps only)
 
     Idempotent: if the directory already exists, returns paths from the
     existing staging without re-creating.
+
+    Args:
+        session_dir: Session directory path.
+        resolved: Resolved role dict from strawhub.resolver.resolve().
+        global_skills: Optional list of (slug, description, path) tuples
+            for globally installed skills to stage alongside deps.
 
     Returns:
         (skills_dir, roles_dir) — parent directories containing staged
@@ -234,6 +316,13 @@ def stage_role(
     for dep in skill_deps:
         dest = os.path.join(skills_dir, dep["slug"])
         _symlink(dep["path"], dest)
+
+    # Stage global skills (skip if slug already present from deps)
+    if global_skills:
+        for gslug, _desc, gpath in global_skills:
+            dest = os.path.join(skills_dir, gslug)
+            if not os.path.exists(dest):
+                _symlink(gpath, dest)
 
     # Stage direct role deps only (symlink to installed paths)
     role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
@@ -372,6 +461,9 @@ def handle_delegate(
     # 2. Resolve role + skills
     resolved = resolve_role(request.role_slug, kind="role")
 
+    # 2b. Discover global skills
+    global_skills = discover_global_skills(resolved)
+
     # 3. Build delegatable roles for the sub-agent
     delegatable = _build_delegatable_roles(
         config, request.role_slug, resolve_role_dirs,
@@ -383,10 +475,13 @@ def handle_delegate(
         resolved,
         delegatable_roles=delegatable or None,
         requester_role=request.parent_role,
+        global_skills=[(s, d) for s, d, _ in global_skills] or None,
     )
 
     # 5. Stage role (session-level, idempotent)
-    skills_dir, roles_dir = stage_role(session_dir, resolved)
+    skills_dir, roles_dir = stage_role(
+        session_dir, resolved, global_skills=global_skills or None
+    )
 
     # 6-9. Spawn/wait loop with retry on format validation failure
     max_attempts = 1 + config.max_delegate_retries
