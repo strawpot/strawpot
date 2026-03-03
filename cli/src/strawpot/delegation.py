@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
+from strawpot.agents.registry import resolve_agent
+from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import StrawPotConfig, get_strawpot_home
 from strawpot.context import (
     build_prompt,
@@ -182,6 +184,21 @@ def _check_inherit_global_skills(role_path: str) -> bool:
     return fm.get("metadata", {}).get("strawpot", {}).get(
         "inherit_global_skills", True
     )
+
+
+def _get_default_agent(role_path: str) -> str | None:
+    """Extract ``default_agent`` from ROLE.md frontmatter.
+
+    Returns the agent name string if present, or ``None`` if the field
+    is missing or the ROLE.md file does not exist.
+    """
+    role_md = Path(role_path) / "ROLE.md"
+    if not role_md.exists():
+        return None
+    text = role_md.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    return fm.get("metadata", {}).get("strawpot", {}).get("default_agent")
 
 
 def discover_global_skills(
@@ -594,6 +611,30 @@ def handle_delegate(
             f"'{request.role_slug}': {missing}. "
             f"Set these variables before starting the session."
         )
+
+    # 2d. Resolve per-role default agent
+    default_agent_name = _get_default_agent(resolved["path"])
+    if default_agent_name and default_agent_name != runtime.name:
+        try:
+            agent_spec = resolve_agent(
+                default_agent_name,
+                working_dir,
+                config.agents.get(default_agent_name),
+            )
+            runtime = WrapperRuntime(agent_spec, session_dir=session_dir)
+            logger.info(
+                "Using default_agent %r for role %r",
+                default_agent_name,
+                request.role_slug,
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "default_agent %r not found for role %r; "
+                "falling back to session default %r",
+                default_agent_name,
+                request.role_slug,
+                runtime.name,
+            )
 
     # 3. Build delegatable roles for the sub-agent
     delegatable = _build_delegatable_roles(

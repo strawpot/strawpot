@@ -18,6 +18,7 @@ from strawpot.delegation import (
     _check_policy,
     _collect_transitive_skills,
     _format_memory_prompt,
+    _get_default_agent,
     _merge_env_entry,
     _parse_role_deps,
     _parse_skill_deps,
@@ -89,7 +90,7 @@ def _write_skill(base, slug, body="Skill body.", deps=None, env=None):
 
 def _write_role(base, slug, body="Role body.", description="test",
                 skill_deps=None, role_deps=None,
-                inherit_global_skills=None):
+                inherit_global_skills=None, default_agent=None):
     """Write a ROLE.md file.
 
     Args:
@@ -100,10 +101,15 @@ def _write_role(base, slug, body="Role body.", description="test",
         skill_deps: Optional list of skill dependency slugs.
         role_deps: Optional list of role dependency slugs.
         inherit_global_skills: Optional bool for metadata.strawpot.inherit_global_skills.
+        default_agent: Optional string for metadata.strawpot.default_agent.
     """
     d = os.path.join(base, "roles", slug)
     os.makedirs(d, exist_ok=True)
-    has_strawpot = skill_deps or role_deps or inherit_global_skills is not None
+    has_strawpot = (
+        skill_deps or role_deps
+        or inherit_global_skills is not None
+        or default_agent is not None
+    )
     if has_strawpot:
         strawpot_lines = []
         if skill_deps or role_deps:
@@ -119,6 +125,8 @@ def _write_role(base, slug, body="Role body.", description="test",
         if inherit_global_skills is not None:
             val = "true" if inherit_global_skills else "false"
             strawpot_lines.append(f"    inherit_global_skills: {val}")
+        if default_agent is not None:
+            strawpot_lines.append(f"    default_agent: {default_agent}")
         strawpot_yaml = "\n".join(strawpot_lines)
         fm = (
             f"---\n"
@@ -2139,3 +2147,177 @@ class TestHandleDelegateSkillEnv:
                 resolve_role=mock_resolve,
                 resolve_role_dirs=lambda s: None,
             )
+
+
+# ---------------------------------------------------------------------------
+# Default agent
+# ---------------------------------------------------------------------------
+
+
+class TestGetDefaultAgent:
+    def test_present(self, tmp_path):
+        """Returns agent name when default_agent is set in frontmatter."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(
+            base, "my-role", default_agent="other_agent",
+        )
+        assert _get_default_agent(role_path) == "other_agent"
+
+    def test_absent(self, tmp_path):
+        """Returns None when default_agent is not set."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "my-role")
+        assert _get_default_agent(role_path) is None
+
+    def test_no_role_md(self, tmp_path):
+        """Returns None when ROLE.md does not exist."""
+        assert _get_default_agent(str(tmp_path / "nonexistent")) is None
+
+
+class TestHandleDelegateDefaultAgent:
+    def test_uses_default_agent(self, tmp_path, monkeypatch):
+        """When role specifies default_agent that exists, that runtime is used."""
+        base = str(tmp_path / "registry")
+        skill_path = _write_skill(base, "testing", "Write tests.")
+        role_path = _write_role(
+            base, "my-role", skill_deps=["testing"],
+            default_agent="alt_agent",
+        )
+
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [
+                {"slug": "testing", "kind": "skill", "path": skill_path,
+                 "version": "1.0", "source": "local"},
+            ],
+        }
+
+        # Session default runtime — should NOT be called for spawn
+        session_runtime = _mock_runtime()
+
+        # Mock resolve_agent to return a spec for the alt agent
+        from strawpot.agents.registry import AgentSpec
+
+        alt_spec = AgentSpec(
+            name="alt_agent",
+            version="1.0.0",
+            wrapper_cmd=["/usr/bin/true"],
+        )
+        monkeypatch.setattr(
+            "strawpot.delegation.resolve_agent",
+            lambda name, project_dir, user_config=None: alt_spec,
+        )
+
+        # Mock WrapperRuntime so we can track spawn calls
+        mock_alt_runtime = _mock_runtime(summary="Alt done", output="alt ok")
+        monkeypatch.setattr(
+            "strawpot.delegation.WrapperRuntime",
+            lambda spec, session_dir=None: mock_alt_runtime,
+        )
+
+        result = handle_delegate(
+            request=_make_request(role_slug="my-role"),
+            config=_make_config(),
+            runtime=session_runtime,
+            working_dir=str(tmp_path),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        # Alt runtime was used, not the session default
+        mock_alt_runtime.spawn.assert_called_once()
+        session_runtime.spawn.assert_not_called()
+        assert result.summary == "Alt done"
+
+    def test_falls_back_on_missing_agent(self, tmp_path, monkeypatch):
+        """When default_agent is not found, falls back to session runtime."""
+        base = str(tmp_path / "registry")
+        skill_path = _write_skill(base, "testing", "Write tests.")
+        role_path = _write_role(
+            base, "my-role", skill_deps=["testing"],
+            default_agent="nonexistent_agent",
+        )
+
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [
+                {"slug": "testing", "kind": "skill", "path": skill_path,
+                 "version": "1.0", "source": "local"},
+            ],
+        }
+
+        session_runtime = _mock_runtime(summary="Session done", output="ok")
+
+        # Make resolve_agent raise FileNotFoundError
+        monkeypatch.setattr(
+            "strawpot.delegation.resolve_agent",
+            lambda name, project_dir, user_config=None:
+                (_ for _ in ()).throw(FileNotFoundError(f"not found: {name}")),
+        )
+
+        result = handle_delegate(
+            request=_make_request(role_slug="my-role"),
+            config=_make_config(),
+            runtime=session_runtime,
+            working_dir=str(tmp_path),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        # Session default runtime was used
+        session_runtime.spawn.assert_called_once()
+        assert result.summary == "Session done"
+
+    def test_skips_when_same_as_current(self, tmp_path, monkeypatch):
+        """When default_agent matches current runtime, no re-resolution happens."""
+        base = str(tmp_path / "registry")
+        skill_path = _write_skill(base, "testing", "Write tests.")
+        role_path = _write_role(
+            base, "my-role", skill_deps=["testing"],
+            default_agent="mock_runtime",
+        )
+
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [
+                {"slug": "testing", "kind": "skill", "path": skill_path,
+                 "version": "1.0", "source": "local"},
+            ],
+        }
+
+        session_runtime = _mock_runtime(summary="Same done", output="ok")
+
+        # resolve_agent should NOT be called
+        resolve_called = []
+        monkeypatch.setattr(
+            "strawpot.delegation.resolve_agent",
+            lambda name, project_dir, user_config=None: resolve_called.append(name),
+        )
+
+        result = handle_delegate(
+            request=_make_request(role_slug="my-role"),
+            config=_make_config(),
+            runtime=session_runtime,
+            working_dir=str(tmp_path),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        assert resolve_called == []
+        session_runtime.spawn.assert_called_once()
+        assert result.summary == "Same done"
