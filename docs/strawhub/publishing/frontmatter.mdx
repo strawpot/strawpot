@@ -1,9 +1,9 @@
 ---
 title: Frontmatter Reference
-description: Complete YAML frontmatter schema for skills and roles
+description: Complete YAML frontmatter schema for skills, roles, and agents
 ---
 
-Both skills and roles use YAML frontmatter in their markdown files. This page documents the complete schema.
+Skills, roles, and agents use YAML frontmatter in their markdown files. This page documents the complete schema.
 
 ## Skill Frontmatter (`SKILL.md`)
 
@@ -14,10 +14,10 @@ description: "Code review checklist"       # Required: one-line summary
 metadata:
   strawpot:
     dependencies:                          # Optional: skill dependencies
-      - security-baseline                  #   latest version
-      - git-workflow>=1.0.0                #   minimum version
-      - python-testing^2.0.0              #   compatible version
-      - code-style==1.5.0                 #   exact version
+      - security-baseline
+      - git-workflow
+      - python-testing
+      - code-style
     tools:                                 # Optional: system tool requirements
       gh:
         description: GitHub CLI
@@ -42,7 +42,7 @@ Markdown body with instructions for the agent...
 |-------|----------|-------------|
 | `name` | Yes | Package slug (unique within skills) |
 | `description` | Yes | One-line summary |
-| `metadata.strawpot.dependencies` | No | Flat list of skill slugs with optional version constraints |
+| `metadata.strawpot.dependencies` | No | Flat list of skill dependency slugs |
 | `metadata.strawpot.tools` | No | System tool requirements |
 | `metadata.strawpot.env` | No | Required environment variables (prompted at session start) |
 
@@ -56,20 +56,11 @@ metadata:
   strawpot:
     dependencies:                           # Optional: dependencies
       skills:                               #   skill dependencies
-        - git-workflow>=1.0.0
+        - git-workflow
         - code-review
       roles:                                #   role dependencies
         - reviewer
-    default_model:                          # Optional: model configuration
-      provider: claude_session
-      id: claude-opus-4-6
-    tools:                                  # Optional: system tool requirements
-      gh:
-        description: GitHub CLI
-        install:
-          macos: brew install gh
-          linux: apt install gh
-          windows: winget install GitHub.cli
+    default_agent: claude_code               # Optional: default agent runtime
 ---
 
 # Role Title
@@ -85,20 +76,7 @@ Markdown body with role instructions for the agent...
 | `description` | Yes | One-line summary |
 | `metadata.strawpot.dependencies.skills` | No | List of skill dependencies |
 | `metadata.strawpot.dependencies.roles` | No | List of role dependencies |
-| `metadata.strawpot.default_model.provider` | No | Model provider identifier |
-| `metadata.strawpot.default_model.id` | No | Model ID |
-| `metadata.strawpot.tools` | No | System tool requirements |
-
-## Version Specifiers
-
-Used in dependency declarations:
-
-| Format | Meaning | Example |
-|--------|---------|---------|
-| `slug` | Latest version | `git-workflow` |
-| `slug==X.Y.Z` | Exact version | `git-workflow==1.0.0` |
-| `slug>=X.Y.Z` | Minimum version | `git-workflow>=1.0.0` |
-| `slug^X.Y.Z` | Compatible (same major) | `git-workflow^1.0.0` |
+| `metadata.strawpot.default_agent` | No | Default agent runtime name |
 
 ## System Tools Schema
 
@@ -135,11 +113,75 @@ metadata:
 - Variables set at session start are inherited by all sub-agents
 - If the same variable appears in multiple skills, `required: true` takes precedence
 
-## Key Differences: Skills vs Roles
+## Agent Frontmatter (`AGENT.md`)
 
-| Aspect | Skills | Roles |
-|--------|--------|-------|
-| File | `SKILL.md` | `ROLE.md` |
-| Dependencies format | Flat list (skills only) | Structured with `skills` and `roles` sub-keys |
-| Model config | Not supported | `default_model` field |
-| Namespace | Separate | Separate (same slug allowed in both) |
+```yaml
+---
+name: my-agent                              # Required: agent slug
+description: "My custom agent"              # Required: one-line summary
+metadata:
+  version: "1.0.0"                          # Optional: semver version
+  strawpot:
+    bin:                                     # Required: compiled agent binary
+      macos: my_agent_wrapper               #   keyed by OS
+      linux: my_agent_wrapper
+    tools:                                   # Optional: system tool requirements
+      my-cli:
+        description: My agent CLI
+        install:
+          macos: brew install my-cli
+          linux: apt install my-cli
+    params:                                  # Optional: custom parameters for the agent
+      model:
+        type: string
+        default: gpt-4
+        description: Model to use
+    env:                                     # Optional: required environment variables
+      MY_API_KEY:
+        required: true
+        description: API key for the service
+---
+
+# Agent Title
+
+Markdown body describing the agent (shown to LLMs for discovery).
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Agent slug (unique identifier) |
+| `description` | Yes | One-line summary |
+| `metadata.version` | No | Semver version string |
+| `metadata.strawpot.bin.<os>` | Yes | Compiled agent binary name, keyed by OS (`macos`, `linux`) |
+| `metadata.strawpot.tools` | No | System tool requirements |
+| `metadata.strawpot.params` | No | Custom parameters for the agent binary |
+| `metadata.strawpot.env` | No | Required environment variables |
+
+## Parameters Schema
+
+```yaml
+metadata:
+  strawpot:
+    params:
+      <param-name>:
+        type: <string>              # Parameter type
+        default: <value>            # Default value
+        description: <string>       # Human-readable description
+```
+
+- Defaults from `AGENT.md` are merged with user config from `[agents.<name>]` in `config.toml`
+- User values take precedence over defaults
+- The merged config is passed to the agent binary as the `--config` JSON string
+
+## Key Differences: Skills vs Roles vs Agents
+
+| Aspect | Skills | Roles | Agents |
+|--------|--------|-------|--------|
+| File | `SKILL.md` | `ROLE.md` | `AGENT.md` |
+| Dependencies | Flat list (skills only) | Structured (`skills` + `roles`) | System tools only |
+| Default agent | No | `default_agent` field | N/A (is the agent) |
+| Env vars | Yes | No | Yes |
+| Params | No | No | Yes |
+| Namespace | Separate | Separate | Separate |

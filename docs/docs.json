@@ -46,6 +46,7 @@
           "strawhub/quickstart",
           "strawhub/concepts/skills",
           "strawhub/concepts/roles",
+          "strawhub/concepts/agents",
           "strawhub/concepts/dependencies",
           "strawhub/cli/commands",
           "strawhub/publishing/guide",

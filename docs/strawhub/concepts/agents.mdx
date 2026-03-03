@@ -1,0 +1,321 @@
+---
+title: Agents
+description: Custom agent wrappers for StrawPot
+---
+
+An agent is a wrapper that translates StrawPot's protocol into a specific AI agent's native CLI. StrawPot manages process lifecycle — the wrapper only translates arguments.
+
+## Format
+
+Every agent is a directory containing an `AGENT.md` file with YAML frontmatter and a markdown body:
+
+```yaml
+---
+name: my-agent
+description: "My custom agent wrapper"
+metadata:
+  version: "1.0.0"
+  strawpot:
+    bin:
+      macos: my_agent_wrapper
+      linux: my_agent_wrapper
+    tools:
+      my-cli:
+        description: My agent CLI
+        install:
+          macos: brew install my-cli
+          linux: apt install my-cli
+    params:
+      model:
+        type: string
+        default: gpt-4
+        description: Model to use
+    env:
+      MY_API_KEY:
+        required: true
+        description: API key for the service
+---
+
+# My Agent
+
+Description of what this agent does (shown to LLMs for discovery).
+```
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Agent slug (unique identifier) |
+| `description` | One-line summary |
+
+### Optional Fields
+
+| Field | Description |
+|-------|-------------|
+| `metadata.version` | Semver version string |
+| `metadata.strawpot.bin` | Compiled agent binary, keyed by OS |
+| `metadata.strawpot.tools` | System tool requirements with OS-specific install commands |
+| `metadata.strawpot.params` | Custom parameters for the agent binary |
+| `metadata.strawpot.env` | Required environment variables |
+
+## Wrapper Binary
+
+The agent binary is a compiled executable placed in the agent directory, keyed by OS:
+
+```yaml
+metadata:
+  strawpot:
+    bin:
+      macos: my_agent_wrapper
+      linux: my_agent_wrapper
+```
+
+StrawPot resolves the binary path as `<agent-directory>/<binary-name>` for the current OS.
+
+## Wrapper Protocol
+
+Every wrapper must implement two subcommands: `setup` and `build`.
+
+### `setup`
+
+Interactive one-time setup (auth, configuration). Runs with stdin/stdout attached to the terminal.
+
+```bash
+<wrapper> setup
+# Exit code 0 = success
+```
+
+Use this for OAuth flows, API key validation, or any interactive setup the agent needs.
+
+### `build`
+
+Translate StrawPot protocol args into the agent's native CLI command. Returns JSON to stdout.
+
+```bash
+<wrapper> build \
+  --agent-id <id> \
+  --working-dir <dir> \
+  --agent-workspace-dir <dir> \
+  --role-prompt <text> \
+  --memory-prompt <text> \
+  --task <text> \
+  --skills-dir <dir> \
+  --roles-dir <dir> \
+  --config <json>
+```
+
+#### Protocol Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--agent-id` | Unique ID for this agent instance |
+| `--working-dir` | Project working directory |
+| `--agent-workspace-dir` | Agent-specific workspace (for prompt files, staged skills/roles) |
+| `--role-prompt` | Assembled role prompt text |
+| `--memory-prompt` | Memory context from memory providers |
+| `--task` | Task description (non-interactive mode) |
+| `--skills-dir` | Directory containing staged skill subdirectories |
+| `--roles-dir` | Directory containing staged role subdirectories (may appear multiple times) |
+| `--config` | JSON string with merged parameter values |
+
+#### JSON Output
+
+The `build` command must print a JSON object to stdout:
+
+```json
+{"cmd": ["my-cli", "run", "--prompt", "..."], "cwd": "/path/to/workdir"}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `cmd` | Yes | Command array to execute |
+| `cwd` | No | Working directory (defaults to `--working-dir`) |
+
+StrawPot launches the command via `Popen` and manages the process lifecycle (PID tracking, wait, kill).
+
+## Parameters
+
+Agents can declare custom parameters for the agent binary. These are CLI-specific settings (e.g. model, flags) that the wrapper uses when building the native command. Users override defaults via `[agents.<name>]` in their config:
+
+```yaml
+metadata:
+  strawpot:
+    params:
+      model:
+        type: string
+        default: gpt-4
+        description: Model to use
+      temperature:
+        type: string
+        default: "0.7"
+        description: Sampling temperature
+```
+
+```toml
+# .strawpot/config.toml
+[agents.my_agent]
+model = "gpt-4o"
+temperature = "0.2"
+```
+
+Parameter defaults from `AGENT.md` are merged with user config — user values take precedence. The merged result is passed to `build` as the `--config` JSON string. The wrapper reads these values to construct the appropriate CLI flags.
+
+## System Tools
+
+Agents can declare system tool requirements. During startup, StrawPot checks if each tool is available on PATH and shows install instructions if missing.
+
+```yaml
+metadata:
+  strawpot:
+    tools:
+      my-cli:
+        description: My agent CLI
+        install:
+          macos: brew install my-cli
+          linux: apt install my-cli
+          windows: winget install my-cli
+```
+
+Supported OS keys: `macos`, `linux`, `windows`. Only the current OS command is shown.
+
+## Environment Variables
+
+Agents can declare required environment variables. At session start, missing required variables are prompted interactively.
+
+```yaml
+metadata:
+  strawpot:
+    env:
+      MY_API_KEY:
+        required: true
+        description: API key for the service
+      OPTIONAL_VAR:
+        required: false
+        description: Optional configuration
+```
+
+## Agent Discovery
+
+Agents are resolved in this order:
+
+1. **Project-local** — `.strawpot/agents/<name>/AGENT.md`
+2. **Global** — `~/.strawpot/agents/<name>/AGENT.md`
+3. **Built-in** — Ships with StrawPot (e.g. `claude_code`)
+
+To install a custom agent, place its directory in either location:
+
+```
+# Project-local
+.strawpot/agents/my-agent/
+├── AGENT.md
+└── my_agent_wrapper        # compiled binary (if using bin mode)
+
+# Global
+~/.strawpot/agents/my-agent/
+├── AGENT.md
+└── my_agent_wrapper
+```
+
+## Example: Minimal Wrapper in Python
+
+A minimal wrapper that translates StrawPot protocol args to a hypothetical `my-ai` CLI:
+
+```python
+#!/usr/bin/env python3
+"""Minimal StrawPot agent wrapper for my-ai CLI."""
+import json
+import sys
+
+def cmd_setup():
+    """Interactive setup — validate API key."""
+    import subprocess
+    result = subprocess.run(["my-ai", "auth", "status"])
+    if result.returncode != 0:
+        result = subprocess.run(["my-ai", "auth", "login"])
+    sys.exit(result.returncode)
+
+def cmd_build(args):
+    """Translate protocol args to my-ai CLI command."""
+    parsed = {}
+    i = 0
+    while i < len(args):
+        if i + 1 < len(args):
+            key = args[i].lstrip("-").replace("-", "_")
+            parsed[key] = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    config = json.loads(parsed.get("config", "{}"))
+
+    cmd = ["my-ai", "run"]
+    if parsed.get("task"):
+        cmd.extend(["--prompt", parsed["task"]])
+    if parsed.get("role_prompt"):
+        cmd.extend(["--system", parsed["role_prompt"]])
+    if config.get("model"):
+        cmd.extend(["--model", config["model"]])
+
+    json.dump({
+        "cmd": cmd,
+        "cwd": parsed.get("working_dir", "."),
+    }, sys.stdout)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: wrapper <setup|build> [args...]", file=sys.stderr)
+        sys.exit(1)
+    if sys.argv[1] == "setup":
+        cmd_setup()
+    elif sys.argv[1] == "build":
+        cmd_build(sys.argv[2:])
+    else:
+        print(f"Unknown subcommand: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(1)
+```
+
+With the corresponding `AGENT.md`:
+
+```yaml
+---
+name: my-ai-agent
+description: "Wrapper for my-ai CLI"
+metadata:
+  version: "1.0.0"
+  strawpot:
+    bin:
+      macos: my_ai_wrapper
+      linux: my_ai_wrapper
+    tools:
+      my-ai:
+        description: My AI CLI
+        install:
+          macos: pip install my-ai
+          linux: pip install my-ai
+    params:
+      model:
+        type: string
+        default: default-model
+        description: Model to use for inference
+    env:
+      MY_AI_API_KEY:
+        required: true
+        description: API key
+---
+
+# My AI Agent
+
+A StrawPot agent wrapper for the my-ai CLI tool.
+```
+
+## Skills vs Roles vs Agents
+
+| | Skills | Roles | Agents |
+|---|--------|-------|--------|
+| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool |
+| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` |
+| **Can depend on** | Other skills | Skills and roles | System tools |
+| **Default agent** | No | Yes | N/A (is the agent) |
+| **Env vars** | Yes | No | Yes |
+| **Params** | No | No | Yes |
+| **Namespace** | Separate | Separate | Separate |

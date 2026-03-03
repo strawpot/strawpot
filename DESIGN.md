@@ -1314,15 +1314,7 @@ metadata:
         - code-review
       roles:
         - fixer
-    default_model:
-      provider: claude_session
-      id: claude-opus-4-6
-    tools:
-        pytest:
-          description: Python test runner
-          install:
-            macos: pip install pytest
-            linux: pip install pytest
+    default_agent: claude_code
 ---
 
 # Implementer
@@ -1340,11 +1332,7 @@ project's conventions...
 | `metadata.author` | no | Creator/organization name |
 | `metadata.strawpot.dependencies.skills` | no | Skill dependencies (resolved by strawhub) |
 | `metadata.strawpot.dependencies.roles` | no | Delegatable sub-roles (shown in delegation section of prompt) |
-| `metadata.strawpot.default_model` | no | Preferred model for this role |
-| `metadata.strawpot.tools` | no | Required tools with per-OS install instructions |
-
-Dependency version specifiers: `slug` (latest), `slug==X.Y.Z` (exact),
-`slug>=X.Y.Z` (minimum), `slug^X.Y.Z` (compatible — same major).
+| `metadata.strawpot.default_agent` | no | Default agent runtime name |
 
 The markdown body (after frontmatter) is used as the role's system prompt
 content. Only the body is included in the agent's prompt — frontmatter is

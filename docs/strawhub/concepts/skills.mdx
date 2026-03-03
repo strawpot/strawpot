@@ -17,7 +17,7 @@ metadata:
   strawpot:
     dependencies:
       - security-baseline
-      - git-workflow>=1.0.0
+      - git-workflow
     tools:
       gh:
         description: GitHub CLI
@@ -43,7 +43,7 @@ Step-by-step instructions for the agent...
 
 | Field | Description |
 |-------|-------------|
-| `metadata.strawpot.dependencies` | List of skill dependencies with optional version constraints |
+| `metadata.strawpot.dependencies` | List of skill dependency slugs |
 | `metadata.strawpot.tools` | System tool requirements with OS-specific install commands |
 | `metadata.strawpot.env` | Required environment variables (prompted at session start) |
 
@@ -55,13 +55,13 @@ Skills can depend on other skills. Dependencies are declared as a flat list:
 metadata:
   strawpot:
     dependencies:
-      - security-baseline          # latest version
-      - git-workflow>=1.0.0        # minimum version
-      - python-testing^2.0.0       # compatible version
-      - code-style==1.5.0          # exact version
+      - security-baseline
+      - git-workflow
+      - python-testing
+      - code-style
 ```
 
-See [Dependencies](/strawhub/concepts/dependencies) for version specifier details.
+See [Dependencies](/strawhub/concepts/dependencies) for resolution details.
 
 ## System Tools
 
