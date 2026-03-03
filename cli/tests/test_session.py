@@ -1230,3 +1230,56 @@ class TestNoninteractiveMode:
             session.start(str(tmp_path))
 
         mock_stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Global skills integration
+# ---------------------------------------------------------------------------
+
+
+class TestGlobalSkills:
+    @patch("strawpot.session.discover_global_skills")
+    @patch("strawpot.session.DenDenServer")
+    def test_orchestrator_gets_global_skills(
+        self, mock_server_cls, mock_discover, tmp_path
+    ):
+        """Orchestrator prompt includes global skills when discovered."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
+        mock_discover.return_value = [
+            ("linter", "Checks code quality", "/global/skills/linter-1.0.0"),
+        ]
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="do stuff"
+        )
+
+        session.start(str(tmp_path))
+
+        # Verify discover_global_skills was called
+        mock_discover.assert_called_once()
+        # Verify the prompt passed to spawn contains Available Skills
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert "## Available Skills" in spawn_kwargs["role_prompt"]
+        assert "**linter**" in spawn_kwargs["role_prompt"]
+
+    @patch("strawpot.session.discover_global_skills")
+    @patch("strawpot.session.DenDenServer")
+    def test_orchestrator_no_global_skills_when_empty(
+        self, mock_server_cls, mock_discover, tmp_path
+    ):
+        """No Available Skills section when discover returns empty."""
+        mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
+        mock_discover.return_value = []
+        isolator = _mock_isolator()
+        isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
+        runtime = _mock_runtime()
+        session = _make_session(
+            tmp_path, isolator=isolator, runtime=runtime, task="do stuff"
+        )
+
+        session.start(str(tmp_path))
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert "Available Skills" not in spawn_kwargs["role_prompt"]

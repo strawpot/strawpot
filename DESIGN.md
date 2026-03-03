@@ -1452,25 +1452,34 @@ alive.
     after wait in the delegation flow
 20. `config.py` — add `memory` and `memory_config` fields
 
-### Phase 4 — Web GUI
+### Phase 4 — Global Skills
 
-21. Central management platform — project management, multi-session
+21. `delegation.py` + `context.py` — discover global skills from
+    `~/.strawpot/skills/`, stage alongside dependency-resolved skills,
+    add "Available Skills" summary section to prompt (slug + description;
+    agents read `skills/<name>/SKILL.md` for full body). Respect
+    `metadata.strawpot.inherit_global_skills` in ROLE.md (default `true`)
+    to allow roles to opt out of global skills.
+
+### Phase 5 — Web GUI
+
+22. Central management platform — project management, multi-session
     monitoring, session history tracking, agent tree visualization,
     denden status, EM replay
 
-### Phase 5 — Docker Isolation
+### Phase 6 — Docker Isolation
 
-22. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
+23. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
     (container create, patch export, cleanup)
-23. `session.py` cleanup — docker merge strategies (local/pr), patch
+24. `session.py` cleanup — docker merge strategies (local/pr), patch
     extraction from container via `docker exec git diff`
 
-### Phase 6 — Ecosystem & Extensibility
+### Phase 7 — Ecosystem & Extensibility
 
-24. Community agents — documentation + strawhub publishing flow
-25. Cron jobs — invoke orchestrator periodically or conditionally
-26. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
-27. Hooks — pre/post spawn, pre/post cleanup extension points
+25. Community agents — documentation + strawhub publishing flow
+26. Cron jobs — invoke orchestrator periodically or conditionally
+27. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
+28. Hooks — pre/post spawn, pre/post cleanup extension points
 
 ---
 
@@ -1672,6 +1681,50 @@ type is added (planned strawhub addition):
 strawpot install memory <slug>     →  strawhub install memory <slug>
 strawpot uninstall memory <slug>   →  strawhub uninstall memory <slug>
 ```
+
+---
+
+## Global Skills (Planned)
+
+When delegating, strawpot discovers globally installed skills and makes them
+available to agents alongside dependency-resolved skills. This lets users
+install utility skills once (e.g. `strawpot install skill my-linter`) and
+have them available to all roles without explicit dependency declarations.
+
+### Discovery
+
+Scan `~/.strawpot/skills/` for installed skill directories using strawhub's
+`parse_dir_name()`. Only global-scope skills are discovered — project-local
+skills (`.strawpot/skills/`) are not included (those are already handled by
+the dependency resolver).
+
+### Staging
+
+During `stage_role()`, symlink each discovered global skill into the
+role's `skills_dir` alongside dependency-resolved skills. If a global
+skill slug already exists (added by the dependency resolver), skip it —
+dependency-resolved versions take precedence.
+
+### Prompt — "Available Skills" Section
+
+`build_prompt()` adds an **Available Skills** summary section listing each
+global skill's slug and one-line description. This appears after the role
+body and before the Delegation section. Agents can read
+`skills/<name>/SKILL.md` for the full body when they need details.
+
+### Opt-Out via `inherit_global_skills`
+
+Roles can opt out of receiving global skills by setting
+`metadata.strawpot.inherit_global_skills: false` in their ROLE.md
+frontmatter. When omitted, the default is `true` (global skills are
+inherited). This allows specialized roles to keep a minimal, controlled
+skill set.
+
+### Denden Communication
+
+Already covered: the Delegation and Requester sections in `context.py`
+include denden communication instructions when delegatable roles are
+present. No additional changes needed.
 
 ---
 

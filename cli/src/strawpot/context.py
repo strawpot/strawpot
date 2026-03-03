@@ -24,6 +24,7 @@ def build_prompt(
     resolved: dict,
     delegatable_roles: list[tuple[str, str]] | None = None,
     requester_role: str | None = None,
+    global_skills: list[tuple[str, str]] | None = None,
 ) -> str:
     """Build a system prompt from a resolved role and its dependencies.
 
@@ -37,10 +38,14 @@ def build_prompt(
         requester_role: optional slug of the role that delegated this task.
             When provided, a Requester section is appended so the agent
             can communicate back via denden.
+        global_skills: optional list of (slug, description) tuples for
+            globally installed skills.  When provided, an Available Skills
+            section is inserted after the role body.
 
     Returns:
         System prompt string: skills first (resolver order), role last,
         frontmatter stripped, sections separated by ``---``.
+        If global_skills is provided, an Available Skills section follows.
         If delegatable_roles is provided, a Delegation section follows.
         If requester_role is provided, a Requester section follows.
     """
@@ -55,6 +60,9 @@ def build_prompt(
         f"## {resolved['kind'].capitalize()}: {resolved['slug']}\n\n{root_body}"
     )
 
+    if global_skills:
+        sections.append(_build_available_skills_section(global_skills))
+
     if delegatable_roles:
         sections.append(_build_delegation_section(delegatable_roles))
 
@@ -62,6 +70,19 @@ def build_prompt(
         sections.append(_build_requester_section(requester_role))
 
     return "\n---\n\n".join(sections)
+
+
+def _build_available_skills_section(skills: list[tuple[str, str]]) -> str:
+    """Build the Available Skills section listing global skills."""
+    lines = [
+        "## Available Skills",
+        "",
+        "The following skills are available in `skills/<name>/`. "
+        "Read the SKILL.md file for full details.",
+    ]
+    for slug, description in skills:
+        lines.append(f"- **{slug}**: {description}")
+    return "\n".join(lines)
 
 
 def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
@@ -96,6 +117,23 @@ def _build_requester_section(role_slug: str) -> str:
         "Do NOT use `denden` to send your final results back. "
         "When your task is complete, write your output to stdout."
     )
+
+
+def read_skill_description(skill_path: str) -> str:
+    """Read the description from a SKILL.md frontmatter.
+
+    Args:
+        skill_path: Directory containing the SKILL.md file.
+
+    Returns:
+        The description string, or empty string if not found.
+    """
+    filepath = Path(skill_path) / "SKILL.md"
+    if not filepath.exists():
+        return ""
+    text = filepath.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    return parsed.get("frontmatter", {}).get("description", "")
 
 
 def read_role_description(role_path: str) -> str:
