@@ -29,6 +29,72 @@ def cli():
 
 
 # ---------------------------------------------------------------------------
+# Bootstrap helpers
+# ---------------------------------------------------------------------------
+
+
+def _ensure_agent_installed(name: str, working_dir: str) -> None:
+    """Prompt to install an agent from StrawHub if it is not found locally."""
+    try:
+        resolve_agent(name, working_dir)
+    except FileNotFoundError:
+        pass  # not installed — continue to prompt
+    else:
+        return  # already available
+
+    if not click.confirm(
+        f"Agent '{name}' is not installed. Install from StrawHub?", default=True
+    ):
+        return
+
+    cmd = shutil.which("strawhub")
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        return
+
+    result = subprocess.run(
+        [cmd, "install", "agent", name, "--global"],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    if result.returncode != 0:
+        click.echo(f"Failed to install agent '{name}'.", err=True)
+
+
+def _ensure_skill_installed(name: str, working_dir: str) -> None:
+    """Prompt to install a skill from StrawHub if it is not found locally."""
+    candidates = [
+        Path(working_dir) / ".strawpot" / "skills" / name,
+        get_strawpot_home() / "skills" / name,
+    ]
+    for candidate in candidates:
+        if (candidate / "SKILL.md").is_file():
+            return  # already installed
+
+    if not click.confirm(
+        f"Skill '{name}' is not installed. Install from StrawHub?", default=True
+    ):
+        return
+
+    cmd = shutil.which("strawhub")
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        return
+
+    result = subprocess.run(
+        [cmd, "install", "skill", name, "--global"],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    if result.returncode != 0:
+        click.echo(f"Failed to install skill '{name}'.", err=True)
+
+
+# ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
 
@@ -85,6 +151,10 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
     recovered = recover_stale_sessions(working_dir, config)
     for run_id in recovered:
         click.echo(f"Recovered stale session: {run_id}")
+
+    # 0b. Auto-install default dependencies if not found
+    _ensure_agent_installed(config.runtime, working_dir)
+    _ensure_skill_installed("denden", working_dir)
 
     # 1. Resolve agent spec
     try:

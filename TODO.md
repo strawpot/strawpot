@@ -2,25 +2,14 @@
 
 Items to address once prerequisites are ready or designs are finalized.
 
-## 1. Remove `builtin_agent` once `strawpot_claude_code` repo is ready in strawhub
-
-The built-in agent is a temporary shim. Once the `strawpot_claude_code` strawhub repo is published, remove the inline definition and rely on the external package instead.
-
-## 2. Auto-install default dependencies (`denden`, `strawpot_claude_code`) on first run
-
-When strawpot starts for the first time and these dependencies are not installed globally, it should automatically install them. Needs design for:
-- Detection of missing dependencies
-- Install mechanism and user confirmation flow
-- Error handling / retry
-
-## 3. Add end-to-end tests
+## 1. Add end-to-end tests
 
 Set up an E2E test suite that exercises the full strawpot workflow — from CLI invocation through agent delegation and output. Needs design for:
 - Test framework and runner selection
 - Fixture / mock strategy for external dependencies
 - CI integration
 
-## 4. Design Web GUI in detail
+## 2. Design Web GUI in detail
 
 Full design for the web-based management interface is pending. Topics to cover:
 - Overall layout and navigation
@@ -28,11 +17,11 @@ Full design for the web-based management interface is pending. Topics to cover:
 - Agent configuration and role management
 - Session monitoring and logs
 
-## 5. Support `"*"` wildcard in role dependencies
+## 3. Support `"*"` wildcard in role dependencies
 
 Add support for `"*"` as a special value in role `dependencies`, meaning "depend on all roles available globally and locally." This wildcard should be ignored by install commands (both `strawhub` CLI and `strawpot` CLI proxy) since it doesn't refer to a specific installable package.
 
-## 6. Persistent user configuration for env, agent params, and default_agent
+## 4. Persistent user configuration for env, agent params, and default_agent
 
 Currently, SKILL.md `env` values are prompted every session and never saved, AGENT.md `params` are persisted only via `[agents.<name>]` in `strawpot.toml`, and ROLE.md `default_agent` has no user-override mechanism beyond the global `runtime` setting.
 

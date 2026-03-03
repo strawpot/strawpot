@@ -58,15 +58,10 @@ src/strawpot/
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
     worktree.py            # WorktreeIsolator
-  _builtin_agents/         # Ships with strawpot
-    claude_code/
-      AGENT.md             # Built-in Claude Code agent manifest
-      wrapper/             # Go source for wrapper binary
-        main.go
-        go.mod
 ```
 
-13 source files + 1 built-in agent. No agent-specific code in the core.
+13 source files. No agent-specific code in the core — agents are installed
+via StrawHub (e.g. `strawhub install agent strawpot_claude_code --global`).
 
 ---
 
@@ -242,9 +237,9 @@ def resolve_agent(name: str, project_dir: str, agent_config: dict | None = None)
     Resolution order:
     1. .strawpot/agents/<name>/AGENT.md    (project-local)
     2. ~/.strawpot/agents/<name>/AGENT.md  (global install)
-    3. built-in _builtin_agents/<name>/    (ships with strawpot)
 
     agent_config merges user overrides (from config.agents[name]) into spec.config.
+    If the agent is not found, `strawpot start` prompts to install it from StrawHub.
     """
 ```
 
@@ -847,10 +842,11 @@ the process, tracking PIDs, waiting for completion, and cleanup.
 
 ---
 
-## Built-in Agent: claude_code
+## Default Agent: claude_code
 
-Ships with strawpot at `_builtin_agents/claude_code/`. Serves as the default
-runtime and as a reference implementation for wrapper authors.
+Installed from StrawHub (`strawhub install agent strawpot_claude_code --global`).
+Serves as the default runtime and as a reference implementation for wrapper authors.
+Auto-installed on first `strawpot start` if not already present.
 
 ### `AGENT.md`
 
@@ -1374,7 +1370,7 @@ strawpot whoami [...]            # show current user
 ```
 
 `--runtime NAME` accepts any agent name resolvable by the registry (project-local,
-global install, or built-in). Not limited to a hardcoded list.
+global install). Not limited to a hardcoded list.
 
 `--merge-strategy` and `--pull` override the `[session]` config values for
 this run. Useful for one-off runs: e.g. `strawpot start --pull never` to
@@ -1405,7 +1401,7 @@ alive.
 2. `agents/protocol.py` + `isolation/protocol.py` — types
 3. `agents/registry.py` — discover `AGENT.md`, validate env, merge config
 4. `agents/wrapper.py` — `WrapperRuntime` (calls wrapper CLI via subprocess)
-5. `_builtin_agents/claude_code/` — `AGENT.md` + Go wrapper binary
+5. Default agent (`strawpot_claude_code`) — installed from StrawHub on first run
 6. `isolation/worktree.py`
 7. `context.py`
 8. `delegation.py`
@@ -1626,7 +1622,7 @@ short-term memory, and semantic memory as local files.
 ```
 
 Installed to `~/.strawpot/memory/<name>/`, resolved the same way as agents:
-project-local → global → built-in.
+project-local → global.
 
 ### EM Event Schema
 

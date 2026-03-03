@@ -31,7 +31,8 @@ Agents are resolved in this order:
 
 1. **Project-local** — `.strawpot/agents/<name>/AGENT.md`
 2. **Global** — `~/.strawpot/agents/<name>/AGENT.md`
-3. **Built-in** — Ships with StrawPot (e.g. `claude_code`)
+
+If the agent is not found, `strawpot start` prompts to install it from StrawHub.
 
 Each agent has an `AGENT.md` manifest describing its wrapper, dependencies, parameters, and required environment variables.
 

@@ -3,7 +3,7 @@ title: Claude Code
 description: Using Claude Code as a StrawPot agent
 ---
 
-Claude Code is the default agent runtime in StrawPot. It ships as a built-in agent with a pre-compiled Go wrapper.
+Claude Code is the default agent runtime in StrawPot. It is installed from StrawHub and auto-installed on first run if not already present.
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ The Claude Code wrapper translates StrawPot protocol args into `claude` CLI flag
 - **Interactive mode** (orchestrator): Runs `claude` with the role prompt injected as system instructions
 - **Non-interactive mode** (sub-agents): Runs `claude -p <task>` with role and skill context
 
-The wrapper binary is located at `_builtin_agents/claude_code/strawpot_claude_code` and implements the standard [wrapper protocol](/agents/overview#wrapper-protocol).
+The wrapper binary implements the standard [wrapper protocol](/agents/overview#wrapper-protocol) and is installed via `strawhub install agent strawpot_claude_code --global`.
 
 ## Agent Manifest
 
