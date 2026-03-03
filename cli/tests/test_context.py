@@ -1,6 +1,13 @@
 """Tests for strawpot.context."""
 
-from strawpot.context import build_prompt, read_role_description, read_skill_description
+import pytest
+
+from strawpot.context import (
+    build_prompt,
+    read_role_description,
+    read_skill_description,
+    validate_frontmatter_slug,
+)
 
 
 def _write_skill(base, slug, body):
@@ -542,3 +549,53 @@ def test_no_available_skills_when_empty(tmp_path):
 
     result = build_prompt(resolved, global_skills=[])
     assert "Available Skills" not in result
+
+
+# ---------------------------------------------------------------------------
+# validate_frontmatter_slug
+# ---------------------------------------------------------------------------
+
+
+def test_validate_frontmatter_slug_matching(tmp_path):
+    d = tmp_path / "skills" / "my-skill"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: my-skill\ndescription: test\n---\nBody.\n")
+    validate_frontmatter_slug(str(d), "my-skill", "skill")
+
+
+def test_validate_frontmatter_slug_mismatch(tmp_path):
+    d = tmp_path / "skills" / "my-skill"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: wrong-name\ndescription: test\n---\nBody.\n")
+    with pytest.raises(ValueError, match="does not match expected slug"):
+        validate_frontmatter_slug(str(d), "my-skill", "skill")
+
+
+def test_validate_frontmatter_slug_missing_name(tmp_path):
+    d = tmp_path / "skills" / "my-skill"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\ndescription: test\n---\nBody.\n")
+    with pytest.raises(ValueError, match="missing the 'name' field"):
+        validate_frontmatter_slug(str(d), "my-skill", "skill")
+
+
+def test_validate_frontmatter_slug_no_file(tmp_path):
+    d = tmp_path / "skills" / "my-skill"
+    d.mkdir(parents=True)
+    # No SKILL.md — should not raise
+    validate_frontmatter_slug(str(d), "my-skill", "skill")
+
+
+def test_validate_frontmatter_slug_role(tmp_path):
+    d = tmp_path / "roles" / "my-role"
+    d.mkdir(parents=True)
+    (d / "ROLE.md").write_text("---\nname: my-role\ndescription: test\n---\nBody.\n")
+    validate_frontmatter_slug(str(d), "my-role", "role")
+
+
+def test_validate_frontmatter_slug_role_mismatch(tmp_path):
+    d = tmp_path / "roles" / "my-role"
+    d.mkdir(parents=True)
+    (d / "ROLE.md").write_text("---\nname: other-role\ndescription: test\n---\nBody.\n")
+    with pytest.raises(ValueError, match="does not match expected slug"):
+        validate_frontmatter_slug(str(d), "my-role", "role")
