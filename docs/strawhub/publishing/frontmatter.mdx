@@ -25,6 +25,10 @@ metadata:
           macos: brew install gh
           linux: apt install gh
           windows: winget install GitHub.cli
+    env:                                   # Optional: required environment variables
+      GITHUB_TOKEN:
+        required: true
+        description: GitHub API token
 ---
 
 # Skill Title
@@ -40,6 +44,7 @@ Markdown body with instructions for the agent...
 | `description` | Yes | One-line summary |
 | `metadata.strawpot.dependencies` | No | Flat list of skill slugs with optional version constraints |
 | `metadata.strawpot.tools` | No | System tool requirements |
+| `metadata.strawpot.env` | No | Required environment variables (prompted at session start) |
 
 ## Role Frontmatter (`ROLE.md`)
 
@@ -113,6 +118,22 @@ metadata:
 - Install commands run in the user's shell
 - Only the current OS command is executed
 - Supported OS keys: `macos`, `linux`, `windows`
+
+## Environment Variables Schema
+
+```yaml
+metadata:
+  strawpot:
+    env:
+      <VARIABLE_NAME>:
+        required: <boolean>          # Whether the variable must be set
+        description: <string>        # Human-readable description
+```
+
+- At session start, missing required variables are prompted interactively
+- During delegation, missing required variables cause the delegation to fail
+- Variables set at session start are inherited by all sub-agents
+- If the same variable appears in multiple skills, `required: true` takes precedence
 
 ## Key Differences: Skills vs Roles
 

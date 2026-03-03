@@ -45,6 +45,7 @@ Step-by-step instructions for the agent...
 |-------|-------------|
 | `metadata.strawpot.dependencies` | List of skill dependencies with optional version constraints |
 | `metadata.strawpot.tools` | System tool requirements with OS-specific install commands |
+| `metadata.strawpot.env` | Required environment variables (prompted at session start) |
 
 ## Dependencies
 
@@ -87,6 +88,24 @@ metadata:
 Supported OS keys: `macos`, `linux`, `windows`.
 
 Use `--skip-tools` during install to opt out, or run `strawhub install-tools` later to re-check.
+
+## Environment Variables
+
+Skills can declare required environment variables. At session start, the CLI checks if each required variable is set and prompts the user interactively for missing ones.
+
+```yaml
+metadata:
+  strawpot:
+    env:
+      GITHUB_TOKEN:
+        required: true
+        description: GitHub API token
+      OPTIONAL_VAR:
+        required: false
+        description: Optional configuration value
+```
+
+Variables set at session start are inherited by all sub-agents. During delegation, missing required variables cause the delegation to fail with a clear error message.
 
 ## Supporting Files
 

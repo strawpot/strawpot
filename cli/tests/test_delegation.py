@@ -10,6 +10,7 @@ from strawpot.config import StrawPotConfig
 from strawpot.delegation import (
     DelegateRequest,
     DelegateResult,
+    DelegationError,
     PolicyDenied,
     _agent_status,
     _build_delegatable_roles,
@@ -17,13 +18,17 @@ from strawpot.delegation import (
     _check_policy,
     _collect_transitive_skills,
     _format_memory_prompt,
+    _merge_env_entry,
     _parse_role_deps,
     _parse_skill_deps,
+    _parse_skill_env,
     _validate_output,
+    collect_skill_env,
     create_agent_workspace,
     discover_global_skills,
     handle_delegate,
     stage_role,
+    validate_skill_env,
 )
 from strawpot.memory.protocol import (
     ContextCard,
@@ -38,7 +43,7 @@ from strawpot.memory.protocol import (
 # ---------------------------------------------------------------------------
 
 
-def _write_skill(base, slug, body="Skill body.", deps=None):
+def _write_skill(base, slug, body="Skill body.", deps=None, env=None):
     """Write a SKILL.md file.
 
     Args:
@@ -46,19 +51,33 @@ def _write_skill(base, slug, body="Skill body.", deps=None):
         slug: Skill slug.
         body: Markdown body.
         deps: Optional list of skill dependency slugs for frontmatter.
+        env: Optional dict of env var schemas
+            (e.g. ``{"TOKEN": {"required": True, "description": "..."}}``)
     """
     d = os.path.join(base, "skills", slug)
     os.makedirs(d, exist_ok=True)
-    if deps:
-        deps_yaml = "\n".join(f"      - {s}" for s in deps)
+    has_strawpot = deps or env
+    if has_strawpot:
+        strawpot_lines = []
+        if deps:
+            strawpot_lines.append("    dependencies:")
+            for s in deps:
+                strawpot_lines.append(f"      - {s}")
+        if env:
+            strawpot_lines.append("    env:")
+            for var_name, var_meta in env.items():
+                strawpot_lines.append(f"      {var_name}:")
+                for k, v in var_meta.items():
+                    val = "true" if v is True else "false" if v is False else v
+                    strawpot_lines.append(f"        {k}: {val}")
+        strawpot_yaml = "\n".join(strawpot_lines)
         fm = (
             f"---\n"
             f"name: {slug}\n"
             f"description: test\n"
             f"metadata:\n"
             f"  strawpot:\n"
-            f"    dependencies:\n"
-            f"{deps_yaml}\n"
+            f"{strawpot_yaml}\n"
             f"---\n"
         )
     else:
@@ -1767,3 +1786,293 @@ class TestStageRoleGlobalSkills:
         # skills dir exists but is empty
         assert os.path.isdir(skills_dir)
         assert os.listdir(skills_dir) == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_skill_env
+# ---------------------------------------------------------------------------
+
+
+class TestParseSkillEnv:
+    def test_reads_env(self, tmp_path):
+        skill_path = _write_skill(
+            str(tmp_path), "my-skill",
+            env={"MY_TOKEN": {"required": True, "description": "API token"}},
+        )
+        result = _parse_skill_env(skill_path)
+        assert "MY_TOKEN" in result
+        assert result["MY_TOKEN"]["required"] is True
+        assert result["MY_TOKEN"]["description"] == "API token"
+
+    def test_empty_when_no_env(self, tmp_path):
+        skill_path = _write_skill(str(tmp_path), "plain-skill")
+        result = _parse_skill_env(skill_path)
+        assert result == {}
+
+    def test_empty_when_no_file(self, tmp_path):
+        result = _parse_skill_env(str(tmp_path / "nonexistent"))
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _merge_env_entry
+# ---------------------------------------------------------------------------
+
+
+class TestMergeEnvEntry:
+    def test_adds_new_entry(self):
+        target = {}
+        _merge_env_entry(target, "TOKEN", {"required": True, "description": "x"})
+        assert target == {"TOKEN": {"required": True, "description": "x"}}
+
+    def test_required_true_wins(self):
+        target = {"TOKEN": {"required": False, "description": "old"}}
+        _merge_env_entry(target, "TOKEN", {"required": True, "description": "new"})
+        assert target["TOKEN"]["required"] is True
+
+    def test_required_false_does_not_overwrite(self):
+        target = {"TOKEN": {"required": True, "description": "old"}}
+        _merge_env_entry(target, "TOKEN", {"required": False, "description": "new"})
+        assert target["TOKEN"]["required"] is True
+        assert target["TOKEN"]["description"] == "old"
+
+
+# ---------------------------------------------------------------------------
+# collect_skill_env
+# ---------------------------------------------------------------------------
+
+
+class TestCollectSkillEnv:
+    def test_merges_deps_and_global(self, tmp_path):
+        base = str(tmp_path)
+
+        # Skill dep with env
+        skill_a = _write_skill(
+            base, "skill-a",
+            env={"TOKEN_A": {"required": True, "description": "A"}},
+        )
+
+        # Global skill with env
+        global_dir = tmp_path / "global_skills" / "skill-g"
+        global_dir.mkdir(parents=True)
+        (global_dir / "SKILL.md").write_text(
+            "---\nname: skill-g\ndescription: global\n"
+            "metadata:\n  strawpot:\n    env:\n      TOKEN_G:\n"
+            "        required: true\n        description: G\n---\nbody\n"
+        )
+
+        role_path = _write_role(base, "my-role", skill_deps=["skill-a"])
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "path": role_path,
+            "dependencies": [
+                {"slug": "skill-a", "kind": "skill", "path": skill_a},
+            ],
+        }
+
+        result = collect_skill_env(
+            resolved,
+            global_skills=[("skill-g", "global", str(global_dir))],
+        )
+        assert "TOKEN_A" in result
+        assert "TOKEN_G" in result
+
+    def test_required_wins_across_skills(self, tmp_path):
+        base = str(tmp_path)
+        skill_a = _write_skill(
+            base, "skill-a",
+            env={"SHARED": {"required": False, "description": "optional"}},
+        )
+        skill_b = _write_skill(
+            base, "skill-b",
+            env={"SHARED": {"required": True, "description": "required"}},
+        )
+        role_path = _write_role(
+            base, "my-role", skill_deps=["skill-a", "skill-b"]
+        )
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "path": role_path,
+            "dependencies": [
+                {"slug": "skill-a", "kind": "skill", "path": skill_a},
+                {"slug": "skill-b", "kind": "skill", "path": skill_b},
+            ],
+        }
+        result = collect_skill_env(resolved)
+        assert result["SHARED"]["required"] is True
+
+    def test_collects_env_from_delegatable_roles(self, tmp_path):
+        """Env from skills of delegatable (child) roles is included."""
+        base = str(tmp_path)
+
+        # Skill owned by the child role
+        child_skill = _write_skill(
+            base, "child-skill",
+            env={"CHILD_TOKEN": {"required": True, "description": "child"}},
+        )
+
+        # Child role that depends on child-skill
+        child_role = _write_role(
+            base, "child-role", skill_deps=["child-skill"],
+        )
+
+        # Parent role delegates to child-role (no direct skill deps)
+        parent_role = _write_role(
+            base, "parent-role", role_deps=["child-role"],
+        )
+
+        resolved = {
+            "slug": "parent-role",
+            "kind": "role",
+            "path": parent_role,
+            "dependencies": [
+                {"slug": "child-skill", "kind": "skill", "path": child_skill},
+                {"slug": "child-role", "kind": "role", "path": child_role},
+            ],
+        }
+
+        result = collect_skill_env(resolved)
+        assert "CHILD_TOKEN" in result
+        assert result["CHILD_TOKEN"]["required"] is True
+
+    def test_collects_env_from_nested_delegatable_roles(self, tmp_path):
+        """Env from skills of deeply nested delegatable roles is collected."""
+        base = str(tmp_path)
+
+        leaf_skill = _write_skill(
+            base, "leaf-skill",
+            env={"LEAF_VAR": {"required": True, "description": "leaf"}},
+        )
+        grandchild_role = _write_role(
+            base, "grandchild", skill_deps=["leaf-skill"],
+        )
+        child_role = _write_role(
+            base, "child", role_deps=["grandchild"],
+        )
+        parent_role = _write_role(
+            base, "parent", role_deps=["child"],
+        )
+
+        resolved = {
+            "slug": "parent",
+            "kind": "role",
+            "path": parent_role,
+            "dependencies": [
+                {"slug": "leaf-skill", "kind": "skill", "path": leaf_skill},
+                {"slug": "grandchild", "kind": "role", "path": grandchild_role},
+                {"slug": "child", "kind": "role", "path": child_role},
+            ],
+        }
+
+        result = collect_skill_env(resolved)
+        assert "LEAF_VAR" in result
+
+    def test_merges_env_across_own_and_delegatable_skills(self, tmp_path):
+        """Env from both the role's own skills and delegatable roles' skills
+        are merged, with required: true winning."""
+        base = str(tmp_path)
+
+        own_skill = _write_skill(
+            base, "own-skill",
+            env={"SHARED": {"required": False, "description": "optional"}},
+        )
+        child_skill = _write_skill(
+            base, "child-skill",
+            env={"SHARED": {"required": True, "description": "required"}},
+        )
+        child_role = _write_role(
+            base, "child-role", skill_deps=["child-skill"],
+        )
+        parent_role = _write_role(
+            base, "parent-role",
+            skill_deps=["own-skill"], role_deps=["child-role"],
+        )
+
+        resolved = {
+            "slug": "parent-role",
+            "kind": "role",
+            "path": parent_role,
+            "dependencies": [
+                {"slug": "own-skill", "kind": "skill", "path": own_skill},
+                {"slug": "child-skill", "kind": "skill", "path": child_skill},
+                {"slug": "child-role", "kind": "role", "path": child_role},
+            ],
+        }
+
+        result = collect_skill_env(resolved)
+        assert result["SHARED"]["required"] is True
+
+
+# ---------------------------------------------------------------------------
+# validate_skill_env
+# ---------------------------------------------------------------------------
+
+
+class TestValidateSkillEnv:
+    def test_missing_required(self, monkeypatch):
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        schema = {"MISSING_VAR": {"required": True, "description": "x"}}
+        result = validate_skill_env(schema)
+        assert not result.ok
+        assert "MISSING_VAR" in result.missing_env
+
+    def test_all_present(self, monkeypatch):
+        monkeypatch.setenv("PRESENT_VAR", "value")
+        schema = {"PRESENT_VAR": {"required": True, "description": "x"}}
+        result = validate_skill_env(schema)
+        assert result.ok
+
+    def test_optional_not_required(self, monkeypatch):
+        monkeypatch.delenv("OPT_VAR", raising=False)
+        schema = {"OPT_VAR": {"required": False, "description": "x"}}
+        result = validate_skill_env(schema)
+        assert result.ok
+
+
+# ---------------------------------------------------------------------------
+# handle_delegate — skill env validation
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDelegateSkillEnv:
+    def test_fails_on_missing_skill_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("REQUIRED_TOKEN", raising=False)
+
+        base = str(tmp_path)
+        skill_path = _write_skill(
+            base, "needs-token",
+            env={"REQUIRED_TOKEN": {"required": True, "description": "token"}},
+        )
+        role_path = _write_role(
+            base, "my-role", skill_deps=["needs-token"]
+        )
+
+        def mock_resolve(slug, kind="role"):
+            return {
+                "slug": slug,
+                "kind": kind,
+                "path": role_path,
+                "source": "local",
+                "dependencies": [
+                    {"slug": "needs-token", "kind": "skill", "path": skill_path},
+                ],
+            }
+
+        request = _make_request(role_slug="my-role")
+        config = StrawPotConfig(allowed_roles=["my-role"])
+
+        runtime = MagicMock()
+        runtime.name = "mock"
+
+        with pytest.raises(DelegationError, match="REQUIRED_TOKEN"):
+            handle_delegate(
+                request=request,
+                config=config,
+                runtime=runtime,
+                working_dir=base,
+                session_dir=str(tmp_path / "session"),
+                resolve_role=mock_resolve,
+                resolve_role_dirs=lambda s: None,
+            )
