@@ -22,8 +22,8 @@ jobs:
       - name: Install Mintlify CLI
         run: npm install -g mint
 
-      - name: Build docs
-        run: mint build
+      - name: Validate docs
+        run: mint validate
         working-directory: docs
 
   # Deployment is handled by the Mintlify GitHub App.
