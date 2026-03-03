@@ -141,6 +141,26 @@ def _parse_skill_deps(skill_path: str) -> list[str]:
     return [spec.split()[0] for spec in deps]
 
 
+def _parse_skill_env(skill_path: str) -> dict[str, dict]:
+    """Parse SKILL.md frontmatter to extract env schema.
+
+    Returns:
+        Dict mapping var name to metadata
+        (e.g. ``{"GITHUB_TOKEN": {"required": True, "description": "..."}}``)
+        or empty dict if no env field.
+    """
+    skill_md = Path(skill_path) / "SKILL.md"
+    if not skill_md.exists():
+        return {}
+    text = skill_md.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    env = fm.get("metadata", {}).get("strawpot", {}).get("env", {})
+    if not isinstance(env, dict):
+        return {}
+    return env
+
+
 # ---------------------------------------------------------------------------
 # Global skill discovery
 # ---------------------------------------------------------------------------
@@ -208,6 +228,98 @@ def discover_global_skills(
         global_skills.append((slug, desc, str(entry)))
 
     return global_skills
+
+
+# ---------------------------------------------------------------------------
+# Skill env collection and validation
+# ---------------------------------------------------------------------------
+
+
+def _merge_env_entry(target: dict[str, dict], var: str, meta: dict) -> None:
+    """Merge a single env entry into *target*, preferring ``required=True``."""
+    if var not in target:
+        target[var] = dict(meta)
+    elif meta.get("required") and not target[var].get("required"):
+        target[var] = dict(meta)
+
+
+def collect_skill_env(
+    resolved: dict,
+    global_skills: list[tuple[str, str, str]] | None = None,
+) -> dict[str, dict]:
+    """Collect env requirements from all skills in a role's dependency tree.
+
+    Walks the full dependency graph:
+
+    1. The role's own transitive skill dependencies (skill → skill chain).
+    2. Each delegatable role's transitive skill dependencies (recursive).
+    3. Global skills (if ``inherit_global_skills`` is true).
+
+    If the same var appears in multiple skills, ``required: True`` wins.
+
+    Args:
+        resolved: Resolved role dict from ``strawhub.resolver.resolve()``.
+        global_skills: Optional list of ``(slug, description, path)`` tuples.
+
+    Returns:
+        Merged dict mapping var name to metadata.
+    """
+    merged: dict[str, dict] = {}
+    all_deps = resolved.get("dependencies", [])
+
+    # Build lookups
+    role_lookup: dict[str, dict] = {}
+    for dep in all_deps:
+        if dep["kind"] == "role":
+            role_lookup[dep["slug"]] = dep
+
+    visited_roles: set[str] = set()
+
+    def _collect_from_role(role_path: str, role_slug: str) -> None:
+        if role_slug in visited_roles:
+            return
+        visited_roles.add(role_slug)
+
+        skill_slugs, child_role_slugs = _parse_role_deps(role_path)
+        skill_deps = _collect_transitive_skills(skill_slugs, all_deps)
+        for dep in skill_deps:
+            for var, meta in _parse_skill_env(dep["path"]).items():
+                _merge_env_entry(merged, var, meta)
+
+        # Recurse into delegatable roles
+        for child_slug in child_role_slugs:
+            child = role_lookup.get(child_slug)
+            if child is not None:
+                _collect_from_role(child["path"], child_slug)
+
+    # Start from the resolved role itself
+    _collect_from_role(resolved["path"], resolved["slug"])
+
+    if global_skills:
+        for _slug, _desc, gpath in global_skills:
+            for var, meta in _parse_skill_env(gpath).items():
+                _merge_env_entry(merged, var, meta)
+
+    return merged
+
+
+def validate_skill_env(env_schema: dict[str, dict]) -> "ValidationResult":
+    """Validate that required skill env vars are set.
+
+    Args:
+        env_schema: Merged env schema from :func:`collect_skill_env`.
+
+    Returns:
+        :class:`~strawpot.agents.registry.ValidationResult` with any
+        missing required env vars.
+    """
+    from strawpot.agents.registry import ValidationResult
+
+    result = ValidationResult()
+    for var_name, var_meta in env_schema.items():
+        if var_meta.get("required") and var_name not in os.environ:
+            result.missing_env.append(var_name)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +575,17 @@ def handle_delegate(
 
     # 2b. Discover global skills
     global_skills = discover_global_skills(resolved)
+
+    # 2c. Validate skill env requirements (non-interactive)
+    skill_env = collect_skill_env(resolved, global_skills=global_skills or None)
+    skill_validation = validate_skill_env(skill_env)
+    if not skill_validation.ok:
+        missing = ", ".join(skill_validation.missing_env)
+        raise DelegationError(
+            f"Missing required environment variables for role "
+            f"'{request.role_slug}': {missing}. "
+            f"Set these variables before starting the session."
+        )
 
     # 3. Build delegatable roles for the sub-agent
     delegatable = _build_delegatable_roles(
