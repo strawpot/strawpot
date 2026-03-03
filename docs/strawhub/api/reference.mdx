@@ -1,0 +1,250 @@
+---
+title: HTTP API
+description: REST API reference for StrawHub
+---
+
+# HTTP API v1
+
+Base URL: `https://strawhub.dev/api/v1/`
+
+## Authentication
+
+Most read endpoints are public. Write endpoints require a Bearer token:
+
+```
+Authorization: Bearer sh_xxxxx
+```
+
+Tokens are created at [strawhub.dev/settings](https://strawhub.dev/settings) under **API Tokens**.
+
+## Rate Limits
+
+All rate limits are per IP address.
+
+| Bucket | Limit |
+|--------|-------|
+| Read | 100/min |
+| Write | 10/min |
+| Search | 30/min |
+
+A `429` response includes a `Retry-After: 60` header.
+
+---
+
+## Skills
+
+### List Skills
+
+```
+GET /api/v1/skills?limit=50&sort=updated
+```
+
+| Param | Description | Default |
+|-------|-------------|---------|
+| `limit` | Results per page (1-200) | `50` |
+| `sort` | `updated`, `downloads`, or `stars` | `updated` |
+
+**Response:**
+
+```json
+{
+  "items": [
+    {
+      "slug": "git-workflow",
+      "displayName": "Git Workflow",
+      "summary": "...",
+      "stats": { "downloads": 0, "stars": 0, "versions": 1, "comments": 0 },
+      "badges": {},
+      "updatedAt": 1700000000000
+    }
+  ],
+  "count": 1
+}
+```
+
+### Get Skill Detail
+
+```
+GET /api/v1/skills/:slug
+```
+
+### Get Skill File
+
+```
+GET /api/v1/skills/:slug/file?path=SKILL.md
+```
+
+Returns raw file content. `path` defaults to `SKILL.md`.
+
+### Publish Skill
+
+<Note>Requires authentication.</Note>
+
+```
+POST /api/v1/skills
+Content-Type: multipart/form-data
+```
+
+**Payload fields:**
+
+| Field | Description |
+|-------|-------------|
+| `slug` | Package slug |
+| `displayName` | Display name |
+| `version` | Semver version |
+| `changelog` | Version changelog |
+| `dependencies` | Optional JSON: `{"skills": ["dep-a", "dep-b>=1.0.0"]}` |
+| `customTags` | Optional tags |
+| `files[]` | File uploads (max 20 files, 512 KB each) |
+
+Allowed file extensions: `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`.
+
+### Delete Skill
+
+<Note>Requires admin role.</Note>
+
+```
+DELETE /api/v1/skills/:slug
+Authorization: Bearer sh_xxxxx
+```
+
+Soft-deletes the skill.
+
+---
+
+## Roles
+
+### List Roles
+
+```
+GET /api/v1/roles?limit=50&sort=updated
+```
+
+Same parameters and response shape as List Skills.
+
+### Get Role Detail
+
+```
+GET /api/v1/roles/:slug
+```
+
+### Get Role File
+
+```
+GET /api/v1/roles/:slug/file?path=ROLE.md
+```
+
+### Resolve Role Dependencies
+
+```
+GET /api/v1/roles/:slug/resolve
+```
+
+Returns the resolved dependency tree:
+
+```json
+{
+  "role": "implementer",
+  "dependencies": [
+    { "kind": "skill", "slug": "git-workflow", "version": "1.2.0" },
+    { "kind": "skill", "slug": "code-review", "version": "2.0.0" },
+    { "kind": "role", "slug": "reviewer", "version": "1.0.0" }
+  ]
+}
+```
+
+### Publish Role
+
+<Note>Requires authentication.</Note>
+
+```
+POST /api/v1/roles
+Content-Type: multipart/form-data
+```
+
+Same payload as Publish Skill, but `dependencies` supports both skills and roles:
+`{"skills": ["git-workflow>=1.0.0"], "roles": ["reviewer"]}`.
+
+Roles must contain exactly one file named `ROLE.md`.
+
+### Delete Role
+
+<Note>Requires admin role.</Note>
+
+```
+DELETE /api/v1/roles/:slug
+```
+
+---
+
+## Search
+
+```
+GET /api/v1/search?q=review&kind=all&limit=20
+```
+
+| Param | Description | Default |
+|-------|-------------|---------|
+| `q` | Search query (required) | — |
+| `kind` | `all`, `skill`, or `role` | `all` |
+| `limit` | Results (1-100) | `20` |
+
+Uses hybrid ranking: vector similarity + lexical matching + popularity boost.
+
+---
+
+## Stars
+
+### Toggle Star
+
+<Note>Requires authentication.</Note>
+
+```
+POST /api/v1/stars/toggle
+Content-Type: application/json
+
+{ "slug": "git-workflow", "kind": "skill" }
+```
+
+Returns `{ "starred": true }` or `{ "starred": false }`.
+
+---
+
+## Auth
+
+### Whoami
+
+```
+GET /api/v1/whoami
+Authorization: Bearer sh_xxxxx
+```
+
+Returns `{ "handle", "displayName", "email", "role", "image" }`.
+
+---
+
+## Admin
+
+### Set User Role
+
+<Note>Requires admin role.</Note>
+
+```
+POST /api/v1/admin/set-role
+Content-Type: application/json
+
+{ "handle": "someuser", "role": "moderator" }
+```
+
+Valid roles: `admin`, `moderator`, `user`.
+
+### Ban / Unban User
+
+<Note>Requires admin role.</Note>
+
+```
+POST /api/v1/admin/ban-user
+Content-Type: application/json
+
+{ "handle": "baduser", "blocked": true, "reason": "spam" }
+```

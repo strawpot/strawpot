@@ -1,0 +1,114 @@
+---
+title: Publishing Guide
+description: How to publish skills and roles to StrawHub
+---
+
+# Publishing Guide
+
+You can publish skills and roles via the web UI, GitHub import, or the CLI.
+
+## Prerequisites
+
+- A [StrawHub account](https://strawhub.dev) (sign in with GitHub)
+- An API token (for CLI publishing) — create one at **Settings > API Tokens**
+
+## Publishing via CLI
+
+### 1. Create your skill or role
+
+Create a directory with a `SKILL.md` or `ROLE.md`:
+
+```bash
+mkdir my-skill
+cat > my-skill/SKILL.md << 'EOF'
+---
+name: my-skill
+description: "A brief description of what this skill does"
+---
+
+# My Skill
+
+Instructions for the agent...
+EOF
+```
+
+### 2. Authenticate
+
+```bash
+strawhub login
+# Paste your API token when prompted
+```
+
+### 3. Publish
+
+```bash
+strawhub publish skill ./my-skill
+```
+
+With version and changelog:
+
+```bash
+strawhub publish skill ./my-skill --version 1.0.0 --changelog "Initial release"
+```
+
+With tags:
+
+```bash
+strawhub publish skill ./my-skill --tag python --tag testing
+```
+
+## Publishing via Web UI
+
+1. Go to [strawhub.dev/upload](https://strawhub.dev/upload)
+2. **Drag and drop** your files or folder
+3. The form auto-fills from frontmatter (slug, display name)
+4. Add a version and changelog
+5. Click **Publish**
+
+## Publishing via GitHub Import
+
+1. Go to [strawhub.dev/upload](https://strawhub.dev/upload)
+2. Paste a **GitHub repository URL** containing your `SKILL.md` or `ROLE.md`
+3. Files are fetched via the GitHub Contents API
+4. Review and publish
+
+## Version Rules
+
+- Versions follow [semver](https://semver.org/) (`major.minor.patch`)
+- New versions must be **strictly greater** than the latest published version
+- If no version is specified, the patch version is auto-incremented
+- Version monotonicity is enforced at publish time
+
+## Slug Ownership
+
+- The first user to publish a slug owns it
+- Only the owner can publish new versions
+- Slug uniqueness is **per-type**: a skill and a role can share the same slug
+- Slugs cannot be transferred (contact an admin if needed)
+
+## Updating an Existing Package
+
+To publish a new version of an existing package, use the same slug:
+
+```bash
+strawhub publish skill ./my-skill --version 2.0.0 --changelog "Breaking change: ..."
+```
+
+Via the web UI, navigate to your package and click **Update**, or use the upload page with `?updateSlug=my-skill`.
+
+## File Constraints
+
+| Constraint | Limit |
+|------------|-------|
+| Max files per package | 20 |
+| Max file size | 512 KB |
+| Allowed extensions | `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml` |
+
+## Dependency Validation
+
+When publishing, dependencies declared in frontmatter are validated:
+
+- Each dependency slug must exist in the registry
+- Version constraints must be satisfiable by at least one published version
+- Circular dependencies are rejected
+- All validation errors are reported together (not just the first one)

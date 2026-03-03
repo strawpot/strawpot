@@ -1,0 +1,121 @@
+---
+title: Dependencies
+description: Version specifiers, resolution algorithm, and project files
+---
+
+# Dependencies
+
+StrawHub supports recursive dependency resolution with semver version constraints.
+
+## Version Specifiers
+
+| Format | Meaning | Example |
+|--------|---------|---------|
+| `slug` | Latest version | `git-workflow` |
+| `slug==X.Y.Z` | Exact version | `git-workflow==1.0.0` |
+| `slug>=X.Y.Z` | Minimum version | `git-workflow>=1.0.0` |
+| `slug^X.Y.Z` | Compatible (same major, >= specified) | `git-workflow^1.0.0` |
+
+Versions follow [semver](https://semver.org/) (`major.minor.patch`).
+
+**Compatible (`^`)** means: same major version, at least the specified minor.patch. For example, `^1.2.0` matches `1.2.0`, `1.3.0`, `1.99.0`, but not `2.0.0`.
+
+## Resolution Algorithm
+
+When you install a role with dependencies:
+
+1. Fetch the role from the registry
+2. Read `metadata.strawpot.dependencies` from its frontmatter
+3. For each dependency, recursively fetch and read its dependencies
+4. Resolve version constraints (find best matching version for each)
+5. Topological sort with cycle detection
+6. Return install order (leaves first)
+
+**Skill resolution** is done client-side by the CLI, recursively reading frontmatter.
+
+**Role resolution** is done server-side via the `/api/v1/roles/:slug/resolve` endpoint, which returns the complete dependency tree.
+
+## Project File (`strawpot.toml`)
+
+Declare project dependencies in `strawpot.toml`:
+
+```toml
+[skills]
+git-workflow = "^1.0.0"
+code-review = "==2.1.0"
+security-baseline = "*"
+
+[roles]
+implementer = "^1.0.0"
+reviewer = ">=2.0.0"
+```
+
+### Constraint Formats
+
+| Format | Meaning |
+|--------|---------|
+| `"*"` | Any version (install latest) |
+| `"^X.Y.Z"` | Compatible — same major, >= specified |
+| `"==X.Y.Z"` | Exact version |
+| `">=X.Y.Z"` | Minimum version |
+
+### Commands
+
+```bash
+# Install all dependencies from strawpot.toml
+strawhub install
+
+# Generate strawpot.toml from installed packages
+strawhub init
+
+# Generate with exact version pins
+strawhub init --exact
+
+# Update all and save new versions
+strawhub update --all --save
+```
+
+### Update Behavior with `--save`
+
+When `strawhub update --save` is used, the constraint operator is preserved — only the version number changes:
+
+| Before | Installed | After |
+|--------|-----------|-------|
+| `^1.0.0` | `1.3.0` | `^1.3.0` |
+| `==1.0.0` | `2.0.0` | `==2.0.0` |
+| `>=1.0.0` | `1.5.0` | `>=1.5.0` |
+| `*` | `3.0.0` | `*` (unchanged) |
+
+## Directory Structure
+
+### Local Scope (project-level)
+
+```
+./
+├── strawpot.toml              # Project file (commit to VCS)
+└── .strawpot/                 # Local package store
+    ├── skills/
+    │   ├── code-review-2.1.0/
+    │   │   └── SKILL.md
+    │   └── git-workflow-1.2.0/
+    │       └── SKILL.md
+    ├── roles/
+    │   └── implementer-1.0.0/
+    │       └── ROLE.md
+    └── strawpot.lock          # Auto-generated lockfile (JSON)
+```
+
+### Global Scope
+
+```
+~/.strawpot/                   # Or STRAWPOT_HOME
+├── skills/
+├── roles/
+└── strawpot.lock
+```
+
+### Scope Resolution
+
+- **Install**: defaults to local. Use `--global` for global.
+- **Resolve**: checks local first, then global. Local takes priority.
+- **Project file**: local only. `--save` flags are incompatible with `--global`.

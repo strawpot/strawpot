@@ -1,0 +1,126 @@
+---
+title: Frontmatter Reference
+description: Complete YAML frontmatter schema for skills and roles
+---
+
+# Frontmatter Reference
+
+Both skills and roles use YAML frontmatter in their markdown files. This page documents the complete schema.
+
+## Skill Frontmatter (`SKILL.md`)
+
+```yaml
+---
+name: code-review                          # Required: package slug
+description: "Code review checklist"       # Required: one-line summary
+metadata:
+  strawpot:
+    dependencies:                          # Optional: skill dependencies
+      - security-baseline                  #   latest version
+      - git-workflow>=1.0.0                #   minimum version
+      - python-testing^2.0.0              #   compatible version
+      - code-style==1.5.0                 #   exact version
+    tools:                                 # Optional: system tool requirements
+      gh:
+        description: GitHub CLI
+        install:
+          macos: brew install gh
+          linux: apt install gh
+          windows: winget install GitHub.cli
+---
+
+# Skill Title
+
+Markdown body with instructions for the agent...
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Package slug (unique within skills) |
+| `description` | Yes | One-line summary |
+| `metadata.strawpot.dependencies` | No | Flat list of skill slugs with optional version constraints |
+| `metadata.strawpot.tools` | No | System tool requirements |
+
+## Role Frontmatter (`ROLE.md`)
+
+```yaml
+---
+name: implementer                           # Required: package slug
+description: "Implements features"          # Required: one-line summary
+metadata:
+  strawpot:
+    dependencies:                           # Optional: dependencies
+      skills:                               #   skill dependencies
+        - git-workflow>=1.0.0
+        - code-review
+      roles:                                #   role dependencies
+        - reviewer
+    default_model:                          # Optional: model configuration
+      provider: claude_session
+      id: claude-opus-4-6
+    tools:                                  # Optional: system tool requirements
+      gh:
+        description: GitHub CLI
+        install:
+          macos: brew install gh
+          linux: apt install gh
+          windows: winget install GitHub.cli
+---
+
+# Role Title
+
+Markdown body with role instructions for the agent...
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Package slug (unique within roles) |
+| `description` | Yes | One-line summary |
+| `metadata.strawpot.dependencies.skills` | No | List of skill dependencies |
+| `metadata.strawpot.dependencies.roles` | No | List of role dependencies |
+| `metadata.strawpot.default_model.provider` | No | Model provider identifier |
+| `metadata.strawpot.default_model.id` | No | Model ID |
+| `metadata.strawpot.tools` | No | System tool requirements |
+
+## Version Specifiers
+
+Used in dependency declarations:
+
+| Format | Meaning | Example |
+|--------|---------|---------|
+| `slug` | Latest version | `git-workflow` |
+| `slug==X.Y.Z` | Exact version | `git-workflow==1.0.0` |
+| `slug>=X.Y.Z` | Minimum version | `git-workflow>=1.0.0` |
+| `slug^X.Y.Z` | Compatible (same major) | `git-workflow^1.0.0` |
+
+## System Tools Schema
+
+```yaml
+metadata:
+  strawpot:
+    tools:
+      <tool-name>:
+        description: <string>          # What the tool is
+        install:
+          macos: <shell command>       # macOS install command
+          linux: <shell command>       # Linux install command
+          windows: <shell command>     # Windows install command
+```
+
+- Tool names should match the CLI binary name (used for `PATH` detection)
+- Install commands run in the user's shell
+- Only the current OS command is executed
+- Supported OS keys: `macos`, `linux`, `windows`
+
+## Key Differences: Skills vs Roles
+
+| Aspect | Skills | Roles |
+|--------|--------|-------|
+| File | `SKILL.md` | `ROLE.md` |
+| Dependencies format | Flat list (skills only) | Structured with `skills` and `roles` sub-keys |
+| Model config | Not supported | `default_model` field |
+| Namespace | Separate | Separate (same slug allowed in both) |

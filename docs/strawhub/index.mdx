@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: Public registry for agent skills and roles
+---
+
+# StrawHub
+
+StrawHub is the public registry for [StrawPot](https://strawpot.com) skills and roles. Discover, publish, and install reusable instruction modules for AI agents with automatic dependency resolution.
+
+**Live at [strawhub.dev](https://strawhub.dev)**
+
+## What Are Skills and Roles?
+
+<CardGroup cols={2}>
+  <Card title="Skills" icon="book-open">
+    Markdown instruction modules that agents load into context. Skills can depend on other skills and declare system tool requirements.
+  </Card>
+  <Card title="Roles" icon="user-cog">
+    Define agent behavior, model configuration, and task specialization. Roles depend on both skills and other roles.
+  </Card>
+</CardGroup>
+
+Both use the same format: YAML frontmatter + markdown body, following the [Agent Skills](https://agentskills.io/) open spec with StrawPot-specific extensions.
+
+## Key Features
+
+- **Browse & Search** — Discover skills and roles with vector + lexical hybrid search
+- **Publish** — Upload via web UI, GitHub import, or REST API
+- **Dependency Resolution** — Transitive dependencies resolved automatically on install
+- **Version Management** — Semver with compatible (`^`), minimum (`>=`), and exact (`==`) constraints
+- **System Tools** — Skills declare required system tools with OS-specific install commands
+- **CLI & API** — Full-featured Python CLI and REST API for programmatic access
+
+## Ecosystem
+
+| Project | Description |
+|---------|-------------|
+| [StrawPot](https://strawpot.com) | CLI orchestrator — uses StrawHub to resolve roles and skills at runtime |
+| [StrawHub](https://strawhub.dev) | Public registry (this project) |
+| [Denden](https://github.com/strawpot/denden) | gRPC transport between agents and orchestrator |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="play" href="/strawhub/quickstart">
+    Install the CLI and get your first skill in 2 minutes.
+  </Card>
+  <Card title="Publishing Guide" icon="upload" href="/strawhub/publishing/guide">
+    Learn how to publish your own skills and roles.
+  </Card>
+</CardGroup>

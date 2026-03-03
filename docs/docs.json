@@ -14,7 +14,7 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Documentation",
+        "tab": "StrawPot",
         "groups": [
           {
             "group": "Get Started",
@@ -40,6 +40,43 @@
             "group": "Agents",
             "icon": "bot",
             "pages": ["agents/overview", "agents/claude-code"]
+          }
+        ]
+      },
+      {
+        "tab": "StrawHub",
+        "groups": [
+          {
+            "group": "Get Started",
+            "icon": "rocket",
+            "pages": ["strawhub/index", "strawhub/quickstart"]
+          },
+          {
+            "group": "Concepts",
+            "icon": "lightbulb",
+            "pages": [
+              "strawhub/concepts/skills",
+              "strawhub/concepts/roles",
+              "strawhub/concepts/dependencies"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "icon": "terminal",
+            "pages": ["strawhub/cli/commands"]
+          },
+          {
+            "group": "Publishing",
+            "icon": "upload",
+            "pages": [
+              "strawhub/publishing/guide",
+              "strawhub/publishing/frontmatter"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "icon": "code",
+            "pages": ["strawhub/api/reference"]
           }
         ]
       }
