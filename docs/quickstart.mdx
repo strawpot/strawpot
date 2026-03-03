@@ -33,7 +33,7 @@ strawpot start
 ```
 
 This will:
-1. Load configuration from `.strawpot/config.toml` (if present) and `~/.strawpot/config.toml`
+1. Load configuration from `strawpot.toml` (if present) and `~/.strawpot/strawpot.toml`
 2. Resolve the agent runtime (default: Claude Code)
 3. Start a Denden gRPC server on `127.0.0.1:9700`
 4. Spawn the orchestrator agent in your terminal
@@ -74,7 +74,7 @@ strawpot search "code review"
 Create a project-level config file:
 
 ```toml
-# .strawpot/config.toml
+# strawpot.toml (project root)
 runtime = "claude_code"
 isolation = "worktree"
 

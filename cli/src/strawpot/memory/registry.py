@@ -95,7 +95,7 @@ def resolve_memory(
     Args:
         name: Memory provider name (e.g. ``"strawpot-memory-local"``).
         project_dir: Project root directory.
-        user_config: Per-provider config from ``[memory_config]`` in config.toml.
+        user_config: Per-provider config from ``[memory_config]`` in strawpot.toml.
 
     Returns:
         Resolved MemorySpec.

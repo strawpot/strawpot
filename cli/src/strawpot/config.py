@@ -96,18 +96,18 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
 def load_config(project_dir: Path | None = None) -> StrawPotConfig:
     """Load config merging: defaults < global < project-level.
 
-    Global: $STRAWPOT_HOME/config.toml (default ~/.strawpot/config.toml)
-    Project: <project_dir>/.strawpot/config.toml
+    Global: $STRAWPOT_HOME/strawpot.toml (default ~/.strawpot/strawpot.toml)
+    Project: <project_dir>/strawpot.toml
     """
     config = StrawPotConfig()
 
     # Global config
-    global_path = get_strawpot_home() / "config.toml"
+    global_path = get_strawpot_home() / "strawpot.toml"
     _apply(config, _read_toml(global_path))
 
     # Project config
     if project_dir:
-        project_path = project_dir / ".strawpot" / "config.toml"
+        project_path = project_dir / "strawpot.toml"
         _apply(config, _read_toml(project_path))
 
     return config

@@ -150,7 +150,7 @@ def resolve_agent(
     Args:
         name: Agent name (e.g. ``"claude_code"``).
         project_dir: Project root directory.
-        user_config: Per-agent config from ``[agents.<name>]`` in config.toml.
+        user_config: Per-agent config from ``[agents.<name>]`` in strawpot.toml.
 
     Returns:
         Resolved AgentSpec.

@@ -64,8 +64,8 @@ strawpot config
 
 ## Configuration
 
-Global: `$STRAWPOT_HOME/config.toml` (default `~/.strawpot/config.toml`)
-Project: `.strawpot/config.toml`
+Global: `$STRAWPOT_HOME/strawpot.toml` (default `~/.strawpot/strawpot.toml`)
+Project: `strawpot.toml` (project root)
 
 ```toml
 runtime = "claude_code"       # claude_code | codex | openhands
