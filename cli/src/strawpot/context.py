@@ -20,6 +20,37 @@ def parse_frontmatter(text: str) -> dict:
     return {"frontmatter": fm, "body": parts[2]}
 
 
+def validate_frontmatter_slug(
+    package_path: str, expected_slug: str, kind: str
+) -> None:
+    """Validate that the frontmatter ``name`` matches the expected slug.
+
+    Args:
+        package_path: Directory containing the SKILL.md or ROLE.md file.
+        expected_slug: The slug derived from the directory name.
+        kind: ``"skill"`` or ``"role"``.
+
+    Raises:
+        ValueError: If the ``name`` field is missing or does not match *expected_slug*.
+    """
+    filename = "SKILL.md" if kind == "skill" else "ROLE.md"
+    filepath = Path(package_path) / filename
+    if not filepath.exists():
+        return
+    text = filepath.read_text(encoding="utf-8")
+    parsed = parse_frontmatter(text)
+    fm_name = parsed.get("frontmatter", {}).get("name")
+    if fm_name is None:
+        raise ValueError(
+            f"{filename} in '{package_path}' is missing the 'name' field"
+        )
+    if fm_name != expected_slug:
+        raise ValueError(
+            f"{filename} name '{fm_name}' does not match expected slug "
+            f"'{expected_slug}' in '{package_path}'"
+        )
+
+
 def build_prompt(
     resolved: dict,
     delegatable_roles: list[tuple[str, str]] | None = None,

@@ -16,6 +16,7 @@ from strawpot.context import (
     parse_frontmatter,
     read_role_description,
     read_skill_description,
+    validate_frontmatter_slug,
 )
 from strawpot.memory.protocol import GetResult, MemoryProvider
 
@@ -224,6 +225,7 @@ def discover_global_skills(
         slug, _version = parsed
         if slug in resolved_slugs:
             continue
+        validate_frontmatter_slug(str(entry), slug, "skill")
         desc = read_skill_description(str(entry))
         global_skills.append((slug, desc, str(entry)))
 
@@ -412,6 +414,12 @@ def stage_role(
 
     os.makedirs(role_stage_dir, exist_ok=True)
 
+    # Validate frontmatter name matches slug for the role and all deps
+    validate_frontmatter_slug(resolved["path"], slug, "role")
+    all_deps = resolved.get("dependencies", [])
+    for dep in all_deps:
+        validate_frontmatter_slug(dep["path"], dep["slug"], dep["kind"])
+
     # Copy ROLE.md from installed path
     src_role_md = os.path.join(resolved["path"], "ROLE.md")
     dst_role_md = os.path.join(role_stage_dir, "ROLE.md")
@@ -419,7 +427,6 @@ def stage_role(
 
     # Parse direct dependencies from frontmatter
     direct_skill_slugs, direct_role_slugs = _parse_role_deps(resolved["path"])
-    all_deps = resolved.get("dependencies", [])
 
     # Stage transitive skill deps (for this role's own skills only)
     skill_deps = _collect_transitive_skills(direct_skill_slugs, all_deps)
@@ -432,6 +439,7 @@ def stage_role(
     # Stage global skills (skip if slug already present from deps)
     if global_skills:
         for gslug, _desc, gpath in global_skills:
+            validate_frontmatter_slug(gpath, gslug, "skill")
             dest = os.path.join(skills_dir, gslug)
             if not os.path.exists(dest):
                 _symlink(gpath, dest)

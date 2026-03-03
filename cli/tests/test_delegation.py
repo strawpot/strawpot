@@ -519,6 +519,49 @@ class TestStageRole:
         role_entries = os.listdir(roles_dir)
         assert "sub-role" in role_entries
 
+    def test_raises_on_role_name_mismatch(self, tmp_path):
+        """stage_role raises ValueError when ROLE.md name != slug."""
+        base = str(tmp_path / "registry")
+        # Write role with a different name in frontmatter
+        role_dir = os.path.join(base, "roles", "implementer")
+        os.makedirs(role_dir, exist_ok=True)
+        with open(os.path.join(role_dir, "ROLE.md"), "w") as f:
+            f.write("---\nname: wrong-name\ndescription: test\n---\nBody.\n")
+        session_dir = str(tmp_path / "session")
+
+        resolved = {
+            "slug": "implementer",
+            "path": role_dir,
+            "dependencies": [],
+        }
+
+        with pytest.raises(ValueError, match="does not match"):
+            stage_role(session_dir, resolved)
+
+    def test_raises_on_skill_dep_name_mismatch(self, tmp_path):
+        """stage_role raises ValueError when a skill dep's name != slug."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "implementer", skill_deps=["my-skill"])
+
+        # Write skill with mismatched name
+        skill_dir = os.path.join(base, "skills", "my-skill")
+        os.makedirs(skill_dir, exist_ok=True)
+        with open(os.path.join(skill_dir, "SKILL.md"), "w") as f:
+            f.write("---\nname: different\ndescription: test\n---\nBody.\n")
+
+        session_dir = str(tmp_path / "session")
+        resolved = {
+            "slug": "implementer",
+            "path": role_path,
+            "dependencies": [
+                {"slug": "my-skill", "kind": "skill", "path": skill_dir,
+                 "version": "1.0", "source": "local"},
+            ],
+        }
+
+        with pytest.raises(ValueError, match="does not match"):
+            stage_role(session_dir, resolved)
+
 
 class TestCreateAgentWorkspace:
     def test_creates_directory(self, tmp_path):
@@ -1710,6 +1753,26 @@ class TestDiscoverGlobalSkills:
         assert len(result) == 2
         assert result[0][0] == "a-tool"
         assert result[1][0] == "z-tool"
+
+    def test_raises_on_name_mismatch(self, tmp_path, monkeypatch):
+        """Raises ValueError when global skill name != directory slug."""
+        global_dir = str(tmp_path / "global")
+        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
+
+        # Create global skill with mismatched name
+        d = os.path.join(global_dir, "skills", "linter-1.0.0")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "SKILL.md"), "w") as f:
+            f.write("---\nname: wrong-name\ndescription: test\n---\nBody.\n")
+
+        role_path = _write_role(str(tmp_path), "worker")
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        with pytest.raises(ValueError, match="does not match"):
+            discover_global_skills(resolved)
 
 
 # ---------------------------------------------------------------------------
