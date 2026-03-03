@@ -1,0 +1,85 @@
+---
+title: Sessions
+description: Session lifecycle, crash recovery, and merge strategies
+---
+
+# Sessions
+
+A session is the unit of work in StrawPot. It encapsulates an isolated environment, a Denden server, and all spawned agents.
+
+## Lifecycle
+
+When you run `strawpot start`:
+
+1. **Load config** — Merge global, project, and CLI flag settings
+2. **Resolve agent** — Find the agent runtime (builtin → global → project)
+3. **Validate** — Check required tools and environment variables
+4. **Create isolation** — Set up worktree or use project directory directly
+5. **Start Denden** — Launch gRPC server on `127.0.0.1:9700`
+6. **Resolve orchestrator role** — Fetch from StrawHub, stage dependencies
+7. **Spawn orchestrator** — Launch the agent in tmux (or direct terminal)
+8. **Block** — Wait for the orchestrator to exit
+9. **Cleanup** — Kill sub-agents, stop Denden, merge changes, remove worktree
+
+Session state is tracked in `.strawpot/sessions/<session_id>/session.json`.
+
+## Merge Strategies
+
+When a session ends with worktree isolation, changes need to be merged back. The `merge_strategy` config controls how:
+
+| Strategy | Behavior |
+|----------|----------|
+| `auto` | Detect remote: use `pr` if remote exists, `local` otherwise |
+| `local` | Generate a patch from the session branch, apply to the base branch |
+| `pr` | Push session branch, create PR via `gh` (or custom command) |
+
+### Local Merge
+
+1. Generate patch: `git diff base_branch...session_branch`
+2. Switch to base branch
+3. Apply patch with `git apply`
+4. If conflicts arise, prompt user for resolution
+
+### PR Merge
+
+1. Push session branch to remote
+2. Run the PR command (configurable):
+   ```
+   gh pr create --base {base_branch} --head {session_branch}
+   ```
+3. The `pr_command` config supports `{base_branch}` and `{session_branch}` placeholders
+
+## Pull Before Session
+
+The `pull_before_session` setting controls whether to pull latest changes before creating a worktree:
+
+| Value | Behavior |
+|-------|----------|
+| `prompt` | Ask the user each time (default) |
+| `auto` | Pull if a remote is detected |
+| `always` | Force pull (error if no remote) |
+| `never` | Skip, use current HEAD |
+
+## Crash Recovery
+
+If StrawPot crashes or is interrupted, sessions may be left in a stale state. On the next `strawpot start`, StrawPot automatically:
+
+1. Scans `.strawpot/sessions/` for stale session files
+2. Checks if the session's PID is still alive
+3. For dead sessions: applies the merge strategy and cleans up the worktree
+4. Removes orphaned session files
+
+## Monitoring
+
+```bash
+# List all running sessions
+strawpot sessions
+
+# List agents in a session
+strawpot agents <session_id>
+```
+
+Each session tracks:
+- Session ID, start time, working directory
+- Denden server address and PID
+- All spawned agents with their role, runtime, parent, and status

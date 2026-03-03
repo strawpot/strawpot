@@ -1,0 +1,113 @@
+---
+title: Quickstart
+description: Install StrawPot and run your first multi-agent session
+---
+
+# Quickstart
+
+Get StrawPot running in under 5 minutes.
+
+## Prerequisites
+
+- Python 3.11+
+- Git
+- An AI agent CLI (e.g. [Claude Code](https://docs.anthropic.com/en/docs/claude-code))
+- tmux (recommended, for interactive sessions)
+
+## Install
+
+<CodeGroup>
+```bash pip
+pip install strawpot
+```
+
+```bash From source
+cd cli
+pip install -e ".[dev]"
+```
+</CodeGroup>
+
+## Start a Session
+
+Run `strawpot start` from any git repository:
+
+```bash
+cd your-project
+strawpot start
+```
+
+This will:
+1. Load configuration from `.strawpot/config.toml` (if present) and `~/.strawpot/config.toml`
+2. Resolve the agent runtime (default: Claude Code)
+3. Start a Denden gRPC server on `127.0.0.1:9700`
+4. Spawn the orchestrator agent in your terminal
+
+### With Options
+
+```bash
+# Use a specific orchestrator role
+strawpot start --role team-lead
+
+# Use worktree isolation (recommended)
+strawpot start --isolation worktree
+
+# Use a specific agent runtime
+strawpot start --runtime claude_code
+
+# Non-interactive mode with a task
+strawpot start --task "Fix the failing tests in src/auth.py"
+```
+
+## Install Skills and Roles
+
+StrawPot uses [StrawHub](https://strawhub.dev) for reusable skills and roles:
+
+```bash
+# Install a skill
+strawpot install skill git-workflow
+
+# Install a role (with dependency resolution)
+strawpot install role implementer
+
+# Search the registry
+strawpot search "code review"
+```
+
+## Configuration
+
+Create a project-level config file:
+
+```toml
+# .strawpot/config.toml
+runtime = "claude_code"
+isolation = "worktree"
+
+[orchestrator]
+role = "team-lead"
+
+[policy]
+allowed_roles = ["implementer", "reviewer"]
+max_depth = 3
+
+[agents.claude_code]
+model = "claude-sonnet-4-6"
+```
+
+See [Configuration](/cli/configuration) for the full reference.
+
+## What Happens During a Session
+
+When the orchestrator agent needs help, it delegates sub-tasks via Denden:
+
+1. **Policy check** — Is the requested role allowed? Is the depth limit reached?
+2. **Role resolution** — StrawPot fetches the role and its dependencies from StrawHub
+3. **Agent spawn** — A sub-agent is launched with the role's instructions and skills
+4. **Result** — The sub-agent's output is returned to the caller
+
+All agents work in the same directory (worktree or project dir), so they can see each other's changes.
+
+## Next Steps
+
+- [Architecture](/concepts/architecture) — Understand the full system
+- [CLI Reference](/cli/commands) — All available commands
+- [Agents](/agents/overview) — How agent runtimes work

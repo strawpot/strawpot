@@ -1,0 +1,131 @@
+---
+title: Agent Runtimes
+description: How agent runtimes work and how to create custom agents
+---
+
+# Agent Runtimes
+
+StrawPot is agent-agnostic. It uses a wrapper protocol to communicate with any AI agent, and a generic runtime to manage their lifecycle.
+
+## How It Works
+
+```
+StrawPot Core                    Agent Wrapper                Agent CLI
+─────────────                    ─────────────                ─────────
+                    build
+WrapperRuntime  ──────────────►  wrapper CLI   ──────────────►  JSON output
+                    args                           {"cmd": [...]}
+                                                          │
+WrapperRuntime  ◄────────────────────────────────────────┘
+  │                                                   parses JSON
+  │  Popen(cmd)
+  ▼
+Agent Process (managed by StrawPot)
+```
+
+1. StrawPot calls `<wrapper> build` with protocol args
+2. The wrapper translates these into the agent's native CLI command
+3. StrawPot launches the command via `Popen` and manages the process
+
+## Agent Discovery
+
+Agents are resolved in this order:
+
+1. **Project-local** — `.strawpot/agents/<name>/AGENT.md`
+2. **Global** — `~/.strawpot/agents/<name>/AGENT.md`
+3. **Built-in** — Ships with StrawPot (e.g. `claude_code`)
+
+Each agent has an `AGENT.md` manifest describing its wrapper, dependencies, parameters, and required environment variables.
+
+## Agent Manifest (AGENT.md)
+
+```yaml
+---
+name: my-agent
+description: My custom agent
+metadata:
+  version: "1.0.0"
+  strawpot:
+    # Option A: Compiled binary (relative to agent folder)
+    bin:
+      macos: my_agent_wrapper
+      linux: my_agent_wrapper
+    # Option B: External CLI on PATH
+    # wrapper:
+    #   command: my-agent-wrapper
+    tools:
+      my-tool:
+        description: Required CLI tool
+        install:
+          macos: brew install my-tool
+          linux: apt install my-tool
+    params:
+      model:
+        type: string
+        default: gpt-4
+        description: Model to use
+    env:
+      MY_API_KEY:
+        required: true
+        description: API key for the service
+---
+
+# My Agent
+
+Description of what this agent does (shown to LLMs for discovery).
+```
+
+### Wrapper Delivery
+
+Two modes:
+
+| Mode | Config | Description |
+|------|--------|-------------|
+| `bin.<os>` | `bin.macos: binary_name` | Compiled binary in the agent folder, keyed by OS |
+| `wrapper.command` | `wrapper.command: cli-name` | External CLI on PATH |
+
+## Wrapper Protocol
+
+Every wrapper must implement two subcommands:
+
+### `setup`
+
+Interactive one-time setup (auth, configuration). Runs with stdin/stdout attached.
+
+```bash
+<wrapper> setup
+# Exit code 0 = success
+```
+
+### `build`
+
+Translate StrawPot protocol args into the agent's native command. Returns JSON to stdout.
+
+```bash
+<wrapper> build \
+  --agent-id <id> \
+  --working-dir <dir> \
+  --agent-workspace-dir <dir> \
+  --role-prompt <text> \
+  --memory-prompt <text> \
+  --task <text> \
+  --skills-dir <dir> \
+  --roles-dir <dir> \
+  --config <json>
+```
+
+**Output:**
+
+```json
+{"cmd": ["claude", "-p", "implement the feature"], "cwd": "/path/to/worktree"}
+```
+
+## Runtime Types
+
+| Runtime | Description | Used For |
+|---------|-------------|----------|
+| `InteractiveWrapperRuntime` | Wraps command in tmux session | Orchestrator (interactive) |
+| `DirectWrapperRuntime` | Runs directly in terminal (fallback) | Orchestrator (no tmux) |
+| `WrapperRuntime` | Headless subprocess | Sub-agents (non-interactive) |
+
+StrawPot auto-selects: if tmux is available, the orchestrator gets `InteractiveWrapperRuntime`. Sub-agents always use `WrapperRuntime` (headless).

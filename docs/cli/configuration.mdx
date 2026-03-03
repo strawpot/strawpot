@@ -1,0 +1,124 @@
+---
+title: Configuration
+description: TOML config format, hierarchy, and all available options
+---
+
+# Configuration
+
+StrawPot uses TOML configuration files with a layered hierarchy.
+
+## Config Hierarchy
+
+Settings are merged in order (later overrides earlier):
+
+1. **Built-in defaults** — Sensible defaults for all options
+2. **Global config** — `~/.strawpot/config.toml` (or `$STRAWPOT_HOME/config.toml`)
+3. **Project config** — `.strawpot/config.toml` (in project root)
+4. **CLI flags** — Override everything
+
+## Full Reference
+
+```toml
+# .strawpot/config.toml
+
+# Agent runtime to use for the orchestrator
+# Options: claude_code, codex, openhands, or any custom agent name
+runtime = "claude_code"
+
+# Isolation strategy
+# Options: none, worktree, docker
+isolation = "none"
+
+# ── Denden gRPC Server ──────────────────────────────────
+[denden]
+addr = "127.0.0.1:9700"
+
+# ── Orchestrator ─────────────────────────────────────────
+[orchestrator]
+# StrawHub role slug for the orchestrator agent
+role = "orchestrator"
+
+# Permission mode for the orchestrator
+# Sub-agents always run in "auto" mode
+permission_mode = "default"
+
+# ── Policy ───────────────────────────────────────────────
+[policy]
+# Roles that agents are allowed to delegate to
+# Omit to allow all roles. Empty list denies all.
+allowed_roles = ["implementer", "reviewer", "fixer"]
+
+# Maximum delegation depth (orchestrator = depth 0)
+max_depth = 3
+
+# Sub-agent timeout in seconds (omit for no limit)
+# The orchestrator is not subject to this timeout.
+agent_timeout = 300
+
+# Max retries for failed delegations
+max_delegate_retries = 0
+
+# ── Session ──────────────────────────────────────────────
+[session]
+# How to merge session changes back
+# Options: auto, local, pr
+merge_strategy = "auto"
+
+# Whether to pull latest before creating a worktree
+# Options: prompt, auto, always, never
+pull_before_session = "prompt"
+
+# Command to create PRs (supports {base_branch} and {session_branch} placeholders)
+pr_command = "gh pr create --base {base_branch} --head {session_branch}"
+
+# ── Memory ───────────────────────────────────────────────
+[memory]
+# Memory provider name (default: noop)
+provider = "noop"
+
+# ── Agent-Specific Config ────────────────────────────────
+# Keyed by agent name. Passed as --config JSON to the wrapper.
+[agents.claude_code]
+model = "claude-sonnet-4-6"
+
+[agents.my_custom_agent]
+endpoint = "https://api.custom.dev"
+temperature = 0.7
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `STRAWPOT_HOME` | Global config and data directory | `~/.strawpot` |
+
+Agent-specific environment variables (e.g. `ANTHROPIC_API_KEY`) are declared in the agent's `AGENT.md` manifest and prompted for interactively when missing.
+
+## Config Locations
+
+| Scope | Path |
+|-------|------|
+| Global | `~/.strawpot/config.toml` |
+| Project | `.strawpot/config.toml` |
+
+The global config applies to all projects. The project config is specific to the repository it lives in. CLI flags override both.
+
+## Agent Config
+
+The `[agents.<name>]` section holds agent-specific settings beyond the standard protocol args. These are serialized as JSON and passed to the wrapper via `--config`.
+
+Common examples:
+
+```toml
+# Claude Code
+[agents.claude_code]
+model = "claude-sonnet-4-6"
+
+# Custom agent with API endpoint
+[agents.my_agent]
+endpoint = "https://api.example.com"
+temperature = 0.7
+api_key_env = "MY_AGENT_KEY"
+```
+
+What you put here depends entirely on the agent's wrapper — StrawPot passes it through without interpretation.

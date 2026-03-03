@@ -1,0 +1,63 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "StrawPot",
+  "colors": {
+    "primary": "#E85D2A",
+    "light": "#F27D52",
+    "dark": "#C44A1C"
+  },
+  "favicon": "/favicon.ico",
+  "icons": {
+    "library": "lucide"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "icon": "rocket",
+            "pages": ["index", "quickstart"]
+          },
+          {
+            "group": "Concepts",
+            "icon": "lightbulb",
+            "pages": [
+              "concepts/architecture",
+              "concepts/sessions",
+              "concepts/delegation",
+              "concepts/isolation"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "icon": "terminal",
+            "pages": ["cli/commands", "cli/configuration"]
+          },
+          {
+            "group": "Agents",
+            "icon": "bot",
+            "pages": ["agents/overview", "agents/claude-code"]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "StrawHub",
+        "url": "https://strawhub.dev"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/strawpot/strawpot",
+      "discord": "https://discord.gg/buEbvEMC",
+      "website": "https://strawpot.com"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/**]
+  pull_request:
+    paths: [docs/**]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint
+
+      - name: Build docs
+        run: mint build
+        working-directory: docs
+
+  # Deployment is handled by the Mintlify GitHub App.
+  # Connect your repo at https://mintlify.com/start to enable auto-deploy on push to main.
