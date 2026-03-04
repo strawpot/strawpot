@@ -75,6 +75,7 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
     "pyyaml>=6.0",
+    "tomli_w>=1.0",
     "strawhub",
     "denden-server",
 ]
@@ -83,7 +84,8 @@ dependencies = [
 strawpot = "strawpot.cli:cli"
 ```
 
-Config uses `tomllib` (stdlib 3.11+). IDs use `uuid` (stdlib). Subprocesses
+Config uses `tomllib` (stdlib 3.11+) for reading and `tomli_w` for writing
+(used to persist prompted skill env values). IDs use `uuid` (stdlib). Subprocesses
 use `subprocess` (stdlib). The denden project has two packages: the `denden`
 binary (distributed as a GitHub release) and `denden-server` (PyPI package)
 which provides the `DenDenServer` Python class used by session.py.
@@ -397,6 +399,8 @@ class StrawPotConfig:
     permission_mode: str = "default"   # orchestrator permission mode
     agent_timeout: int | None = None   # sub-agent timeout in seconds (None = no limit)
     agents: dict[str, dict] = field(default_factory=dict)  # per-agent extras
+    skills: dict[str, dict[str, str]] = field(default_factory=dict)  # persisted skill env
+    roles: dict[str, dict] = field(default_factory=dict)   # role overrides (default_agent, etc.)
     merge_strategy: str = "auto"       # auto | local | pr
     pull_before_session: str = "prompt" # auto | always | never | prompt
     pr_command: str = "gh pr create --base {base_branch} --head {session_branch}"
@@ -405,6 +409,14 @@ class StrawPotConfig:
 `agents` holds agent-specific config keyed by agent name. These are extras
 beyond the standard protocol args — model, temperature, custom endpoints, etc.
 Passed as `--config JSON` to the wrapper.
+
+`skills` holds persisted skill env values keyed by skill slug. When a user is
+prompted for a missing env var at session start, the value is automatically
+saved to `[skills.<slug>.env]` in the project-local `strawpot.toml`.
+Resolution order: `os.environ` > saved config > interactive prompt.
+
+`roles` holds user overrides for role settings. Currently supports
+`default_agent` to override the agent specified in ROLE.md frontmatter.
 
 `merge_strategy` controls how session changes are applied at cleanup:
 - `auto` — detect remote (`git remote get-url origin`): PR if remote exists, local otherwise
@@ -466,6 +478,14 @@ model = "claude-sonnet-4-6"
 [agents.my_custom_agent]
 endpoint = "https://api.custom.dev"
 temperature = 0.7
+
+# Persisted skill env values (auto-saved on first prompt).
+[skills.github_pr.env]
+GITHUB_TOKEN = "ghp_..."
+
+# Role overrides — override ROLE.md frontmatter settings.
+[roles.implementer]
+default_agent = "claude_code"
 ```
 
 ---
@@ -481,8 +501,9 @@ temperature = 0.7
    → merges config.agents[name] into spec.config
    → validates metadata.strawpot.tools (fail if missing — should
      have been installed via `strawpot install agent`, this is a safety net)
-   → validates metadata.strawpot.env: prompt user for missing required env vars
-     interactively (set in process env for this session only, not persisted)
+   → validates metadata.strawpot.env: checks os.environ first, then saved
+     config from [skills.<slug>.env], then prompts interactively for any
+     still-missing required vars (prompted values auto-saved to strawpot.toml)
 4. wrapper = WrapperRuntime(agent_spec)                      # generic, works for any agent
    runtime = InteractiveWrapperRuntime(wrapper)              # tmux available → tmux session
           or DirectWrapperRuntime(wrapper)                   # no tmux → direct terminal attach

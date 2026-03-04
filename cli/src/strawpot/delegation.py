@@ -351,11 +351,24 @@ def collect_skill_env(
     return merged
 
 
-def validate_skill_env(env_schema: dict[str, dict]) -> "ValidationResult":
+def validate_skill_env(
+    env_schema: dict[str, dict],
+    saved_env: dict[str, str] | None = None,
+) -> "ValidationResult":
     """Validate that required skill env vars are set.
+
+    Resolution order per variable:
+
+    1. ``os.environ`` — an explicit shell variable always wins.
+    2. *saved_env* — values persisted in ``strawpot.toml``.  If found
+       here the value is injected into ``os.environ`` so sub-agents
+       inherit it.
+    3. If neither source provides a value and the variable is required,
+       it is reported as missing.
 
     Args:
         env_schema: Merged env schema from :func:`collect_skill_env`.
+        saved_env: Optional flat dict of saved env values from config.
 
     Returns:
         :class:`~strawpot.agents.registry.ValidationResult` with any
@@ -365,9 +378,34 @@ def validate_skill_env(env_schema: dict[str, dict]) -> "ValidationResult":
 
     result = ValidationResult()
     for var_name, var_meta in env_schema.items():
-        if var_meta.get("required") and var_name not in os.environ:
+        if var_name in os.environ:
+            continue
+        if saved_env and var_name in saved_env:
+            os.environ[var_name] = saved_env[var_name]
+            continue
+        if var_meta.get("required"):
             result.missing_env.append(var_name)
     return result
+
+
+def _collect_saved_env(
+    config: StrawPotConfig,
+    resolved: dict,
+    global_skills: list[tuple[str, str, str]] | None = None,
+) -> dict[str, str]:
+    """Collect saved env values from config for all skills in a role's tree.
+
+    Walks the dependency list and global skills, returning a flat dict of
+    saved env key-value pairs from ``config.skills``.
+    """
+    saved: dict[str, str] = {}
+    for dep in resolved.get("dependencies", []):
+        if dep["kind"] == "skill":
+            saved.update(config.skills.get(dep["slug"], {}))
+    if global_skills:
+        for slug, _desc, _path in global_skills:
+            saved.update(config.skills.get(slug, {}))
+    return saved
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +683,8 @@ def handle_delegate(
 
     # 2c. Validate skill env requirements (non-interactive)
     skill_env = collect_skill_env(resolved, global_skills=global_skills or None)
-    skill_validation = validate_skill_env(skill_env)
+    saved_env = _collect_saved_env(config, resolved, global_skills=global_skills or None)
+    skill_validation = validate_skill_env(skill_env, saved_env=saved_env)
     if not skill_validation.ok:
         missing = ", ".join(skill_validation.missing_env)
         raise DelegationError(
@@ -654,8 +693,11 @@ def handle_delegate(
             f"Set these variables before starting the session."
         )
 
-    # 2d. Resolve per-role default agent
-    default_agent_name = _get_default_agent(resolved["path"])
+    # 2d. Resolve per-role default agent (config override > frontmatter)
+    role_override = config.roles.get(request.role_slug, {})
+    default_agent_name = role_override.get(
+        "default_agent", _get_default_agent(resolved["path"])
+    )
     if default_agent_name and default_agent_name != runtime.name:
         try:
             agent_spec = resolve_agent(

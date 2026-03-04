@@ -17,33 +17,10 @@ Full design for the web-based management interface is pending. Topics to cover:
 - Agent configuration and role management
 - Session monitoring and logs
 
-## 3. Persistent user configuration for env, agent params, and default_agent
+## ~~3. Persistent user configuration for env, agent params, and default_agent~~
 
-Currently, SKILL.md `env` values are prompted every session and never saved, AGENT.md `params` are persisted only via `[agents.<name>]` in `strawpot.toml`, and ROLE.md `default_agent` has no user-override mechanism beyond the global `runtime` setting.
+**Done.** Skill env values are now persisted to `[skills.<slug>.env]` in `strawpot.toml` and role `default_agent` can be overridden via `[roles.<slug>]`. See [configuration docs](docs/cli/configuration.mdx) for details.
 
-Design a unified persistent configuration layer so users can set and reuse these values across sessions, and the Web GUI can read/write them.
-
-### Recommended approach: extend `strawpot.toml`
-
-Reuse the existing `strawpot.toml` (global `~/.strawpot/strawpot.toml` and project-level `strawpot.toml` at project root) with new sections:
-
-```toml
-# Persist env values for skills (avoids re-prompting each session)
-[skills.github_pr.env]
-GITHUB_TOKEN = "ghp_..."
-
-# Override a role's default_agent
-[roles.implementer]
-default_agent = "claude_code"
-
-# Agent params already supported — no changes needed
-[agents.claude_code]
-model = "claude-sonnet-4-6"
-```
-
-### Design considerations
-- **Global vs local layering** — project-local overrides global, matching the existing `strawpot.toml` merge behavior
-- **Env resolution order** — saved value → environment variable → interactive prompt (only prompt if still missing)
-- **Secret handling** — env values may contain secrets; consider whether to store them in plain text, use OS keychain integration, or reference external secret managers
-- **Web GUI integration** — the GUI should be able to list configurable fields (from frontmatter schemas) and read/write the corresponding `strawpot.toml` sections
+Remaining future work:
+- **Secret handling** — env values are stored as plain text; consider OS keychain integration or external secret managers
 - **Validation** — validate saved values against frontmatter-declared types and `required` flags at load time
