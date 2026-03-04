@@ -10,7 +10,7 @@ A session is the unit of work in StrawPot. It encapsulates an isolated environme
 When you run `strawpot start`:
 
 1. **Load config** — Merge global, project, and CLI flag settings
-2. **Resolve agent** — Find the agent runtime (builtin → global → project)
+2. **Resolve agent** — Find the agent runtime (project-local → global), auto-install if needed
 3. **Validate** — Check required tools and environment variables
 4. **Create isolation** — Set up worktree or use project directory directly
 5. **Start Denden** — Launch gRPC server on `127.0.0.1:9700`

@@ -145,7 +145,6 @@ def resolve_agent(
     Resolution order:
         1. ``<project_dir>/.strawpot/agents/<name>/AGENT.md`` (project-local)
         2. ``~/.strawpot/agents/<name>/AGENT.md`` (global install)
-        3. Built-in ``_builtin_agents/<name>/AGENT.md`` (ships with strawpot)
 
     Args:
         name: Agent name (e.g. ``"claude_code"``).
@@ -161,7 +160,6 @@ def resolve_agent(
     candidates = [
         Path(project_dir) / ".strawpot" / "agents" / name,
         get_strawpot_home() / "agents" / name,
-        Path(__file__).parent.parent / "_builtin_agents" / name,
     ]
 
     agent_dir: Path | None = None
