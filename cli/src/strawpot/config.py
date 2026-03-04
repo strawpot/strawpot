@@ -32,6 +32,8 @@ class StrawPotConfig:
     agent_timeout: int | None = None
     max_delegate_retries: int = 0
     agents: dict[str, dict] = field(default_factory=dict)
+    skills: dict[str, dict[str, str]] = field(default_factory=dict)
+    roles: dict[str, dict] = field(default_factory=dict)
     memory: str | None = None
     memory_config: dict[str, str] = field(default_factory=dict)
     merge_strategy: str = "auto"
@@ -78,6 +80,16 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     for name, agent_data in agents.items():
         config.agents.setdefault(name, {}).update(agent_data)
 
+    skills_section = data.get("skills", {})
+    for slug, skill_data in skills_section.items():
+        env_data = skill_data.get("env", {})
+        if env_data:
+            config.skills.setdefault(slug, {}).update(env_data)
+
+    roles_section = data.get("roles", {})
+    for slug, role_data in roles_section.items():
+        config.roles.setdefault(slug, {}).update(role_data)
+
     if "memory" in data:
         config.memory = data["memory"]
     memory_cfg = data.get("memory_config", {})
@@ -111,3 +123,31 @@ def load_config(project_dir: Path | None = None) -> StrawPotConfig:
         _apply(config, _read_toml(project_path))
 
     return config
+
+
+def save_skill_env(
+    project_dir: Path | None,
+    slug: str,
+    env_values: dict[str, str],
+) -> None:
+    """Persist skill env values to strawpot.toml.
+
+    Writes to the project-local file when *project_dir* is given,
+    otherwise to the global config.  Creates the file if it doesn't
+    exist and merges into existing content.
+    """
+    import tomli_w
+
+    if project_dir:
+        toml_path = project_dir / "strawpot.toml"
+    else:
+        toml_path = get_strawpot_home() / "strawpot.toml"
+
+    existing = _read_toml(toml_path)
+    existing.setdefault("skills", {}).setdefault(slug, {}).setdefault(
+        "env", {}
+    ).update(env_values)
+
+    toml_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(toml_path, "wb") as f:
+        tomli_w.dump(existing, f)

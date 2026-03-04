@@ -1,8 +1,9 @@
 """Tests for strawpot.config."""
 
+import tomllib
 from pathlib import Path
 
-from strawpot.config import StrawPotConfig, get_strawpot_home, load_config
+from strawpot.config import StrawPotConfig, get_strawpot_home, load_config, save_skill_env
 
 
 def test_defaults():
@@ -17,6 +18,8 @@ def test_defaults():
     assert config.agent_timeout is None
     assert config.max_delegate_retries == 0
     assert config.agents == {}
+    assert config.skills == {}
+    assert config.roles == {}
     assert config.memory is None
     assert config.memory_config == {}
     assert config.merge_strategy == "auto"
@@ -190,3 +193,112 @@ def test_load_config_memory_merge(tmp_path, monkeypatch):
     assert config.memory == "my-provider"
     assert config.memory_config["storage_dir"] == "/project/mem"
     assert config.memory_config["em_max_events"] == 5000
+
+
+def test_load_config_skills_env(tmp_path, monkeypatch):
+    """[skills.<slug>.env] values are loaded into config.skills."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[skills.github_pr.env]\n"
+        'GITHUB_TOKEN = "ghp_abc"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.skills == {"github_pr": {"GITHUB_TOKEN": "ghp_abc"}}
+
+
+def test_load_config_roles(tmp_path, monkeypatch):
+    """[roles.<slug>] values are loaded into config.roles."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[roles.implementer]\n"
+        'default_agent = "claude_code"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.roles == {"implementer": {"default_agent": "claude_code"}}
+
+
+def test_skills_env_merge_global_project(tmp_path, monkeypatch):
+    """Skill env from project overrides global per-key, not wholesale."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text(
+        "[skills.my_skill.env]\n"
+        'TOKEN = "global_token"\n'
+        'EXTRA = "global_extra"\n'
+    )
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[skills.my_skill.env]\n"
+        'TOKEN = "project_token"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.skills == {
+        "my_skill": {"TOKEN": "project_token", "EXTRA": "global_extra"}
+    }
+
+
+def test_roles_merge_global_project(tmp_path, monkeypatch):
+    """Role overrides from project merge with global per-key."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text(
+        "[roles.implementer]\n"
+        'default_agent = "codex"\n'
+    )
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[roles.implementer]\n"
+        'default_agent = "claude_code"\n'
+    )
+
+    config = load_config(project_dir)
+    assert config.roles == {"implementer": {"default_agent": "claude_code"}}
+
+
+def test_save_skill_env_creates_file(tmp_path):
+    """save_skill_env creates strawpot.toml from scratch."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+
+    save_skill_env(project_dir, "my_skill", {"TOKEN": "abc123"})
+
+    toml_path = project_dir / "strawpot.toml"
+    assert toml_path.exists()
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    assert data["skills"]["my_skill"]["env"]["TOKEN"] == "abc123"
+
+
+def test_save_skill_env_merges_existing(tmp_path):
+    """save_skill_env preserves existing content and merges."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        'runtime = "codex"\n'
+        "\n"
+        "[skills.my_skill.env]\n"
+        'EXISTING = "keep"\n'
+    )
+
+    save_skill_env(project_dir, "my_skill", {"NEW_VAR": "new_val"})
+
+    with open(project_dir / "strawpot.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["runtime"] == "codex"
+    assert data["skills"]["my_skill"]["env"]["EXISTING"] == "keep"
+    assert data["skills"]["my_skill"]["env"]["NEW_VAR"] == "new_val"

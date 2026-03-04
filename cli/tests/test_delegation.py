@@ -24,6 +24,7 @@ from strawpot.delegation import (
     _parse_role_deps,
     _parse_skill_deps,
     _parse_skill_env,
+    _collect_saved_env,
     _validate_output,
     collect_skill_env,
     create_agent_workspace,
@@ -2459,3 +2460,187 @@ class TestHandleDelegateDefaultAgent:
         assert resolve_called == []
         session_runtime.spawn.assert_called_once()
         assert result.summary == "Same done"
+
+
+# ---------------------------------------------------------------------------
+# Saved env (persistent config)
+# ---------------------------------------------------------------------------
+
+
+class TestValidateSkillEnvSaved:
+    def test_saved_env_satisfies_required(self, monkeypatch):
+        """Saved env value satisfies a required var."""
+        monkeypatch.delenv("MY_TOKEN", raising=False)
+        schema = {"MY_TOKEN": {"required": True, "description": "x"}}
+        result = validate_skill_env(schema, saved_env={"MY_TOKEN": "saved_val"})
+        assert result.ok
+
+    def test_saved_env_injected_to_environ(self, monkeypatch):
+        """Saved env value is injected into os.environ."""
+        monkeypatch.delenv("MY_TOKEN", raising=False)
+        schema = {"MY_TOKEN": {"required": True, "description": "x"}}
+        validate_skill_env(schema, saved_env={"MY_TOKEN": "saved_val"})
+        assert os.environ["MY_TOKEN"] == "saved_val"
+
+    def test_os_environ_takes_precedence(self, monkeypatch):
+        """Existing os.environ value is not overwritten by saved_env."""
+        monkeypatch.setenv("MY_TOKEN", "env_val")
+        schema = {"MY_TOKEN": {"required": True, "description": "x"}}
+        result = validate_skill_env(schema, saved_env={"MY_TOKEN": "saved_val"})
+        assert result.ok
+        assert os.environ["MY_TOKEN"] == "env_val"
+
+    def test_none_saved_env_backward_compat(self, monkeypatch):
+        """Without saved_env, behaviour is unchanged."""
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        schema = {"MISSING_VAR": {"required": True, "description": "x"}}
+        result = validate_skill_env(schema)
+        assert not result.ok
+        assert "MISSING_VAR" in result.missing_env
+
+
+class TestCollectSavedEnv:
+    def test_collects_from_skill_deps(self):
+        config = StrawPotConfig(skills={"skill_a": {"TOKEN": "abc"}})
+        resolved = {
+            "slug": "my-role",
+            "path": "/tmp",
+            "dependencies": [
+                {"slug": "skill_a", "kind": "skill", "path": "/tmp/a"},
+            ],
+        }
+        saved = _collect_saved_env(config, resolved)
+        assert saved == {"TOKEN": "abc"}
+
+    def test_collects_from_global_skills(self):
+        config = StrawPotConfig(skills={"global_skill": {"KEY": "val"}})
+        resolved = {"slug": "my-role", "path": "/tmp", "dependencies": []}
+        saved = _collect_saved_env(
+            config, resolved,
+            global_skills=[("global_skill", "desc", "/tmp/g")],
+        )
+        assert saved == {"KEY": "val"}
+
+    def test_ignores_unknown_slugs(self):
+        config = StrawPotConfig(skills={})
+        resolved = {
+            "slug": "my-role",
+            "path": "/tmp",
+            "dependencies": [
+                {"slug": "unknown", "kind": "skill", "path": "/tmp/u"},
+            ],
+        }
+        saved = _collect_saved_env(config, resolved)
+        assert saved == {}
+
+
+class TestHandleDelegateSkillEnvSaved:
+    def test_saved_env_prevents_delegation_error(self, tmp_path, monkeypatch):
+        """Saved env values in config prevent DelegationError."""
+        monkeypatch.delenv("REQUIRED_TOKEN", raising=False)
+
+        base = str(tmp_path)
+        skill_path = _write_skill(
+            base, "needs-token",
+            env={"REQUIRED_TOKEN": {"required": True, "description": "token"}},
+        )
+        role_path = _write_role(
+            base, "my-role", skill_deps=["needs-token"],
+        )
+
+        def mock_resolve(slug, kind="role"):
+            return {
+                "slug": slug,
+                "kind": kind,
+                "path": role_path,
+                "source": "local",
+                "dependencies": [
+                    {"slug": "needs-token", "kind": "skill", "path": skill_path},
+                ],
+            }
+
+        request = _make_request(role_slug="my-role")
+        config = _make_config(
+            allowed_roles=["my-role"],
+            skills={"needs-token": {"REQUIRED_TOKEN": "saved_value"}},
+        )
+        runtime = _mock_runtime()
+
+        # Should NOT raise — saved env satisfies the requirement
+        result = handle_delegate(
+            request=request,
+            config=config,
+            runtime=runtime,
+            working_dir=base,
+            session_dir=str(tmp_path / "session"),
+            resolve_role=mock_resolve,
+            resolve_role_dirs=lambda s: None,
+        )
+        assert result.summary == "Done"
+
+
+class TestHandleDelegateDefaultAgentConfigOverride:
+    def test_config_overrides_frontmatter(self, tmp_path, monkeypatch):
+        """config.roles[slug].default_agent overrides ROLE.md frontmatter."""
+        base = str(tmp_path / "registry")
+        skill_path = _write_skill(base, "testing", "Write tests.")
+        # Frontmatter says "frontmatter_agent"
+        role_path = _write_role(
+            base, "my-role", skill_deps=["testing"],
+            default_agent="frontmatter_agent",
+        )
+
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [
+                {"slug": "testing", "kind": "skill", "path": skill_path,
+                 "version": "1.0", "source": "local"},
+            ],
+        }
+
+        session_runtime = _mock_runtime()
+
+        from strawpot.agents.registry import AgentSpec
+
+        config_agent_spec = AgentSpec(
+            name="config_agent",
+            version="1.0.0",
+            wrapper_cmd=["/usr/bin/true"],
+        )
+
+        resolve_calls = []
+
+        def mock_resolve_agent(name, project_dir, user_config=None):
+            resolve_calls.append(name)
+            return config_agent_spec
+
+        monkeypatch.setattr(
+            "strawpot.delegation.resolve_agent", mock_resolve_agent,
+        )
+
+        mock_config_runtime = _mock_runtime(summary="Config agent done")
+        monkeypatch.setattr(
+            "strawpot.delegation.WrapperRuntime",
+            lambda spec, session_dir=None: mock_config_runtime,
+        )
+
+        # Config overrides default_agent to "config_agent"
+        result = handle_delegate(
+            request=_make_request(role_slug="my-role"),
+            config=_make_config(roles={"my-role": {"default_agent": "config_agent"}}),
+            runtime=session_runtime,
+            working_dir=str(tmp_path),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+        )
+
+        # Config agent was resolved, not frontmatter agent
+        assert resolve_calls == ["config_agent"]
+        mock_config_runtime.spawn.assert_called_once()
+        session_runtime.spawn.assert_not_called()
+        assert result.summary == "Config agent done"
