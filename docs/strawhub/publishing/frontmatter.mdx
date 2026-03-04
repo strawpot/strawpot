@@ -109,7 +109,6 @@ metadata:
 ```
 
 - Resolution order: `os.environ` > saved config (`[skills.<slug>.env]` in `strawpot.toml`) > interactive prompt
-- Prompted values are automatically saved to the project-local `strawpot.toml` for future sessions
 - During delegation, missing required variables cause the delegation to fail (saved config values are checked)
 - Variables set at session start are inherited by all sub-agents
 - If the same variable appears in multiple skills, `required: true` takes precedence

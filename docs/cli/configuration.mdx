@@ -136,7 +136,7 @@ What you put here depends entirely on the agent's wrapper — StrawPot passes it
 
 ## Skill Env Persistence
 
-Skills declare required environment variables in their `SKILL.md` frontmatter. By default, missing variables are prompted interactively at session start. To avoid re-prompting every session, prompted values are automatically saved to the project-local `strawpot.toml` under `[skills.<slug>.env]`.
+Skills declare required environment variables in their `SKILL.md` frontmatter. Missing variables are prompted interactively at session start. To avoid re-prompting every session, you can manually add values to `strawpot.toml` under `[skills.<slug>.env]`.
 
 **Resolution order** (per variable):
 
@@ -152,7 +152,7 @@ GITHUB_TOKEN = "ghp_..."
 Saved values follow the same global/project merge hierarchy as other config — project-local values override global ones.
 
 <Note>
-Env values are stored as plain text. Avoid committing `strawpot.toml` files that contain secrets. Future versions may support OS keychain integration.
+Env values are stored as plain text. Do not commit `strawpot.toml` files that contain secrets. Add `strawpot.toml` to `.gitignore` if it holds sensitive values. Future versions may support OS keychain integration.
 </Note>
 
 ## Role Overrides

@@ -479,7 +479,7 @@ model = "claude-sonnet-4-6"
 endpoint = "https://api.custom.dev"
 temperature = 0.7
 
-# Persisted skill env values (auto-saved on first prompt).
+# Persisted skill env values (manually configured by user).
 [skills.github_pr.env]
 GITHUB_TOKEN = "ghp_..."
 
@@ -503,7 +503,7 @@ default_agent = "claude_code"
      have been installed via `strawpot install agent`, this is a safety net)
    → validates metadata.strawpot.env: checks os.environ first, then saved
      config from [skills.<slug>.env], then prompts interactively for any
-     still-missing required vars (prompted values auto-saved to strawpot.toml)
+     still-missing required vars are prompted interactively
 4. wrapper = WrapperRuntime(agent_spec)                      # generic, works for any agent
    runtime = InteractiveWrapperRuntime(wrapper)              # tmux available → tmux session
           or DirectWrapperRuntime(wrapper)                   # no tmux → direct terminal attach

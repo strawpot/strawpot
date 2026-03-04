@@ -1,15 +1,12 @@
 """StrawPot CLI — agent orchestration commands + strawhub passthrough."""
 
 import json
-import logging
 import os
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 import click
 
@@ -187,10 +184,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
     try:
         from strawhub.resolver import resolve as _resolve
 
-        from strawpot.config import save_skill_env
         from strawpot.delegation import (
             _collect_saved_env,
-            _parse_skill_env,
             collect_skill_env,
             discover_global_skills,
             validate_skill_env,
@@ -202,17 +197,6 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
         saved_env = _collect_saved_env(config, resolved, global_skills=global_skills or None)
         skill_validation = validate_skill_env(skill_env, saved_env=saved_env)
 
-        # Build reverse map: var -> skill slug (for saving prompted values)
-        var_to_slug: dict[str, str] = {}
-        for dep in resolved.get("dependencies", []):
-            if dep["kind"] == "skill":
-                for var in _parse_skill_env(dep["path"]):
-                    var_to_slug.setdefault(var, dep["slug"])
-        if global_skills:
-            for gs_slug, _desc, gs_path in global_skills:
-                for var in _parse_skill_env(gs_path):
-                    var_to_slug.setdefault(var, gs_slug)
-
         for var in skill_validation.missing_env:
             desc = skill_env[var].get("description", "")
             prompt_text = f"Enter value for {var}"
@@ -220,12 +204,6 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
                 prompt_text += f" ({desc})"
             value = click.prompt(prompt_text)
             os.environ[var] = value
-
-            # Auto-save to project-local strawpot.toml
-            slug = var_to_slug.get(var)
-            if slug:
-                save_skill_env(Path.cwd(), slug, {var: value})
-                logger.debug("Saved %s to [skills.%s.env] in strawpot.toml", var, slug)
     except Exception:
         pass  # Role resolution failures handled by Session.start()
 
