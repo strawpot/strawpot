@@ -1808,3 +1808,17 @@ strawpot gui --host 0.0.0.0         # bind to all interfaces
 The `gui` command is a thin launcher — available only when `strawpot-gui` is
 installed. If not installed, `strawpot gui` prints an install hint and exits.
 
+---
+
+## Future Work
+
+### Secret Handling for Persisted Env Values
+
+Skill env values are stored as plain text in `strawpot.toml`. Consider OS
+keychain integration or external secret managers for sensitive values.
+
+### Config Validation Against Frontmatter Declarations
+
+Validate saved env/config values against frontmatter-declared types and
+`required` flags at load time.
+
