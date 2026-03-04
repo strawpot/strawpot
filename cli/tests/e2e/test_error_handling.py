@@ -40,6 +40,11 @@ class TestErrorHandling:
         # Should not hang — timeout kills the sub-agent
         session.start(str(git_project))
 
+        # Session should still clean up after timeout
+        sessions_dir = git_project / ".strawpot" / "sessions"
+        if sessions_dir.exists():
+            assert len(list(sessions_dir.iterdir())) == 0
+
     def test_stale_session_recovery(self, git_project, make_config, strawpot_home):
         """Stale session files with dead PIDs are cleaned up."""
         config = make_config()

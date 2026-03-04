@@ -32,23 +32,24 @@ class TestDelegationFlow:
         """Delegation to a role not in allowed_roles returns DENIED."""
         session = make_session(
             str(git_project),
-            task="delegate implementer do something",
+            task="delegate implementer write denied.txt",
             agent_script=STUB_AGENT_DELEGATE,
             config_overrides={"allowed_roles": ["orchestrator"]},
         )
         session.start(str(git_project))
 
-        # Orchestrator should have received a DENIED response
-        # (no crash, session completes cleanly)
+        # Sub-agent should NOT have run — file must not exist
+        assert not (git_project / "denied.txt").exists()
 
     def test_delegation_depth_limit(self, make_session, git_project):
         """Delegation beyond max_depth returns DENIED."""
         session = make_session(
             str(git_project),
-            task="delegate implementer do something",
+            task="delegate implementer write depth-denied.txt",
             agent_script=STUB_AGENT_DELEGATE,
             config_overrides={"max_depth": 0},
         )
         session.start(str(git_project))
 
-        # Should complete without crash; sub-agent was denied
+        # Sub-agent should NOT have run — file must not exist
+        assert not (git_project / "depth-denied.txt").exists()

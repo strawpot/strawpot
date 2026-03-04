@@ -33,15 +33,16 @@ class TestSessionLifecycle:
             remaining = list(sessions_dir.iterdir())
             assert len(remaining) == 0, f"Stale session dirs: {remaining}"
 
-    def test_default_task_prints_message(self, make_session, git_project):
-        """Agent with no special task prints default message."""
-        session = make_session(str(git_project), task="hello world")
+    def test_session_cleanup_unconditional(self, make_session, git_project):
+        """Session dir is created during run and fully removed after."""
+        session = make_session(str(git_project), task="write cleanup-test.txt")
         session.start(str(git_project))
 
-        # No files should be created for a generic task
-        contents = [
-            f.name
-            for f in git_project.iterdir()
-            if f.name not in ("README.md", ".git", ".strawpot")
-        ]
-        assert contents == []
+        # File was written, proving the session actually ran
+        assert (git_project / "cleanup-test.txt").exists()
+
+        # .strawpot/sessions must be gone or empty — not conditionally skipped
+        sessions_dir = git_project / ".strawpot" / "sessions"
+        if sessions_dir.exists():
+            remaining = list(sessions_dir.iterdir())
+            assert remaining == [], f"Stale session dirs: {remaining}"
