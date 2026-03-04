@@ -20,6 +20,7 @@ from strawpot.delegation import (
     _format_memory_prompt,
     _get_default_agent,
     _merge_env_entry,
+    _discover_all_roles,
     _parse_role_deps,
     _parse_skill_deps,
     _parse_skill_env,
@@ -121,7 +122,7 @@ def _write_role(base, slug, body="Role body.", description="test",
             if role_deps:
                 strawpot_lines.append("      roles:")
                 for r in role_deps:
-                    strawpot_lines.append(f"        - {r}")
+                    strawpot_lines.append(f'        - "{r}"')
         if inherit_global_skills is not None:
             val = "true" if inherit_global_skills else "false"
             strawpot_lines.append(f"    inherit_global_skills: {val}")
@@ -268,7 +269,7 @@ class TestParseRoleDeps:
     def test_no_deps(self, tmp_path):
         """Role without deps returns empty lists."""
         role_path = _write_role(str(tmp_path), "basic")
-        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
         assert skill_slugs == []
         assert role_slugs == []
 
@@ -277,7 +278,7 @@ class TestParseRoleDeps:
         role_path = _write_role(
             str(tmp_path), "impl", skill_deps=["git-workflow", "testing"]
         )
-        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["git-workflow", "testing"]
         assert role_slugs == []
 
@@ -287,7 +288,7 @@ class TestParseRoleDeps:
             str(tmp_path), "orchestrator",
             role_deps=["reviewer", "implementer"],
         )
-        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
         assert skill_slugs == []
         assert role_slugs == ["reviewer", "implementer"]
 
@@ -298,7 +299,7 @@ class TestParseRoleDeps:
             skill_deps=["testing"],
             role_deps=["reviewer"],
         )
-        skill_slugs, role_slugs = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["testing"]
         assert role_slugs == ["reviewer"]
 
@@ -307,16 +308,45 @@ class TestParseRoleDeps:
         role_path = _write_role(
             str(tmp_path), "impl", skill_deps=["git-workflow ^1.0"]
         )
-        skill_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["git-workflow"]
 
     def test_no_role_md(self, tmp_path):
         """Missing ROLE.md returns empty lists."""
         d = str(tmp_path / "roles" / "missing")
         os.makedirs(d, exist_ok=True)
-        skill_slugs, role_slugs = _parse_role_deps(d)
+        skill_slugs, role_slugs, _ = _parse_role_deps(d)
         assert skill_slugs == []
         assert role_slugs == []
+
+    def test_wildcard_roles(self, tmp_path):
+        """'*' in role deps sets wildcard_roles=True and excludes from slugs."""
+        role_path = _write_role(
+            str(tmp_path), "orchestrator", role_deps=["*"],
+        )
+        skill_slugs, role_slugs, wildcard_roles = _parse_role_deps(role_path)
+        assert skill_slugs == []
+        assert role_slugs == []
+        assert wildcard_roles is True
+
+    def test_wildcard_with_explicit_roles(self, tmp_path):
+        """'*' can appear alongside explicit role deps."""
+        role_path = _write_role(
+            str(tmp_path), "orchestrator",
+            role_deps=["reviewer", "*"],
+        )
+        skill_slugs, role_slugs, wildcard_roles = _parse_role_deps(role_path)
+        assert role_slugs == ["reviewer"]
+        assert wildcard_roles is True
+
+    def test_no_wildcard(self, tmp_path):
+        """Normal role deps return wildcard_roles=False."""
+        role_path = _write_role(
+            str(tmp_path), "orchestrator",
+            role_deps=["reviewer"],
+        )
+        _, _, wildcard_roles = _parse_role_deps(role_path)
+        assert wildcard_roles is False
 
 
 class TestParseSkillDeps:
@@ -569,6 +599,93 @@ class TestStageRole:
 
         with pytest.raises(ValueError, match="does not match"):
             stage_role(session_dir, resolved)
+
+    def test_wildcard_stages_all_roles(self, tmp_path, monkeypatch):
+        """stage_role with '*' in role deps stages all globally installed roles."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "orchestrator", role_deps=["*"])
+
+        # Set up global roles for _discover_all_roles
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        for slug in ["reviewer", "implementer"]:
+            d = roles_dir / f"{slug}-1.0.0"
+            d.mkdir(parents=True)
+            with open(d / "ROLE.md", "w") as f:
+                f.write(f"---\nname: {slug}\ndescription: test\n---\nBody.\n")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+        session_dir = str(tmp_path / "session")
+        resolved = {
+            "slug": "orchestrator",
+            "path": role_path,
+            "dependencies": [],
+        }
+
+        _, roles_staged_dir = stage_role(session_dir, resolved)
+
+        # Both global roles should be staged
+        assert os.path.islink(os.path.join(roles_staged_dir, "reviewer"))
+        assert os.path.islink(os.path.join(roles_staged_dir, "implementer"))
+
+    def test_wildcard_skips_self(self, tmp_path, monkeypatch):
+        """stage_role with '*' does not stage the role itself."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "orchestrator", role_deps=["*"])
+
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        # Include the role itself in global roles
+        for slug in ["orchestrator", "reviewer"]:
+            d = roles_dir / f"{slug}-1.0.0"
+            d.mkdir(parents=True)
+            with open(d / "ROLE.md", "w") as f:
+                f.write(f"---\nname: {slug}\ndescription: test\n---\nBody.\n")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+        session_dir = str(tmp_path / "session")
+        resolved = {
+            "slug": "orchestrator",
+            "path": role_path,
+            "dependencies": [],
+        }
+
+        _, roles_staged_dir = stage_role(session_dir, resolved)
+
+        # Self should be excluded
+        assert not os.path.exists(os.path.join(roles_staged_dir, "orchestrator"))
+        assert os.path.islink(os.path.join(roles_staged_dir, "reviewer"))
+
+
+class TestDiscoverAllRoles:
+    def test_discovers_global_roles(self, tmp_path, monkeypatch):
+        """Finds all globally installed roles."""
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        for slug in ["reviewer", "implementer"]:
+            d = roles_dir / f"{slug}-1.0.0"
+            d.mkdir(parents=True)
+            (d / "ROLE.md").write_text(f"---\nname: {slug}\n---\nBody.\n")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+        result = _discover_all_roles()
+        slugs = [s for s, _ in result]
+        assert "reviewer" in slugs
+        assert "implementer" in slugs
+
+    def test_empty_when_no_roles_dir(self, tmp_path, monkeypatch):
+        """Returns empty when roles dir doesn't exist."""
+        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty"))
+        assert _discover_all_roles() == []
+
+    def test_skips_non_dirs(self, tmp_path, monkeypatch):
+        """Skips non-directory entries in roles dir."""
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        roles_dir.mkdir(parents=True)
+        (roles_dir / "not-a-dir.txt").write_text("junk")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        assert _discover_all_roles() == []
 
 
 class TestCreateAgentWorkspace:
@@ -2074,6 +2191,27 @@ class TestCollectSkillEnv:
 
         result = collect_skill_env(resolved)
         assert result["SHARED"]["required"] is True
+
+    def test_wildcard_role_dep_does_not_crash(self, tmp_path):
+        """collect_skill_env works when the role has '*' in its role deps."""
+        base = str(tmp_path)
+        skill_a = _write_skill(
+            base, "skill-a",
+            env={"TOKEN_A": {"required": True, "description": "A"}},
+        )
+        role_path = _write_role(
+            base, "my-role", skill_deps=["skill-a"], role_deps=["*"],
+        )
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "path": role_path,
+            "dependencies": [
+                {"slug": "skill-a", "kind": "skill", "path": skill_a},
+            ],
+        }
+        result = collect_skill_env(resolved)
+        assert "TOKEN_A" in result
 
 
 # ---------------------------------------------------------------------------

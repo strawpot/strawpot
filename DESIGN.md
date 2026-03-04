@@ -564,7 +564,9 @@ Denden server dispatches to `Session._handle_delegate`:
    skills_dir, roles_dir = stage_role(session_dir, resolved)
    → session-level (idempotent): copies ROLE.md into session_dir/roles/<slug>/,
      symlinks transitive skill deps into skills/, direct role deps into roles/
-     (symlinks into session dir)
+     (symlinks into session dir).
+     If the role has `"*"` in its role deps, all globally installed roles are
+     staged (via `_discover_all_roles()`), excluding the role itself.
    roles_dirs = [roles_dir]
    → if requester role is resolvable, symlink into
      session_dir/requester_roles/<agent_id>/<parent_role>/
@@ -1327,7 +1329,7 @@ project's conventions...
 | `metadata.tags` | no | Category tags for discovery |
 | `metadata.author` | no | Creator/organization name |
 | `metadata.strawpot.dependencies.skills` | no | Skill dependencies (resolved by strawhub) |
-| `metadata.strawpot.dependencies.roles` | no | Delegatable sub-roles (shown in delegation section of prompt) |
+| `metadata.strawpot.dependencies.roles` | no | Delegatable sub-roles (shown in delegation section of prompt); use `"*"` for all available roles |
 | `metadata.strawpot.default_agent` | no | Default agent runtime name |
 
 The markdown body (after frontmatter) is used as the role's system prompt
@@ -1337,7 +1339,8 @@ stripped by `context.py`.
 Roles can declare other roles as dependencies via `metadata.strawpot.dependencies.roles`.
 These are the roles the agent is allowed to delegate to. The delegation section
 of the prompt lists these roles with their `name` and `description` from
-frontmatter.
+frontmatter. Use `"*"` to depend on all available roles — at runtime, StrawPot
+expands this wildcard to all globally installed roles.
 
 ---
 

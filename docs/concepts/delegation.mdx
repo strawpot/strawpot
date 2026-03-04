@@ -73,7 +73,7 @@ max_delegate_retries = 0
 When a delegation request arrives:
 
 1. **Fetch role** — StrawPot calls `strawhub resolve role <slug>` to get the role and all transitive dependencies
-2. **Stage dependencies** — Skills and roles are symlinked into the agent's workspace directory
+2. **Stage dependencies** — Skills and roles are symlinked into the agent's workspace directory. If the role declares `"*"` in its role dependencies, all globally installed roles are staged.
 3. **Build prompt** — The role's `ROLE.md` body becomes the system prompt, with skill instructions appended
 
 The resolved directory structure looks like:

@@ -17,11 +17,7 @@ Full design for the web-based management interface is pending. Topics to cover:
 - Agent configuration and role management
 - Session monitoring and logs
 
-## 3. Support `"*"` wildcard in role dependencies
-
-Add support for `"*"` as a special value in role `dependencies`, meaning "depend on all roles available globally and locally." This wildcard should be ignored by install commands (both `strawhub` CLI and `strawpot` CLI proxy) since it doesn't refer to a specific installable package.
-
-## 4. Persistent user configuration for env, agent params, and default_agent
+## 3. Persistent user configuration for env, agent params, and default_agent
 
 Currently, SKILL.md `env` values are prompted every session and never saved, AGENT.md `params` are persisted only via `[agents.<name>]` in `strawpot.toml`, and ROLE.md `default_agent` has no user-override mechanism beyond the global `runtime` setting.
 

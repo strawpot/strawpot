@@ -42,7 +42,7 @@ Role instructions for the agent...
 | Field | Description |
 |-------|-------------|
 | `metadata.strawpot.dependencies.skills` | List of skill dependencies |
-| `metadata.strawpot.dependencies.roles` | List of role dependencies |
+| `metadata.strawpot.dependencies.roles` | List of role dependencies (use `"*"` for all available roles) |
 | `metadata.strawpot.default_agent` | Default agent runtime name |
 
 ## Dependencies
@@ -62,6 +62,7 @@ metadata:
 
 - **Skill dependencies** provide instructions the agent follows
 - **Role dependencies** define other roles the agent can delegate to
+- Use `"*"` in the `roles` list to depend on all available roles (useful for orchestrator roles)
 
 ## Default Agent
 

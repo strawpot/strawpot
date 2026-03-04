@@ -30,6 +30,8 @@ metadata:
         - reviewer
 ```
 
+The `roles` list supports `"*"` as a wildcard meaning "all available roles." This is useful for orchestrator roles that can delegate to any installed role. The wildcard is expanded at runtime by StrawPot and filtered out during install.
+
 See [Frontmatter Reference](/strawhub/publishing/frontmatter) for the complete schema.
 
 ## Resolution Algorithm
