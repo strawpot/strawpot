@@ -93,9 +93,7 @@ Content-Type: multipart/form-data
 | `changelog` | Version changelog |
 | `dependencies` | Optional JSON: `{"skills": ["dep-a", "dep-b>=1.0.0"]}` |
 | `customTags` | Optional tags |
-| `files[]` | File uploads (max 20 files, 512 KB each) |
-
-Allowed file extensions: `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`.
+| `files[]` | File uploads (must include `SKILL.md`, max 20 files, 512 KB each, any file type) |
 
 ### Delete Skill
 
