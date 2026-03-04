@@ -1,34 +1,63 @@
 # StrawPot
 
+Run role-based AI workers locally.
+
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
   <a href="https://discord.gg/buEbvEMC"><img src="https://img.shields.io/discord/1476285531464929505?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Lightweight CLI for agent orchestration. StrawPot connects
-[Denden](https://github.com/strawpot/denden) (gRPC agent-to-orchestrator transport)
-and [StrawHub](https://strawhub.dev) (skill & role registry) to run multi-agent
-sessions (e.g. coding, research, ops) in isolated environments.
+StrawPot orchestrates multiple agents (Claude Code, Codex, OpenHands)
+in isolated environments using roles and skills from
+[StrawHub](https://strawhub.dev). Agents communicate through
+[Denden](https://github.com/strawpot/denden), a gRPC transport layer.
 
 ```
 strawpot start --role team-lead
 ```
 
-1. Creates a git worktree for the session
-2. Starts a Denden gRPC server
-3. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
-4. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills
-   from StrawHub and spawns sub-agents in the same worktree
-5. On exit, cleans up everything automatically
+## Architecture
 
-## Repository Structure
+StrawPot coordinates three components:
+
+- **StrawPot** — local orchestrator CLI
+- **[Denden](https://github.com/strawpot/denden)** — agent-to-orchestrator communication layer
+- **[StrawHub](https://strawhub.dev)** — registry for roles and skills
 
 ```
-cli/          Python CLI package (strawpot)
-web/          Web GUI (planned)
-DESIGN.md     Architecture & design document
+User task
+  ↓
+StrawPot CLI
+  ↓
+Orchestrator agent (team-lead)
+  ↓
+Sub-agents (implementer, reviewer, etc.)
+  ↓
+Roles & skills resolved from StrawHub
 ```
+
+## Execution Flow
+
+When you start a session:
+
+1. StrawPot creates an isolated git worktree
+2. Starts the Denden gRPC server for agent communication
+3. Launches the orchestrator agent (e.g. team-lead)
+4. Agents delegate tasks to other roles
+5. StrawPot installs required roles and skills from StrawHub
+6. Sub-agents run inside the same environment
+7. On exit, everything is cleaned up automatically
+
+## Supported Agent Runtimes
+
+StrawPot can orchestrate different agent runtimes:
+
+- Claude Code
+- OpenAI Codex
+- OpenHands
+
+Additional runtimes can be added via agent configuration.
 
 ## Install
 
@@ -41,6 +70,27 @@ Or from source:
 ```
 cd cli
 pip install -e ".[dev]"
+```
+
+## Quick Start
+
+Start a multi-agent session:
+
+```bash
+strawpot start --role team-lead
+```
+
+Install roles and skills:
+
+```bash
+strawpot install role implementer
+strawpot install skill git-workflow
+```
+
+Search available roles:
+
+```bash
+strawpot search implementer
 ```
 
 ## Usage
@@ -80,6 +130,14 @@ role = "team-lead"
 [policy]
 allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
+```
+
+## Repository Structure
+
+```
+cli/          StrawPot CLI implementation
+gui/          Web GUI (planned)
+DESIGN.md     System architecture
 ```
 
 See [DESIGN.md](DESIGN.md) for architecture details.
