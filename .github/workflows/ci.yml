@@ -27,5 +27,8 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Run tests
-        run: pytest --cov=strawpot --cov-report=term-missing
+      - name: Run unit tests
+        run: pytest tests/ --ignore=tests/e2e --cov=strawpot --cov-report=term-missing
+
+      - name: Run E2E tests
+        run: pytest tests/e2e -v --timeout=30
