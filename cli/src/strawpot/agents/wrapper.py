@@ -41,6 +41,7 @@ class WrapperRuntime:
         self.spec = spec
         self.name = spec.name
         self.session_dir = session_dir
+        self._procs: dict[str, subprocess.Popen] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers — wrapper CLI
@@ -194,7 +195,8 @@ class WrapperRuntime:
                 start_new_session=True,
             )
 
-        # 3. Write PID file
+        # 3. Track process and write PID file
+        self._procs[agent_id] = proc
         self._write_pid(agent_id, proc.pid)
 
         return AgentHandle(
@@ -207,20 +209,33 @@ class WrapperRuntime:
     def wait(
         self, handle: AgentHandle, timeout: float | None = None
     ) -> AgentResult:
-        """Block until the agent finishes by polling PID.
+        """Block until the agent finishes.
 
+        Uses the stored Popen object when available for reliable process
+        reaping; falls back to PID polling for recovered sessions.
         Reads captured output from the log file.
         """
-        pid = handle.pid or self._read_pid(handle.agent_id)
-        elapsed = 0.0
-        poll_interval = 0.5
+        proc = self._procs.get(handle.agent_id)
+        exit_code = 0
 
-        if pid is not None:
-            while self._is_process_alive(pid):
-                if timeout is not None and elapsed >= timeout:
-                    break
-                time.sleep(poll_interval)
-                elapsed += poll_interval
+        if proc is not None:
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                pass
+            exit_code = proc.returncode if proc.returncode is not None else 0
+        else:
+            # Fallback: poll PID (e.g. recovered session with only PID file)
+            pid = handle.pid or self._read_pid(handle.agent_id)
+            elapsed = 0.0
+            poll_interval = 0.5
+
+            if pid is not None:
+                while self._is_process_alive(pid):
+                    if timeout is not None and elapsed >= timeout:
+                        break
+                    time.sleep(poll_interval)
+                    elapsed += poll_interval
 
         # Read captured output
         log_path = self._log_file(handle.agent_id)
@@ -232,11 +247,14 @@ class WrapperRuntime:
         return AgentResult(
             summary="Agent completed",
             output=output,
-            exit_code=0,
+            exit_code=exit_code,
         )
 
     def is_alive(self, handle: AgentHandle) -> bool:
         """Check whether the agent process is still running."""
+        proc = self._procs.get(handle.agent_id)
+        if proc is not None:
+            return proc.poll() is None
         pid = handle.pid or self._read_pid(handle.agent_id)
         if pid is None:
             return False

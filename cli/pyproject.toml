@@ -38,12 +38,17 @@ strawpot = "strawpot.cli:cli"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
+    "pytest-timeout>=2.0",
     "pyinstaller>=6.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+timeout = 30
+markers = [
+    "e2e: End-to-end tests (may be slower, require git)",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
