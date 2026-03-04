@@ -100,15 +100,17 @@ def _symlink(src: str, dst: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_role_deps(role_path: str) -> tuple[list[str], list[str]]:
+def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
     """Parse ROLE.md frontmatter to extract direct skill and role dep slugs.
 
     Returns:
-        (skill_slugs, role_slugs) — slug strings with version specifiers stripped.
+        (skill_slugs, role_slugs, wildcard_roles) — slug strings with version
+        specifiers stripped. ``wildcard_roles`` is True if ``"*"`` appears in
+        the role dependencies, meaning "depend on all available roles."
     """
     role_md = Path(role_path) / "ROLE.md"
     if not role_md.exists():
-        return [], []
+        return [], [], False
     text = role_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
@@ -116,13 +118,14 @@ def _parse_role_deps(role_path: str) -> tuple[list[str], list[str]]:
         fm.get("metadata", {}).get("strawpot", {}).get("dependencies", {})
     )
     if not isinstance(deps, dict):
-        return [], []
+        return [], [], False
 
     skill_specs = deps.get("skills", [])
     role_specs = deps.get("roles", [])
     skill_slugs = [spec.split()[0] for spec in skill_specs]
-    role_slugs = [spec.split()[0] for spec in role_specs]
-    return skill_slugs, role_slugs
+    role_slugs = [spec.split()[0] for spec in role_specs if spec.split()[0] != "*"]
+    wildcard_roles = any(spec.strip() == "*" for spec in role_specs)
+    return skill_slugs, role_slugs, wildcard_roles
 
 
 def _parse_skill_deps(skill_path: str) -> list[str]:
@@ -249,6 +252,32 @@ def discover_global_skills(
     return global_skills
 
 
+def _discover_all_roles() -> list[tuple[str, str]]:
+    """Discover all globally installed roles.
+
+    Scans ``~/.strawpot/roles/`` for installed role directories.
+
+    Returns:
+        List of (slug, path) tuples for each installed role.
+    """
+    from strawhub.version_spec import parse_dir_name
+
+    roles_dir = get_strawpot_home() / "roles"
+    if not roles_dir.is_dir():
+        return []
+
+    roles: list[tuple[str, str]] = []
+    for entry in sorted(roles_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        parsed = parse_dir_name(entry.name)
+        if parsed is None:
+            continue
+        slug, _version = parsed
+        roles.append((slug, str(entry)))
+    return roles
+
+
 # ---------------------------------------------------------------------------
 # Skill env collection and validation
 # ---------------------------------------------------------------------------
@@ -299,7 +328,7 @@ def collect_skill_env(
             return
         visited_roles.add(role_slug)
 
-        skill_slugs, child_role_slugs = _parse_role_deps(role_path)
+        skill_slugs, child_role_slugs, _ = _parse_role_deps(role_path)
         skill_deps = _collect_transitive_skills(skill_slugs, all_deps)
         for dep in skill_deps:
             for var, meta in _parse_skill_env(dep["path"]).items():
@@ -443,7 +472,9 @@ def stage_role(
     shutil.copy2(src_role_md, dst_role_md)
 
     # Parse direct dependencies from frontmatter
-    direct_skill_slugs, direct_role_slugs = _parse_role_deps(resolved["path"])
+    direct_skill_slugs, direct_role_slugs, wildcard_roles = _parse_role_deps(
+        resolved["path"]
+    )
 
     # Stage transitive skill deps (for this role's own skills only)
     skill_deps = _collect_transitive_skills(direct_skill_slugs, all_deps)
@@ -461,16 +492,27 @@ def stage_role(
             if not os.path.exists(dest):
                 _symlink(gpath, dest)
 
-    # Stage direct role deps only (symlink to installed paths)
-    role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
+    # Stage role deps
     roles_dir = os.path.join(role_stage_dir, "roles")
     os.makedirs(roles_dir, exist_ok=True)
-    for role_slug in direct_role_slugs:
-        dep = role_lookup.get(role_slug)
-        if dep is None:
-            continue
-        dest = os.path.join(roles_dir, role_slug)
-        _symlink(dep["path"], dest)
+
+    if wildcard_roles:
+        # "*" — stage all globally installed roles
+        for role_slug, role_path in _discover_all_roles():
+            if role_slug == slug:  # skip self
+                continue
+            dest = os.path.join(roles_dir, role_slug)
+            if not os.path.exists(dest):
+                _symlink(role_path, dest)
+    else:
+        # Stage direct role deps only (symlink to installed paths)
+        role_lookup = {d["slug"]: d for d in all_deps if d["kind"] == "role"}
+        for role_slug in direct_role_slugs:
+            dep = role_lookup.get(role_slug)
+            if dep is None:
+                continue
+            dest = os.path.join(roles_dir, role_slug)
+            _symlink(dep["path"], dest)
 
     return skills_dir, roles_dir
 
