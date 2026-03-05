@@ -1,6 +1,6 @@
 # StrawPot
 
-AI agents work better in teams.
+Define your AI team in Markdown. No Python. No orchestration code.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -8,49 +8,55 @@ AI agents work better in teams.
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Install roles like Team Lead, Implementer, or Analyst.
-StrawPot automatically resolves the skills needed for the job and launches the team.
-
-It orchestrates multiple agents (Claude Code, Codex, Gemini)
-in isolated environments using roles and skills from
-[StrawHub](https://strawhub.dev). Agents communicate through
-[Denden](https://github.com/strawpot/denden), a gRPC transport layer.
-
 ```
-strawpot start --role team-lead
+# CrewAI: 40 lines of Python to define a 2-agent team
+# OpenClaw: Skills in Markdown, but no roles or dependency resolution
+# StrawPot: One ROLE.md file. Done.
 ```
 
-## Architecture
+| | CrewAI | OpenClaw | StrawPot |
+|---|---|---|---|
+| **Format** | YAML + Python | JSON5 + Markdown | Markdown only |
+| **Skills / Tools** | Python (tools) | Markdown (skills) | Markdown (skills) |
+| **Roles** | Agent attribute | — | Standalone Markdown |
+| **Skill dependency resolution** | — | — | Automatic |
+| **Multi-agent delegation** | Python config | Runtime (subagent spawn) | Declarative (role deps) |
 
-StrawPot coordinates three components:
+## Quick Start
 
-- **StrawPot** — local orchestrator CLI
-- **[Denden](https://github.com/strawpot/denden)** — agent-to-orchestrator communication layer
-- **[StrawHub](https://strawhub.dev)** — registry for roles and skills
-
-```
-User task
-  ↓
-StrawPot CLI
-  ↓
-Orchestrator agent (team-lead)
-  ↓
-Sub-agents (implementer, reviewer, etc.)
-  ↓
-Roles & skills resolved from StrawHub
+```bash
+pip install strawpot
+strawpot install role team-lead
+strawpot start
 ```
 
-## Execution Flow
+## Why StrawPot?
 
-When you start a session:
+- **Zero boilerplate** — A role is a Markdown file with YAML frontmatter. That's it.
+- **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
+- **Declarative delegation** — A team-lead role depends on other roles. StrawPot handles the orchestration.
+- **Agent-agnostic** — Same role works with Claude Code, Codex, Gemini, or your own runtime.
 
-1. StrawPot creates an isolated git worktree
+## How It Works
+
+```
+User task → StrawPot → Role (team-lead)
+                         ├─ Sub-role (implementer)
+                         │   ├─ Skills (git-workflow, python-dev)
+                         │   └─ Agent (claude_code)
+                         └─ Sub-role (reviewer)
+                             ├─ Skills (code-review, security-baseline)
+                             └─ Agent (gemini)
+```
+
+When you run `strawpot start`:
+
+1. Creates an isolated git worktree
 2. Starts the Denden gRPC server for agent communication
 3. Launches the orchestrator agent (e.g. team-lead)
-4. Agents delegate tasks to other roles
-5. StrawPot installs required roles and skills from StrawHub
-6. Sub-agents run inside the same environment
-7. On exit, everything is cleaned up automatically
+4. Agents delegate tasks to sub-roles automatically
+5. Required roles and skills are resolved from StrawHub
+6. On exit, everything is cleaned up
 
 ## The Workforce Model
 
@@ -60,8 +66,6 @@ Skills are abilities. Roles are jobs. Teams are roles collaborating.
 - **Roles** — Job definitions that automatically load the skills needed for the work.
 - **Teams** — Roles collaborating to complete tasks.
 
-Install a role. StrawPot resolves the skills automatically.
-
 ```
 Role: implementer
  ├─ git-workflow
@@ -70,54 +74,18 @@ Role: implementer
  └─ code-review
 ```
 
-## Supported Agent Runtimes
+## Ecosystem
 
-StrawPot can orchestrate different agent runtimes:
-
-- Claude Code
-- Codex
-- Gemini
-
-Mix and match per role. Additional runtimes can be added via agent configuration.
-
-## Install
-
-```
-pip install strawpot
-```
-
-Or from source:
-
-```
-cd cli
-pip install -e ".[dev]"
-```
-
-## Quick Start
-
-Start a multi-agent session:
-
-```bash
-strawpot start --role team-lead
-```
-
-Install roles and skills:
-
-```bash
-strawpot install role implementer
-strawpot install skill git-workflow
-```
-
-Search available roles:
-
-```bash
-strawpot search implementer
-```
+| Project | Role |
+|---------|------|
+| [**StrawPot**](https://strawpot.com) | Runtime — runs role-based AI agents locally |
+| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, and agents |
+| [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the orchestrator |
 
 ## Usage
 
 ```bash
-# Start a session (foreground, interactive)
+# Start a session
 strawpot start
 strawpot start --role team-lead --runtime claude_code
 
