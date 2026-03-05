@@ -1,6 +1,6 @@
 # StrawPot
 
-Run role-based AI workers locally.
+AI agents work better in teams.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -8,7 +8,10 @@ Run role-based AI workers locally.
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-StrawPot orchestrates multiple agents (Claude Code, Codex, OpenHands)
+Install roles like Team Lead, Implementer, or Analyst.
+StrawPot automatically resolves the skills needed for the job and launches the team.
+
+It orchestrates multiple agents (Claude Code, Codex, Gemini)
 in isolated environments using roles and skills from
 [StrawHub](https://strawhub.dev). Agents communicate through
 [Denden](https://github.com/strawpot/denden), a gRPC transport layer.
@@ -49,15 +52,33 @@ When you start a session:
 6. Sub-agents run inside the same environment
 7. On exit, everything is cleaned up automatically
 
+## The Workforce Model
+
+Skills are abilities. Roles are jobs. Teams are roles collaborating.
+
+- **Skills** — Atomic capabilities such as writing code, searching documents, or running tests.
+- **Roles** — Job definitions that automatically load the skills needed for the work.
+- **Teams** — Roles collaborating to complete tasks.
+
+Install a role. StrawPot resolves the skills automatically.
+
+```
+Role: implementer
+ ├─ git-workflow
+ ├─ python-dev
+ ├─ run-tests
+ └─ code-review
+```
+
 ## Supported Agent Runtimes
 
 StrawPot can orchestrate different agent runtimes:
 
 - Claude Code
-- OpenAI Codex
-- OpenHands
+- Codex
+- Gemini
 
-Additional runtimes can be added via agent configuration.
+Mix and match per role. Additional runtimes can be added via agent configuration.
 
 ## Install
 
@@ -118,7 +139,7 @@ Global: `$STRAWPOT_HOME/strawpot.toml` (default `~/.strawpot/strawpot.toml`)
 Project: `strawpot.toml` (project root)
 
 ```toml
-runtime = "claude_code"       # claude_code | codex | openhands
+runtime = "claude_code"       # claude_code | codex | gemini
 isolation = "worktree"        # worktree | docker
 
 [denden]
