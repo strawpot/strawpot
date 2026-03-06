@@ -91,7 +91,7 @@ Content-Type: multipart/form-data
 | `displayName` | Display name |
 | `version` | Semver version |
 | `changelog` | Version changelog |
-| `dependencies` | Optional JSON: `{"skills": ["dep-a", "dep-b>=1.0.0"]}` |
+| `dependencies` | Optional JSON: `{"skills": ["dep-a", "dep-b==1.0.0"]}` |
 | `customTags` | Optional tags |
 | `files[]` | File uploads (must include `SKILL.md`, max 20 files, 512 KB each, any file type) |
 
@@ -159,7 +159,7 @@ Content-Type: multipart/form-data
 ```
 
 Same payload as Publish Skill, but `dependencies` supports both skills and roles:
-`{"skills": ["git-workflow>=1.0.0"], "roles": ["reviewer"]}`.
+`{"skills": ["git-workflow==1.0.0"], "roles": ["reviewer"]}`.
 
 Roles must contain exactly one file named `ROLE.md`.
 

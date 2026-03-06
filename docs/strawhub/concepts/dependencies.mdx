@@ -54,13 +54,13 @@ Declare project dependencies in `strawpot.toml`:
 
 ```toml
 [skills]
-git-workflow = "^1.0.0"
+git-workflow = "*"
 code-review = "==2.1.0"
 security-baseline = "*"
 
 [roles]
-implementer = "^1.0.0"
-reviewer = ">=2.0.0"
+implementer = "*"
+reviewer = "==2.0.0"
 ```
 
 ### Version Specifiers
@@ -69,10 +69,8 @@ Version specifiers are supported only in `strawpot.toml` — not in SKILL.md or 
 
 | Format | Meaning |
 |--------|---------|
-| `"*"` | Any version (install latest) |
-| `"^X.Y.Z"` | Compatible — same major, >= specified |
+| `"*"` or `""` | Any version (install latest) |
 | `"==X.Y.Z"` | Exact version |
-| `">=X.Y.Z"` | Minimum version |
 
 Versions follow [semver](https://semver.org/) (`major.minor.patch`).
 

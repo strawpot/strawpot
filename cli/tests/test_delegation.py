@@ -307,7 +307,7 @@ class TestParseRoleDeps:
     def test_version_specifiers_stripped(self, tmp_path):
         """Version specifiers are stripped from slugs."""
         role_path = _write_role(
-            str(tmp_path), "impl", skill_deps=["git-workflow ^1.0"]
+            str(tmp_path), "impl", skill_deps=["git-workflow ==1.0.0"]
         )
         skill_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["git-workflow"]
