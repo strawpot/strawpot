@@ -100,3 +100,15 @@ If a memory provider is configured, StrawPot retrieves context before spawning e
 3. Context is injected into the agent's prompt via `--memory-prompt`
 
 After the sub-agent completes, `memory.dump()` records the result for future reference.
+
+## Tracing
+
+When tracing is enabled (the default), every delegation emits structured events to the session's `trace.jsonl`:
+
+- `delegate_start` — records the role and stores the full context prompt as an artifact
+- `agent_spawn` / `agent_end` — tracks the sub-agent process lifecycle with timing
+- `memory_get` / `memory_dump` — records memory interactions with artifact references
+- `delegate_end` — captures exit code, summary, and total duration
+- `delegate_denied` — logged when policy blocks a delegation request
+
+These events include span IDs that link to the parent agent's span, enabling full call-tree reconstruction across nested delegations. See [Sessions](/concepts/sessions#tracing) for the complete event reference.

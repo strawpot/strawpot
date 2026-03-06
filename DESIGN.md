@@ -58,9 +58,10 @@ src/strawpot/
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
     worktree.py            # WorktreeIsolator
+  trace.py                 # Session tracing — JSONL events + content-addressed artifacts
 ```
 
-13 source files. No agent-specific code in the core — agents are installed
+14 source files. No agent-specific code in the core — agents are installed
 via StrawHub (e.g. `strawhub install agent strawpot_claude_code --global`).
 
 ---
@@ -404,6 +405,7 @@ class StrawPotConfig:
     merge_strategy: str = "auto"       # auto | local | pr
     pull_before_session: str = "prompt" # auto | always | never | prompt
     pr_command: str = "gh pr create --base {base_branch} --head {session_branch}"
+    trace: bool = True                 # emit JSONL trace events per session
 ```
 
 `agents` holds agent-specific config keyed by agent name. These are extras
@@ -430,6 +432,9 @@ creating a worktree or docker session:
 - `never` — skip, use current HEAD
 - `prompt` — ask the user each time (default)
 
+`trace` enables the two-tier tracing system (JSONL events + content-addressed
+artifacts). Default on. Disable with `[trace] enabled = false` in config.
+
 `pr_command` is the command template for creating PRs. Supports `{base_branch}`
 and `{session_branch}` placeholders. Set to empty string to push without
 creating a PR. Users can swap `gh` for `glab`, a custom script, etc.
@@ -443,6 +448,69 @@ Loaded from (later overrides earlier):
 Environment variables:
 - `STRAWPOT_HOME` — global config/data directory (default: `~/.strawpot/`).
   Also used by `strawhub` CLI for skill/role install paths.
+
+### Tracer (`trace.py`)
+
+Two-tier tracing: a lightweight JSONL event stream for metadata + span tree,
+and a content-addressed artifact store for large payloads (context prompts,
+agent output, memory cards).
+
+```python
+@dataclass
+class TraceEvent:
+    ts: str                          # ISO 8601 UTC
+    event: str                       # event name
+    trace_id: str                    # = run_id (session-scoped)
+    span_id: str                     # uuid hex[:12]
+    parent_span: str | None = None   # parent span for tree reconstruction
+    data: dict = field(default_factory=dict)
+
+class Tracer:
+    def __init__(self, session_dir: str, trace_id: str) -> None:
+        # Creates <session_dir>/trace.jsonl and <session_dir>/artifacts/
+        ...
+
+    def store_artifact(self, content: str) -> str | None:
+        # Writes to artifacts/<sha256[:12]>, deduplicates, returns ref
+        # Returns None for empty content
+        ...
+
+    def emit(self, event, span_id, parent_span=None, **data) -> None:
+        # Appends one JSONL line. Wrapped in try/except — never crashes the session.
+        ...
+```
+
+Convenience methods (each calls `emit` + `store_artifact` as needed):
+
+| Method | Returns | Stores artifact |
+|--------|---------|-----------------|
+| `session_start(run_id, role, runtime, isolation)` | span_id | — |
+| `session_end(span_id, merge_strategy, duration_ms)` | — | — |
+| `delegate_start(role, parent_span, context)` | span_id | context → `context_ref` |
+| `delegate_end(span_id, exit_code, summary, duration_ms)` | — | — |
+| `delegate_denied(role, parent_span, reason)` | — | — |
+| `memory_get(span_id, provider, cards, card_count)` | — | cards JSON → `cards_ref` |
+| `memory_dump(span_id, provider, entries, entry_count)` | — | entries → `entries_ref` |
+| `agent_spawn(span_id, agent_id, runtime, pid)` | — | — |
+| `agent_end(span_id, exit_code, output, duration_ms)` | — | output → `output_ref` |
+
+Session output layout:
+
+```
+.strawpot/sessions/<run_id>/
+  session.json
+  trace.jsonl          ← JSONL event stream (metadata + artifact refs)
+  artifacts/           ← content-addressed store for large payloads
+    a1b2c3d4e5f6       ← sha256[:12] filename, plain text content
+    ...
+```
+
+The span tree enables call-tree reconstruction:
+- `session_start` is the root span (no parent)
+- `delegate_start` sets `parent_span` to the requesting agent's span
+- `agent_spawn`, `memory_get`, `memory_dump`, `agent_end` inherit the
+  delegation span_id
+- Nested delegations form a tree: session → delegate A→B → delegate B→C
 
 ---
 
@@ -486,6 +554,11 @@ GITHUB_TOKEN = "ghp_..."
 # Role overrides — override ROLE.md frontmatter settings.
 [roles.implementer]
 default_agent = "claude_code"
+
+# Tracing — JSONL events + content-addressed artifacts per session.
+# Default: enabled. Set to false to disable.
+[trace]
+enabled = true
 ```
 
 ---
@@ -511,6 +584,7 @@ default_agent = "claude_code"
 6. session = Session(config, wrapper, runtime, isolator)
 7. session.start():
    a. run_id = "run_" + uuid4()
+      → if config.trace: create Tracer(session_dir, run_id), emit session_start
    b. Create isolated env (or use CWD directly):
       env = isolator.create(session_id=run_id, base_dir=working_dir)
       → isolation=none:     env.path = working_dir (no-op)
@@ -566,8 +640,8 @@ Denden server dispatches to `Session._handle_delegate`:
 ```
 1. Extract: role_slug, task_text, parent_agent_id, run_id from request
 2. Policy check:
-   - role_slug in allowed_roles?  → DENY_ROLE_NOT_ALLOWED
-   - depth > max_depth?           → DENY_DEPTH_LIMIT
+   - role_slug in allowed_roles?  → DENY_ROLE_NOT_ALLOWED (+ trace: delegate_denied)
+   - depth > max_depth?           → DENY_DEPTH_LIMIT (+ trace: delegate_denied)
 3. Resolve:
    resolved = strawhub.resolver.resolve(role_slug, kind="role")
    → {slug, version, path, dependencies: [{slug, kind, path}, ...]}
@@ -595,6 +669,7 @@ Denden server dispatches to `Session._handle_delegate`:
    workspace = create_agent_workspace(session_dir, agent_id)
    → per-agent scratch directory at session_dir/agents/<agent_id>/ (clean — no pre-placed files)
 6. Spawn in session worktree (shared — no new worktree):
+   → trace: delegate_start (stores context as artifact)
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
      agent_workspace_dir=workspace,
@@ -606,12 +681,16 @@ Denden server dispatches to `Session._handle_delegate`:
           DENDEN_PARENT_AGENT_ID, DENDEN_RUN_ID}
    )
    → WrapperRuntime calls wrapper CLI with standard protocol args
+   → trace: agent_spawn
 7. Wait:
    result = runtime.wait(handle, timeout=config.agent_timeout)
    (blocks — sequential DAG, one sub-agent at a time)
+   → trace: agent_end (stores output as artifact)
    → on timeout: runtime.kill(handle), return error response
      "Agent timed out after {timeout}s" to parent
+   → trace: memory_dump (if memory provider configured)
 8. Return:
+   → trace: delegate_end (exit_code, summary, duration_ms)
    ok_response(request_id, delegate_result=DelegateResult(summary=result.summary))
 ```
 

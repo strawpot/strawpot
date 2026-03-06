@@ -95,6 +95,12 @@ SCANNER_API_KEY = "sk-..."
 # Override role settings from ROLE.md frontmatter.
 [roles.implementer]
 default_agent = "claude_code"
+
+# ── Tracing ──────────────────────────────────────────────
+# JSONL event stream + content-addressed artifacts per session.
+# Enabled by default. Set to false to disable.
+[trace]
+enabled = true
 ```
 
 ## Environment Variables

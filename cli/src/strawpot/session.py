@@ -36,6 +36,7 @@ from strawpot.memory.protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 from strawpot.isolation.worktree import WorktreeIsolator
+from strawpot.trace import Tracer
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +253,10 @@ class Session:
         self._session_file: str | None = None
         self._session_data: dict = {}
         self._memory_provider: MemoryProvider | None = None
+        self._tracer: Tracer | None = None
+        self._session_span_id: str | None = None
+        self._session_start_time: float = 0.0
+        self._agent_spans: dict[str, str] = {}
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -273,6 +278,17 @@ class Session:
 
         # Set session_dir on wrapper so PID/log files go to the right place
         self.wrapper.session_dir = self._session_dir()
+
+        # Initialize tracer (before try block so session_dir exists)
+        if self.config.trace:
+            self._tracer = Tracer(self._session_dir(), self._run_id)
+            self._session_span_id = self._tracer.session_start(
+                run_id=self._run_id,
+                role=self.config.orchestrator_role,
+                runtime=self.config.runtime,
+                isolation=self.config.isolation,
+            )
+            self._session_start_time = time.monotonic()
 
         original_sigint = signal.getsignal(signal.SIGINT)
         try:
@@ -325,6 +341,13 @@ class Session:
                 )
                 if get_result.context_cards:
                     memory_prompt = _format_memory_prompt(get_result)
+                if self._tracer is not None:
+                    self._tracer.memory_get(
+                        span_id=self._session_span_id,
+                        provider=self._memory_provider.name,
+                        cards=get_result.context_cards or [],
+                        card_count=len(get_result.context_cards) if get_result.context_cards else 0,
+                    )
 
             # 5b. Spawn orchestrator (interactive mode)
             env = {
@@ -346,6 +369,14 @@ class Session:
                 env=env,
             )
             self._orchestrator_handle = handle
+            if self._tracer is not None:
+                self._tracer.agent_spawn(
+                    span_id=self._session_span_id,
+                    agent_id=agent_id,
+                    runtime=self.config.runtime,
+                    pid=handle.pid,
+                )
+                self._agent_spans[agent_id] = self._session_span_id
             self._register_agent(
                 agent_id,
                 role=self.config.orchestrator_role,
@@ -373,6 +404,17 @@ class Session:
 
     def stop(self) -> None:
         """Clean up the session: kill agents, stop server, merge changes, remove isolation."""
+        # 0. Emit session_end trace event before cleanup that might fail
+        if self._tracer is not None and self._session_span_id is not None:
+            duration_ms = int(
+                (time.monotonic() - self._session_start_time) * 1000
+            )
+            self._tracer.session_end(
+                span_id=self._session_span_id,
+                merge_strategy=self.config.merge_strategy,
+                duration_ms=duration_ms,
+            )
+
         # 1. Kill remaining sub-agents
         for agent_id, handle in self._agents.items():
             if handle is self._orchestrator_handle:
@@ -599,6 +641,10 @@ class Session:
         )
 
         try:
+            # Look up the span for the requesting agent (for call tree)
+            requester_span = self._agent_spans.get(
+                trace.agent_instance_id, self._session_span_id
+            )
             result = handle_delegate(
                 request=delegate_req,
                 config=self.config,
@@ -609,6 +655,9 @@ class Session:
                 resolve_role_dirs=self._resolve_role_dirs,
                 denden_addr=self._denden_addr,
                 memory_provider=self._memory_provider,
+                tracer=self._tracer,
+                parent_span=requester_span,
+                agent_spans=self._agent_spans,
             )
             return ok_response(
                 request.request_id,
@@ -617,6 +666,12 @@ class Session:
                 ),
             )
         except PolicyDenied as exc:
+            if self._tracer is not None:
+                self._tracer.delegate_denied(
+                    role=delegate_req.role_slug,
+                    parent_span=requester_span,
+                    reason=exc.reason,
+                )
             return denied_response(
                 request.request_id, exc.reason, str(exc)
             )
