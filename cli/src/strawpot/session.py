@@ -717,10 +717,11 @@ class Session:
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                timeout=5,
             )
             if result.returncode == 0:
                 return result.stdout.strip() or None
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         return None
 
