@@ -94,6 +94,21 @@ strawhub publish skill ./my-skill --version 2.0.0 --changelog "Breaking change: 
 
 Via the web UI, navigate to your package and click **Update**, or use the upload page with `?updateSlug=my-skill`.
 
+## Frontmatter Name
+
+The `name` field in frontmatter is **required** and must match the package slug:
+
+```yaml
+---
+name: my-skill
+description: "A brief description"
+---
+```
+
+- **CLI**: If `name` is missing or doesn't match the slug, the CLI automatically injects or overwrites it before uploading.
+- **Web UI**: The upload form auto-corrects the `name` field to match the slug.
+- **API**: Requests are rejected with a 400 error if `name` is missing or doesn't match the slug.
+
 ## File Constraints
 
 | Constraint | Limit |
