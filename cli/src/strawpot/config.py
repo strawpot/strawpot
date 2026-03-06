@@ -39,6 +39,7 @@ class StrawPotConfig:
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
     pr_command: str = _DEFAULT_PR_COMMAND
+    trace: bool = True
 
 
 def _read_toml(path: Path) -> dict:
@@ -103,6 +104,10 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.pull_before_session = session["pull_before_session"]
     if "pr_command" in session:
         config.pr_command = session["pr_command"]
+
+    trace_section = data.get("trace", {})
+    if "enabled" in trace_section:
+        config.trace = trace_section["enabled"]
 
 
 def load_config(project_dir: Path | None = None) -> StrawPotConfig:

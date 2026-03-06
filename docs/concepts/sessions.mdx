@@ -81,3 +81,60 @@ Each session tracks:
 - Session ID, start time, working directory
 - Denden server address and PID
 - All spawned agents with their role, runtime, parent, and status
+
+## Tracing
+
+StrawPot records structured trace events for every session using a two-tier system:
+
+1. **JSONL event stream** (`trace.jsonl`) — lightweight metadata with timing, span IDs, and artifact references
+2. **Artifact store** (`artifacts/`) — content-addressed storage for large payloads (context prompts, agent output, memory cards)
+
+This separation keeps the event stream small and scannable while preserving full payloads for debugging.
+
+### Session directory layout
+
+```
+.strawpot/sessions/<session_id>/
+  session.json
+  trace.jsonl
+  artifacts/
+    a1b2c3d4e5f6
+    ...
+```
+
+### Events
+
+| Event | When | Key data |
+|-------|------|----------|
+| `session_start` | Session begins | role, runtime, isolation |
+| `session_end` | Session stops | merge_strategy, duration_ms |
+| `delegate_start` | Delegation begins | role, context_ref (artifact) |
+| `delegate_end` | Delegation completes | exit_code, summary, duration_ms |
+| `delegate_denied` | Policy blocks delegation | role, reason |
+| `memory_get` | Memory context retrieved | provider, cards_ref, card_count |
+| `memory_dump` | Memory recorded after agent | provider, entries_ref, entry_count |
+| `agent_spawn` | Agent process launched | agent_id, runtime, pid |
+| `agent_end` | Agent process exits | exit_code, output_ref, duration_ms |
+
+### Call tree reconstruction
+
+Each event has a `span_id` and optional `parent_span`. The `session_start` span is the root. Delegation spans reference the requesting agent's span as their parent, forming a tree that reflects the actual delegation chain:
+
+```
+session_start (root)
+  └─ delegate_start (orchestrator → implementer)
+       ├─ agent_spawn
+       ├─ delegate_start (implementer → reviewer)
+       │    ├─ agent_spawn
+       │    └─ agent_end
+       └─ agent_end
+```
+
+### Disabling
+
+Tracing is enabled by default. Disable it in `strawpot.toml`:
+
+```toml
+[trace]
+enabled = false
+```

@@ -1,13 +1,20 @@
 """Delegate handler — policy check, resolve, build prompt, spawn, wait."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 import shutil
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from strawpot.trace import Tracer
 
 from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
 from strawpot.agents.registry import resolve_agent
@@ -626,6 +633,24 @@ def _agent_status(result: AgentResult, *, timed_out: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _emit_delegate_end(
+    tracer: Tracer | None,
+    span_id: str | None,
+    exit_code: int,
+    summary: str,
+    start_time: float,
+) -> None:
+    """Emit delegate_end if tracer is active."""
+    if tracer is not None and span_id is not None:
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        tracer.delegate_end(
+            span_id=span_id,
+            exit_code=exit_code,
+            summary=summary,
+            duration_ms=duration_ms,
+        )
+
+
 def handle_delegate(
     *,
     request: DelegateRequest,
@@ -637,6 +662,9 @@ def handle_delegate(
     resolve_role_dirs: Callable[[str], str | None],
     denden_addr: str | None = None,
     memory_provider: MemoryProvider | None = None,
+    tracer: Tracer | None = None,
+    parent_span: str | None = None,
+    agent_spans: dict[str, str] | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -665,6 +693,11 @@ def handle_delegate(
             precedence over ``config.denden_addr``.
         memory_provider: Optional memory provider. When set, ``get()``
             is called before spawn and ``dump()`` after wait.
+        tracer: Optional session tracer for JSONL event emission.
+        parent_span: Parent span ID for delegation tree reconstruction.
+        agent_spans: Shared dict mapping agent_id to its delegation
+            span_id.  Populated here so sub-delegations from the
+            spawned agent can look up the correct parent span.
 
     Returns:
         DelegateResult with summary and output from the sub-agent.
@@ -674,6 +707,16 @@ def handle_delegate(
     """
     # 1. Policy check
     _check_policy(request, config)
+
+    # 1b. Start delegation trace span
+    delegate_span_id: str | None = None
+    delegate_start_time = time.monotonic()
+    if tracer is not None:
+        delegate_span_id = tracer.delegate_start(
+            role=request.role_slug,
+            parent_span=parent_span,
+            context=request.task_text,
+        )
 
     # 2. Resolve role + skills
     resolved = resolve_role(request.role_slug, kind="role")
@@ -775,6 +818,13 @@ def handle_delegate(
             )
             if get_result.context_cards:
                 memory_prompt = _format_memory_prompt(get_result)
+            if tracer is not None and delegate_span_id is not None:
+                tracer.memory_get(
+                    span_id=delegate_span_id,
+                    provider=memory_provider.name,
+                    cards=get_result.context_cards or [],
+                    card_count=len(get_result.context_cards) if get_result.context_cards else 0,
+                )
 
         # 7b. Spawn
         env = {
@@ -785,6 +835,7 @@ def handle_delegate(
             "PERMISSION_MODE": "auto",
         }
 
+        spawn_time = time.monotonic()
         handle: AgentHandle = runtime.spawn(
             agent_id=agent_id,
             working_dir=working_dir,
@@ -796,9 +847,28 @@ def handle_delegate(
             task=task_text,
             env=env,
         )
+        if tracer is not None and delegate_span_id is not None:
+            tracer.agent_spawn(
+                span_id=delegate_span_id,
+                agent_id=agent_id,
+                runtime=runtime.name,
+                pid=handle.pid,
+            )
+            if agent_spans is not None:
+                agent_spans[agent_id] = delegate_span_id
 
         # 8. Wait
         result = runtime.wait(handle, timeout=config.agent_timeout)
+        if tracer is not None and delegate_span_id is not None:
+            agent_duration_ms = int(
+                (time.monotonic() - spawn_time) * 1000
+            )
+            tracer.agent_end(
+                span_id=delegate_span_id,
+                exit_code=result.exit_code,
+                output=result.output,
+                duration_ms=agent_duration_ms,
+            )
 
         # 8a. Memory dump — record result after wait
         timed_out = (
@@ -815,10 +885,22 @@ def handle_delegate(
                 output=result.output,
                 parent_agent_id=request.parent_agent_id,
             )
+            if tracer is not None and delegate_span_id is not None:
+                tracer.memory_dump(
+                    span_id=delegate_span_id,
+                    provider=memory_provider.name,
+                    entries=result.output,
+                    entry_count=1,
+                )
 
         # 8b. Handle timeout — no retry on timeout
         if timed_out:
             runtime.kill(handle)
+            _emit_delegate_end(
+                tracer, delegate_span_id, 1,
+                f"Agent timed out after {config.agent_timeout}s",
+                delegate_start_time,
+            )
             return DelegateResult(
                 summary=f"Agent timed out after {config.agent_timeout}s",
                 output=result.output,
@@ -827,6 +909,10 @@ def handle_delegate(
 
         # 8c. No retry on non-zero exit
         if result.exit_code != 0:
+            _emit_delegate_end(
+                tracer, delegate_span_id, result.exit_code,
+                result.summary, delegate_start_time,
+            )
             return DelegateResult(
                 summary=result.summary,
                 output=result.output,
@@ -838,6 +924,10 @@ def handle_delegate(
             result.output, request.return_format
         )
         if validation_error is None:
+            _emit_delegate_end(
+                tracer, delegate_span_id, result.exit_code,
+                result.summary, delegate_start_time,
+            )
             return DelegateResult(
                 summary=result.summary,
                 output=result.output,
@@ -852,6 +942,10 @@ def handle_delegate(
                 request.role_slug,
                 max_attempts,
                 validation_error,
+            )
+            _emit_delegate_end(
+                tracer, delegate_span_id, result.exit_code,
+                result.summary, delegate_start_time,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -875,6 +969,10 @@ def handle_delegate(
 
     # Defensive: should never reach here
     assert result is not None
+    _emit_delegate_end(
+        tracer, delegate_span_id, result.exit_code,
+        result.summary, delegate_start_time,
+    )
     return DelegateResult(
         summary=result.summary,
         output=result.output,

@@ -25,6 +25,7 @@ def test_defaults():
     assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
     assert "gh pr create" in config.pr_command
+    assert config.trace is True
 
 
 def test_strawpot_home_default(monkeypatch):
@@ -268,6 +269,21 @@ def test_roles_merge_global_project(tmp_path, monkeypatch):
 
     config = load_config(project_dir)
     assert config.roles == {"implementer": {"default_agent": "claude_code"}}
+
+
+def test_trace_disabled_via_toml(tmp_path, monkeypatch):
+    """[trace] enabled = false disables tracing."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[trace]\n"
+        "enabled = false\n"
+    )
+
+    config = load_config(project_dir)
+    assert config.trace is False
 
 
 def test_save_skill_env_creates_file(tmp_path):
