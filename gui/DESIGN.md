@@ -62,13 +62,17 @@ FastAPI server                              ← strawpot-gui package
   │
   ├─ /api/projects/*                        CRUD projects (gui.db + dirs)
   ├─ /api/projects/:id/config               read/write strawpot.toml
-  ├─ /api/sessions/*                        list / detail / launch
+  ├─ /api/sessions/*                        list / detail / launch / stop
   ├─ /api/sessions/:id/tree                 SSE  real-time agent tree
   ├─ /api/sessions/:id/logs/:agent_id       SSE  agent log stream
   ├─ /api/sessions/:id/trace                SSE  trace event stream
+  ├─ /api/sessions/:id/artifacts/:hash      read artifact content
+  ├─ /api/sessions/:id/changed-files        changed file list (worktree)
   ├─ /api/registry/*                        browse installed items
   ├─ /api/registry/install                  install via strawpot CLI
+  ├─ /api/registry/search                   search StrawHub
   ├─ /api/config/global                     read/write global config
+  ├─ /api/health                            health check
   ├─ /api/triggers/*                        CRUD + start/stop triggers
   └─ /api/triggers/:id/logs                 SSE  trigger adapter logs
 
@@ -77,7 +81,7 @@ Data sources
   ├─ ~/.strawpot/strawpot.toml              global config
   ├─ <project>/strawpot.toml                project config
   ├─ <project>/.strawpot/sessions/*/        live + archived session data
-  ├─ <project>/.strawpot/files/                project files (uploaded via GUI)
+  ├─ <project>/.strawpot/files/             project files (uploaded via GUI)
   ├─ <project>/.strawpot/{roles,skills,agents,memory}/
   └─ DenDen gRPC Status()                   live agent count + uptime
 ```
@@ -315,7 +319,9 @@ specs, data files, or other context that agents can access during
 sessions.
 
 **Storage**: `<project>/.strawpot/files/`. Flat or nested — uploaded
-directory structure is preserved.
+directory structure is preserved. Path components are validated on
+upload: reject names containing `..`, absolute paths, or symlinks to
+prevent writing outside the files directory.
 
 **Agent access**: The delegation handler appends the file listing and
 absolute path to the agent's system prompt so agents know where to
@@ -454,11 +460,11 @@ CREATE TABLE projects (
 
 CREATE TABLE sessions (
     run_id      TEXT PRIMARY KEY,
-    project_id  INTEGER NOT NULL REFERENCES projects(id),
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role        TEXT NOT NULL,
     runtime     TEXT NOT NULL,
     isolation   TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'active',  -- active | archived
+    status      TEXT NOT NULL DEFAULT 'starting',  -- starting | running | completed | failed | archived
     started_at  TEXT NOT NULL,
     ended_at    TEXT,
     duration_ms INTEGER,
@@ -475,8 +481,9 @@ CREATE TABLE trigger_instances (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
     adapter     TEXT NOT NULL,
-    project_id  INTEGER NOT NULL REFERENCES projects(id),
-    config      TEXT NOT NULL DEFAULT '{}',  -- JSON
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,               -- role to launch sessions with
+    config      TEXT NOT NULL DEFAULT '{}',  -- JSON (adapter-specific settings)
     status      TEXT NOT NULL DEFAULT 'stopped',  -- running | stopped | error
     last_error  TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -487,6 +494,30 @@ The projects table is the source of truth for which directories are
 registered. Session rows are populated by scanning session directories
 and kept as a queryable index — the session files remain the primary
 data source.
+
+**Session index sync:** On GUI startup, scan all registered project
+session directories and upsert rows into the `sessions` table. For
+each session directory, read `session.json` for core fields (`run_id`,
+`role`, `runtime`, `isolation`, `started_at`, `session_dir`) and parse
+`trace.jsonl` for completion fields (`exit_code`, `summary`,
+`duration_ms`, `ended_at` from `session_end` / `delegate_end` events).
+During runtime, session rows are created on launch and updated via SSE
+events (status transitions, exit code, summary).
+
+**TODO:** Detect CLI-launched sessions while the GUI is running. The
+startup scan catches sessions created before the GUI starts, but
+sessions launched via `strawpot start` from the CLI while the GUI is
+open are not detected until the next restart. A filesystem watcher on
+each project's `.strawpot/sessions/` directory would close this gap.
+
+**Session status transitions:**
+
+```
+starting → running     (session.json appears / session_start trace)
+running  → completed   (root delegate_end trace with exit_code 0)
+running  → failed      (root delegate_end trace with exit_code ≠ 0, or process dies)
+*        → archived    (CLI moves session dir to archive/)
+```
 
 ---
 
@@ -620,7 +651,14 @@ channel. The session layer handles routing.
 
 ### Configuration
 
-Triggers are configured in `strawpot.toml`:
+**Source of truth:** `gui.db` owns trigger instance state (running,
+stopped, last error). `strawpot.toml` is used only as an optional
+seed — on first GUI startup, any `[[triggers]]` entries in the config
+are imported into `gui.db`. After that, the GUI API is the sole
+interface for creating and managing triggers. The TOML entries are
+not kept in sync.
+
+Triggers are configured in `strawpot.toml` (seed only):
 
 ```toml
 [[triggers]]
@@ -651,6 +689,7 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 | GET | `/api/projects` | List registered projects |
 | POST | `/api/projects` | Register a project (working_dir, display_name) |
 | GET | `/api/projects/:id` | Project detail |
+| PATCH | `/api/projects/:id` | Update project metadata (display_name) |
 | DELETE | `/api/projects/:id` | Unregister project |
 | GET | `/api/projects/:id/config` | Read merged project config |
 | PUT | `/api/projects/:id/config` | Write project `strawpot.toml` |
@@ -669,7 +708,7 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 | GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream |
 | GET | `/api/sessions/:id/trace` | SSE: trace event stream |
 | GET | `/api/sessions/:id/artifacts/:hash` | Read artifact content |
-| GET | `/api/sessions/:id/changed-files` | List of changed files with status (added/modified/deleted) |
+| GET | `/api/sessions/:id/changed-files` | List of changed files with status (added/modified/deleted). Worktree sessions only; returns empty list for non-worktree sessions. |
 | POST | `/api/sessions/:id/stop` | Stop session (SIGTERM to orchestrator PID) |
 
 ### Registry
