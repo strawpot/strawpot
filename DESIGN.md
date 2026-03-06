@@ -1901,3 +1901,46 @@ keychain integration or external secret managers for sensitive values.
 Validate saved env/config values against frontmatter-declared types and
 `required` flags at load time.
 
+### Parallel Sub-Agent Delegation
+
+Currently delegation is sequential — an agent calls `stub.Send()` which
+blocks until the sub-agent finishes. The architecture is designed so that
+parallel delegation can be added incrementally without restructuring.
+
+**What already supports parallelism (no changes needed):**
+
+- **gRPC server thread pool** — `DenDenServer(max_workers=10_000)` can
+  handle concurrent `Send()` calls from the same or different agents.
+- **`handle_delegate()`** — stateless function; each call independently
+  spawns, waits, and returns. Multiple concurrent invocations are safe.
+- **Agent workspaces** — UUID-based per-agent directories, no conflicts.
+- **Role staging** — idempotent `stage_role()` returns early if already
+  staged; safe for concurrent calls to the same role.
+- **Tracing spans** — the parent/child span model already supports
+  multiple children under the same parent span.
+
+**Incremental changes required:**
+
+| Area | Issue | Fix |
+|------|-------|-----|
+| `Session._agents`, `_agent_info`, `_agent_spans` | Plain dicts, not thread-safe | Add `threading.Lock` |
+| `Tracer` JSONL writes | Concurrent appends could interleave | Lock or write queue |
+| `_write_session_file()` | Not safe for concurrent updates | Lock or atomic write |
+| Client-side agent | Blocks on `stub.Send()` | Agent wrapper must support concurrent gRPC calls (threads or async) |
+
+**Design decision — shared worktree:**
+
+All agents share one working directory. Parallel agents editing the same
+files will conflict. Options when the time comes:
+
+1. **Task decomposition discipline** — rely on role/task design to avoid
+   file overlap (simplest, no code change).
+2. **Per-agent worktrees** — give each sub-agent its own worktree, merge
+   results (requires isolation layer changes).
+3. **File-level coordination** — locking or ownership semantics
+   (complex, likely overkill).
+
+Option 1 is the likely first approach. The proto, server, and handler
+layers do not need changes — parallelism is a client-side concern plus
+a few locks in `Session`.
+
