@@ -1,4 +1,6 @@
-"""Tests for session list endpoint."""
+"""Tests for session list and detail endpoints."""
+
+import shutil
 
 from strawpot_gui.db import sync_sessions
 
@@ -101,3 +103,103 @@ class TestListSessions:
         sessions = resp.json()
         assert len(sessions) == 1
         assert sessions[0]["run_id"] == "run_p1"
+
+
+class TestGetSession:
+    def _setup_session(self, client, tmp_path):
+        """Create a project with one archived session and return (pid, session_dir)."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        pid = _register_project(client, project_dir)
+
+        session_dir = _write_session(project_dir, "run_detail", archived=True)
+        _write_trace(session_dir, [
+            {
+                "ts": "2026-01-01T12:05:00+00:00",
+                "event": "delegate_end",
+                "trace_id": "run_detail",
+                "span_id": "s1",
+                "parent_span": None,
+                "data": {"exit_code": 0, "summary": "All done", "duration_ms": 60000},
+            },
+            {
+                "ts": "2026-01-01T12:05:01+00:00",
+                "event": "session_end",
+                "trace_id": "run_detail",
+                "span_id": "s0",
+                "data": {"duration_ms": 60100},
+            },
+        ])
+        sync_sessions(client.app.state.db_path)
+        return pid, session_dir
+
+    def test_get_session_basic(self, client, tmp_path):
+        """Detail endpoint returns metadata without session_dir."""
+        pid, _ = self._setup_session(client, tmp_path)
+
+        resp = client.get(f"/api/projects/{pid}/sessions/run_detail")
+        assert resp.status_code == 200
+        s = resp.json()
+        assert s["run_id"] == "run_detail"
+        assert s["project_id"] == pid
+        assert s["status"] == "completed"
+        assert s["exit_code"] == 0
+        assert s["summary"] == "All done"
+        assert "session_dir" not in s
+
+    def test_get_session_agents(self, client, tmp_path):
+        """Detail endpoint returns agents from session.json."""
+        pid, _ = self._setup_session(client, tmp_path)
+
+        resp = client.get(f"/api/projects/{pid}/sessions/run_detail")
+        agents = resp.json()["agents"]
+        assert "agent_abc" in agents
+        assert agents["agent_abc"]["role"] == "orchestrator"
+
+    def test_get_session_events(self, client, tmp_path):
+        """Detail endpoint returns trace events."""
+        pid, _ = self._setup_session(client, tmp_path)
+
+        resp = client.get(f"/api/projects/{pid}/sessions/run_detail")
+        events = resp.json()["events"]
+        assert len(events) == 2
+        assert events[0]["event"] == "delegate_end"
+        assert events[1]["event"] == "session_end"
+
+    def test_get_session_not_found(self, client, tmp_path):
+        """Nonexistent run_id returns 404."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        pid = _register_project(client, project_dir)
+
+        resp = client.get(f"/api/projects/{pid}/sessions/run_nope")
+        assert resp.status_code == 404
+
+    def test_get_session_wrong_project(self, client, tmp_path):
+        """Session from another project returns 404."""
+        p1 = tmp_path / "proj1"
+        p1.mkdir()
+        p2 = tmp_path / "proj2"
+        p2.mkdir()
+        pid1 = _register_project(client, p1)
+        pid2 = _register_project(client, p2)
+
+        _write_session(p1, "run_p1", archived=True)
+        sync_sessions(client.app.state.db_path)
+
+        resp = client.get(f"/api/projects/{pid2}/sessions/run_p1")
+        assert resp.status_code == 404
+
+    def test_get_session_missing_files(self, client, tmp_path):
+        """Returns empty agents/events when session dir is deleted."""
+        pid, session_dir = self._setup_session(client, tmp_path)
+
+        # Delete the session directory after sync
+        shutil.rmtree(session_dir)
+
+        resp = client.get(f"/api/projects/{pid}/sessions/run_detail")
+        assert resp.status_code == 200
+        s = resp.json()
+        assert s["run_id"] == "run_detail"
+        assert s["agents"] == {}
+        assert s["events"] == []
