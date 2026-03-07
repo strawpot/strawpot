@@ -632,6 +632,7 @@ class Session:
         self._server = DenDenServer(addr=self.config.denden_addr)
         self._server.on_delegate(self._handle_delegate)
         self._server.on_ask_user(self._handle_ask_user)
+        self._server.on_remember(self._handle_remember)
 
         try:
             self._server.start()
@@ -644,6 +645,8 @@ class Session:
             self._server = DenDenServer(addr=f"{host}:0")
             self._server.on_delegate(self._handle_delegate)
             self._server.on_ask_user(self._handle_ask_user)
+            if hasattr(self._server, "on_remember"):
+                self._server.on_remember(self._handle_remember)
             self._server.start()
 
         self._denden_addr = self._server.bound_addr
@@ -750,6 +753,44 @@ class Session:
 
             result.json.update(_json.loads(resp.json))
         return ok_response(request.request_id, ask_user_result=result)
+
+    def _handle_remember(
+        self, request: denden_pb2.DenDenRequest
+    ) -> denden_pb2.DenDenResponse:
+        """Handle a remember request by routing to the memory provider."""
+        if self._memory_provider is None:
+            return error_response(
+                request.request_id,
+                "ERR_NO_MEMORY",
+                "no memory provider configured",
+            )
+
+        remember = request.remember
+        trace = request.trace
+
+        try:
+            result = self._memory_provider.remember(
+                session_id=trace.run_id,
+                agent_id=trace.agent_instance_id,
+                role=self._agent_role(trace.agent_instance_id),
+                content=remember.content,
+                keywords=list(remember.keywords) or None,
+                scope=remember.scope or "project",
+            )
+            return ok_response(
+                request.request_id,
+                remember_result=denden_pb2.RememberResult(
+                    status=result.status,
+                    entry_id=result.entry_id,
+                ),
+            )
+        except Exception as exc:
+            logger.exception("remember handler failed")
+            return error_response(
+                request.request_id,
+                "ERR_REMEMBER",
+                str(exc),
+            )
 
     # ------------------------------------------------------------------
     # Session directory and state file

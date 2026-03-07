@@ -298,7 +298,6 @@ def test_noop_provider_dump_returns_empty():
         status="success", output="done",
     )
     assert receipt.em_event_ids == []
-    assert receipt.deferred_items == []
 
 
 # --- load_provider ---
@@ -306,7 +305,7 @@ def test_noop_provider_dump_returns_empty():
 
 def test_load_provider(tmp_path):
     provider_code = dedent("""\
-        from strawpot.memory.protocol import DumpReceipt, GetResult
+        from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
 
         class MyProvider:
             name = "test"
@@ -319,6 +318,10 @@ def test_load_provider(tmp_path):
                      task, status, output, tool_trace="",
                      parent_agent_id=None, artifacts=None):
                 return DumpReceipt()
+
+            def remember(self, *, session_id, agent_id, role, content,
+                         keywords=None, scope="project"):
+                return RememberResult(status="accepted")
     """)
     script = tmp_path / "provider.py"
     script.write_text(provider_code)

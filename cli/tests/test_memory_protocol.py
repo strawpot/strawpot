@@ -7,6 +7,7 @@ from strawpot.memory.protocol import (
     GetResult,
     MemoryKind,
     MemoryProvider,
+    RememberResult,
 )
 
 
@@ -96,22 +97,13 @@ def test_get_result_with_cards():
 def test_dump_receipt_defaults():
     receipt = DumpReceipt()
     assert receipt.em_event_ids == []
-    assert receipt.stm_updates == []
-    assert receipt.sm_rm_proposals == []
-    assert receipt.deferred_items == []
 
 
 def test_dump_receipt_with_values():
     receipt = DumpReceipt(
         em_event_ids=["ev1", "ev2"],
-        stm_updates=["scratch:updated"],
-        sm_rm_proposals=["add convention X"],
-        deferred_items=["review needed"],
     )
     assert receipt.em_event_ids == ["ev1", "ev2"]
-    assert receipt.stm_updates == ["scratch:updated"]
-    assert receipt.sm_rm_proposals == ["add convention X"]
-    assert receipt.deferred_items == ["review needed"]
 
 
 # -- Mutable default isolation -------------------------------------------------
@@ -158,6 +150,18 @@ class _MinimalProvider:
         artifacts: dict[str, str] | None = None,
     ) -> DumpReceipt:
         return DumpReceipt()
+
+    def remember(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        content: str,
+        keywords: list[str] | None = None,
+        scope: str = "project",
+    ) -> RememberResult:
+        return RememberResult(status="accepted")
 
 
 def test_provider_protocol_satisfied():

@@ -1,6 +1,6 @@
 """Noop memory provider — returns empty context and discards dumps."""
 
-from strawpot.memory.protocol import DumpReceipt, GetResult
+from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
 
 
 class NoopMemoryProvider:
@@ -36,3 +36,15 @@ class NoopMemoryProvider:
         artifacts: dict[str, str] | None = None,
     ) -> DumpReceipt:
         return DumpReceipt()
+
+    def remember(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        content: str,
+        keywords: list[str] | None = None,
+        scope: str = "project",
+    ) -> RememberResult:
+        return RememberResult(status="accepted")
