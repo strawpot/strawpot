@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from strawpot.config import get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
-from strawpot_gui.routers import config, health, projects
+from strawpot_gui.routers import config, health, projects, sessions
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -33,5 +33,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(config.router)
+    app.include_router(sessions.router)
 
     return app
