@@ -1,8 +1,10 @@
 """Memory registry — discover MEMORY.md manifests and resolve to MemorySpec."""
 
 import importlib
+import importlib.metadata
 import importlib.util
 import logging
+import re
 import os
 import shutil
 import subprocess
@@ -163,19 +165,55 @@ def resolve_memory(
     )
 
 
-def _pip_install(package: str) -> None:
-    """Install a Python package via pip."""
-    log.info("Installing %s via pip...", package)
+def _pip_install(requirement: str) -> None:
+    """Install or upgrade a Python package via pip."""
+    log.info("Installing %s via pip...", requirement)
     subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", package],
+        [sys.executable, "-m", "pip", "install", requirement],
         stdout=subprocess.DEVNULL,
     )
+
+
+def _check_requirement(pip_requirement: str) -> bool:
+    """Check if the installed package satisfies the pip requirement.
+
+    Returns True if the requirement is satisfied, False if install/upgrade
+    is needed.  Uses ``packaging`` if available for fast version comparison,
+    falls back to calling pip otherwise.
+    """
+    # Extract package name (e.g. "dial-memory>=0.1.4" -> "dial-memory")
+    match = re.match(r"^([A-Za-z0-9_.-]+)", pip_requirement)
+    if not match:
+        return False
+    pkg_name = match.group(1)
+
+    try:
+        installed = importlib.metadata.version(pkg_name)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+
+    # No version specifier — installed is enough
+    if pkg_name == pip_requirement:
+        return True
+
+    try:
+        from packaging.requirements import Requirement
+        from packaging.version import Version
+
+        return Version(installed) in Requirement(pip_requirement).specifier
+    except Exception:
+        # packaging unavailable — fall back to pip install (no-op if satisfied)
+        _pip_install(pip_requirement)
+        return True
 
 
 def _load_module(spec: MemorySpec):
     """Import the provider module, auto-installing pip packages if needed."""
     if spec.module_path:
-        # pip-based provider
+        # pip-based provider — check version requirement
+        if spec.pip and not _check_requirement(spec.pip):
+            _pip_install(spec.pip)
+
         try:
             return importlib.import_module(spec.module_path)
         except ImportError:
