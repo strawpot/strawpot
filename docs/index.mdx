@@ -16,9 +16,10 @@ strawpot start --role team-lead
 
 1. Creates a git worktree for the session
 2. Starts a Denden gRPC server
-3. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
-4. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills from StrawHub and spawns sub-agents in the same worktree
-5. On exit, cleans up everything automatically
+3. Retrieves memory context from the configured provider
+4. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
+5. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills from StrawHub, retrieves memory, and spawns sub-agents in the same worktree
+6. On exit, records results to memory and cleans up everything automatically
 
 ## Key Features
 
@@ -35,6 +36,9 @@ strawpot start --role team-lead
   <Card title="Skill & Role Registry" icon="book">
     Agents load reusable skills and roles from StrawHub with automatic dependency resolution and version management.
   </Card>
+  <Card title="Persistent Memory" icon="brain">
+    Memory providers give agents context from past sessions and persist knowledge across runs. Pluggable via pip packages.
+  </Card>
 </CardGroup>
 
 ## Ecosystem
@@ -42,8 +46,9 @@ strawpot start --role team-lead
 | Project | Description |
 |---------|-------------|
 | [StrawPot](https://strawpot.com) | CLI orchestrator (this project) |
-| [StrawHub](https://strawhub.dev) | Public registry for skills and roles |
+| [StrawHub](https://strawhub.dev) | Public registry for skills, roles, and memories |
 | [Denden](https://github.com/strawpot/denden) | gRPC transport between agents and orchestrator |
+| [strawpot-memory](https://github.com/strawpot/strawpot-memory) | Memory provider protocol and types |
 
 ## Next Steps
 

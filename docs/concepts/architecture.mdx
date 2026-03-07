@@ -28,9 +28,10 @@ strawpot start              ← CLI entry point
     StrawPot handles delegation:
       1. Policy check (role allowed? depth limit?)
       2. Resolve role + skills from StrawHub
-      3. Spawn sub-agent in session worktree
-      4. Wait for completion
-      5. Return result to caller
+      3. Retrieve memory context from provider
+      4. Spawn sub-agent in session worktree
+      5. Wait for completion, record to memory
+      6. Return result to caller
       │
       ├─ Sub-agent A (implementer role)
       │    └─ can also delegate via Denden

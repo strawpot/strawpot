@@ -1,9 +1,9 @@
 ---
 title: Frontmatter Reference
-description: Complete YAML frontmatter schema for skills, roles, and agents
+description: Complete YAML frontmatter schema for skills, roles, agents, and memories
 ---
 
-Skills, roles, and agents use YAML frontmatter in their markdown files. This page documents the complete schema.
+Skills, roles, agents, and memories use YAML frontmatter in their markdown files. This page documents the complete schema.
 
 ## Skill Frontmatter (`SKILL.md`)
 
@@ -159,6 +159,56 @@ Markdown body describing the agent (shown to LLMs for discovery).
 | `metadata.strawpot.params` | No | Custom parameters for the agent binary |
 | `metadata.strawpot.env` | No | Required environment variables |
 
+## Memory Frontmatter (`MEMORY.md`)
+
+```yaml
+---
+name: my-provider                              # Required: provider slug
+description: "My custom memory provider"       # Required: one-line summary
+metadata:
+  version: "1.0.0"                             # Optional: semver version
+  strawpot:
+    pip: my-provider-package                   # PyPI package name (auto-installed)
+    memory_module: my_provider.provider        # Dotted import path to provider class
+    params:                                    # Optional: configurable parameters
+      storage_dir:
+        type: string
+        default: .strawpot/memory/my-data
+        description: Where to store memory data
+      em_tail_count:
+        type: integer
+        default: 20
+        description: Number of event memory entries to return
+    tools:                                     # Optional: system tool requirements
+      sqlite3:
+        description: SQLite CLI
+        install:
+          macos: brew install sqlite
+          linux: apt install sqlite3
+    env:                                       # Optional: required environment variables
+      MY_PROVIDER_KEY:
+        required: false
+        description: Optional API key for cloud sync
+---
+
+# My Provider
+
+Description of what this provider does and how it stores data.
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Provider slug (unique within memories) |
+| `description` | Yes | One-line summary |
+| `metadata.version` | No | Semver version string |
+| `metadata.strawpot.pip` | No | PyPI package name — StrawPot auto-installs on first use |
+| `metadata.strawpot.memory_module` | Yes | Dotted import path to the module containing the provider class, or relative file path |
+| `metadata.strawpot.params` | No | Configurable parameters (merged with `[memory_config]` in `strawpot.toml`) |
+| `metadata.strawpot.tools` | No | System tool requirements |
+| `metadata.strawpot.env` | No | Required environment variables |
+
 ## Parameters Schema
 
 ```yaml
@@ -175,13 +225,14 @@ metadata:
 - User values take precedence over defaults
 - The merged config is passed to the agent binary as the `--config` JSON string
 
-## Key Differences: Skills vs Roles vs Agents
+## Key Differences: Skills vs Roles vs Agents vs Memories
 
-| Aspect | Skills | Roles | Agents |
-|--------|--------|-------|--------|
-| File | `SKILL.md` | `ROLE.md` | `AGENT.md` |
-| Dependencies | Flat list (skills only) | Structured (`skills` + `roles`) | System tools only |
-| Default agent | No | `default_agent` field | N/A (is the agent) |
-| Env vars | Yes | No | Yes |
-| Params | No | No | Yes |
-| Namespace | Separate | Separate | Separate |
+| Aspect | Skills | Roles | Agents | Memories |
+|--------|--------|-------|--------|----------|
+| File | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` |
+| Dependencies | Flat list (skills only) | Structured (`skills` + `roles`) | System tools only | None |
+| Default agent | No | `default_agent` field | N/A (is the agent) | No |
+| Env vars | Yes | No | Yes | Yes |
+| Params | No | No | Yes | Yes |
+| Pip package | No | No | No | Yes (`pip` field) |
+| Namespace | Separate | Separate | Separate | Separate |

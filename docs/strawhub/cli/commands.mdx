@@ -17,7 +17,7 @@ strawhub [--version] [--help] <command>
 
 ### `install`
 
-Install a skill or role with all dependencies. Without a subcommand, installs from `strawpot.toml`.
+Install a skill, role, or memory provider with all dependencies. Without a subcommand, installs from `strawpot.toml`.
 
 ```bash
 # From project file
@@ -26,6 +26,7 @@ strawhub install [--skip-tools] [--yes]
 # Specific package
 strawhub install skill <slug> [options]
 strawhub install role <slug> [options]
+strawhub install memory <slug> [options]
 ```
 
 | Option | Description |
@@ -49,6 +50,7 @@ strawhub install skill code-review --version 2.1.0  # specific version
 strawhub install role implementer --global           # global install
 strawhub install skill code-review --save            # save to project file
 strawhub install skill code-review --update          # update to latest
+strawhub install memory dial --global                # memory provider
 ```
 
 ### `uninstall`
@@ -58,6 +60,7 @@ Remove a package and clean up orphaned dependencies.
 ```bash
 strawhub uninstall skill <slug> [--version <ver>] [--global] [--save]
 strawhub uninstall role <slug> [--version <ver>] [--global] [--save]
+strawhub uninstall memory <slug> [--version <ver>] [--global] [--save]
 ```
 
 ### `update`
@@ -67,6 +70,7 @@ Update packages to their latest versions.
 ```bash
 strawhub update skill <slug> [--global] [--save] [--skip-tools] [--yes]
 strawhub update role <slug> [--global] [--save] [--skip-tools] [--yes]
+strawhub update memory <slug> [--global] [--save]
 strawhub update --all [--global] [--save] [--skip-tools] [--yes]
 ```
 
@@ -95,7 +99,7 @@ strawhub install-tools [--global] [--yes]
 Search the registry.
 
 ```bash
-strawhub search <query> [--kind skill|role|all] [--limit N] [--json]
+strawhub search <query> [--kind skill|role|agent|memory|all] [--limit N] [--json]
 ```
 
 ### `info`
@@ -105,6 +109,7 @@ Show package details.
 ```bash
 strawhub info skill <slug> [--file PATH] [--json]
 strawhub info role <slug> [--file PATH] [--json]
+strawhub info memory <slug> [--file PATH] [--json]
 ```
 
 ### `list`
@@ -112,7 +117,7 @@ strawhub info role <slug> [--file PATH] [--json]
 List available packages.
 
 ```bash
-strawhub list [--kind skills|roles|all] [--limit N] [--sort updated|downloads|stars] [--json]
+strawhub list [--kind skills|roles|agents|memories|all] [--limit N] [--sort updated|downloads|stars] [--json]
 ```
 
 ---
@@ -126,6 +131,7 @@ Resolve a package to its installed path and dependency paths.
 ```bash
 strawhub resolve skill <slug> [--version <ver>] [--global]
 strawhub resolve role <slug> [--version <ver>] [--global]
+strawhub resolve memory <slug> [--version <ver>] [--global]
 ```
 
 Returns JSON with the resolved path and all transitive dependencies.
@@ -136,14 +142,15 @@ Returns JSON with the resolved path and all transitive dependencies.
 
 ### `publish`
 
-Publish a skill or role to the registry. Requires authentication.
+Publish a skill, role, or memory provider to the registry. Requires authentication.
 
 ```bash
 strawhub publish skill [<path>] [--version <ver>] [--changelog <text>] [--tag <tag>]...
 strawhub publish role [<path>] [--version <ver>] [--changelog <text>] [--tag <tag>]...
+strawhub publish memory [<path>] [--version <ver>] [--changelog <text>] [--tag <tag>]...
 ```
 
-The directory must contain `SKILL.md` or `ROLE.md` with valid frontmatter. See [Publishing Guide](/strawhub/publishing/guide).
+The directory must contain `SKILL.md`, `ROLE.md`, or `MEMORY.md` with valid frontmatter. See [Publishing Guide](/strawhub/publishing/guide).
 
 ---
 
@@ -191,6 +198,7 @@ Requires admin privileges.
 ```bash
 strawhub delete skill <slug> [--yes]
 strawhub delete role <slug> [--yes]
+strawhub delete memory <slug> [--yes]
 ```
 
 ### `ban-user`

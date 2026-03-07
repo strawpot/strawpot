@@ -1,9 +1,9 @@
 ---
 title: Publishing Guide
-description: How to publish skills and roles to StrawHub
+description: How to publish skills, roles, and memories to StrawHub
 ---
 
-You can publish skills and roles via the web UI, GitHub import, or the CLI.
+You can publish skills, roles, and memory providers via the web UI, GitHub import, or the CLI.
 
 ## Prerequisites
 
@@ -12,9 +12,9 @@ You can publish skills and roles via the web UI, GitHub import, or the CLI.
 
 ## Publishing via CLI
 
-### 1. Create your skill or role
+### 1. Create your package
 
-Create a directory with a `SKILL.md` or `ROLE.md`:
+Create a directory with a `SKILL.md`, `ROLE.md`, or `MEMORY.md`:
 
 ```bash
 mkdir my-skill
@@ -27,6 +27,26 @@ description: "A brief description of what this skill does"
 # My Skill
 
 Instructions for the agent...
+EOF
+```
+
+For memory providers, create a `MEMORY.md` with pip and module fields:
+
+```bash
+mkdir my-memory
+cat > my-memory/MEMORY.md << 'EOF'
+---
+name: my-memory
+description: "My custom memory provider"
+metadata:
+  strawpot:
+    pip: my-memory-package
+    memory_module: my_memory.provider
+---
+
+# My Memory Provider
+
+Description of how this provider stores and retrieves context.
 EOF
 ```
 
@@ -66,7 +86,7 @@ strawhub publish skill ./my-skill --tag python --tag testing
 ## Publishing via GitHub Import
 
 1. Go to [strawhub.dev/upload](https://strawhub.dev/upload)
-2. Paste a **GitHub repository URL** containing your `SKILL.md` or `ROLE.md`
+2. Paste a **GitHub repository URL** containing your `SKILL.md`, `ROLE.md`, or `MEMORY.md`
 3. Files are fetched via the GitHub Contents API
 4. Review and publish
 
@@ -113,9 +133,9 @@ description: "A brief description"
 
 | Constraint | Limit |
 |------------|-------|
-| Required file | `SKILL.md` (skills) or `ROLE.md` (roles) |
-| Max files per package | 20 |
-| Max file size | 512 KB |
+| Required file | `SKILL.md` (skills), `ROLE.md` (roles), or `MEMORY.md` (memories) |
+| Max files per package | 20 (skills/roles), 50 (memories) |
+| Max file size | 512 KB (skills/roles), 10 MB (memories) |
 | Max total size | 50 MB |
 
 ## Dependency Validation

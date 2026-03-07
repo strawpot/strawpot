@@ -21,6 +21,7 @@ Define your AI team in Markdown. No Python. No orchestration code.
 | **Roles** | Agent attribute | — | Standalone Markdown |
 | **Skill dependency resolution** | — | — | Automatic |
 | **Multi-agent delegation** | Python config | Runtime (subagent spawn) | Declarative (role deps) |
+| **Persistent memory** | — | — | Built-in (pluggable providers) |
 
 ## Quick Start
 
@@ -35,6 +36,7 @@ strawpot start
 - **Zero boilerplate** — A role is a Markdown file with YAML frontmatter. That's it.
 - **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
 - **Declarative delegation** — A team-lead role depends on other roles. StrawPot handles the orchestration.
+- **Persistent memory** — Agents learn from past sessions. Context is retrieved before each run and results are recorded after.
 - **Agent-agnostic** — Same role works with Claude Code, Codex, Gemini, or your own runtime.
 
 ## How It Works
@@ -53,10 +55,11 @@ When you run `strawpot start`:
 
 1. Creates an isolated git worktree
 2. Starts the Denden gRPC server for agent communication
-3. Launches the orchestrator agent (e.g. team-lead)
-4. Agents delegate tasks to sub-roles automatically
-5. Required roles and skills are resolved from StrawHub
-6. On exit, everything is cleaned up
+3. Retrieves memory context from past sessions
+4. Launches the orchestrator agent (e.g. team-lead)
+5. Agents delegate tasks to sub-roles automatically
+6. Required roles and skills are resolved from StrawHub
+7. On exit, records results to memory and cleans up
 
 ## The Workforce Model
 
@@ -79,7 +82,7 @@ Role: implementer
 | Project | Role |
 |---------|------|
 | [**StrawPot**](https://strawpot.com) | Runtime — runs role-based AI agents locally |
-| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, and agents |
+| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, and memories |
 | [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the orchestrator |
 
 ## Usage
@@ -119,6 +122,9 @@ role = "team-lead"
 [policy]
 allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
+
+[memory]
+provider = "dial"             # default; "" to disable
 ```
 
 ## Repository Structure

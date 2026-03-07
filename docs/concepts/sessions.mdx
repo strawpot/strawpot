@@ -14,10 +14,11 @@ When you run `strawpot start`:
 3. **Validate** — Check required tools and environment variables
 4. **Create isolation** — Set up worktree or use project directory directly
 5. **Start Denden** — Launch gRPC server on `127.0.0.1:9700`
-6. **Resolve orchestrator role** — Fetch from StrawHub, stage dependencies
-7. **Spawn orchestrator** — Launch the agent in tmux (or direct terminal)
-8. **Block** — Wait for the orchestrator to exit
-9. **Cleanup** — Kill sub-agents, stop Denden, merge changes, remove worktree
+6. **Resolve memory provider** — Load the configured provider (default: `dial`), auto-install if needed
+7. **Resolve orchestrator role** — Fetch from StrawHub, stage dependencies
+8. **Spawn orchestrator** — Launch the agent with role, skills, and memory context in tmux (or direct terminal)
+9. **Block** — Wait for the orchestrator to exit
+10. **Cleanup** — Kill sub-agents, stop Denden, merge changes, remove worktree
 
 Session state is tracked in `.strawpot/sessions/<session_id>/session.json`.
 
