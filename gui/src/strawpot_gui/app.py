@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from strawpot.config import get_strawpot_home
 
-from strawpot_gui.db import init_db
+from strawpot_gui.db import init_db, sync_sessions
 from strawpot_gui.routers import config, health, projects
 
 
@@ -24,6 +24,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_db(db_path)
+        sync_sessions(db_path)
         yield
 
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
