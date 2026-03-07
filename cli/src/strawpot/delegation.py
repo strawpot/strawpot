@@ -27,7 +27,7 @@ from strawpot.context import (
     read_skill_description,
     validate_frontmatter_slug,
 )
-from strawpot.memory.protocol import GetResult, MemoryProvider
+from strawpot_memory.memory_protocol import GetResult, MemoryProvider
 
 logger = logging.getLogger(__name__)
 

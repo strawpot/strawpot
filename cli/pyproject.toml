@@ -23,6 +23,7 @@ dependencies = [
     "pyyaml>=6.0",
     "tomli_w>=1.0",
     "strawhub",
+    "strawpot-memory",
     "denden-server",
 ]
 
