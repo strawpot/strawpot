@@ -578,8 +578,14 @@ enabled = true
      config from [skills.<slug>.env], then prompts interactively for any
      still-missing required vars are prompted interactively
 4. wrapper = WrapperRuntime(agent_spec)                      # generic, works for any agent
-   runtime = InteractiveWrapperRuntime(wrapper)              # tmux available → tmux session
-          or DirectWrapperRuntime(wrapper)                   # no tmux → direct terminal attach
+   if --headless:
+     runtime = wrapper                                       # headless → output to .log file
+   elif --task:
+     runtime = DirectWrapperRuntime(wrapper)                 # task → direct terminal attach
+   elif tmux available:
+     runtime = InteractiveWrapperRuntime(wrapper)            # interactive → tmux session
+   else:
+     runtime = DirectWrapperRuntime(wrapper)                 # fallback → direct terminal attach
 5. isolator = resolve_isolator(config.isolation)             # none | worktree | docker
 6. session = Session(config, wrapper, runtime, isolator)
 7. session.start():
@@ -699,8 +705,77 @@ No per-agent worktree creation or cleanup. All agents share the session worktree
 ### ask_user Request
 
 Agent calls `denden send '{"ask_user": {"question": "which db?", "choices": ["postgres", "sqlite"]}}'`.
-Forwarded to the user via the orchestrator's terminal. Orchestrator's response
-flows back through denden.
+Dispatched to `Session._handle_ask_user`, which delegates to a pluggable
+callback.
+
+**DenDen protobuf types:**
+
+- `AskUserPayload`: `question`, `choices[]`, `default_value`, `why`, `response_format`
+- `AskUserResult`: `text`, `json`
+
+**Pluggable handler:**
+
+`Session` accepts an `ask_user_handler` callback at construction.
+The handler receives an `AskUserRequest` dataclass and returns an
+`AskUserResponse` dataclass — both transport-agnostic (no protobuf
+dependency for handler authors).
+
+```python
+@dataclass(frozen=True)
+class AskUserRequest:
+    question: str
+    choices: list[str]
+    default_value: str
+    why: str               # informational context for the user
+    response_format: str   # "text" or "json"
+
+@dataclass(frozen=True)
+class AskUserResponse:
+    text: str = ""         # plain text answer
+    json: str = ""         # JSON string (converted to protobuf Struct on the wire)
+
+AskUserHandler = Callable[[AskUserRequest], AskUserResponse]
+```
+
+`_handle_ask_user` converts protobuf → `AskUserRequest`, calls the
+handler, then converts `AskUserResponse` → protobuf `AskUserResult`.
+This is the only place that touches protobuf types.
+
+**Handlers by mode:**
+
+| Mode | Handler | Wired in |
+|------|---------|----------|
+| All CLI modes | `_default_ask_user_handler` — returns `default_value` or auto-responds | `session.py` (default) |
+| GUI interactive | Bridge to SSE → chat panel → user response | `gui/` (future) |
+| Trigger ongoing | Bridge to adapter queue (Slack, Telegram) | (future) |
+
+All CLI modes (headless, task, interactive) use the default auto-respond
+handler. The orchestrator is an AI agent that can make decisions on
+behalf of the user. A terminal interactive handler that prompts via
+stdin is deferred — it requires routing questions through the
+orchestrator's own UI (e.g., via a denden bidirectional channel) to
+avoid stdin/stdout conflicts with the orchestrator subprocess.
+
+### Headless Mode
+
+`strawpot start --task "..." --headless` runs the orchestrator in the
+same way as sub-agents: stdout/stderr captured to `.log` file, stdin is
+`/dev/null`, process runs in a new session group.
+
+```
+strawpot start --task "implement feature X" --headless
+  → uses WrapperRuntime (not DirectWrapperRuntime or InteractiveWrapperRuntime)
+  → orchestrator output at: .strawpot/sessions/<run_id>/agents/<agent_id>/.log
+  → blocks until orchestrator exits (runtime.wait)
+  → exit code propagated to caller
+```
+
+This is the mode the GUI uses to launch sessions. The GUI can stream the
+`.log` file via SSE for real-time output, and read `trace.jsonl` for
+structured lifecycle events.
+
+`--headless` requires `--task`. Without a task, the orchestrator would
+be launched with no instructions and no stdin — an error.
 
 ---
 
