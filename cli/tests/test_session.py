@@ -805,8 +805,8 @@ class TestSessionStateFile:
         assert data["worktree"] == wt_path
         assert data["worktree_branch"] == "strawpot/run_wt"
 
-    def test_remove_session_dir(self, tmp_path):
-        """_remove_session_dir removes the entire session directory."""
+    def test_archive_session_dir(self, tmp_path):
+        """_archive_session_dir moves session directory to archive/."""
         session = _make_session(tmp_path)
         session._working_dir = str(tmp_path)
         session._run_id = "run_rm"
@@ -817,8 +817,13 @@ class TestSessionStateFile:
             str(tmp_path), ".strawpot", "sessions", "run_rm"
         )
         assert os.path.isdir(session_dir)
-        session._remove_session_dir()
+        session._archive_session_dir()
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_rm"
+        )
+        assert os.path.isdir(archived)
+        assert os.path.isfile(os.path.join(archived, "session.json"))
 
 
 # ---------------------------------------------------------------------------
@@ -839,13 +844,17 @@ class TestRecoverStaleSessions:
         assert result == []
 
     def test_stale_none_isolation(self, tmp_path):
-        """Stale session with isolation=none — removes session dir."""
+        """Stale session with isolation=none — archives session dir."""
         session_dir = _write_stale_session(tmp_path, "run_stale1")
 
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
         assert result == ["run_stale1"]
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_stale1"
+        )
+        assert os.path.isdir(archived)
 
     def test_running_session_skipped(self, tmp_path):
         """Session with a live PID is not recovered."""
@@ -883,7 +892,7 @@ class TestRecoverStaleSessions:
         assert result == []
 
     def test_multiple_stale_sessions(self, tmp_path):
-        """Multiple stale sessions are all recovered."""
+        """Multiple stale sessions are all archived."""
         dir1 = _write_stale_session(tmp_path, "run_a")
         dir2 = _write_stale_session(tmp_path, "run_b")
 
@@ -892,6 +901,9 @@ class TestRecoverStaleSessions:
         assert sorted(result) == ["run_a", "run_b"]
         assert not os.path.exists(dir1)
         assert not os.path.exists(dir2)
+        archive = os.path.join(str(tmp_path), ".strawpot", "sessions", "archive")
+        assert os.path.isdir(os.path.join(archive, "run_a"))
+        assert os.path.isdir(os.path.join(archive, "run_b"))
 
     @patch("strawpot.session._recover_merge", return_value=True)
     @patch("strawpot.session.WorktreeIsolator")
@@ -918,6 +930,10 @@ class TestRecoverStaleSessions:
         cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
         assert cleanup_kwargs["delete_branch"] is True
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_wt"
+        )
+        assert os.path.isdir(archived)
 
     @patch("strawpot.session._recover_merge", return_value=False)
     @patch("strawpot.session.WorktreeIsolator")
@@ -959,6 +975,10 @@ class TestRecoverStaleSessions:
         assert result == ["run_noinfo"]
         mock_wt_cls.return_value.cleanup.assert_called_once()
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_noinfo"
+        )
+        assert os.path.isdir(archived)
 
     def test_worktree_dir_missing_skips_merge(self, tmp_path):
         """Worktree dir already removed — skips merge, still cleans up."""
@@ -978,12 +998,16 @@ class TestRecoverStaleSessions:
         # Cleanup still called even though worktree is missing (idempotent)
         mock_wt_cls.return_value.cleanup.assert_called_once()
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_gone"
+        )
+        assert os.path.isdir(archived)
 
     @patch("strawpot.session.WorktreeIsolator")
-    def test_isolator_cleanup_failure_still_removes_dir(
+    def test_isolator_cleanup_failure_still_archives_dir(
         self, mock_wt_cls, tmp_path
     ):
-        """If isolator cleanup raises, session dir is still removed."""
+        """If isolator cleanup raises, session dir is still archived."""
         wt_path = str(tmp_path / "worktrees" / "run_fail")
         os.makedirs(wt_path)
         mock_wt_cls.return_value.cleanup.side_effect = RuntimeError("git fail")
@@ -999,6 +1023,26 @@ class TestRecoverStaleSessions:
 
         assert result == ["run_fail"]
         assert not os.path.exists(session_dir)
+        archived = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_fail"
+        )
+        assert os.path.isdir(archived)
+
+    def test_archive_dir_skipped_during_scan(self, tmp_path):
+        """The archive/ directory itself is not treated as a session."""
+        # Create a real stale session and an archive dir with old sessions
+        _write_stale_session(tmp_path, "run_real")
+        archive_dir = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "archive", "run_old"
+        )
+        os.makedirs(archive_dir)
+        with open(os.path.join(archive_dir, "session.json"), "w") as f:
+            json.dump({"run_id": "run_old", "working_dir": str(tmp_path), "pid": 1}, f)
+
+        result = recover_stale_sessions(str(tmp_path), _make_config())
+
+        # Only the real session is recovered, not the archived one
+        assert result == ["run_real"]
 
 
 # ---------------------------------------------------------------------------
