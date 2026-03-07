@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -66,7 +67,7 @@ def recover_stale_sessions(
     Returns:
         List of recovered ``run_id`` strings.
     """
-    from strawpot._process import is_pid_alive, robust_rmtree
+    from strawpot._process import is_pid_alive
 
     sessions_dir = os.path.join(working_dir, ".strawpot", "sessions")
     if not os.path.isdir(sessions_dir):
@@ -75,6 +76,8 @@ def recover_stale_sessions(
     recovered: list[str] = []
 
     for entry in sorted(os.listdir(sessions_dir)):
+        if entry == "archive" or not entry.startswith("run_"):
+            continue
         session_file = os.path.join(sessions_dir, entry, "session.json")
         if not os.path.isfile(session_file):
             continue
@@ -119,12 +122,14 @@ def recover_stale_sessions(
                     "Isolator cleanup failed for %s", run_id, exc_info=True
                 )
 
-        # --- Remove session directory ---
+        # --- Archive session directory ---
         session_dir = os.path.join(sessions_dir, entry)
+        archive_dir = os.path.join(sessions_dir, "archive")
+        os.makedirs(archive_dir, exist_ok=True)
         try:
-            robust_rmtree(session_dir)
+            shutil.move(session_dir, os.path.join(archive_dir, entry))
         except OSError:
-            logger.debug("Failed to remove session dir %s", session_dir)
+            logger.debug("Failed to archive session dir %s", session_dir)
 
         recovered.append(run_id)
 
@@ -487,8 +492,8 @@ class Session:
             except Exception:
                 logger.debug("Isolator cleanup failed", exc_info=True)
 
-        # 5. Remove session directory (includes session.json, agent workspaces, staged roles)
-        self._remove_session_dir()
+        # 5. Archive session directory for GUI history browsing
+        self._archive_session_dir()
 
     # ------------------------------------------------------------------
     # Signal handling
@@ -809,20 +814,24 @@ class Session:
         with open(self._session_file, "w", encoding="utf-8") as f:
             json.dump(self._session_data, f, indent=2)
 
-    def _remove_session_dir(self) -> None:
-        """Remove the entire session directory."""
-        from strawpot._process import robust_rmtree
-
+    def _archive_session_dir(self) -> None:
+        """Move the session directory to the archive for GUI history."""
         if self._working_dir and self._run_id:
             session_dir = os.path.join(
                 self._working_dir, ".strawpot", "sessions", self._run_id
             )
             if os.path.isdir(session_dir):
+                archive_dir = os.path.join(
+                    self._working_dir, ".strawpot", "sessions", "archive"
+                )
+                os.makedirs(archive_dir, exist_ok=True)
                 try:
-                    robust_rmtree(session_dir)
+                    shutil.move(
+                        session_dir, os.path.join(archive_dir, self._run_id)
+                    )
                 except OSError:
                     logger.debug(
-                        "Failed to remove session dir %s", session_dir
+                        "Failed to archive session dir %s", session_dir
                     )
 
     # ------------------------------------------------------------------

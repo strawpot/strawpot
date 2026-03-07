@@ -24,10 +24,11 @@ class TestErrorHandling:
             session.start(str(git_project))
         assert exc_info.value.code == 1
 
-        # Session should still clean up
+        # Session should still clean up (archive/ may remain)
         sessions_dir = git_project / ".strawpot" / "sessions"
         if sessions_dir.exists():
-            assert len(list(sessions_dir.iterdir())) == 0
+            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
+            assert len(active) == 0
 
     def test_delegation_timeout(self, make_session, git_project):
         """Sub-agent that exceeds timeout is killed during delegation."""
@@ -40,10 +41,11 @@ class TestErrorHandling:
         # Should not hang — timeout kills the sub-agent
         session.start(str(git_project))
 
-        # Session should still clean up after timeout
+        # Session should still clean up after timeout (archive/ may remain)
         sessions_dir = git_project / ".strawpot" / "sessions"
         if sessions_dir.exists():
-            assert len(list(sessions_dir.iterdir())) == 0
+            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
+            assert len(active) == 0
 
     def test_stale_session_recovery(self, git_project, make_config, strawpot_home):
         """Stale session files with dead PIDs are cleaned up."""
@@ -70,5 +72,7 @@ class TestErrorHandling:
         recovered = recover_stale_sessions(str(git_project), config)
         assert "run_stale123" in recovered
 
-        # Session directory should be removed
+        # Session directory should be archived, not in active sessions
         assert not sessions_dir.exists()
+        archived = git_project / ".strawpot" / "sessions" / "archive" / "run_stale123"
+        assert archived.exists()
