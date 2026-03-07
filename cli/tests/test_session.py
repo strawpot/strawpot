@@ -11,7 +11,13 @@ from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.config import StrawPotConfig
 from strawpot.delegation import PolicyDenied
 from strawpot.isolation.protocol import IsolatedEnv, NoneIsolator
-from strawpot.session import Session, recover_stale_sessions, resolve_isolator
+from strawpot.session import (
+    AskUserRequest,
+    AskUserResponse,
+    Session,
+    recover_stale_sessions,
+    resolve_isolator,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -570,21 +576,124 @@ class TestHandleDelegate:
 
 
 class TestHandleAskUser:
-    @patch("strawpot.session.error_response")
-    def test_returns_not_implemented(self, mock_error, tmp_path):
-        """ask_user returns NOT_IMPLEMENTED error for now."""
-        mock_error.return_value = "not_impl"
+    @patch("strawpot.session.ok_response")
+    def test_default_handler_auto_responds(self, mock_ok, tmp_path):
+        """Default ask_user handler returns auto-response."""
+        mock_ok.return_value = "ok"
 
         session = _make_session(tmp_path)
         request = MagicMock()
         request.request_id = "req_456"
+        request.ask_user.question = "which db?"
+        request.ask_user.choices = ["postgres", "sqlite"]
+        request.ask_user.default_value = ""
+        request.ask_user.why = ""
+        request.ask_user.response_format = ""
+
+        result = session._handle_ask_user(request)
+
+        mock_ok.assert_called_once()
+        call_kwargs = mock_ok.call_args
+        assert call_kwargs[0][0] == "req_456"
+        assert result == "ok"
+
+    @patch("strawpot.session.ok_response")
+    def test_default_handler_uses_default_value(self, mock_ok, tmp_path):
+        """Default handler returns default_value when provided."""
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        request = MagicMock()
+        request.request_id = "req_789"
+        request.ask_user.question = "which db?"
+        request.ask_user.choices = []
+        request.ask_user.default_value = "postgres"
+        request.ask_user.why = ""
+        request.ask_user.response_format = ""
+
+        session._handle_ask_user(request)
+
+        call_kwargs = mock_ok.call_args
+        ask_result = call_kwargs[1]["ask_user_result"]
+        assert ask_result.text == "postgres"
+
+    @patch("strawpot.session.ok_response")
+    def test_custom_handler(self, mock_ok, tmp_path):
+        """Custom ask_user handler is called when provided."""
+        mock_ok.return_value = "ok"
+
+        def custom_handler(req: AskUserRequest) -> AskUserResponse:
+            return AskUserResponse(text=f"custom: {req.question}")
+
+        session = _make_session(tmp_path, ask_user_handler=custom_handler)
+        request = MagicMock()
+        request.request_id = "req_abc"
+        request.ask_user.question = "pick one"
+        request.ask_user.choices = ["a", "b"]
+        request.ask_user.default_value = ""
+        request.ask_user.why = ""
+        request.ask_user.response_format = ""
+
+        session._handle_ask_user(request)
+
+        call_kwargs = mock_ok.call_args
+        ask_result = call_kwargs[1]["ask_user_result"]
+        assert ask_result.text == "custom: pick one"
+
+    @patch("strawpot.session.ok_response")
+    def test_passes_all_fields_to_handler(self, mock_ok, tmp_path):
+        """Handler receives all protobuf fields via AskUserRequest."""
+        mock_ok.return_value = "ok"
+        received = {}
+
+        def capture_handler(req: AskUserRequest) -> AskUserResponse:
+            received["question"] = req.question
+            received["choices"] = req.choices
+            received["default_value"] = req.default_value
+            received["why"] = req.why
+            received["response_format"] = req.response_format
+            return AskUserResponse(text="ok")
+
+        session = _make_session(tmp_path, ask_user_handler=capture_handler)
+        request = MagicMock()
+        request.request_id = "req_fields"
+        request.ask_user.question = "which db?"
+        request.ask_user.choices = ["pg", "sqlite"]
+        request.ask_user.default_value = "pg"
+        request.ask_user.why = "need to pick a database"
+        request.ask_user.response_format = "text"
+
+        session._handle_ask_user(request)
+
+        assert received["question"] == "which db?"
+        assert received["choices"] == ["pg", "sqlite"]
+        assert received["default_value"] == "pg"
+        assert received["why"] == "need to pick a database"
+        assert received["response_format"] == "text"
+
+    @patch("strawpot.session.error_response")
+    def test_handler_exception_returns_error(self, mock_error, tmp_path):
+        """If the handler raises, return an error response."""
+        mock_error.return_value = "err"
+
+        def failing_handler(req: AskUserRequest) -> AskUserResponse:
+            raise RuntimeError("handler broke")
+
+        session = _make_session(tmp_path, ask_user_handler=failing_handler)
+        request = MagicMock()
+        request.request_id = "req_fail"
+        request.ask_user.question = "test"
+        request.ask_user.choices = []
+        request.ask_user.default_value = ""
+        request.ask_user.why = ""
+        request.ask_user.response_format = ""
 
         result = session._handle_ask_user(request)
 
         mock_error.assert_called_once_with(
-            "req_456", "NOT_IMPLEMENTED", "ask_user is not yet implemented"
+            "req_fail", "ERR_ASK_USER", "handler broke"
         )
-        assert result == "not_impl"
+        assert result == "err"
 
 
 # ---------------------------------------------------------------------------

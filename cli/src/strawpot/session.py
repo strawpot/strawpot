@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from denden import (
@@ -204,6 +205,38 @@ def resolve_isolator(isolation: str) -> Isolator:
     raise ValueError(f"Unknown isolation mode: {isolation}")
 
 
+@dataclass(frozen=True)
+class AskUserRequest:
+    """Transport-agnostic representation of an ask_user request."""
+
+    question: str
+    choices: list[str]
+    default_value: str
+    why: str
+    response_format: str
+
+
+@dataclass(frozen=True)
+class AskUserResponse:
+    """Transport-agnostic representation of an ask_user response.
+
+    Attributes:
+        text: Plain text answer.
+        json: JSON string for structured responses (converted to
+            protobuf Struct on the wire). Leave empty for text-only.
+    """
+
+    text: str = ""
+    json: str = ""
+
+
+def _default_ask_user_handler(req: AskUserRequest) -> AskUserResponse:
+    """Default ask_user handler — auto-responds for headless/autonomous mode."""
+    if req.default_value:
+        return AskUserResponse(text=req.default_value)
+    return AskUserResponse(text="Proceed with your best judgment.")
+
+
 class Session:
     """Orchestration session — manages the full lifecycle.
 
@@ -233,6 +266,7 @@ class Session:
         resolve_role: Callable[..., dict],
         resolve_role_dirs: Callable[[str], str | None],
         task: str = "",
+        ask_user_handler: Callable[[AskUserRequest], AskUserResponse] | None = None,
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -241,6 +275,7 @@ class Session:
         self.task = task
         self._resolve_role = resolve_role
         self._resolve_role_dirs = resolve_role_dirs
+        self._ask_user_handler = ask_user_handler or _default_ask_user_handler
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
@@ -686,12 +721,30 @@ class Session:
     def _handle_ask_user(
         self, request: denden_pb2.DenDenRequest
     ) -> denden_pb2.DenDenResponse:
-        """Handle an ask_user request (placeholder)."""
-        return error_response(
-            request.request_id,
-            "NOT_IMPLEMENTED",
-            "ask_user is not yet implemented",
+        """Handle an ask_user request via the pluggable handler callback."""
+        ask = request.ask_user
+        req = AskUserRequest(
+            question=ask.question,
+            choices=list(ask.choices),
+            default_value=ask.default_value,
+            why=ask.why,
+            response_format=ask.response_format,
         )
+        try:
+            resp = self._ask_user_handler(req)
+        except Exception as exc:
+            logger.exception("ask_user handler failed")
+            return error_response(
+                request.request_id,
+                "ERR_ASK_USER",
+                str(exc),
+            )
+        result = denden_pb2.AskUserResult(text=resp.text)
+        if resp.json:
+            import json as _json
+
+            result.json.update(_json.loads(resp.json))
+        return ok_response(request.request_id, ask_user_result=result)
 
     # ------------------------------------------------------------------
     # Session directory and state file

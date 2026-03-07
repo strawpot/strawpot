@@ -123,7 +123,13 @@ def _ensure_skill_installed(name: str, working_dir: str) -> None:
 @click.option("--host", default=None, help="Denden server host.")
 @click.option("--port", default=None, type=int, help="Denden server port.")
 @click.option("--task", default=None, help="Run noninteractively with a task string.")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
+@click.option(
+    "--headless",
+    is_flag=True,
+    default=False,
+    help="Run detached with output to log file (requires --task).",
+)
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -208,8 +214,14 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task):
         pass  # Role resolution failures handled by Session.start()
 
     # 3. Build runtimes (session_dir set later by Session.start())
+    if headless and not task:
+        click.echo("Error: --headless requires --task", err=True)
+        sys.exit(1)
+
     wrapper = WrapperRuntime(spec)
-    if task:
+    if headless:
+        rt = wrapper  # WrapperRuntime directly → output to .log file
+    elif task:
         rt = DirectWrapperRuntime(wrapper)
     elif shutil.which("tmux"):
         rt = InteractiveWrapperRuntime(wrapper)
