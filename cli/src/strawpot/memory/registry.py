@@ -16,7 +16,7 @@ import yaml
 
 from strawpot.agents.registry import ValidationResult, _current_os
 from strawpot.config import get_strawpot_home
-from strawpot.memory.protocol import MemoryProvider
+from strawpot_memory.memory_protocol import MemoryProvider
 
 
 log = logging.getLogger(__name__)

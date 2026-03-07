@@ -1,6 +1,6 @@
 """Noop memory provider — returns empty context and discards dumps."""
 
-from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
+from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
 
 
 class NoopMemoryProvider:

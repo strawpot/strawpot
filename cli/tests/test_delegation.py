@@ -33,7 +33,7 @@ from strawpot.delegation import (
     stage_role,
     validate_skill_env,
 )
-from strawpot.memory.protocol import (
+from strawpot_memory.memory_protocol import (
     ContextCard,
     DumpReceipt,
     GetResult,

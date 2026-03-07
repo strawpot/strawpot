@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest
 
 from strawpot.agents.registry import ValidationResult
-from strawpot.memory.protocol import MemoryProvider
+from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import (
     MemorySpec,
     _merge_config,
@@ -327,7 +327,7 @@ def test_noop_provider_dump_returns_empty():
 
 def test_load_provider(tmp_path):
     provider_code = dedent("""\
-        from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
 
         class MyProvider:
             name = "test"
@@ -419,7 +419,7 @@ def test_load_provider_pip(tmp_path, monkeypatch):
     fake_pkg.mkdir()
     (fake_pkg / "__init__.py").write_text("")
     (fake_pkg / "provider.py").write_text(dedent("""\
-        from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
 
         class DialMemoryProvider:
             name = "dial"

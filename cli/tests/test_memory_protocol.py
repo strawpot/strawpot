@@ -1,6 +1,6 @@
 """Tests for strawpot.memory.protocol."""
 
-from strawpot.memory.protocol import (
+from strawpot_memory.memory_protocol import (
     ContextCard,
     ControlSignal,
     DumpReceipt,

@@ -34,7 +34,7 @@ from strawpot.delegation import (
     handle_delegate,
     stage_role,
 )
-from strawpot.memory.protocol import MemoryProvider
+from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 from strawpot.isolation.worktree import WorktreeIsolator
