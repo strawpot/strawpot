@@ -48,6 +48,7 @@
           "strawhub/concepts/skills",
           "strawhub/concepts/roles",
           "strawhub/concepts/agents",
+          "strawhub/concepts/memories",
           "strawhub/concepts/dependencies",
           "strawhub/cli/commands",
           "strawhub/publishing/guide",

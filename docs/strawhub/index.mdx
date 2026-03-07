@@ -1,13 +1,13 @@
 ---
 title: StrawHub Introduction
-description: Public registry for agent skills and roles
+description: Public registry for agent skills, roles, agents, and memories
 ---
 
-StrawHub is the public registry for [StrawPot](https://strawpot.com) skills and roles. Discover, publish, and install reusable instruction modules for AI agents with automatic dependency resolution.
+StrawHub is the public registry for [StrawPot](https://strawpot.com) skills, roles, agents, and memories. Discover, publish, and install reusable agent components with automatic dependency resolution.
 
 **Live at [strawhub.dev](https://strawhub.dev)**
 
-## What Are Skills and Roles?
+## Content Types
 
 <CardGroup cols={2}>
   <Card title="Skills" icon="book-open">
@@ -16,13 +16,19 @@ StrawHub is the public registry for [StrawPot](https://strawpot.com) skills and 
   <Card title="Roles" icon="user-cog">
     Define agent behavior, model configuration, and task specialization. Roles depend on both skills and other roles.
   </Card>
+  <Card title="Agents" icon="bot">
+    CLI wrapper binaries that translate StrawPot's protocol into a specific AI platform's native interface.
+  </Card>
+  <Card title="Memories" icon="brain">
+    Persistent knowledge banks that store context, patterns, and learned information across agent sessions.
+  </Card>
 </CardGroup>
 
-Both use the same format: YAML frontmatter + markdown body, following the [Agent Skills](https://agentskills.io/) open spec with StrawPot-specific extensions.
+All use the same format: YAML frontmatter + markdown body, following the [Agent Skills](https://agentskills.io/) open spec with StrawPot-specific extensions.
 
 ## Key Features
 
-- **Browse & Search** — Discover skills and roles with vector + lexical hybrid search
+- **Browse & Search** — Discover skills, roles, agents, and memories with vector + lexical hybrid search
 - **Publish** — Upload via web UI, GitHub import, or REST API
 - **Dependency Resolution** — Transitive dependencies resolved automatically on install
 - **Version Management** — Semver with latest (`*`) and exact (`==`) version constraints
@@ -44,6 +50,6 @@ Both use the same format: YAML frontmatter + markdown body, following the [Agent
     Install the CLI and get your first skill in 2 minutes.
   </Card>
   <Card title="Publishing Guide" icon="upload" href="/strawhub/publishing/guide">
-    Learn how to publish your own skills and roles.
+    Learn how to publish your own content.
   </Card>
 </CardGroup>
