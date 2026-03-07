@@ -251,7 +251,7 @@ def _upsert_session(
             trace_info.get("duration_ms"),
             trace_info.get("exit_code"),
             session_dir,
-            None,  # task not stored in session.json
+            data.get("task"),
             trace_info.get("summary"),
         ),
     )

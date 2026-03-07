@@ -271,6 +271,7 @@ class Session:
         resolve_role: Callable[..., dict],
         resolve_role_dirs: Callable[[str], str | None],
         task: str = "",
+        run_id: str | None = None,
         ask_user_handler: Callable[[AskUserRequest], AskUserResponse] | None = None,
     ) -> None:
         self.config = config
@@ -281,6 +282,7 @@ class Session:
         self._resolve_role = resolve_role
         self._resolve_role_dirs = resolve_role_dirs
         self._ask_user_handler = ask_user_handler or _default_ask_user_handler
+        self._provided_run_id = run_id
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
@@ -314,7 +316,7 @@ class Session:
             working_dir: Project directory (CWD at invocation time).
         """
         self._working_dir = working_dir
-        self._run_id = f"run_{uuid.uuid4().hex[:12]}"
+        self._run_id = self._provided_run_id or f"run_{uuid.uuid4().hex[:12]}"
 
         # Set session_dir on wrapper so PID/log files go to the right place
         self.wrapper.session_dir = self._session_dir()
@@ -836,6 +838,7 @@ class Session:
             "denden_addr": self._denden_addr,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
+            "task": self.task or None,
             "agents": {},
         }
 

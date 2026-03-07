@@ -346,3 +346,59 @@ def test_start_host_port_override(
     runner.invoke(cli, ["start", "--host", "0.0.0.0", "--port", "8080"])
 
     assert config.denden_addr == "0.0.0.0:8080"
+
+
+# ---------------------------------------------------------------------------
+# Run ID
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+@patch("strawpot.cli._ensure_agent_installed")
+@patch("strawpot.cli.Session")
+@patch("strawpot.cli.resolve_isolator")
+@patch("strawpot.cli.WrapperRuntime")
+@patch("strawpot.cli.validate_agent", return_value=ValidationResult())
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+def test_start_run_id_override(
+    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
+):
+    """--run-id passes the pre-assigned run ID to Session constructor."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+
+    runner = CliRunner()
+    runner.invoke(cli, [
+        "start", "--headless", "--task", "do stuff", "--run-id", "run_gui123"
+    ])
+
+    call_kwargs = mock_session.call_args.kwargs
+    assert call_kwargs["run_id"] == "run_gui123"
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+@patch("strawpot.cli._ensure_agent_installed")
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+def test_start_invalid_run_id_rejected(
+    mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
+):
+    """--run-id without 'run_' prefix fails with error."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "start", "--headless", "--task", "do stuff", "--run-id", "bad_id"
+    ])
+
+    assert result.exit_code != 0
+    assert "run_" in result.output
