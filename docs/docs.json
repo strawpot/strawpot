@@ -25,7 +25,8 @@
           "concepts/architecture",
           "concepts/sessions",
           "concepts/delegation",
-          "concepts/isolation"
+          "concepts/isolation",
+          "concepts/memory"
         ]
       },
       {
