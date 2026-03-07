@@ -36,6 +36,7 @@ def _write_role(base, slug, body="Role body.", description="test"):
 
 
 def _make_config(**overrides):
+    overrides.setdefault("memory", "")
     return StrawPotConfig(**overrides)
 
 

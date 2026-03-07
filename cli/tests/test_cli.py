@@ -27,6 +27,7 @@ def _make_spec(**overrides):
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -37,7 +38,7 @@ def _make_spec(**overrides):
 @patch("strawpot.cli.load_config")
 def test_start_resolves_agent(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """start() calls resolve_agent with config.runtime."""
     from strawpot.config import StrawPotConfig
@@ -54,6 +55,7 @@ def test_start_resolves_agent(
     assert call_args[0][2] is None  # no agent-specific config
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -64,7 +66,7 @@ def test_start_resolves_agent(
 @patch("strawpot.cli.load_config")
 def test_start_resolves_agent_with_runtime_override(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """start --runtime overrides the agent name passed to resolve_agent."""
     from strawpot.config import StrawPotConfig
@@ -80,11 +82,12 @@ def test_start_resolves_agent_with_runtime_override(
     assert call_args[0][0] == "custom_agent"
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill):
+def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory):
     """FileNotFoundError from resolve_agent prints error and exits 1."""
     from strawpot.config import StrawPotConfig
 
@@ -103,13 +106,14 @@ def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.load_config")
 def test_start_missing_tools_exits(
-    mock_load, mock_validate, mock_resolve, mock_ensure_agent, mock_ensure_skill
+    mock_load, mock_validate, mock_resolve, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """Missing tools prints error with hints and exits 1."""
     from strawpot.config import StrawPotConfig
@@ -130,6 +134,7 @@ def test_start_missing_tools_exits(
     assert "git" in result.output
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -140,7 +145,7 @@ def test_start_missing_tools_exits(
 @patch("strawpot.cli.load_config")
 def test_start_missing_env_prompts(
     mock_load, mock_validate, mock_resolve, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """Missing env vars are prompted and set in os.environ."""
     from strawpot.config import StrawPotConfig
@@ -164,6 +169,7 @@ def test_start_missing_env_prompts(
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -175,7 +181,7 @@ def test_start_missing_env_prompts(
 @patch("strawpot.cli.shutil.which")
 def test_start_uses_tmux_when_available(
     mock_which, mock_load, mock_resolve, mock_validate,
-    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """InteractiveWrapperRuntime is used when tmux is on PATH."""
     from strawpot.config import StrawPotConfig
@@ -192,6 +198,7 @@ def test_start_uses_tmux_when_available(
         mock_interactive.assert_called_once()
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -203,7 +210,7 @@ def test_start_uses_tmux_when_available(
 @patch("strawpot.cli.shutil.which")
 def test_start_falls_back_to_direct(
     mock_which, mock_load, mock_resolve, mock_validate,
-    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """DirectWrapperRuntime is used when tmux is not on PATH."""
     from strawpot.config import StrawPotConfig
@@ -224,6 +231,7 @@ def test_start_falls_back_to_direct(
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -234,7 +242,7 @@ def test_start_falls_back_to_direct(
 @patch("strawpot.cli.load_config")
 def test_start_creates_session(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """Session is constructed with correct args and start() is called."""
     from strawpot.config import StrawPotConfig
@@ -262,6 +270,7 @@ def test_start_creates_session(
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -272,7 +281,7 @@ def test_start_creates_session(
 @patch("strawpot.cli.load_config")
 def test_start_role_override(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """--role overrides config.orchestrator_role."""
     from strawpot.config import StrawPotConfig
@@ -287,6 +296,7 @@ def test_start_role_override(
     assert config.orchestrator_role == "custom-orchestrator"
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -297,7 +307,7 @@ def test_start_role_override(
 @patch("strawpot.cli.load_config")
 def test_start_isolation_override(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """--isolation overrides config.isolation."""
     from strawpot.config import StrawPotConfig
@@ -312,6 +322,7 @@ def test_start_isolation_override(
     assert config.isolation == "worktree"
 
 
+@patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
@@ -322,7 +333,7 @@ def test_start_isolation_override(
 @patch("strawpot.cli.load_config")
 def test_start_host_port_override(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_memory
 ):
     """--host and --port override config.denden_addr."""
     from strawpot.config import StrawPotConfig

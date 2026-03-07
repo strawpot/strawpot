@@ -280,48 +280,6 @@ def test_memory_spec_pip():
     assert spec.module_path == "dial_memory.provider"
 
 
-# --- Built-in noop provider ---
-
-
-def test_resolve_builtin_noop(tmp_path, monkeypatch):
-    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
-    spec = resolve_memory("noop", str(tmp_path))
-    assert spec.name == "noop"
-    assert spec.version == "0.1.0"
-    assert spec.script.endswith("provider.py")
-
-
-def test_noop_provider_satisfies_protocol():
-    from strawpot.memory._builtin_memory.noop.provider import NoopMemoryProvider
-
-    provider = NoopMemoryProvider()
-    assert isinstance(provider, MemoryProvider)
-
-
-def test_noop_provider_get_returns_empty():
-    from strawpot.memory._builtin_memory.noop.provider import NoopMemoryProvider
-
-    provider = NoopMemoryProvider()
-    result = provider.get(
-        session_id="s1", agent_id="a1", role="impl",
-        behavior_ref="text", task="do something",
-    )
-    assert result.context_cards == []
-    assert result.context_hash == ""
-
-
-def test_noop_provider_dump_returns_empty():
-    from strawpot.memory._builtin_memory.noop.provider import NoopMemoryProvider
-
-    provider = NoopMemoryProvider()
-    receipt = provider.dump(
-        session_id="s1", agent_id="a1", role="impl",
-        behavior_ref="text", task="do something",
-        status="success", output="done",
-    )
-    assert receipt.em_event_ids == []
-
-
 # --- load_provider ---
 
 
@@ -366,15 +324,6 @@ def test_load_provider_no_class(tmp_path):
 
     with pytest.raises(ValueError, match="No MemoryProvider"):
         load_provider(spec)
-
-
-def test_load_provider_noop(tmp_path, monkeypatch):
-    """load_provider works with the built-in noop provider."""
-    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
-    spec = resolve_memory("noop", str(tmp_path))
-    provider = load_provider(spec)
-    assert isinstance(provider, MemoryProvider)
-    assert provider.name == "noop"
 
 
 # --- pip-based provider ---

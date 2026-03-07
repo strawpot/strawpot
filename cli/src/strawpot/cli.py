@@ -17,6 +17,7 @@ from strawpot.agents.interactive import (
     InteractiveWrapperRuntime,
 )
 from strawpot.agents.registry import resolve_agent, validate_agent
+from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, load_config
 from strawpot.session import Session, recover_stale_sessions, resolve_isolator
@@ -94,6 +95,37 @@ def _ensure_skill_installed(name: str, working_dir: str) -> None:
         click.echo(f"Failed to install skill '{name}'.", err=True)
 
 
+def _ensure_memory_installed(name: str, working_dir: str) -> None:
+    """Prompt to install a memory provider from StrawHub if not found locally."""
+    try:
+        resolve_memory(name, working_dir)
+    except FileNotFoundError:
+        pass  # not installed — continue to prompt
+    else:
+        return  # already available
+
+    if not click.confirm(
+        f"Memory provider '{name}' is not installed. Install from StrawHub?",
+        default=True,
+    ):
+        return
+
+    cmd = shutil.which("strawhub")
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        return
+
+    result = subprocess.run(
+        [cmd, "install", "memory", name, "--global"],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    if result.returncode != 0:
+        click.echo(f"Failed to install memory provider '{name}'.", err=True)
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
@@ -161,6 +193,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     # 0b. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir)
     _ensure_skill_installed("denden", working_dir)
+    if config.memory:
+        _ensure_memory_installed(config.memory, working_dir)
 
     # 1. Resolve agent spec
     try:
