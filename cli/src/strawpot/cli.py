@@ -161,7 +161,8 @@ def _ensure_memory_installed(name: str, working_dir: str) -> None:
     default=False,
     help="Run detached with output to log file (requires --task).",
 )
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless):
+@click.option("--run-id", "run_id", default=None, help="Pre-assigned run ID (used by GUI).")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -252,6 +253,10 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         click.echo("Error: --headless requires --task", err=True)
         sys.exit(1)
 
+    if run_id and not run_id.startswith("run_"):
+        click.echo("Error: --run-id must start with 'run_'", err=True)
+        sys.exit(1)
+
     wrapper = WrapperRuntime(spec)
     if headless:
         rt = wrapper  # WrapperRuntime directly → output to .log file
@@ -288,6 +293,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         resolve_role=_resolve_role,
         resolve_role_dirs=_resolve_role_dirs,
         task=task or "",
+        run_id=run_id,
     )
     session.start(working_dir)
 
