@@ -378,6 +378,26 @@ def agents(session_id):
 
 
 # ---------------------------------------------------------------------------
+# GUI
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--port", default=None, type=int, help="Port for GUI server (default: 8741).")
+def gui(port):
+    """Launch the StrawPot web dashboard."""
+    try:
+        from strawpot_gui.server import DEFAULT_PORT
+        from strawpot_gui.server import main as gui_main
+    except ImportError:
+        click.echo("Error: strawpot-gui package is not installed.", err=True)
+        click.echo("Install it with: pip install strawpot-gui", err=True)
+        sys.exit(1)
+
+    gui_main(port=port or DEFAULT_PORT)
+
+
+# ---------------------------------------------------------------------------
 # Strawhub passthrough
 # ---------------------------------------------------------------------------
 
