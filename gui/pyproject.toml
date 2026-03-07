@@ -1,0 +1,34 @@
+[project]
+name = "strawpot-gui"
+version = "0.1.0"
+description = "Local web dashboard for StrawPot agent orchestration"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "strawpot",
+    "tomli_w>=1.0",
+]
+
+[project.scripts]
+strawpot-gui = "strawpot_gui.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "pytest-timeout>=2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+timeout = 30
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
