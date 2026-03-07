@@ -94,8 +94,18 @@ def test_resolve_script_found(tmp_path):
     script = tmp_path / "provider.py"
     script.write_text("# stub")
     meta = {"memory_module": "provider.py"}
-    result = _resolve_script(tmp_path, meta)
-    assert result == str(script.resolve())
+    script_path, pip, module_path = _resolve_script(tmp_path, meta)
+    assert script_path == str(script.resolve())
+    assert pip == ""
+    assert module_path == ""
+
+
+def test_resolve_script_pip_mode(tmp_path):
+    meta = {"memory_module": "dial_memory.provider", "pip": "dial-memory"}
+    script_path, pip, module_path = _resolve_script(tmp_path, meta)
+    assert script_path == ""
+    assert pip == "dial-memory"
+    assert module_path == "dial_memory.provider"
 
 
 def test_resolve_script_missing_field():
@@ -256,6 +266,18 @@ def test_memory_spec_defaults():
     assert spec.config == {}
     assert spec.env_schema == {}
     assert spec.tools == {}
+    assert spec.pip == ""
+    assert spec.module_path == ""
+
+
+def test_memory_spec_pip():
+    spec = MemorySpec(
+        name="m", version="1.0",
+        pip="dial-memory", module_path="dial_memory.provider",
+    )
+    assert spec.script == ""
+    assert spec.pip == "dial-memory"
+    assert spec.module_path == "dial_memory.provider"
 
 
 # --- Built-in noop provider ---
@@ -353,3 +375,76 @@ def test_load_provider_noop(tmp_path, monkeypatch):
     provider = load_provider(spec)
     assert isinstance(provider, MemoryProvider)
     assert provider.name == "noop"
+
+
+# --- pip-based provider ---
+
+
+PIP_MEMORY_MD = dedent("""\
+    ---
+    name: pip-memory
+    description: A pip-based memory provider
+    metadata:
+      version: "1.0.0"
+      strawpot:
+        pip: dial-memory
+        memory_module: dial_memory.provider
+        params:
+          storage_dir:
+            type: string
+            default: .strawpot/memory/dial-data
+    ---
+
+    # Pip Memory
+""")
+
+
+def test_resolve_pip_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
+    project_dir = tmp_path / "project"
+    memory_dir = project_dir / ".strawpot" / "memory"
+    _write_memory(memory_dir, "pip-memory", PIP_MEMORY_MD, script=False)
+
+    spec = resolve_memory("pip-memory", str(project_dir))
+    assert spec.name == "pip-memory"
+    assert spec.pip == "dial-memory"
+    assert spec.module_path == "dial_memory.provider"
+    assert spec.script == ""
+
+
+def test_load_provider_pip(tmp_path, monkeypatch):
+    """load_provider works with a pip-installed module."""
+    # Create a fake pip-installed module in a temp directory
+    fake_pkg = tmp_path / "dial_memory"
+    fake_pkg.mkdir()
+    (fake_pkg / "__init__.py").write_text("")
+    (fake_pkg / "provider.py").write_text(dedent("""\
+        from strawpot.memory.protocol import DumpReceipt, GetResult, RememberResult
+
+        class DialMemoryProvider:
+            name = "dial"
+
+            def get(self, *, session_id, agent_id, role, behavior_ref,
+                    task, budget=None, parent_agent_id=None):
+                return GetResult()
+
+            def dump(self, *, session_id, agent_id, role, behavior_ref,
+                     task, status, output, tool_trace="",
+                     parent_agent_id=None, artifacts=None):
+                return DumpReceipt()
+
+            def remember(self, *, session_id, agent_id, role, content,
+                         keywords=None, scope="project"):
+                return RememberResult(status="accepted")
+    """))
+
+    # Add temp dir to sys.path so importlib can find it
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    spec = MemorySpec(
+        name="dial", version="1.0",
+        pip="dial-memory", module_path="dial_memory.provider",
+    )
+    provider = load_provider(spec)
+    assert isinstance(provider, MemoryProvider)
+    assert provider.name == "dial"

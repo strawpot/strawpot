@@ -113,6 +113,7 @@ This separation keeps the event stream small and scannable while preserving full
 | `delegate_denied` | Policy blocks delegation | role, reason |
 | `memory_get` | Memory context retrieved | provider, cards_ref, card_count |
 | `memory_dump` | Memory recorded after agent | provider, entries_ref, entry_count |
+| `memory_remember` | Agent stores knowledge | provider, entry_id, scope |
 | `agent_spawn` | Agent process launched | agent_id, runtime, pid |
 | `agent_end` | Agent process exits | exit_code, output_ref, duration_ms |
 

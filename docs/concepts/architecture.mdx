@@ -108,7 +108,12 @@ class MemoryProvider(Protocol):
     name: str
     def get(self, *, session_id, agent_id, role, ...) -> GetResult: ...
     def dump(self, *, session_id, agent_id, role, ...) -> DumpReceipt: ...
+    def remember(self, *, session_id, agent_id, role,
+                 content, keywords=None, scope="project") -> RememberResult: ...
 ```
+
+Memory providers are distributed as pip packages with a `MEMORY.md` manifest.
+StrawPot auto-installs the package on first use. See [DESIGN.md](https://github.com/strawpot/strawpot/blob/main/DESIGN.md#memory-manifest-memorymd) for the manifest format.
 
 ## Agent Wrapper Protocol
 

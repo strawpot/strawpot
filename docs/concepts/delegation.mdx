@@ -101,6 +101,8 @@ If a memory provider is configured, StrawPot retrieves context before spawning e
 
 After the sub-agent completes, `memory.dump()` records the result for future reference.
 
+Agents can also store knowledge explicitly via `memory.remember()`, which persists facts and domain knowledge at global, project, or role scope for retrieval in future sessions.
+
 ## Tracing
 
 When tracing is enabled (the default), every delegation emits structured events to the session's `trace.jsonl`:

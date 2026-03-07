@@ -1794,7 +1794,13 @@ class MemoryProvider(Protocol):
 Memory providers follow the same [Agent Skills](https://agentskills.io) open
 format — YAML frontmatter (`name`, `description`) + markdown body. The body
 describes the provider's capabilities and storage approach. StrawPot-specific
-config (wrapper, tools, params, env) lives under `metadata.strawpot`:
+config (wrapper, tools, params, env) lives under `metadata.strawpot`.
+
+There are two distribution modes:
+
+**Pip-based (recommended)** — The provider is distributed as a Python package.
+`MEMORY.md` references the pip package name and a dotted module path. StrawPot
+auto-installs the package on first use if not already installed.
 
 ```yaml
 ---
@@ -1803,7 +1809,8 @@ description: Default file-based memory provider for StrawPot
 metadata:
   version: "0.1.0"
   strawpot:
-    memory_module: provider.py
+    pip: dial-memory
+    memory_module: dial_memory.provider
     params:
       storage_dir:
         type: string
@@ -1821,6 +1828,30 @@ metadata:
 Default file-based memory provider. Two memory layers — Event Memory
 and a unified Knowledge store — using local JSON/JSONL files.
 ```
+
+**File-based** — The provider Python file is bundled alongside `MEMORY.md`.
+`memory_module` is a relative file path. Used for built-in providers (e.g. noop).
+
+```yaml
+---
+name: noop
+description: No-op memory provider
+metadata:
+  version: "0.1.0"
+  strawpot:
+    memory_module: provider.py
+---
+```
+
+#### Fields
+
+| Field | Description |
+|-------|-------------|
+| `pip` | PyPI package name (e.g. `dial-memory`). When present, StrawPot uses `importlib.import_module` and auto-runs `pip install` on `ImportError`. |
+| `memory_module` | Dotted module path (e.g. `dial_memory.provider`) when `pip` is set, or relative file path (e.g. `provider.py`) for file-based providers. |
+| `params` | Parameter definitions with types and defaults. Merged with user config from `strawpot.toml`. |
+| `tools` | System tool dependencies with install hints (same as agent skills). |
+| `env` | Environment variable requirements. |
 
 Installed to `~/.strawpot/memory/<name>/`, resolved the same way as agents:
 project-local → global.
@@ -1842,13 +1873,16 @@ flow works as before.
 
 ### Installation
 
-Memory providers will be installable via strawhub once the `memory` package
-type is added (planned strawhub addition):
+Memory providers are installable via strawhub:
 
 ```
 strawpot install memory <slug>     →  strawhub install memory <slug>
 strawpot uninstall memory <slug>   →  strawhub uninstall memory <slug>
 ```
+
+For pip-based providers, strawhub installs the `MEMORY.md` manifest. The
+Python package itself is auto-installed by StrawPot on first use when
+`importlib.import_module` raises `ImportError`.
 
 ---
 

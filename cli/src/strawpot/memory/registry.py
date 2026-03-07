@@ -1,8 +1,12 @@
 """Memory registry — discover MEMORY.md manifests and resolve to MemorySpec."""
 
+import importlib
 import importlib.util
+import logging
 import os
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,16 +17,21 @@ from strawpot.config import get_strawpot_home
 from strawpot.memory.protocol import MemoryProvider
 
 
+log = logging.getLogger(__name__)
+
+
 @dataclass
 class MemorySpec:
     """Resolved memory manifest ready for loading."""
 
     name: str
     version: str
-    script: str
+    script: str = ""
     config: dict = field(default_factory=dict)
     env_schema: dict = field(default_factory=dict)
     tools: dict = field(default_factory=dict)
+    pip: str = ""
+    module_path: str = ""
 
 
 def parse_memory_md(path: Path) -> tuple[dict, str]:
@@ -45,28 +54,37 @@ def parse_memory_md(path: Path) -> tuple[dict, str]:
     return frontmatter, body
 
 
-def _resolve_script(memory_dir: Path, strawpot_meta: dict) -> str:
-    """Resolve the provider script path from metadata.strawpot.memory_module.
+def _resolve_script(memory_dir: Path, strawpot_meta: dict) -> tuple[str, str, str]:
+    """Resolve the provider module from metadata.strawpot.
 
-    Args:
-        memory_dir: Directory containing the MEMORY.md.
-        strawpot_meta: The ``metadata.strawpot`` dict from frontmatter.
+    When ``pip`` is present, ``memory_module`` is treated as a dotted Python
+    import path (e.g. ``dial_memory.provider``).  Otherwise it is a file path
+    relative to the MEMORY.md directory.
 
     Returns:
-        Absolute path to the provider script.
+        ``(script_path, pip_package, module_path)`` — only one of
+        ``script_path`` or ``module_path`` will be non-empty.
 
     Raises:
-        ValueError: If memory_module is missing or file does not exist.
+        ValueError: If memory_module is missing or (for file mode) file
+            does not exist.
     """
-    script = strawpot_meta.get("memory_module")
-    if not script:
+    module = strawpot_meta.get("memory_module")
+    if not module:
         raise ValueError(
             "MEMORY.md must define metadata.strawpot.memory_module"
         )
-    script_path = memory_dir / script
+
+    pip_package = strawpot_meta.get("pip", "")
+    if pip_package:
+        # pip-based: memory_module is a dotted import path
+        return ("", pip_package, module)
+
+    # File-based: memory_module is a relative file path
+    script_path = memory_dir / module
     if not script_path.is_file():
         raise ValueError(f"Memory provider script not found: {script_path}")
-    return str(script_path.resolve())
+    return (str(script_path.resolve()), "", "")
 
 
 def _merge_config(params: dict, user_config: dict) -> dict:
@@ -126,7 +144,7 @@ def resolve_memory(
     metadata = frontmatter.get("metadata", {})
     strawpot_meta = metadata.get("strawpot", {})
 
-    script = _resolve_script(memory_dir, strawpot_meta)
+    script, pip_package, module_path = _resolve_script(memory_dir, strawpot_meta)
     params = strawpot_meta.get("params", {})
     config = _merge_config(params, user_config or {})
     env_schema = strawpot_meta.get("env", {})
@@ -140,29 +158,62 @@ def resolve_memory(
         config=config,
         env_schema=env_schema,
         tools=tools,
+        pip=pip_package,
+        module_path=module_path,
     )
 
 
-def load_provider(spec: MemorySpec) -> MemoryProvider:
-    """Dynamically load a memory provider from a MemorySpec.
+def _pip_install(package: str) -> None:
+    """Install a Python package via pip."""
+    log.info("Installing %s via pip...", package)
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", package],
+        stdout=subprocess.DEVNULL,
+    )
 
-    Imports the script file, scans for a class that satisfies
-    ``MemoryProvider``, and returns an instance.
 
-    Args:
-        spec: A resolved MemorySpec with an absolute script path.
+def _load_module(spec: MemorySpec):
+    """Import the provider module, auto-installing pip packages if needed."""
+    if spec.module_path:
+        # pip-based provider
+        try:
+            return importlib.import_module(spec.module_path)
+        except ImportError:
+            if not spec.pip:
+                raise
+            _pip_install(spec.pip)
+            return importlib.import_module(spec.module_path)
 
-    Returns:
-        An instance of the first class found that satisfies MemoryProvider.
-
-    Raises:
-        ValueError: If no MemoryProvider implementation is found in the script.
-    """
+    # File-based provider
     mod_spec = importlib.util.spec_from_file_location(
         "_memory_provider", spec.script
     )
     mod = importlib.util.module_from_spec(mod_spec)  # type: ignore[arg-type]
     mod_spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def load_provider(spec: MemorySpec) -> MemoryProvider:
+    """Dynamically load a memory provider from a MemorySpec.
+
+    For pip-based providers (``spec.module_path`` is set), imports via
+    ``importlib.import_module`` and auto-installs the pip package on
+    ``ImportError``.  For file-based providers, loads from ``spec.script``.
+
+    Scans the loaded module for a class satisfying ``MemoryProvider``
+    and returns an instance.
+
+    Args:
+        spec: A resolved MemorySpec.
+
+    Returns:
+        An instance of the first class found that satisfies MemoryProvider.
+
+    Raises:
+        ValueError: If no MemoryProvider implementation is found.
+    """
+    mod = _load_module(spec)
+    source = spec.module_path or spec.script
 
     for attr_name in dir(mod):
         attr = getattr(mod, attr_name)
@@ -179,7 +230,7 @@ def load_provider(spec: MemorySpec) -> MemoryProvider:
                 return instance
 
     raise ValueError(
-        f"No MemoryProvider implementation found in {spec.script}"
+        f"No MemoryProvider implementation found in {source}"
     )
 
 
