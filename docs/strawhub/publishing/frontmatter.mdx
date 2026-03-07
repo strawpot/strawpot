@@ -203,7 +203,7 @@ Description of what this provider does and how it stores data.
 | `name` | Yes | Provider slug (unique within memories) |
 | `description` | Yes | One-line summary |
 | `metadata.version` | No | Semver version string |
-| `metadata.strawpot.pip` | No | PyPI package name — StrawPot auto-installs on first use |
+| `metadata.strawpot.pip` | No | PyPI requirement string with optional version specifiers (e.g. `my-package>=0.1.0`) — StrawPot auto-installs on first use |
 | `metadata.strawpot.memory_module` | Yes | Dotted import path to the module containing the provider class, or relative file path |
 | `metadata.strawpot.params` | No | Configurable parameters (merged with `[memory_config]` in `strawpot.toml`) |
 | `metadata.strawpot.tools` | No | System tool requirements |

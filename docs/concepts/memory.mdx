@@ -153,12 +153,27 @@ description: My custom memory provider
 metadata:
   version: "0.1.0"
   strawpot:
-    pip: my-provider-package
-    memory_module: my_provider.provider
-    params:
+    pip: my-provider-package>=0.1.0       # PyPI package (auto-installed)
+    memory_module: my_provider.provider   # Dotted import path to provider class
+    params:                               # Configurable parameters
       storage_dir:
         type: string
         default: .strawpot/memory/my-data
+        description: Where to store memory data
+      em_tail_count:
+        type: integer
+        default: 20
+        description: Number of event memory entries to return
+    tools:                                # System tool requirements
+      sqlite3:
+        description: SQLite CLI
+        install:
+          macos: brew install sqlite
+          linux: apt install sqlite3
+    env:                                  # Required environment variables
+      MY_PROVIDER_KEY:
+        required: false
+        description: Optional API key for cloud sync
 ---
 
 # My Provider
@@ -168,13 +183,15 @@ Description of what this provider does and how it stores data.
 
 **Key fields under `metadata.strawpot`:**
 
-| Field | Description |
-|-------|-------------|
-| `pip` | PyPI package name. StrawPot auto-installs on first use |
-| `memory_module` | Dotted import path to the module containing the provider class |
-| `params` | Parameter definitions with types and defaults, merged with `[memory_config]` |
-| `tools` | System tool dependencies with install hints |
-| `env` | Required environment variables |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `memory_module` | Yes | Dotted import path to the module containing the provider class (when `pip` is set), or a relative file path to a Python script (when `pip` is absent) |
+| `pip` | No | PyPI requirement string with optional version specifiers (e.g. `my-package>=0.1.0`). StrawPot auto-installs on first use |
+| `params` | No | Parameter definitions — defaults are merged with `[memory_config]` in `strawpot.toml` |
+| `tools` | No | System tool dependencies with per-OS install commands |
+| `env` | No | Environment variable requirements |
+
+See [Frontmatter Reference](/strawhub/publishing/frontmatter#memory-frontmatter-memorymd) for the complete sub-field schemas for `params`, `env`, and `tools`.
 
 ### 4. Distribute
 
