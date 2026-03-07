@@ -27,6 +27,14 @@ strawhub install role implementer
 
 Roles can depend on both skills and other roles. Dependencies are resolved automatically via the StrawHub API.
 
+## Install a Memory Provider
+
+```bash
+strawhub install memory dial
+```
+
+Memory providers are installed to `.strawpot/memory/` and supply agents with context from past sessions.
+
 ## Search the Registry
 
 ```bash
@@ -67,7 +75,7 @@ strawhub init
 
 ## Authentication
 
-To publish skills and roles, you need an API token:
+To publish skills, roles, and memories, you need an API token:
 
 1. Sign in at [strawhub.dev](https://strawhub.dev) with GitHub
 2. Go to **Settings > API Tokens** and create a token
@@ -80,7 +88,7 @@ strawhub login
 
 ## Using with StrawPot
 
-StrawPot automatically resolves and installs skills and roles from StrawHub during orchestration sessions. You can also use the same commands through `strawpot`:
+StrawPot automatically resolves and installs skills, roles, and memory providers from StrawHub during orchestration sessions. You can also use the same commands through `strawpot`:
 
 ```bash
 strawpot install skill git-workflow
@@ -91,5 +99,6 @@ strawpot search "testing"
 
 - [Skills](/strawhub/concepts/skills) — Understand how skills work
 - [Roles](/strawhub/concepts/roles) — Understand how roles work
+- [Memories](/strawhub/concepts/memories) — Understand how memory providers work
 - [CLI Reference](/strawhub/cli/commands) — All available commands
-- [Publishing](/strawhub/publishing/guide) — Publish your own skills and roles
+- [Publishing](/strawhub/publishing/guide) — Publish your own skills, roles, and memories

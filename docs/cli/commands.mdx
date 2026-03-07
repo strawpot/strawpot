@@ -73,11 +73,12 @@ StrawPot delegates these commands to the `strawhub` CLI. They work identically t
 
 ### `install`
 
-Install a skill or role from StrawHub.
+Install a skill, role, or memory provider from StrawHub.
 
 ```bash
 strawpot install skill <slug> [options]
 strawpot install role <slug> [options]
+strawpot install memory <slug> [options]
 ```
 
 | Option | Description |
@@ -94,15 +95,15 @@ strawpot install role <slug> [options]
 Search the StrawHub registry.
 
 ```bash
-strawpot search <query> [--kind skill|role|all] [--limit N]
+strawpot search <query> [--kind skill|role|memory|all] [--limit N]
 ```
 
 ### `list`
 
-List available skills and roles.
+List available packages.
 
 ```bash
-strawpot list [--kind skills|roles|all] [--sort updated|downloads|stars]
+strawpot list [--kind skills|roles|memories|all] [--sort updated|downloads|stars]
 ```
 
 ### `info`
@@ -112,6 +113,7 @@ Show detailed information about a package.
 ```bash
 strawpot info skill <slug>
 strawpot info role <slug>
+strawpot info memory <slug>
 ```
 
 ### `resolve`
@@ -121,15 +123,17 @@ Resolve a package to its installed path and dependencies.
 ```bash
 strawpot resolve skill <slug>
 strawpot resolve role <slug>
+strawpot resolve memory <slug>
 ```
 
 ### `publish`
 
-Publish a skill or role to StrawHub.
+Publish a skill, role, or memory provider to StrawHub.
 
 ```bash
 strawpot publish skill [<path>]
 strawpot publish role [<path>]
+strawpot publish memory [<path>]
 ```
 
 ### Authentication

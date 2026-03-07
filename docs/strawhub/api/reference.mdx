@@ -173,6 +173,49 @@ DELETE /api/v1/roles/:slug
 
 ---
 
+## Memories
+
+### List Memories
+
+```
+GET /api/v1/memories?limit=50&sort=updated
+```
+
+Same parameters and response shape as List Skills.
+
+### Get Memory Detail
+
+```
+GET /api/v1/memories/:slug
+```
+
+### Get Memory File
+
+```
+GET /api/v1/memories/:slug/file?path=MEMORY.md
+```
+
+### Publish Memory
+
+<Note>Requires authentication.</Note>
+
+```
+POST /api/v1/memories
+Content-Type: multipart/form-data
+```
+
+Same payload as Publish Skill. Must include a `MEMORY.md` file. Max 50 files, 10 MB each.
+
+### Delete Memory
+
+<Note>Requires admin role.</Note>
+
+```
+DELETE /api/v1/memories/:slug
+```
+
+---
+
 ## Search
 
 ```
@@ -182,7 +225,7 @@ GET /api/v1/search?q=review&kind=all&limit=20
 | Param | Description | Default |
 |-------|-------------|---------|
 | `q` | Search query (required) | — |
-| `kind` | `all`, `skill`, or `role` | `all` |
+| `kind` | `all`, `skill`, `role`, `agent`, or `memory` | `all` |
 | `limit` | Results (1-100) | `20` |
 
 Uses hybrid ranking: vector similarity + lexical matching + popularity boost.
@@ -199,7 +242,7 @@ Uses hybrid ranking: vector similarity + lexical matching + popularity boost.
 POST /api/v1/stars/toggle
 Content-Type: application/json
 
-{ "slug": "git-workflow", "kind": "skill" }
+{ "slug": "git-workflow", "kind": "skill" }  // kind: skill | role | agent | memory
 ```
 
 Returns `{ "starred": true }` or `{ "starred": false }`.
