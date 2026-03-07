@@ -72,7 +72,12 @@ pr_command = "gh pr create --base {base_branch} --head {session_branch}"
 # ── Memory ───────────────────────────────────────────────
 [memory]
 # Memory provider name (default: noop)
-provider = "noop"
+provider = "dial"
+
+# Provider-specific config (merged with MEMORY.md param defaults)
+[memory_config]
+storage_dir = ".strawpot/memory/dial-data"
+em_tail_count = 20
 
 # ── Agent-Specific Config ────────────────────────────────
 # Keyed by agent name. Passed as --config JSON to the wrapper.
