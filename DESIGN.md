@@ -1621,8 +1621,8 @@ alive.
 
 ### Phase 3 — Memory
 
-17. `memory/protocol.py` — `MemoryProvider` protocol, `ContextCard`,
-    `ControlSignal`, `DumpReceipt` types
+17. `strawpot_memory.memory_protocol` (external `strawpot-memory` package) —
+    `MemoryProvider` protocol, `ContextCard`, `ControlSignal`, `DumpReceipt` types
 18. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
     validate deps (same pattern as agent registry)
 19. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
@@ -1775,7 +1775,7 @@ Outputs:
 Memory providers are Python modules loaded directly into the strawpot
 process (unlike agent wrappers which are CLI subprocesses). Each provider
 implements the `MemoryProvider` protocol defined in
-`strawpot.memory.protocol`:
+`strawpot_memory.memory_protocol` (from the `strawpot-memory` package):
 
 ```python
 class MemoryProvider(Protocol):

@@ -60,8 +60,8 @@ src/strawpot/
     protocol.py            # Isolator protocol
     worktree.py            # Git worktree isolator
   memory/
-    protocol.py            # MemoryProvider protocol
     registry.py            # Memory provider resolution
+# Protocol types live in the external strawpot-memory package
 ```
 
 ## Design Principles
@@ -113,7 +113,7 @@ class MemoryProvider(Protocol):
 ```
 
 Memory providers are distributed as pip packages with a `MEMORY.md` manifest.
-StrawPot auto-installs the package on first use. See [DESIGN.md](https://github.com/strawpot/strawpot/blob/main/DESIGN.md#memory-manifest-memorymd) for the manifest format.
+StrawPot auto-installs the package on first use. See the [Memory guide](/concepts/memory) for details.
 
 ## Agent Wrapper Protocol
 

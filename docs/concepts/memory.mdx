@@ -1,0 +1,223 @@
+---
+title: Memory
+description: How memory providers give agents context and persist knowledge
+---
+
+Memory providers are optional plugins that supply agents with contextual information before they run and record their results afterward. This enables agents to learn from past sessions and share knowledge across runs.
+
+## How It Works
+
+Memory integrates at three points in the delegation flow:
+
+```
+Before agent spawn:
+  memory.get() → context cards → injected into agent prompt
+
+During agent execution:
+  Agent calls memory.remember() via Denden → persisted by provider
+
+After agent completion:
+  memory.dump() → records outcome for future retrieval
+```
+
+When no memory provider is configured, these steps are skipped and agents run without memory context.
+
+## Configuring a Provider
+
+Set the provider name in your `strawpot.toml`:
+
+```toml
+[memory]
+provider = "dial"
+
+[memory_config]
+storage_dir = ".strawpot/memory/dial-data"
+em_tail_count = 20
+```
+
+Values in `[memory_config]` override the provider's default parameters defined in its `MEMORY.md` manifest.
+
+## Provider Resolution Order
+
+When StrawPot resolves a provider by name, it searches:
+
+1. **Project-local**: `<project>/.strawpot/memory/<name>/MEMORY.md`
+2. **Global**: `~/.strawpot/memory/<name>/MEMORY.md`
+3. **Built-in**: Ships with StrawPot (e.g., `noop`)
+
+## Context Cards
+
+`memory.get()` returns context cards tagged by memory kind:
+
+| Kind | Description |
+|------|-------------|
+| **SM** (Semantic) | Facts and conventions — always included |
+| **RM** (Retrieval) | Domain-specific — included when task keywords match |
+| **EM** (Event) | Append-only log of past agent runs and results |
+
+Cards are formatted into a memory prompt section and injected into the agent's system prompt alongside the role and skill instructions.
+
+## Building a Custom Memory Provider
+
+A memory provider is a Python class that implements the `MemoryProvider` protocol from the `strawpot-memory` package.
+
+### 1. Install the protocol package
+
+```bash
+pip install strawpot-memory
+```
+
+### 2. Implement the protocol
+
+```python
+from strawpot_memory.memory_protocol import (
+    ContextCard,
+    ControlSignal,
+    DumpReceipt,
+    GetResult,
+    MemoryKind,
+    MemoryProvider,
+    RememberResult,
+)
+
+
+class MyMemoryProvider:
+    name = "my-provider"
+
+    def get(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        behavior_ref: str,
+        task: str,
+        budget: int | None = None,
+        parent_agent_id: str | None = None,
+    ) -> GetResult:
+        # Retrieve relevant context for this agent
+        cards = [
+            ContextCard(
+                kind=MemoryKind.SM,
+                content="Always use snake_case for Python.",
+                source="project-conventions",
+            )
+        ]
+        return GetResult(context_cards=cards)
+
+    def dump(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        behavior_ref: str,
+        task: str,
+        status: str,
+        output: str,
+        tool_trace: str = "",
+        parent_agent_id: str | None = None,
+        artifacts: dict[str, str] | None = None,
+    ) -> DumpReceipt:
+        # Record the agent's outcome for future retrieval
+        return DumpReceipt()
+
+    def remember(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        content: str,
+        keywords: list[str] | None = None,
+        scope: str = "project",
+    ) -> RememberResult:
+        # Persist knowledge from an agent mid-execution
+        return RememberResult(status="accepted")
+```
+
+### 3. Create a `MEMORY.md` manifest
+
+The manifest uses Agent Skills format — YAML frontmatter plus a markdown body:
+
+```yaml
+---
+name: my-provider
+description: My custom memory provider
+metadata:
+  version: "0.1.0"
+  strawpot:
+    pip: my-provider-package
+    memory_module: my_provider.provider
+    params:
+      storage_dir:
+        type: string
+        default: .strawpot/memory/my-data
+---
+
+# My Provider
+
+Description of what this provider does and how it stores data.
+```
+
+**Key fields under `metadata.strawpot`:**
+
+| Field | Description |
+|-------|-------------|
+| `pip` | PyPI package name. StrawPot auto-installs on first use |
+| `memory_module` | Dotted import path to the module containing the provider class |
+| `params` | Parameter definitions with types and defaults, merged with `[memory_config]` |
+| `tools` | System tool dependencies with install hints |
+| `env` | Required environment variables |
+
+### 4. Distribute
+
+**Pip-based (recommended)** — Publish your package to PyPI. Distribute the `MEMORY.md` manifest via StrawHub:
+
+```bash
+strawhub publish memory my-provider
+```
+
+Users install with:
+
+```bash
+strawpot install memory my-provider
+```
+
+StrawPot installs the `MEMORY.md` manifest and auto-installs the pip package on first use.
+
+**File-based** — For local or built-in providers, set `memory_module` to a relative file path instead of a dotted module:
+
+```yaml
+metadata:
+  strawpot:
+    memory_module: provider.py
+```
+
+Place the file alongside `MEMORY.md` in the provider directory.
+
+## Protocol Reference
+
+The full protocol is defined in the [`strawpot-memory`](https://github.com/strawpot/strawpot-memory) package:
+
+```python
+class MemoryProvider(Protocol):
+    name: str
+    def get(self, *, session_id, agent_id, role, behavior_ref,
+            task, budget=None, parent_agent_id=None) -> GetResult: ...
+    def dump(self, *, session_id, agent_id, role, behavior_ref,
+             task, status, output, tool_trace="",
+             parent_agent_id=None, artifacts=None) -> DumpReceipt: ...
+    def remember(self, *, session_id, agent_id, role,
+                 content, keywords=None, scope="project") -> RememberResult: ...
+```
+
+### Return Types
+
+| Type | Fields |
+|------|--------|
+| `GetResult` | `context_cards`, `control_signals`, `context_hash`, `sources_used` |
+| `DumpReceipt` | `em_event_ids` |
+| `RememberResult` | `status` ("accepted" / "duplicate"), `entry_id` |
+| `ContextCard` | `kind` (MemoryKind), `content`, `source` |
+| `ControlSignal` | `risk_level`, `suggested_next`, `policy_flags` |
