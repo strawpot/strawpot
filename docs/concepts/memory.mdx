@@ -20,19 +20,26 @@ After agent completion:
   memory.dump() → records outcome for future retrieval
 ```
 
-When no memory provider is configured, these steps are skipped and agents run without memory context.
+The default memory provider is `dial`. To disable memory, set `provider = ""` in your config.
 
 ## Configuring a Provider
 
-Set the provider name in your `strawpot.toml`:
+The default provider is `dial`. Override or customize it in `strawpot.toml`:
 
 ```toml
 [memory]
-provider = "dial"
+provider = "dial"  # default
 
 [memory_config]
 storage_dir = ".strawpot/memory/dial-data"
 em_tail_count = 20
+```
+
+To disable memory entirely:
+
+```toml
+[memory]
+provider = ""
 ```
 
 Values in `[memory_config]` override the provider's default parameters defined in its `MEMORY.md` manifest.
@@ -43,7 +50,6 @@ When StrawPot resolves a provider by name, it searches:
 
 1. **Project-local**: `<project>/.strawpot/memory/<name>/MEMORY.md`
 2. **Global**: `~/.strawpot/memory/<name>/MEMORY.md`
-3. **Built-in**: Ships with StrawPot (e.g., `noop`)
 
 ## Context Cards
 

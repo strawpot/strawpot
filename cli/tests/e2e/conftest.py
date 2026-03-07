@@ -152,6 +152,7 @@ def make_config():
             orchestrator_role="orchestrator",
             allowed_roles=["orchestrator", "implementer"],
             max_depth=3,
+            memory="",
         )
         defaults.update(overrides)
         return StrawPotConfig(**defaults)

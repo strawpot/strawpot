@@ -110,7 +110,6 @@ def resolve_memory(
     Resolution order:
         1. ``<project_dir>/.strawpot/memory/<name>/MEMORY.md`` (project-local)
         2. ``~/.strawpot/memory/<name>/MEMORY.md`` (global install)
-        3. Built-in ``_builtin_memory/<name>/MEMORY.md`` (ships with strawpot)
 
     Args:
         name: Memory provider name (e.g. ``"strawpot-memory-local"``).
@@ -126,7 +125,6 @@ def resolve_memory(
     candidates = [
         Path(project_dir) / ".strawpot" / "memory" / name,
         get_strawpot_home() / "memory" / name,
-        Path(__file__).parent / "_builtin_memory" / name,
     ]
 
     memory_dir: Path | None = None

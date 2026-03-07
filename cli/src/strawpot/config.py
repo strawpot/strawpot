@@ -34,7 +34,7 @@ class StrawPotConfig:
     agents: dict[str, dict] = field(default_factory=dict)
     skills: dict[str, dict[str, str]] = field(default_factory=dict)
     roles: dict[str, dict] = field(default_factory=dict)
-    memory: str | None = None
+    memory: str = "dial"
     memory_config: dict[str, str] = field(default_factory=dict)
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"

@@ -20,7 +20,7 @@ def test_defaults():
     assert config.agents == {}
     assert config.skills == {}
     assert config.roles == {}
-    assert config.memory is None
+    assert config.memory == "dial"
     assert config.memory_config == {}
     assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
