@@ -741,6 +741,21 @@ AskUserHandler = Callable[[AskUserRequest], AskUserResponse]
 handler, then converts `AskUserResponse` → protobuf `AskUserResult`.
 This is the only place that touches protobuf types.
 
+### remember Request
+
+Agent calls `denden send '{"remember": {"content": "This project uses pytest", "scope": "project"}}'`.
+Dispatched to `Session._handle_remember`, which routes to
+`memory_provider.remember()`.
+
+**DenDen protobuf types:**
+
+- `RememberRequest`: `content`, `keywords[]`, `scope`
+- `RememberResult`: `status`, `entry_id`
+
+`_handle_remember` extracts `session_id`, `agent_id`, and `role` from
+the request trace, then calls `memory_provider.remember()`. If no memory
+provider is configured, returns an error response.
+
 **Handlers by mode:**
 
 | Mode | Handler | Wired in |
@@ -1645,10 +1660,11 @@ alive.
 
 ---
 
-## Memory (Planned)
+## Memory
 
 Installable memory providers that strawpot queries before spawning an agent
-(`memory.get`) and writes to after the agent completes (`memory.dump`).
+(`memory.get`), writes to after the agent completes (`memory.dump`), and
+accepts knowledge from during agent execution (`memory.remember`).
 Memory follows the same installable-package pattern as agents — a folder with
 a manifest, managed by strawhub.
 
@@ -1656,28 +1672,36 @@ a manifest, managed by strawhub.
 
 | Type | Abbr | Description |
 |---|---|---|
-| Procedural Memory | PM | Role-specific instructions, patterns, runbooks |
-| Semantic Memory | SM | Workspace facts (global) + project conventions |
-| Short-Term Memory | STM | Session/agent-scoped scratchpad, TTL-based |
-| Retrieval Memory | RM | Hinted retrieval — triggered only when relevant |
-| Event Memory | EM | Append-only event log (agent runs, tool calls, results) |
+| Semantic Memory | SM | Facts and conventions — always included |
+| Retrieval Memory | RM | Domain-specific — included only when task keywords match |
+| Event Memory | EM | Append-only event log (agent runs, results) |
+
+STM (Short-Term Memory) and PM (Procedural Memory) are defined in
+`MemoryKind` but not used by the default provider (dial). STM is redundant
+with orchestrator context bridging + EM tail. PM overlaps with the static
+ROLE.md/SKILL.md system. See [dial DESIGN.md](https://github.com/strawpot/dial/blob/main/DESIGN.md)
+for detailed rationale.
 
 ### Hooks in Delegation Flow
 
-Memory wraps the existing spawn/wait cycle. Two calls per agent:
+Memory has three integration points — two at delegation boundaries and
+one during agent execution:
 
 ```
 Delegate flow (updated):
   1. Policy check
   2. Resolve role + skills
-  3. memory.get(...)          ← NEW: before spawn
+  3. memory.get(...)          ← before spawn
      → returns context_cards + control_signals
   4. Build prompt (role + skills + context_cards)
   5. Spawn agent
-  6. Wait for result
-  7. memory.dump(...)         ← NEW: after completion
-     → appends to EM, updates STM, proposes SM/RM
-  8. Return result
+  6. [agent runs]
+     └─ denden remember ──→ memory.remember(...)    ← during execution
+        → dedup + write knowledge
+  7. Wait for result
+  8. memory.dump(...)         ← after completion
+     → appends to EM
+  9. Return result
 ```
 
 ### `memory.get` — Before Every Agent
@@ -1696,17 +1720,10 @@ Inputs:
   budget                      (token budget hint, optional)
 
 Outputs:
-  context_cards               (typed: PM/SM/STM/RM)
+  context_cards               (typed: SM/RM/EM)
   control_signals             (risk level, suggested next, policy flags)
   context_hash + sources_used (receipt for traceability)
 ```
-
-**Retrieval order** (default):
-1. PM — role bundle (instructions for this role)
-2. RM — hint-triggered retrieval (only if relevant)
-3. SM — workspace-scoped facts
-4. SM — global invariants (minimal)
-5. STM — global + agent-scoped scratchpad
 
 No conversation history passed by the orchestrator. The memory provider
 decides what context is relevant.
@@ -1730,16 +1747,28 @@ Inputs:
 
 Outputs (mandatory receipt):
   em_event_ids                (appended event IDs or count)
-  stm_updates                 (what changed in short-term memory)
-  sm_rm_proposals             (proposed commits + reasons)
-  deferred_items              (queued for review)
 ```
 
-**Routing rules:**
-- EM: always append (never gate)
-- STM: always update (TTL-based expiry)
-- SM/RM: propose → gate → commit or defer
-- PM: never auto-commit; always defer to eval/review
+### `memory.remember` — During Agent Execution
+
+Agents write knowledge through denden's `remember` action. StrawPot routes
+the denden callback to `memory_provider.remember()` via
+`Session._handle_remember`, similar to how `_handle_delegate` routes
+delegation requests.
+
+```
+Inputs:
+  session_id
+  agent_id
+  role
+  content                     (the knowledge to persist)
+  keywords                    (optional — empty means always-relevant SM)
+  scope                       ("global" | "project" | "role")
+
+Outputs:
+  status                      ("accepted" | "duplicate")
+  entry_id                    (the written entry ID)
+```
 
 ### Memory Provider Protocol
 
@@ -1756,6 +1785,8 @@ class MemoryProvider(Protocol):
     def dump(self, *, session_id, agent_id, role, behavior_ref,
              task, status, output, tool_trace="",
              parent_agent_id=None, artifacts=None) -> DumpReceipt: ...
+    def remember(self, *, session_id, agent_id, role,
+                 content, keywords=None, scope="project") -> RememberResult: ...
 ```
 
 ### Memory Manifest (`MEMORY.md`)
@@ -1767,72 +1798,47 @@ config (wrapper, tools, params, env) lives under `metadata.strawpot`:
 
 ```yaml
 ---
-name: strawpot-memory-local
-description: File-based local memory provider
+name: dial
+description: Default file-based memory provider for StrawPot
 metadata:
   version: "0.1.0"
   strawpot:
     memory_module: provider.py
-    # tools:
-    #     some-tool:
-    #       description: ...
-    #       install:
-    #         macos: brew install some-tool
-    #         linux: apt install some-tool
     params:
       storage_dir:
         type: string
-        default: .strawpot/memory
-      em_max_events:
+        default: .strawpot/memory/dial-data
+      em_tail_count:
         type: int
-        default: 10000
-    env:
-      # e.g. for a vector-db-backed provider:
-      # PINECONE_API_KEY:
-      #   required: true
-      #   description: Pinecone API key
+        default: 20
+      rm_min_score:
+        type: float
+        default: 0.3
 ---
 
-# Local Memory Provider
+# Dial
 
-File-based memory provider for local development. Stores event memory,
-short-term memory, and semantic memory as local files.
+Default file-based memory provider. Two memory layers — Event Memory
+and a unified Knowledge store — using local JSON/JSONL files.
 ```
 
 Installed to `~/.strawpot/memory/<name>/`, resolved the same way as agents:
 project-local → global.
 
-### EM Event Schema
-
-Every event in the append-only event log:
-
-```json
-{
-  "session_id": "run_abc123",
-  "agent_id": "agent_xyz",
-  "parent_agent_id": null,
-  "role": "implementer",
-  "event_type": "AGENT_RESULT",
-  "payload": {},
-  "timestamp": "2026-02-27T10:05:00Z"
-}
-```
-
-Event types: `AGENT_STARTED`, `MEMORY_GET_USED`, `TOOL_CALL`, `TOOL_RESULT`,
-`AGENT_RESULT`, `MEMORY_DUMP_RECEIPT`, `AGENT_SPAWN_REQUESTED`, `AGENT_SPAWNED`.
-
 ### Config
 
 ```toml
 # strawpot.toml (project root)
-memory = "strawpot-memory-local"   # provider name (default: none/disabled)
+memory = "dial"   # provider name (default: none/disabled)
 
 [memory_config]
-storage_dir = ".strawpot/memory"
+storage_dir = ".strawpot/memory/dial-data"
+em_tail_count = 20
 ```
 
 Memory is optional. When no provider is configured, strawpot skips the
-`memory.get`/`memory.dump` calls and the delegation flow works as before.
+`memory.get`/`memory.dump`/`memory.remember` calls and the delegation
+flow works as before.
 
 ### Installation
 

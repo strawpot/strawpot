@@ -48,9 +48,14 @@ class DumpReceipt:
     """Mandatory receipt returned by memory.dump."""
 
     em_event_ids: list[str] = field(default_factory=list)
-    stm_updates: list[str] = field(default_factory=list)
-    sm_rm_proposals: list[str] = field(default_factory=list)
-    deferred_items: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RememberResult:
+    """Result returned by memory.remember."""
+
+    status: str = ""  # "accepted" | "duplicate" | "queued"
+    entry_id: str = ""
 
 
 @runtime_checkable
@@ -110,5 +115,28 @@ class MemoryProvider(Protocol):
             tool_trace: Tool call trace text.
             parent_agent_id: Parent agent instance id, if delegated.
             artifacts: Additional artifacts (commit hash, patch refs, etc.).
+        """
+        ...
+
+    def remember(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        content: str,
+        keywords: list[str] | None = None,
+        scope: str = "project",
+    ) -> RememberResult:
+        """Persist knowledge during agent execution.
+
+        Args:
+            session_id: Session worktree identifier.
+            agent_id: Unique agent instance identifier.
+            role: Role slug for the calling agent.
+            content: The knowledge to persist.
+            keywords: Optional keywords for retrieval matching.
+                Empty or None means always-relevant (SM behavior).
+            scope: One of "global", "project", or "role".
         """
         ...
