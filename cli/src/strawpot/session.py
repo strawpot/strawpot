@@ -645,8 +645,7 @@ class Session:
             self._server = DenDenServer(addr=f"{host}:0")
             self._server.on_delegate(self._handle_delegate)
             self._server.on_ask_user(self._handle_ask_user)
-            if hasattr(self._server, "on_remember"):
-                self._server.on_remember(self._handle_remember)
+            self._server.on_remember(self._handle_remember)
             self._server.start()
 
         self._denden_addr = self._server.bound_addr
