@@ -71,11 +71,6 @@ def _check_policy(
     config: StrawPotConfig,
 ) -> None:
     """Raise PolicyDenied if the request violates policy."""
-    if (
-        config.allowed_roles is not None
-        and request.role_slug not in config.allowed_roles
-    ):
-        raise PolicyDenied("DENY_ROLE_NOT_ALLOWED")
     if request.depth + 1 > config.max_depth:
         raise PolicyDenied("DENY_DEPTH_LIMIT")
 
@@ -579,17 +574,18 @@ def create_agent_workspace(session_dir: str, agent_id: str) -> str:
 
 
 def _build_delegatable_roles(
-    config: StrawPotConfig,
+    candidate_slugs: list[str],
     current_role: str,
     resolve_role_dirs: Callable[[str], str | None],
     requester_role: str | None = None,
 ) -> list[tuple[str, str]]:
     """Build list of (slug, description) for roles the sub-agent can delegate to.
 
+    Candidate slugs come from the role's own declared dependencies.
     Excludes the current role and the requester role. Only includes roles
-    in allowed_roles (if set) that have resolvable directories.
+    with resolvable directories.
     """
-    if config.allowed_roles is None:
+    if not candidate_slugs:
         return []
 
     skip = {current_role}
@@ -597,7 +593,7 @@ def _build_delegatable_roles(
         skip.add(requester_role)
 
     roles: list[tuple[str, str]] = []
-    for slug in config.allowed_roles:
+    for slug in candidate_slugs:
         if slug in skip:
             continue
         role_dir = resolve_role_dirs(slug)
@@ -669,7 +665,7 @@ def handle_delegate(
     """Handle a delegation request end-to-end.
 
     Steps:
-      1. Policy check (allowed_roles, max_depth)
+      1. Policy check (max_depth)
       2. Resolve role + skills via resolver
       3. Build delegatable roles list for sub-agent
       4. Build system prompt
@@ -764,8 +760,12 @@ def handle_delegate(
             )
 
     # 3. Build delegatable roles for the sub-agent
+    #    Candidates come from the role's own declared role dependencies.
+    _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
+    if wildcard:
+        role_dep_slugs = [slug for slug, _ in _discover_all_roles()]
     delegatable = _build_delegatable_roles(
-        config, request.role_slug, resolve_role_dirs,
+        role_dep_slugs, request.role_slug, resolve_role_dirs,
         requester_role=request.parent_role,
     )
 

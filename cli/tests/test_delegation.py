@@ -182,24 +182,11 @@ def _mock_runtime(summary="Done", output="ok", exit_code=0):
 
 
 class TestCheckPolicy:
-    def test_allowed_roles_none_allows_all(self):
-        """allowed_roles=None means all roles are allowed."""
-        config = _make_config(allowed_roles=None)
+    def test_any_role_allowed(self):
+        """Any installed role passes policy check."""
+        config = _make_config()
         request = _make_request(role_slug="anything")
         _check_policy(request, config)  # should not raise
-
-    def test_role_in_allowed_list(self):
-        """Role in allowed_roles passes."""
-        config = _make_config(allowed_roles=["implementer", "reviewer"])
-        request = _make_request(role_slug="implementer")
-        _check_policy(request, config)  # should not raise
-
-    def test_role_not_in_allowed_list(self):
-        """Role not in allowed_roles raises DENY_ROLE_NOT_ALLOWED."""
-        config = _make_config(allowed_roles=["implementer"])
-        request = _make_request(role_slug="admin")
-        with pytest.raises(PolicyDenied, match="DENY_ROLE_NOT_ALLOWED"):
-            _check_policy(request, config)
 
     def test_depth_under_limit(self):
         """depth + 1 <= max_depth passes."""
@@ -703,10 +690,9 @@ class TestCreateAgentWorkspace:
 
 
 class TestBuildDelegatableRoles:
-    def test_none_allowed_roles_returns_empty(self, tmp_path):
-        """When allowed_roles is None, no delegatable roles are listed."""
-        config = _make_config(allowed_roles=None)
-        result = _build_delegatable_roles(config, "implementer", lambda s: None)
+    def test_empty_candidates_returns_empty(self):
+        """When no candidate slugs are given, no delegatable roles are listed."""
+        result = _build_delegatable_roles([], "implementer", lambda s: None)
         assert result == []
 
     def test_excludes_current_role(self, tmp_path):
@@ -715,9 +701,8 @@ class TestBuildDelegatableRoles:
         _write_role(base, "implementer", description="Writes code")
         impl_dir = os.path.join(base, "roles", "implementer")
 
-        config = _make_config(allowed_roles=["implementer", "reviewer"])
         result = _build_delegatable_roles(
-            config,
+            ["implementer", "reviewer"],
             "implementer",
             lambda s: impl_dir if s == "implementer" else None,
         )
@@ -728,9 +713,8 @@ class TestBuildDelegatableRoles:
         base = str(tmp_path)
         rev_dir = _write_role(base, "reviewer", description="Reviews code")
 
-        config = _make_config(allowed_roles=["implementer", "reviewer"])
         result = _build_delegatable_roles(
-            config,
+            ["implementer", "reviewer"],
             "implementer",
             lambda s: rev_dir if s == "reviewer" else None,
         )
@@ -742,10 +726,6 @@ class TestBuildDelegatableRoles:
         impl_dir = _write_role(base, "implementer", description="Writes code")
         orch_dir = _write_role(base, "orchestrator", description="Orchestrates")
 
-        config = _make_config(
-            allowed_roles=["implementer", "orchestrator", "reviewer"]
-        )
-
         def resolve(s):
             if s == "implementer":
                 return impl_dir
@@ -754,7 +734,8 @@ class TestBuildDelegatableRoles:
             return None
 
         result = _build_delegatable_roles(
-            config, "reviewer", resolve, requester_role="orchestrator"
+            ["implementer", "orchestrator", "reviewer"],
+            "reviewer", resolve, requester_role="orchestrator",
         )
         slugs = [slug for slug, _ in result]
         assert "orchestrator" not in slugs
@@ -762,9 +743,8 @@ class TestBuildDelegatableRoles:
 
     def test_skips_unresolvable_roles(self):
         """Roles that can't be resolved are skipped."""
-        config = _make_config(allowed_roles=["implementer", "ghost"])
         result = _build_delegatable_roles(
-            config, "orchestrator", lambda s: None
+            ["implementer", "ghost"], "orchestrator", lambda s: None
         )
         assert result == []
 
@@ -809,7 +789,10 @@ class TestPromptBuilding:
     def test_delegatable_roles_in_prompt(self, tmp_path):
         """When sub-agent has delegatable roles, prompt includes delegation section."""
         base = str(tmp_path / "registry")
-        role_path = _write_role(base, "orchestrator", "You orchestrate.")
+        role_path = _write_role(
+            base, "orchestrator", "You orchestrate.",
+            role_deps=["reviewer"],
+        )
         rev_dir = _write_role(base, "reviewer", description="Reviews code")
 
         resolved = {
@@ -822,7 +805,7 @@ class TestPromptBuilding:
         }
 
         runtime = _mock_runtime()
-        config = _make_config(allowed_roles=["orchestrator", "reviewer"])
+        config = _make_config()
 
         handle_delegate(
             request=_make_request(role_slug="orchestrator"),
@@ -1446,23 +1429,6 @@ class TestRetryPolicy:
 
 
 class TestHandleDelegatePolicyDenial:
-    def test_denied_role_does_not_spawn(self, tmp_path):
-        """PolicyDenied is raised before spawn when role is not allowed."""
-        runtime = _mock_runtime()
-
-        with pytest.raises(PolicyDenied, match="DENY_ROLE_NOT_ALLOWED"):
-            handle_delegate(
-                request=_make_request(role_slug="admin"),
-                config=_make_config(allowed_roles=["implementer"]),
-                runtime=runtime,
-                working_dir=str(tmp_path),
-                session_dir=str(tmp_path / "session"),
-                resolve_role=lambda slug, kind="role": {},
-                resolve_role_dirs=lambda s: None,
-            )
-
-        runtime.spawn.assert_not_called()
-
     def test_denied_depth_does_not_spawn(self, tmp_path):
         """PolicyDenied is raised before spawn when depth exceeds limit."""
         runtime = _mock_runtime()
@@ -2271,7 +2237,7 @@ class TestHandleDelegateSkillEnv:
             }
 
         request = _make_request(role_slug="my-role")
-        config = StrawPotConfig(allowed_roles=["my-role"])
+        config = StrawPotConfig()
 
         runtime = MagicMock()
         runtime.name = "mock"
@@ -2561,7 +2527,6 @@ class TestHandleDelegateSkillEnvSaved:
 
         request = _make_request(role_slug="my-role")
         config = _make_config(
-            allowed_roles=["my-role"],
             skills={"needs-token": {"REQUIRED_TOKEN": "saved_value"}},
         )
         runtime = _mock_runtime()

@@ -150,7 +150,6 @@ def make_config():
             isolation="none",
             denden_addr="127.0.0.1:0",
             orchestrator_role="orchestrator",
-            allowed_roles=["orchestrator", "implementer"],
             max_depth=3,
             memory="",
         )

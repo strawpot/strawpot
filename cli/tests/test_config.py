@@ -12,7 +12,6 @@ def test_defaults():
     assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
     assert config.orchestrator_role == "orchestrator"
-    assert config.allowed_roles is None
     assert config.max_depth == 3
     assert config.permission_mode == "default"
     assert config.agent_timeout is None
@@ -91,7 +90,6 @@ def test_load_config_full(tmp_path, monkeypatch):
         'permission_mode = "plan"\n'
         "\n"
         "[policy]\n"
-        'allowed_roles = ["implementer", "reviewer"]\n'
         "max_depth = 5\n"
         "agent_timeout = 300\n"
         "max_delegate_retries = 2\n"
@@ -113,7 +111,6 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.isolation == "docker"
     assert config.denden_addr == "0.0.0.0:8080"
     assert config.orchestrator_role == "team-lead"
-    assert config.allowed_roles == ["implementer", "reviewer"]
     assert config.max_depth == 5
     assert config.permission_mode == "plan"
     assert config.agent_timeout == 300

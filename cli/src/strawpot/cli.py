@@ -307,7 +307,6 @@ def show_config():
     click.echo(f"denden_addr:          {config.denden_addr}")
     click.echo(f"orchestrator_role:    {config.orchestrator_role}")
     click.echo(f"permission_mode:      {config.permission_mode}")
-    click.echo(f"allowed_roles:        {config.allowed_roles}")
     click.echo(f"max_depth:            {config.max_depth}")
     click.echo(f"agent_timeout:        {config.agent_timeout}")
     click.echo(f"merge_strategy:       {config.merge_strategy}")

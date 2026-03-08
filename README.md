@@ -14,14 +14,32 @@ Define your AI team in Markdown. No Python. No orchestration code.
 # StrawPot: One ROLE.md file. Done.
 ```
 
+```yaml
+# team-lead/ROLE.md
+---
+name: team-lead
+description: "Orchestrates implementation and review"
+metadata:
+  strawpot:
+    dependencies:
+      roles: [implementer, reviewer]
+    default_agent: claude_code
+---
+
+# Team Lead
+
+Break the task into subtasks.
+Delegate implementation and code review to sub-roles.
+```
+
 | | CrewAI | OpenClaw | StrawPot |
 |---|---|---|---|
 | **Format** | YAML + Python | JSON5 + Markdown | Markdown only |
 | **Skills / Tools** | Python (tools) | Markdown (skills) | Markdown (skills) |
 | **Roles** | Agent attribute | — | Standalone Markdown |
+| **Memory** | Python config | Markdown/YAML (local) | Markdown (installable) |
 | **Skill dependency resolution** | — | — | Automatic |
 | **Multi-agent delegation** | Python config | Runtime (subagent spawn) | Declarative (role deps) |
-| **Persistent memory** | — | — | Built-in (pluggable providers) |
 
 ## Quick Start
 
@@ -36,7 +54,7 @@ strawpot start
 - **Zero boilerplate** — A role is a Markdown file with YAML frontmatter. That's it.
 - **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
 - **Declarative delegation** — A team-lead role depends on other roles. StrawPot handles the orchestration.
-- **Persistent memory** — Agents learn from past sessions. Context is retrieved before each run and results are recorded after.
+- **Installable memory** — Memory banks are packages. Install shared context and patterns from StrawHub.
 - **Agent-agnostic** — Same role works with Claude Code, Codex, Gemini, or your own runtime.
 
 ## How It Works
@@ -68,6 +86,7 @@ Skills are abilities. Roles are jobs. Teams are roles collaborating.
 - **Skills** — Atomic capabilities such as writing code, searching documents, or running tests.
 - **Roles** — Job definitions that automatically load the skills needed for the work.
 - **Teams** — Roles collaborating to complete tasks.
+- **Memories** — Persistent knowledge banks shared across sessions.
 
 ```
 Role: implementer
@@ -120,7 +139,6 @@ addr = "127.0.0.1:9700"
 role = "team-lead"
 
 [policy]
-allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
 
 [memory]
