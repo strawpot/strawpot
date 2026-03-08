@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import AgentTreeFlow from "../components/AgentTreeFlow";
 import { statusColor, formatTime, formatDuration } from "../components/SessionTable";
 import { useApi } from "../hooks/useApi";
-import type { AgentInfo, SessionDetail as SessionDetailType, TraceEvent } from "../api/types";
+import type { SessionDetail as SessionDetailType, TraceEvent } from "../api/types";
 
 export default function SessionDetail() {
   const { projectId, runId } = useParams();
@@ -88,12 +89,10 @@ export default function SessionDetail() {
         </section>
       )}
 
-      {Object.keys(session.agents).length > 0 && (
-        <section className="dashboard-section">
-          <h2>Agents ({Object.keys(session.agents).length})</h2>
-          <AgentTree agents={session.agents} />
-        </section>
-      )}
+      <section className="dashboard-section">
+        <h2>Agent Tree</h2>
+        <AgentTreeFlow runId={session.run_id} />
+      </section>
 
       {session.events.length > 0 && (
         <section className="dashboard-section">
@@ -116,32 +115,6 @@ function DetailRow({
     <div className="project-info-row">
       <span className="project-info-label">{label}</span>
       <span className="project-info-value">{children}</span>
-    </div>
-  );
-}
-
-function AgentTree({ agents }: { agents: Record<string, AgentInfo> }) {
-  // Find root agents (no parent), then render children recursively
-  const entries = Object.entries(agents);
-  const roots = entries.filter(([, a]) => !a.parent);
-
-  const renderAgent = (id: string, agent: AgentInfo, depth: number) => {
-    const children = entries.filter(([, a]) => a.parent === id);
-    return (
-      <div key={id} className="agent-node" style={{ marginLeft: depth * 20 }}>
-        <div className="agent-header">
-          <span className="agent-role">{agent.role}</span>
-          <span className="agent-meta">{agent.runtime}</span>
-          {agent.pid && <span className="agent-meta">PID {agent.pid}</span>}
-        </div>
-        {children.map(([cId, cAgent]) => renderAgent(cId, cAgent, depth + 1))}
-      </div>
-    );
-  };
-
-  return (
-    <div className="agent-tree">
-      {roots.map(([id, agent]) => renderAgent(id, agent, 0))}
     </div>
   );
 }

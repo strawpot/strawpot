@@ -49,3 +49,32 @@ export interface SessionDetail extends Session {
   agents: Record<string, AgentInfo>;
   events: TraceEvent[];
 }
+
+export interface TreeNode {
+  agent_id: string;
+  role: string;
+  runtime: string;
+  status: "running" | "completed" | "failed";
+  exit_code: number | null;
+  started_at: string | null;
+  duration_ms: number | null;
+  parent: string | null;
+}
+
+export interface PendingDelegation {
+  role: string;
+  requested_by: string | null;
+  span_id: string;
+}
+
+export interface DeniedDelegation {
+  role: string;
+  reason: string;
+  span_id: string;
+}
+
+export interface TreeData {
+  nodes: TreeNode[];
+  pending_delegations: PendingDelegation[];
+  denied_delegations: DeniedDelegation[];
+}

@@ -488,7 +488,7 @@
   word-break: break-word;
 }
 
-/* Agent tree */
+/* Agent tree (fallback / loading) */
 
 .agent-tree {
   background: #fff;
@@ -497,23 +497,108 @@
   padding: 0.75rem 1rem;
 }
 
-.agent-node {
-  padding: 0.25rem 0;
-}
-
-.agent-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.agent-role {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
 .agent-meta {
   font-size: 0.78rem;
   color: #888;
   font-family: monospace;
+}
+
+/* React Flow agent tree */
+
+.react-flow-wrapper {
+  height: 400px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+.agent-flow-node {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-left: 3px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  min-width: 150px;
+  font-size: 0.85rem;
+}
+
+.agent-flow-node.running {
+  border-left-color: #2e7d32;
+}
+
+.agent-flow-node.success {
+  border-left-color: #2e7d32;
+}
+
+.agent-flow-node.error {
+  border-left-color: #c62828;
+}
+
+.agent-flow-node.warning {
+  border-left-color: #e65100;
+}
+
+.agent-flow-node.pending {
+  border: 1px dashed #bbb;
+  border-left: 3px dashed #bbb;
+  color: #999;
+  background: #fafafa;
+}
+
+.agent-flow-role {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.15rem;
+}
+
+.agent-flow-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #888;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.status-dot.running {
+  background: #2e7d32;
+}
+
+.status-dot.success {
+  background: #2e7d32;
+}
+
+.status-dot.error {
+  background: #c62828;
+}
+
+.status-dot.warning {
+  background: #e65100;
+}
+
+/* Denied delegations list */
+
+.denied-list {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: #888;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.denied-item {
+  background: #fbe9e7;
+  color: #c62828;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
 }
