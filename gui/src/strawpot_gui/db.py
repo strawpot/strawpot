@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS trigger_instances (
 
 def _connect(db_path: str) -> sqlite3.Connection:
     """Open a connection with recommended settings."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
