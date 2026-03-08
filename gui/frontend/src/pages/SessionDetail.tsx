@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import AgentTreeFlow from "../components/AgentTreeFlow";
@@ -12,6 +12,14 @@ export default function SessionDetail() {
     `/projects/${projectId}/sessions/${runId}`,
   );
   const [confirming, setConfirming] = useState(false);
+
+  // Auto-poll while session is active
+  const isActive = session?.status === "starting" || session?.status === "running";
+  useEffect(() => {
+    if (!isActive) return;
+    const id = setInterval(refetch, 2000);
+    return () => clearInterval(id);
+  }, [isActive, refetch]);
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="error">Error: {error}</p>;
