@@ -635,6 +635,7 @@ def _emit_delegate_end(
     exit_code: int,
     summary: str,
     start_time: float,
+    output: str = "",
 ) -> None:
     """Emit delegate_end if tracer is active."""
     if tracer is not None and span_id is not None:
@@ -644,6 +645,7 @@ def _emit_delegate_end(
             exit_code=exit_code,
             summary=summary,
             duration_ms=duration_ms,
+            output=output,
         )
 
 
@@ -900,7 +902,7 @@ def handle_delegate(
             _emit_delegate_end(
                 tracer, delegate_span_id, 1,
                 f"Agent timed out after {config.agent_timeout}s",
-                delegate_start_time,
+                delegate_start_time, output=result.output,
             )
             return DelegateResult(
                 summary=f"Agent timed out after {config.agent_timeout}s",
@@ -912,7 +914,7 @@ def handle_delegate(
         if result.exit_code != 0:
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time,
+                result.summary, delegate_start_time, output=result.output,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -927,7 +929,7 @@ def handle_delegate(
         if validation_error is None:
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time,
+                result.summary, delegate_start_time, output=result.output,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -946,7 +948,7 @@ def handle_delegate(
             )
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time,
+                result.summary, delegate_start_time, output=result.output,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -972,7 +974,7 @@ def handle_delegate(
     assert result is not None
     _emit_delegate_end(
         tracer, delegate_span_id, result.exit_code,
-        result.summary, delegate_start_time,
+        result.summary, delegate_start_time, output=result.output,
     )
     return DelegateResult(
         summary=result.summary,
