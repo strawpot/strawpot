@@ -27,3 +27,25 @@ export interface SessionList {
   page: number;
   per_page: number;
 }
+
+export interface AgentInfo {
+  role: string;
+  runtime: string;
+  parent: string | null;
+  started_at: string;
+  pid: number | null;
+}
+
+export interface TraceEvent {
+  ts: string;
+  event: string;
+  trace_id: string;
+  span_id: string;
+  parent_span: string | null;
+  data: Record<string, unknown>;
+}
+
+export interface SessionDetail extends Session {
+  agents: Record<string, AgentInfo>;
+  events: TraceEvent[];
+}

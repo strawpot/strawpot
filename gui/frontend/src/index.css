@@ -442,3 +442,53 @@
   font-size: 0.9rem;
   word-break: break-all;
 }
+
+/* Detail grid (reuses project-info-row styles) */
+
+.detail-grid {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-block {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Agent tree */
+
+.agent-tree {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.agent-node {
+  padding: 0.25rem 0;
+}
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agent-role {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.agent-meta {
+  font-size: 0.78rem;
+  color: #888;
+  font-family: monospace;
+}
