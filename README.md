@@ -4,6 +4,10 @@ One engineer. One laptop. One AI company.
 
 One engineer. A full AI workforce — CEO, product manager, engineer, tester, reviewer — collaborating to ship your product.
 
+**StrawPot**: https://strawpot.com
+
+**StrawHub** (Registry): https://strawhub.dev
+
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
   <a href="https://discord.gg/buEbvEMC"><img src="https://img.shields.io/discord/1476285531464929505?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
