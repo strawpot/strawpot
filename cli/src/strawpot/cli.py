@@ -40,8 +40,34 @@ def _ensure_agent_installed(name: str, working_dir: str) -> None:
         resolve_agent(name, working_dir)
     except FileNotFoundError:
         pass  # not installed — continue to prompt
+    except ValueError:
+        pass  # installed but binary missing — need to run install script
     else:
         return  # already available
+
+    # Check if agent files exist but binary is missing (needs install script)
+    agent_dirs = [
+        Path(working_dir) / ".strawpot" / "agents" / name,
+        get_strawpot_home() / "agents" / name,
+    ]
+    for agent_dir in agent_dirs:
+        if (agent_dir / "AGENT.md").is_file():
+            install_script = agent_dir / "install.sh"
+            if install_script.is_file():
+                click.echo(f"Running install script for '{name}'...")
+                result = subprocess.run(
+                    ["sh", str(install_script)],
+                    cwd=str(agent_dir),
+                    env={**os.environ, "INSTALL_DIR": str(agent_dir)},
+                    stdin=sys.stdin,
+                    stdout=sys.stdout,
+                    stderr=sys.stderr,
+                )
+                if result.returncode != 0:
+                    click.echo(f"Install script failed for '{name}'.", err=True)
+                return
+            click.echo(f"Agent '{name}' binary is missing and no install script found.", err=True)
+            return
 
     if not click.confirm(
         f"Agent '{name}' is not installed. Install from StrawHub?", default=True
@@ -62,6 +88,23 @@ def _ensure_agent_installed(name: str, working_dir: str) -> None:
     )
     if result.returncode != 0:
         click.echo(f"Failed to install agent '{name}'.", err=True)
+        return
+
+    # Run install.sh if present (downloads compiled binary into agent dir)
+    global_agent_dir = get_strawpot_home() / "agents" / name
+    install_script = global_agent_dir / "install.sh"
+    if install_script.is_file():
+        click.echo(f"Running install script for '{name}'...")
+        result = subprocess.run(
+            ["sh", str(install_script)],
+            cwd=str(global_agent_dir),
+            env={**os.environ, "INSTALL_DIR": str(global_agent_dir)},
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        if result.returncode != 0:
+            click.echo(f"Install script failed for '{name}'.", err=True)
 
 
 def _ensure_skill_installed(name: str, working_dir: str) -> None:
