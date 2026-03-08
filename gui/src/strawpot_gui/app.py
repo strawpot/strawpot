@@ -5,7 +5,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from strawpot.config import get_strawpot_home
@@ -56,9 +57,15 @@ def create_app(db_path: str | None = None) -> FastAPI:
     dev_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
     frontend_dir = static_dir if static_dir.is_dir() else dev_dir
     if frontend_dir.is_dir():
-        app.mount(
-            "/", StaticFiles(directory=str(frontend_dir), html=True),
-            name="frontend",
-        )
+        index_html = frontend_dir / "index.html"
+
+        # SPA catch-all: serve index.html for non-API, non-file routes
+        @app.get("/{full_path:path}")
+        async def spa_fallback(request: Request, full_path: str):
+            # Let static files (js, css, assets) be served directly
+            file_path = frontend_dir / full_path
+            if full_path and file_path.is_file():
+                return FileResponse(str(file_path))
+            return FileResponse(str(index_html))
 
     return app

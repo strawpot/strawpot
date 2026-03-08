@@ -298,11 +298,12 @@ class TestAgentEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.agent_spawn(
             span_id="s1", agent_id="agent_abc",
-            runtime="claude_code", pid=12345,
+            role="ai-ceo", runtime="claude_code", pid=12345,
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "agent_spawn"
         assert events[0]["data"]["agent_id"] == "agent_abc"
+        assert events[0]["data"]["role"] == "ai-ceo"
         assert events[0]["data"]["pid"] == 12345
 
     def test_agent_end_stores_output_artifact(self, tmp_path):

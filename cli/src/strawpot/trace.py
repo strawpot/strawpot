@@ -214,6 +214,7 @@ class Tracer:
         *,
         span_id: str,
         agent_id: str,
+        role: str,
         runtime: str,
         pid: int | None,
     ) -> None:
@@ -222,6 +223,7 @@ class Tracer:
             "agent_spawn",
             span_id,
             agent_id=agent_id,
+            role=role,
             runtime=runtime,
             pid=pid,
         )

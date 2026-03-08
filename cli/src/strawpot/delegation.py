@@ -851,6 +851,7 @@ def handle_delegate(
             tracer.agent_spawn(
                 span_id=delegate_span_id,
                 agent_id=agent_id,
+                role=request.role_slug,
                 runtime=runtime.name,
                 pid=handle.pid,
             )
