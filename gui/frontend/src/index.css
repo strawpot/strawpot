@@ -413,3 +413,32 @@
 .dir-entry:hover {
   background: #e3f2fd;
 }
+
+/* Project info */
+
+.project-info {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.project-info-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.project-info-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #666;
+  min-width: 80px;
+}
+
+.project-info-value {
+  font-size: 0.9rem;
+  word-break: break-all;
+}
