@@ -273,6 +273,7 @@ class Session:
         task: str = "",
         run_id: str | None = None,
         ask_user_handler: Callable[[AskUserRequest], AskUserResponse] | None = None,
+        headless: bool = False,
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -283,6 +284,7 @@ class Session:
         self._resolve_role_dirs = resolve_role_dirs
         self._ask_user_handler = ask_user_handler or _default_ask_user_handler
         self._provided_run_id = run_id
+        self._headless = headless
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
@@ -595,11 +597,13 @@ class Session:
 
         try:
             if strategy == "local":
+                prompt_fn = (lambda *a, **kw: "d") if self._headless else None
                 result = merge_local(
                     base_branch=base_branch,
                     session_branch=session_branch,
                     worktree_dir=self._env.path,
                     base_dir=self._working_dir,
+                    prompt=prompt_fn,
                 )
                 logger.info("Local merge: %s", result.message)
                 return True  # always delete branch for local strategy
