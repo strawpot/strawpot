@@ -46,7 +46,6 @@ addr = "127.0.0.1:9700"
 role = "team-lead"
 
 [policy]
-allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
 ```
 

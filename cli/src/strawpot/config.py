@@ -26,7 +26,6 @@ class StrawPotConfig:
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "orchestrator"
-    allowed_roles: list[str] | None = None
     max_depth: int = 3
     permission_mode: str = "default"
     agent_timeout: int | None = None
@@ -68,8 +67,6 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.permission_mode = orch["permission_mode"]
 
     policy = data.get("policy", {})
-    if "allowed_roles" in policy:
-        config.allowed_roles = policy["allowed_roles"]
     if "max_depth" in policy:
         config.max_depth = policy["max_depth"]
     if "agent_timeout" in policy:

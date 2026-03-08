@@ -180,7 +180,6 @@ Project: `<project>/strawpot.toml` (overrides global)
 | `isolation` | str | `"none"` |
 | `denden_addr` | str | `"127.0.0.1:9700"` |
 | `orchestrator_role` | str | `"orchestrator"` |
-| `allowed_roles` | list[str] \| None | `None` (all allowed) |
 | `max_depth` | int | `3` |
 | `permission_mode` | str | `"default"` |
 | `agent_timeout` | int \| None | `None` |

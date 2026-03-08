@@ -28,19 +28,6 @@ class TestDelegationFlow:
         assert (git_project / "delegated.txt").exists()
         assert "Written by stub agent" in (git_project / "delegated.txt").read_text()
 
-    def test_delegation_policy_denied(self, make_session, git_project):
-        """Delegation to a role not in allowed_roles returns DENIED."""
-        session = make_session(
-            str(git_project),
-            task="delegate implementer write denied.txt",
-            agent_script=STUB_AGENT_DELEGATE,
-            config_overrides={"allowed_roles": ["orchestrator"]},
-        )
-        session.start(str(git_project))
-
-        # Sub-agent should NOT have run — file must not exist
-        assert not (git_project / "denied.txt").exists()
-
     def test_delegation_depth_limit(self, make_session, git_project):
         """Delegation beyond max_depth returns DENIED."""
         session = make_session(

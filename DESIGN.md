@@ -395,7 +395,6 @@ class StrawPotConfig:
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "orchestrator"
-    allowed_roles: list[str] | None = None   # None = all
     max_depth: int = 3
     permission_mode: str = "default"   # orchestrator permission mode
     agent_timeout: int | None = None   # sub-agent timeout in seconds (None = no limit)
@@ -529,7 +528,6 @@ role = "team-lead"           # strawhub role slug (default: "orchestrator")
 permission_mode = "default"  # orchestrator permission mode (sub-agents always "auto")
 
 [policy]
-allowed_roles = ["implementer", "reviewer", "fixer"]
 max_depth = 3
 agent_timeout = 300          # sub-agent timeout in seconds (omit for no limit)
 
@@ -646,15 +644,14 @@ Denden server dispatches to `Session._handle_delegate`:
 ```
 1. Extract: role_slug, task_text, parent_agent_id, run_id from request
 2. Policy check:
-   - role_slug in allowed_roles?  → DENY_ROLE_NOT_ALLOWED (+ trace: delegate_denied)
    - depth > max_depth?           → DENY_DEPTH_LIMIT (+ trace: delegate_denied)
 3. Resolve:
    resolved = strawhub.resolver.resolve(role_slug, kind="role")
    → {slug, version, path, dependencies: [{slug, kind, path}, ...]}
-   Build delegatable roles list for the sub-agent:
+   Build delegatable roles list from the role's own declared role dependencies:
    → excludes the current role (can't self-delegate)
    → excludes the requester role (can't delegate back to parent)
-   → only includes roles in allowed_roles with resolvable directories
+   → only includes roles with resolvable directories
 4. Build prompt:
    system_prompt = context.build_prompt(resolved,
      delegatable_roles=..., requester_role=parent_role)

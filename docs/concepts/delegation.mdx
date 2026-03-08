@@ -26,17 +26,6 @@ StrawPot delegation handler:
 
 Every delegation request is checked against the session policy before proceeding:
 
-### Allowed Roles
-
-Restrict which roles agents can delegate to:
-
-```toml
-[policy]
-allowed_roles = ["implementer", "reviewer", "fixer"]
-```
-
-Set to an empty list to deny all delegations. Omit to allow all roles.
-
 ### Max Depth
 
 Limit how deep delegation chains can go:
