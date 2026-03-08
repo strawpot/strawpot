@@ -108,8 +108,8 @@ def resolve_memory(
     """Resolve a memory provider name to a fully loaded MemorySpec.
 
     Resolution order:
-        1. ``<project_dir>/.strawpot/memory/<name>/MEMORY.md`` (project-local)
-        2. ``~/.strawpot/memory/<name>/MEMORY.md`` (global install)
+        1. ``<project_dir>/.strawpot/memories/<name>/MEMORY.md`` (project-local)
+        2. ``~/.strawpot/memories/<name>/MEMORY.md`` (global install)
 
     Args:
         name: Memory provider name (e.g. ``"strawpot-memory-local"``).
@@ -123,8 +123,8 @@ def resolve_memory(
         FileNotFoundError: If no MEMORY.md found in any search path.
     """
     candidates = [
-        Path(project_dir) / ".strawpot" / "memory" / name,
-        get_strawpot_home() / "memory" / name,
+        Path(project_dir) / ".strawpot" / "memories" / name,
+        get_strawpot_home() / "memories" / name,
     ]
 
     memory_dir: Path | None = None
@@ -221,6 +221,20 @@ def _load_module(spec: MemorySpec):
             return importlib.import_module(spec.module_path)
 
     # File-based provider
+    script_path = Path(spec.script)
+    parent_dir = script_path.parent
+
+    # If the provider directory is a Python package (has __init__.py),
+    # add its parent to sys.path and import as a package module so
+    # relative imports work.
+    if (parent_dir / "__init__.py").is_file():
+        pkg_name = parent_dir.name
+        module_name = f"{pkg_name}.{script_path.stem}"
+        parent_of_pkg = str(parent_dir.parent)
+        if parent_of_pkg not in sys.path:
+            sys.path.insert(0, parent_of_pkg)
+        return importlib.import_module(module_name)
+
     mod_spec = importlib.util.spec_from_file_location(
         "_memory_provider", spec.script
     )

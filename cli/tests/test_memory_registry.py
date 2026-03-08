@@ -150,7 +150,7 @@ def test_merge_config_user_overrides():
 def test_resolve_project_local(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
     project_dir = tmp_path / "project"
-    memory_dir = project_dir / ".strawpot" / "memory"
+    memory_dir = project_dir / ".strawpot" / "memories"
     _write_memory(memory_dir, "test-mem", SAMPLE_MEMORY_MD)
 
     spec = resolve_memory("test-mem", str(project_dir))
@@ -165,7 +165,7 @@ def test_resolve_project_local(tmp_path, monkeypatch):
 def test_resolve_global(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
-    memory_dir = global_dir / "memory"
+    memory_dir = global_dir / "memories"
     _write_memory(memory_dir, "test-mem", SAMPLE_MEMORY_MD)
 
     project_dir = tmp_path / "empty_project"
@@ -184,7 +184,7 @@ def test_resolve_not_found(tmp_path, monkeypatch):
 def test_resolve_merges_config(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
     project_dir = tmp_path / "project"
-    memory_dir = project_dir / ".strawpot" / "memory"
+    memory_dir = project_dir / ".strawpot" / "memories"
     _write_memory(memory_dir, "test-mem", SAMPLE_MEMORY_MD)
 
     spec = resolve_memory(
@@ -351,7 +351,7 @@ PIP_MEMORY_MD = dedent("""\
 def test_resolve_pip_provider(tmp_path, monkeypatch):
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global"))
     project_dir = tmp_path / "project"
-    memory_dir = project_dir / ".strawpot" / "memory"
+    memory_dir = project_dir / ".strawpot" / "memories"
     _write_memory(memory_dir, "pip-memory", PIP_MEMORY_MD, script=False)
 
     spec = resolve_memory("pip-memory", str(project_dir))
