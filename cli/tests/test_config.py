@@ -8,7 +8,7 @@ from strawpot.config import StrawPotConfig, get_strawpot_home, load_config, save
 
 def test_defaults():
     config = StrawPotConfig()
-    assert config.runtime == "claude_code"
+    assert config.runtime == "strawpot-claude-code"
     assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
     assert config.orchestrator_role == "orchestrator"
@@ -39,7 +39,7 @@ def test_strawpot_home_env(monkeypatch):
 
 def test_load_config_no_files(tmp_path):
     config = load_config(tmp_path)
-    assert config.runtime == "claude_code"
+    assert config.runtime == "strawpot-claude-code"
     assert config.denden_addr == "127.0.0.1:9700"
 
 
@@ -53,7 +53,7 @@ def test_load_config_global(tmp_path, monkeypatch):
 
     config = load_config(tmp_path / "project")
     assert config.agents == {"claude_code": {"model": "claude-opus-4-6"}}
-    assert config.runtime == "claude_code"  # default preserved
+    assert config.runtime == "strawpot-claude-code"  # default preserved
 
 
 def test_load_config_project_overrides_global(tmp_path, monkeypatch):

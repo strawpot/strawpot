@@ -55,7 +55,7 @@ class TestProjectConfig:
         assert data["project"] == {}
         assert data["global"] == {}
         # Merged should have defaults
-        assert data["merged"]["runtime"] == "claude_code"
+        assert data["merged"]["runtime"] == "strawpot-claude-code"
 
     def test_put_and_get_project_config(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "home"))

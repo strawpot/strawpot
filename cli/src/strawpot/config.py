@@ -22,7 +22,7 @@ _DEFAULT_PR_COMMAND = "gh pr create --base {base_branch} --head {session_branch}
 
 @dataclass
 class StrawPotConfig:
-    runtime: str = "claude_code"
+    runtime: str = "strawpot-claude-code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "orchestrator"
