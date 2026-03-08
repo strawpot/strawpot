@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from strawpot.config import get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
-from strawpot_gui.routers import config, fs, health, projects, sessions
+from strawpot_gui.routers import config, fs, health, projects, sessions, sse
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -48,6 +48,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.include_router(projects.router)
     app.include_router(config.router)
     app.include_router(sessions.router)
+    app.include_router(sse.router)
     app.include_router(fs.router)
 
     # Serve built frontend — check installed package path then dev path
