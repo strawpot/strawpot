@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import AgentTreeFlow from "../components/AgentTreeFlow";
 import { statusColor, formatTime, formatDuration } from "../components/SessionTable";
 import { useApi } from "../hooks/useApi";
+import { useTraceSSE } from "../hooks/useTraceSSE";
 import type { SessionDetail as SessionDetailType, TraceEvent } from "../api/types";
 
 export default function SessionDetail() {
@@ -13,13 +14,20 @@ export default function SessionDetail() {
   );
   const [confirming, setConfirming] = useState(false);
 
-  // Auto-poll while session is active
+  // Auto-poll session metadata while active
   const isActive = session?.status === "starting" || session?.status === "running";
   useEffect(() => {
     if (!isActive) return;
-    const id = setInterval(refetch, 2000);
+    const id = setInterval(refetch, 5000);
     return () => clearInterval(id);
   }, [isActive, refetch]);
+
+  // SSE for live trace events on active sessions
+  const { events: sseEvents } = useTraceSSE(runId ?? "", isActive);
+  const displayEvents = useMemo<TraceEvent[]>(() => {
+    if (isActive && sseEvents.length > 0) return sseEvents;
+    return session?.events ?? [];
+  }, [isActive, sseEvents, session?.events]);
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="error">Error: {error}</p>;
@@ -102,10 +110,10 @@ export default function SessionDetail() {
         <AgentTreeFlow runId={session.run_id} />
       </section>
 
-      {session.events.length > 0 && (
+      {displayEvents.length > 0 && (
         <section className="dashboard-section">
-          <h2>Trace Events ({session.events.length})</h2>
-          <EventTimeline events={session.events} runId={session.run_id} />
+          <h2>Trace Events ({displayEvents.length})</h2>
+          <EventTimeline events={displayEvents} runId={session.run_id} />
         </section>
       )}
     </div>
