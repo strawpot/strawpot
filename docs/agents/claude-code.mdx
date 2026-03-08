@@ -17,9 +17,9 @@ Claude Code is the default agent runtime in StrawPot. It is installed from Straw
 
 ```toml
 # strawpot.toml (project root)
-runtime = "claude_code"
+runtime = "strawpot-claude-code"
 
-[agents.claude_code]
+[agents."strawpot-claude-code"]
 model = "claude-sonnet-4-6"
 ```
 
@@ -84,6 +84,6 @@ strawpot start
 
 # Start with a specific model
 strawpot start  # then set in config:
-# [agents.claude_code]
+# [agents."strawpot-claude-code"]
 # model = "claude-opus-4-6"
 ```

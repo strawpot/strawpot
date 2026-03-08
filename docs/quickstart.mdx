@@ -48,7 +48,7 @@ strawpot start --role team-lead
 strawpot start --isolation worktree
 
 # Use a specific agent runtime
-strawpot start --runtime claude_code
+strawpot start --runtime strawpot-claude-code
 
 # Non-interactive mode with a task
 strawpot start --task "Fix the failing tests in src/auth.py"
@@ -75,7 +75,7 @@ Create a project-level config file:
 
 ```toml
 # strawpot.toml (project root)
-runtime = "claude_code"
+runtime = "strawpot-claude-code"
 isolation = "worktree"
 
 [orchestrator]
@@ -84,7 +84,7 @@ role = "team-lead"
 [policy]
 max_depth = 3
 
-[agents.claude_code]
+[agents."strawpot-claude-code"]
 model = "claude-sonnet-4-6"
 
 [memory]

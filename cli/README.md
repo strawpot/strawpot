@@ -16,7 +16,7 @@ pip install strawpot
 ```bash
 # Start a session (foreground, interactive)
 strawpot start
-strawpot start --role team-lead --runtime claude_code
+strawpot start --role team-lead --runtime strawpot-claude-code
 
 # Install skills and roles from StrawHub
 strawpot install skill git-workflow
@@ -36,7 +36,7 @@ Global: `$STRAWPOT_HOME/strawpot.toml` (default `~/.strawpot/strawpot.toml`)
 Project: `strawpot.toml` (project root)
 
 ```toml
-runtime = "claude_code"       # claude_code | codex | openhands
+runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | openhands
 isolation = "worktree"        # worktree | docker
 
 [denden]

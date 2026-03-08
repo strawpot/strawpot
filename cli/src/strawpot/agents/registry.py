@@ -147,7 +147,7 @@ def resolve_agent(
         2. ``~/.strawpot/agents/<name>/AGENT.md`` (global install)
 
     Args:
-        name: Agent name (e.g. ``"claude_code"``).
+        name: Agent name (e.g. ``"strawpot-claude-code"``).
         project_dir: Project root directory.
         user_config: Per-agent config from ``[agents.<name>]`` in strawpot.toml.
 

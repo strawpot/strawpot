@@ -31,14 +31,14 @@ def _write_session(base_dir, run_id, *, archived=False, **overrides):
         "run_id": run_id,
         "working_dir": str(base_dir),
         "isolation": "none",
-        "runtime": "claude_code",
+        "runtime": "strawpot-claude-code",
         "denden_addr": "127.0.0.1:9700",
         "started_at": "2026-01-01T12:00:00+00:00",
         "pid": 999999,
         "agents": {
             "agent_abc": {
                 "role": "orchestrator",
-                "runtime": "claude_code",
+                "runtime": "strawpot-claude-code",
                 "parent": None,
                 "started_at": "2026-01-01T12:00:01+00:00",
                 "pid": 999998,
@@ -151,7 +151,7 @@ class TestSyncSessions:
         assert row is not None
         assert row["project_id"] == pid
         assert row["role"] == "orchestrator"
-        assert row["runtime"] == "claude_code"
+        assert row["runtime"] == "strawpot-claude-code"
         assert row["isolation"] == "none"
         assert row["status"] == "failed"  # no trace → failed
 
@@ -169,7 +169,7 @@ class TestSyncSessions:
                 "trace_id": "run_traced",
                 "span_id": "s1",
                 "data": {"run_id": "run_traced", "role": "orchestrator",
-                         "runtime": "claude_code", "isolation": "none"},
+                         "runtime": "strawpot-claude-code", "isolation": "none"},
             },
             {
                 "ts": "2026-01-01T12:05:00+00:00",

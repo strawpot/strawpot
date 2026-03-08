@@ -33,7 +33,7 @@ class TestTreeSSETerminalSession:
             {"ts": "T1", "event": "session_start", "trace_id": "run_tree1",
              "span_id": "s0", "data": {"run_id": "run_tree1",
                                         "role": "orchestrator",
-                                        "runtime": "claude_code",
+                                        "runtime": "strawpot-claude-code",
                                         "isolation": "none"}},
             {"ts": "T2", "event": "delegate_end", "trace_id": "run_tree1",
              "span_id": "s0", "parent_span": None,

@@ -15,7 +15,7 @@ strawpot start          ← CLI entry point, CWD = working dir
  ├─ DenDen gRPC server  ← listens on 127.0.0.1:9700
  │
  └─ Orchestrator agent   ← "hive mind" (Claude Code / Codex / OpenHands)
-      │                     runtime is user's choice, default: claude_code
+      │                     runtime is user's choice, default: strawpot-claude-code
       │  denden send '{"delegate": ...}'
       ▼
     StrawPot handles delegate:
@@ -391,7 +391,7 @@ Implementations:
 ```python
 @dataclass
 class StrawPotConfig:
-    runtime: str = "claude_code"
+    runtime: str = "strawpot-claude-code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "orchestrator"
@@ -517,7 +517,7 @@ The span tree enables call-tree reconstruction:
 
 ```toml
 # strawpot.toml (project root)
-runtime = "claude_code"
+runtime = "strawpot-claude-code"
 isolation = "none"               # none | worktree | docker
 
 [denden]
@@ -538,7 +538,7 @@ pr_command = "gh pr create --base {base_branch} --head {session_branch}"
 
 # Agent-specific extras — keyed by agent name.
 # Only for config beyond the standard protocol args.
-[agents.claude_code]
+[agents."strawpot-claude-code"]
 model = "claude-sonnet-4-6"
 
 [agents.my_custom_agent]
@@ -551,7 +551,7 @@ GITHUB_TOKEN = "ghp_..."
 
 # Role overrides — override ROLE.md frontmatter settings.
 [roles.implementer]
-default_agent = "claude_code"
+default_agent = "strawpot-claude-code"
 
 # Tracing — JSONL events + content-addressed artifacts per session.
 # Default: enabled. Set to false to disable.
@@ -944,7 +944,7 @@ Agents install to `$STRAWPOT_HOME/agents/<name>/` (default: `~/.strawpot/agents/
 
 ```
 ~/.strawpot/agents/
-  claude_code/
+  strawpot-claude-code/
     AGENT.md               # manifest: wrapper config, params, env, install prereqs
     strawpot_claude_code   # compiled wrapper binary (bin.<os> mode)
   codex/
@@ -961,8 +961,8 @@ precedence over global installs.
 When an agent is installed, its manifest `metadata.strawpot.tools` is validated:
 
 ```
-Agent install example (claude_code):
-  1. Agent package downloaded to ~/.strawpot/agents/claude_code/
+Agent install example (strawpot-claude-code):
+  1. Agent package downloaded to ~/.strawpot/agents/strawpot-claude-code/
   2. Read AGENT.md metadata.strawpot.tools
   3. Detect current OS (platform.system() → macos/linux)
   4. For each command: shutil.which(cmd)
@@ -992,7 +992,7 @@ $ strawpot install-tools
 Scanning installed packages for required tools...
 
 Missing tools:
-  ✗ claude (required by: claude_code)
+  ✗ claude (required by: strawpot-claude-code)
     Install: npm install -g @anthropic-ai/claude-code
 
 Install missing tools? [y/N]
@@ -1031,7 +1031,7 @@ the process, tracking PIDs, waiting for completion, and cleanup.
 
 ---
 
-## Default Agent: claude_code
+## Default Agent: strawpot-claude-code
 
 Installed from StrawHub (`strawhub install agent strawpot_claude_code --global`).
 Serves as the default runtime and as a reference implementation for wrapper authors.
@@ -1375,7 +1375,7 @@ the same session directory:
   "run_id": "run_abc123",
   "working_dir": "/home/user/project",
   "isolation": "worktree",
-  "runtime": "claude_code",
+  "runtime": "strawpot-claude-code",
   "denden_addr": "127.0.0.1:9700",
   "worktree": "~/.strawpot/worktrees/<project_hash>/run_abc123",
   "worktree_branch": "strawpot/run_abc123",
@@ -1385,14 +1385,14 @@ the same session directory:
   "agents": {
     "agent_xyz": {
       "role": "orchestrator",
-      "runtime": "claude_code",
+      "runtime": "strawpot-claude-code",
       "parent": null,
       "started_at": "2026-02-27T10:00:01Z",
       "pid": 54322
     },
     "agent_abc": {
       "role": "implementer",
-      "runtime": "claude_code",
+      "runtime": "strawpot-claude-code",
       "parent": "agent_xyz",
       "started_at": "2026-02-27T10:01:00Z",
       "pid": 54330
@@ -1422,7 +1422,7 @@ One file per session: `.strawpot/sessions/<run_id>/session.jsonl`
 Each line is a JSON object:
 
 ```json
-{"ts": "2026-02-27T10:00:00Z", "level": "info", "event": "session_started", "run_id": "run_abc123", "msg": "Session started", "data": {"isolation": "worktree", "runtime": "claude_code"}}
+{"ts": "2026-02-27T10:00:00Z", "level": "info", "event": "session_started", "run_id": "run_abc123", "msg": "Session started", "data": {"isolation": "worktree", "runtime": "strawpot-claude-code"}}
 {"ts": "2026-02-27T10:00:01Z", "level": "info", "event": "agent_spawned", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Spawned orchestrator", "data": {"role": "orchestrator"}}
 {"ts": "2026-02-27T10:01:00Z", "level": "info", "event": "delegate_request", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Delegation requested", "data": {"role": "implementer", "task": "implement auth"}}
 {"ts": "2026-02-27T10:05:00Z", "level": "error", "event": "agent_timeout", "run_id": "run_abc123", "agent_id": "agent_abc", "msg": "Agent timed out after 300s"}
@@ -1499,7 +1499,7 @@ metadata:
         - code-review
       roles:
         - fixer
-    default_agent: claude_code
+    default_agent: strawpot-claude-code
 ---
 
 # Implementer

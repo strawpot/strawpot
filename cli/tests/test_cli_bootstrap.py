@@ -22,9 +22,9 @@ def test_ensure_agent_already_installed(mock_resolve):
     """No prompt when the agent is already installed."""
     mock_resolve.return_value = MagicMock()  # resolve succeeds
 
-    _ensure_agent_installed("claude_code", "/tmp/project")
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project")
 
-    mock_resolve.assert_called_once_with("claude_code", "/tmp/project")
+    mock_resolve.assert_called_once_with("strawpot-claude-code", "/tmp/project")
 
 
 @patch("strawpot.cli.subprocess.run")
@@ -35,12 +35,12 @@ def test_ensure_agent_installs_on_confirm(mock_resolve, mock_confirm, mock_which
     """Installs agent via strawhub when user confirms."""
     mock_run.return_value = MagicMock(returncode=0)
 
-    _ensure_agent_installed("claude_code", "/tmp/project")
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project")
 
     mock_confirm.assert_called_once()
     mock_run.assert_called_once()
     cmd = mock_run.call_args[0][0]
-    assert cmd == ["/usr/bin/strawhub", "install", "agent", "claude_code", "--global"]
+    assert cmd == ["/usr/bin/strawhub", "install", "agent", "strawpot-claude-code", "--global"]
 
 
 @patch("strawpot.cli.subprocess.run")
@@ -49,7 +49,7 @@ def test_ensure_agent_installs_on_confirm(mock_resolve, mock_confirm, mock_which
 @patch("strawpot.cli.resolve_agent", side_effect=FileNotFoundError("not found"))
 def test_ensure_agent_skips_on_decline(mock_resolve, mock_confirm, mock_which, mock_run):
     """Does nothing when user declines install."""
-    _ensure_agent_installed("claude_code", "/tmp/project")
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project")
 
     mock_confirm.assert_called_once()
     mock_run.assert_not_called()
@@ -61,7 +61,7 @@ def test_ensure_agent_skips_on_decline(mock_resolve, mock_confirm, mock_which, m
 @patch("strawpot.cli.resolve_agent", side_effect=FileNotFoundError("not found"))
 def test_ensure_agent_strawhub_not_found(mock_resolve, mock_confirm, mock_which, mock_echo):
     """Shows error when strawhub CLI is not on PATH."""
-    _ensure_agent_installed("claude_code", "/tmp/project")
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project")
 
     # Should print error about missing strawhub
     calls = [str(c) for c in mock_echo.call_args_list]
@@ -77,7 +77,7 @@ def test_ensure_agent_install_fails(mock_resolve, mock_confirm, mock_which, mock
     """Shows error when install command fails."""
     mock_run.return_value = MagicMock(returncode=1)
 
-    _ensure_agent_installed("claude_code", "/tmp/project")
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project")
 
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Failed to install agent" in c for c in calls)
@@ -268,7 +268,7 @@ def test_ensure_agent_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock_
     """auto_setup=True installs without prompting."""
     mock_run.return_value = MagicMock(returncode=0)
 
-    _ensure_agent_installed("claude_code", "/tmp/project", auto_setup=True)
+    _ensure_agent_installed("strawpot-claude-code", "/tmp/project", auto_setup=True)
 
     mock_confirm.assert_not_called()
     mock_run.assert_called_once()

@@ -22,7 +22,7 @@ metadata:
         - python-testing
       roles:
         - reviewer
-    default_agent: claude_code
+    default_agent: strawpot-claude-code
 ---
 
 # Implementer
@@ -71,7 +71,7 @@ Roles can specify a default agent runtime:
 ```yaml
 metadata:
   strawpot:
-    default_agent: claude_code
+    default_agent: strawpot-claude-code
 ```
 
 This can be overridden by the user's `runtime` config in their StrawPot configuration.
