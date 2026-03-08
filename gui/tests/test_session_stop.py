@@ -34,7 +34,7 @@ class TestStopSession:
             resp = client.post("/api/sessions/run_stop/stop")
 
         assert resp.status_code == 200
-        assert resp.json() == {"run_id": "run_stop", "status": "stopping"}
+        assert resp.json() == {"run_id": "run_stop", "status": "stopped"}
         # First call: liveness check (signal 0), second call: SIGTERM
         assert mock_kill.call_count == 2
         mock_kill.assert_any_call(os.getpid(), 0)
@@ -80,7 +80,7 @@ class TestStopSession:
             resp = client.post("/api/sessions/run_start/stop")
 
         assert resp.status_code == 200
-        assert resp.json()["status"] == "stopping"
+        assert resp.json()["status"] == "stopped"
 
     def test_stop_already_dead_marks_failed(self, client, tmp_path):
         """If process is already gone, marks session as failed."""
@@ -95,7 +95,7 @@ class TestStopSession:
             resp = client.post("/api/sessions/run_dead/stop")
 
         assert resp.status_code == 200
-        assert resp.json() == {"run_id": "run_dead", "status": "failed"}
+        assert resp.json() == {"run_id": "run_dead", "status": "stopped"}
 
         # Verify DB was updated
         with get_db(client.app.state.db_path) as conn:
@@ -103,10 +103,10 @@ class TestStopSession:
                 "SELECT status FROM sessions WHERE run_id = ?",
                 ("run_dead",),
             ).fetchone()
-        assert row["status"] == "failed"
+        assert row["status"] == "stopped"
 
-    def test_stop_missing_session_json_returns_500(self, client, tmp_path):
-        """If session.json is missing, returns 500."""
+    def test_stop_missing_session_json_marks_failed(self, client, tmp_path):
+        """If session.json is missing, marks session as failed."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         _, session_dir = _insert_session(
@@ -117,10 +117,11 @@ class TestStopSession:
         os.remove(os.path.join(session_dir, "session.json"))
 
         resp = client.post("/api/sessions/run_nofile/stop")
-        assert resp.status_code == 500
+        assert resp.status_code == 200
+        assert resp.json() == {"run_id": "run_nofile", "status": "stopped"}
 
-    def test_stop_no_pid_in_session_json_returns_500(self, client, tmp_path):
-        """If session.json has no pid field, returns 500."""
+    def test_stop_no_pid_in_session_json_marks_failed(self, client, tmp_path):
+        """If session.json has no pid field, marks session as failed."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         _, session_dir = _insert_session(
@@ -136,4 +137,5 @@ class TestStopSession:
             json.dump(data, f)
 
         resp = client.post("/api/sessions/run_nopid/stop")
-        assert resp.status_code == 500
+        assert resp.status_code == 200
+        assert resp.json() == {"run_id": "run_nopid", "status": "stopped"}

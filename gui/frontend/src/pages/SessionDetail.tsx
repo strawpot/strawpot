@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { api } from "../api/client";
 import { statusColor, formatTime, formatDuration } from "../components/SessionTable";
 import { useApi } from "../hooks/useApi";
 import type { AgentInfo, SessionDetail as SessionDetailType, TraceEvent } from "../api/types";
 
 export default function SessionDetail() {
   const { projectId, runId } = useParams();
-  const { data: session, loading, error } = useApi<SessionDetailType>(
+  const { data: session, loading, error, refetch } = useApi<SessionDetailType>(
     `/projects/${projectId}/sessions/${runId}`,
   );
+  const [confirming, setConfirming] = useState(false);
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="error">Error: {error}</p>;
@@ -17,9 +20,39 @@ export default function SessionDetail() {
     <div>
       <div className="page-header">
         <h1>Session {session.run_id.slice(0, 16)}</h1>
-        <Link to={`/projects/${projectId}`} className="btn">
-          Back to Project
-        </Link>
+        <div className="page-header-actions">
+          {(session.status === "starting" || session.status === "running") &&
+            (confirming ? (
+              <span className="confirm-group">
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={async () => {
+                    await api.post(`/sessions/${runId}/stop`);
+                    setConfirming(false);
+                    refetch();
+                  }}
+                >
+                  Confirm
+                </button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                className="btn btn-danger"
+                onClick={() => setConfirming(true)}
+              >
+                Stop Session
+              </button>
+            ))}
+          <Link to={`/projects/${projectId}`} className="btn">
+            Back to Project
+          </Link>
+        </div>
       </div>
 
       <div className="detail-grid">

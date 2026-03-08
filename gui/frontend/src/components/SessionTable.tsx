@@ -1,12 +1,19 @@
 import { Link } from "react-router-dom";
 import type { Session } from "../api/types";
 
-export default function SessionTable({ sessions }: { sessions: Session[] }) {
+export default function SessionTable({
+  sessions,
+  projectNames,
+}: {
+  sessions: Session[];
+  projectNames?: Map<number, string>;
+}) {
   return (
     <table className="session-table">
       <thead>
         <tr>
           <th>Run ID</th>
+          {projectNames && <th>Project</th>}
           <th>Role</th>
           <th>Status</th>
           <th>Started</th>
@@ -22,6 +29,13 @@ export default function SessionTable({ sessions }: { sessions: Session[] }) {
                 {s.run_id.slice(0, 16)}
               </Link>
             </td>
+            {projectNames && (
+              <td>
+                <Link to={`/projects/${s.project_id}`}>
+                  {projectNames.get(s.project_id) ?? `#${s.project_id}`}
+                </Link>
+              </td>
+            )}
             <td>{s.role}</td>
             <td>
               <span className={`badge badge-${statusColor(s.status)}`}>
@@ -47,6 +61,8 @@ export function statusColor(status: string): string {
       return "success";
     case "failed":
       return "error";
+    case "stopped":
+      return "warning";
     default:
       return "default";
   }

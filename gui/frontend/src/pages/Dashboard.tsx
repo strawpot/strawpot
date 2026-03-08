@@ -20,6 +20,12 @@ export default function Dashboard() {
   const runningSessions = running.data?.items ?? [];
   const recentSessions = recent.data?.items ?? [];
 
+  // Build project name lookup
+  const projectNames = new Map<number, string>();
+  for (const p of projectList) {
+    projectNames.set(p.id, p.display_name);
+  }
+
   // Count running sessions per project
   const runningByProject = new Map<number, number>();
   for (const s of runningSessions) {
@@ -61,7 +67,7 @@ export default function Dashboard() {
       {runningSessions.length > 0 && (
         <section className="dashboard-section">
           <h2>Running Sessions ({runningSessions.length})</h2>
-          <SessionTable sessions={runningSessions} />
+          <SessionTable sessions={runningSessions} projectNames={projectNames} />
         </section>
       )}
 
@@ -70,7 +76,7 @@ export default function Dashboard() {
         {recentSessions.length === 0 ? (
           <p className="empty">No sessions yet.</p>
         ) : (
-          <SessionTable sessions={recentSessions} />
+          <SessionTable sessions={recentSessions} projectNames={projectNames} />
         )}
       </section>
     </div>

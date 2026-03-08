@@ -13,9 +13,76 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from strawpot.config import load_config
-from strawpot_gui.db import get_db_conn
+from strawpot_gui.db import _parse_trace, get_db_conn
 
 router = APIRouter(prefix="/api", tags=["sessions"])
+
+
+def _refresh_session_status(conn, run_id: str) -> None:
+    """Re-check status for a starting/running session from disk.
+
+    Reads session.json for PID liveness and trace.jsonl for completion.
+    Updates the DB row if the status has changed.
+    """
+    row = conn.execute(
+        "SELECT status, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row or row["status"] not in ("starting", "running"):
+        return
+
+    session_dir = row["session_dir"]
+    session_json = os.path.join(session_dir, "session.json")
+
+    # Try to read session.json
+    try:
+        with open(session_json, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        # session.json not yet written — still starting
+        return
+
+    # Check trace for completion
+    trace_path = os.path.join(session_dir, "trace.jsonl")
+    trace_info = _parse_trace(trace_path)
+
+    if trace_info.get("exit_code") is not None or "ended_at" in trace_info:
+        # Session has ended
+        exit_code = trace_info.get("exit_code")
+        status = "completed" if exit_code == 0 else "failed"
+        conn.execute(
+            """UPDATE sessions
+               SET status = ?, ended_at = ?, duration_ms = ?,
+                   exit_code = ?, summary = ?
+               WHERE run_id = ?""",
+            (
+                status,
+                trace_info.get("ended_at"),
+                trace_info.get("duration_ms"),
+                exit_code,
+                trace_info.get("summary"),
+                run_id,
+            ),
+        )
+        return
+
+    # Check PID liveness
+    pid = data.get("pid")
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+            # Process alive — mark running if still starting
+            if row["status"] == "starting":
+                conn.execute(
+                    "UPDATE sessions SET status = 'running' WHERE run_id = ?",
+                    (run_id,),
+                )
+        except (ProcessLookupError, OSError):
+            # Process gone without trace end — mark failed
+            conn.execute(
+                "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+                (run_id,),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +200,13 @@ def list_all_sessions(
     conn=Depends(get_db_conn),
 ):
     """List sessions across all projects with optional filters and pagination."""
+    # Refresh active sessions before listing
+    active = conn.execute(
+        "SELECT run_id FROM sessions WHERE status IN ('starting', 'running')"
+    ).fetchall()
+    for r in active:
+        _refresh_session_status(conn, r["run_id"])
+
     clauses: list[str] = []
     params: list = []
 
@@ -180,6 +254,14 @@ def list_sessions(project_id: int, conn=Depends(get_db_conn)):
     if not project:
         raise HTTPException(404, "Project not found")
 
+    # Refresh active sessions for this project
+    active = conn.execute(
+        "SELECT run_id FROM sessions WHERE project_id = ? AND status IN ('starting', 'running')",
+        (project_id,),
+    ).fetchall()
+    for r in active:
+        _refresh_session_status(conn, r["run_id"])
+
     rows = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
         "       started_at, ended_at, duration_ms, exit_code, task, summary"
@@ -191,6 +273,9 @@ def list_sessions(project_id: int, conn=Depends(get_db_conn)):
 
 @router.get("/projects/{project_id}/sessions/{run_id}")
 def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
+    # Refresh status for active sessions before returning
+    _refresh_session_status(conn, run_id)
+
     row = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
         "       started_at, ended_at, duration_ms, exit_code, task, summary,"
@@ -255,31 +340,45 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     try:
         data = json.loads(session_json.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        raise HTTPException(500, "Cannot read session.json")
+        # session.json not created yet — session never fully started
+        conn.execute(
+            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            (run_id,),
+        )
+        return {"run_id": run_id, "status": "stopped"}
 
     pid = data.get("pid")
     if pid is None:
-        raise HTTPException(500, "No PID found in session.json")
+        # No PID recorded — mark as stopped
+        conn.execute(
+            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            (run_id,),
+        )
+        return {"run_id": run_id, "status": "stopped"}
 
     # Check liveness and send SIGTERM
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, OSError):
-        # Process already gone — mark as failed
+        # Process already gone
         conn.execute(
-            "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        return {"run_id": run_id, "status": "failed"}
+        return {"run_id": run_id, "status": "stopped"}
 
     try:
         os.kill(pid, signal.SIGTERM)
     except (ProcessLookupError, OSError):
         # Race: died between check and kill
         conn.execute(
-            "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        return {"run_id": run_id, "status": "failed"}
+        return {"run_id": run_id, "status": "stopped"}
 
-    return {"run_id": run_id, "status": "stopping"}
+    conn.execute(
+        "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+        (run_id,),
+    )
+    return {"run_id": run_id, "status": "stopped"}
