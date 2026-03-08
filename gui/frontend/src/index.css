@@ -315,9 +315,101 @@
   gap: 0.5rem;
 }
 
+/* Input with inline button */
+
+.input-with-button {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.input-with-button input {
+  flex: 1;
+}
+
 /* Confirm group */
 
 .confirm-group {
   display: inline-flex;
   gap: 0.25rem;
+}
+
+/* Modal */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Directory browser */
+
+.dir-browser-path {
+  font-size: 0.82rem;
+  font-family: monospace;
+  color: #333;
+  word-break: break-all;
+  padding: 0.5rem 1rem;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.dir-browser-list {
+  list-style: none;
+  min-height: 120px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 0;
+  margin: 0;
+}
+
+.dir-entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #1565c0;
+}
+
+.dir-entry:hover {
+  background: #e3f2fd;
 }

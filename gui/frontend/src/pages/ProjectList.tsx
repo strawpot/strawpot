@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import DirBrowser from "../components/DirBrowser";
 import { useApi } from "../hooks/useApi";
 import type { Project } from "../api/types";
 
@@ -18,7 +19,7 @@ export default function ProjectList() {
       <div className="page-header">
         <h1>Projects</h1>
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          Register Project
+          New Project
         </button>
       </div>
 
@@ -81,6 +82,7 @@ function RegisterForm({
 }) {
   const [displayName, setDisplayName] = useState("");
   const [workingDir, setWorkingDir] = useState("");
+  const [showBrowser, setShowBrowser] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,19 +118,38 @@ function RegisterForm({
         </label>
         <label>
           Working Directory
-          <input
-            type="text"
-            value={workingDir}
-            onChange={(e) => setWorkingDir(e.target.value)}
-            placeholder="/path/to/project"
-            required
-          />
+          <div className="input-with-button">
+            <input
+              type="text"
+              value={workingDir}
+              onChange={(e) => setWorkingDir(e.target.value)}
+              placeholder="/path/to/project"
+              required
+            />
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={() => setShowBrowser(!showBrowser)}
+            >
+              Browse
+            </button>
+          </div>
         </label>
       </div>
+      {showBrowser && (
+        <DirBrowser
+          initialPath={workingDir || undefined}
+          onSelect={(path) => {
+            setWorkingDir(path);
+            setShowBrowser(false);
+          }}
+          onCancel={() => setShowBrowser(false)}
+        />
+      )}
       {error && <p className="error">{error}</p>}
       <div className="form-actions">
         <button className="btn btn-primary" type="submit" disabled={submitting}>
-          {submitting ? "Registering..." : "Register"}
+          {submitting ? "Creating..." : "Create"}
         </button>
         <button className="btn" type="button" onClick={onCancel}>
           Cancel
