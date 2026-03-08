@@ -14,6 +14,28 @@ router = APIRouter(prefix="/api", tags=["config"])
 
 
 # ---------------------------------------------------------------------------
+# Installed roles
+# ---------------------------------------------------------------------------
+
+
+@router.get("/roles")
+def list_roles():
+    """List installed role slugs from ~/.strawpot/roles/."""
+    roles_dir = get_strawpot_home() / "roles"
+    if not roles_dir.is_dir():
+        return []
+    slugs: list[str] = []
+    for entry in sorted(roles_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Skip hidden dirs
+        if entry.name.startswith("."):
+            continue
+        slugs.append(entry.name)
+    return slugs
+
+
+# ---------------------------------------------------------------------------
 # Global config
 # ---------------------------------------------------------------------------
 

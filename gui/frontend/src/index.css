@@ -211,6 +211,11 @@
   margin: 0;
 }
 
+.page-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 /* Buttons */
 
 .btn {
@@ -297,17 +302,37 @@
   flex: 1;
 }
 
-.form-row input {
+.form-row input,
+.form-row select {
   padding: 0.4rem 0.6rem;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 0.9rem;
 }
 
-.form-row input:focus {
+.form-row select {
+  background: #fff;
+}
+
+.form-row input:focus,
+.form-row textarea:focus,
+.form-row select:focus {
   outline: none;
   border-color: #1565c0;
   box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.15);
+}
+
+.form-row textarea {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.required {
+  color: #c62828;
 }
 
 .form-actions {
