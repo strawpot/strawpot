@@ -769,3 +769,17 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
   launch dialog with the same role, task, and config overrides.
 - Archive retention policy — configurable max age or count per project.
 - Changed files view — file list from `git diff --name-status`.
+- Chat-style task input — replace the plain textarea with a ChatGPT-like
+  prompt box (auto-expanding, Enter to submit, Shift+Enter for newline,
+  rounded border, send button).
+- Chat-style trace view — render session trace events as a chat dialogue
+  instead of a table. Delegation requests appear as outgoing messages,
+  delegation returns as incoming messages with summary and clickable
+  artifact refs. Memory events, agent spawns, and lifecycle events
+  render as system messages between chat bubbles.
+- Session attachments — allow attaching files directly to a task prompt
+  when launching a session. Unlike project-level files (Phase 7.5) which
+  persist across sessions, session attachments are one-off context files
+  stored in the session directory and referenced in the agent's system
+  prompt. The launch dialog gets a drop zone or file picker alongside
+  the task textarea.
