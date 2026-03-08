@@ -172,6 +172,38 @@ def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = 
         click.echo(f"Failed to install memory provider '{name}'.", err=True)
 
 
+def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
+    """Prompt to install a role from StrawHub if it is not found locally."""
+    candidates = [
+        Path(working_dir) / ".strawpot" / "roles" / name,
+        get_strawpot_home() / "roles" / name,
+    ]
+    for candidate in candidates:
+        if (candidate / "ROLE.md").is_file():
+            return  # already installed
+
+    if not auto_setup:
+        if not click.confirm(
+            f"Role '{name}' is not installed. Install from StrawHub?", default=True
+        ):
+            return
+
+    cmd = shutil.which("strawhub")
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        return
+
+    result = subprocess.run(
+        [cmd, "install", "role", name, "--global"],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    if result.returncode != 0:
+        click.echo(f"Failed to install role '{name}'.", err=True)
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
@@ -240,6 +272,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     # 0b. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
     _ensure_skill_installed("denden", working_dir, auto_setup=headless)
+    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=headless)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=headless)
 

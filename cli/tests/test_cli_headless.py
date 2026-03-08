@@ -13,6 +13,7 @@ from strawpot.cli import cli
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_role_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.recover_stale_sessions", return_value=[])
@@ -22,6 +23,7 @@ def test_headless_missing_env_exits(
     mock_recover,
     mock_agent_install,
     mock_skill_install,
+    mock_role_install,
     mock_memory_install,
     mock_resolve,
     mock_validate,
@@ -60,6 +62,7 @@ def test_headless_missing_env_exits(
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_role_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.recover_stale_sessions", return_value=[])
@@ -69,6 +72,7 @@ def test_headless_no_missing_env_proceeds(
     mock_recover,
     mock_agent_install,
     mock_skill_install,
+    mock_role_install,
     mock_memory_install,
     mock_resolve,
     mock_validate,
