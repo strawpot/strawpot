@@ -42,9 +42,8 @@ htmlcov/
 *.swp
 *.swo
 
-# StrawPot runtime (per-project, not committed)
-.strawpot/runtime/
-.strawpot/worktrees/
+# StrawPot (per-project, not committed)
+.strawpot/
 
 # Claude Code session files written by ClaudeSessionProvider
 .claude/settings.json
