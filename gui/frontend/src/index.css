@@ -602,3 +602,49 @@
   border-radius: 10px;
   font-size: 0.75rem;
 }
+
+/* Artifact buttons in trace events */
+
+.btn-artifact {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid #1565c0;
+  border-radius: 3px;
+  background: #e3f2fd;
+  color: #1565c0;
+  cursor: pointer;
+  font-family: monospace;
+}
+
+.btn-artifact:hover {
+  background: #bbdefb;
+}
+
+.modal-lg {
+  width: 720px;
+  max-width: 90vw;
+}
+
+.modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.artifact-content {
+  font-size: 0.82rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin: 0;
+}
+
+.delegate-summary {
+  font-style: italic;
+  color: #333;
+}

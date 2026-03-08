@@ -149,14 +149,17 @@ class Tracer:
         exit_code: int,
         summary: str,
         duration_ms: int,
+        output: str = "",
     ) -> None:
-        """Emit ``delegate_end``."""
+        """Emit ``delegate_end``.  Stores output as artifact."""
+        output_ref = self.store_artifact(output)
         self.emit(
             "delegate_end",
             span_id,
             exit_code=exit_code,
             summary=summary,
             duration_ms=duration_ms,
+            output_ref=output_ref,
         )
 
     def delegate_denied(

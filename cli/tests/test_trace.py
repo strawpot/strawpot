@@ -229,12 +229,18 @@ class TestDelegateEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.delegate_end(
             span_id="s1", exit_code=0, summary="Done", duration_ms=1234,
+            output="task output here",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "delegate_end"
         assert events[0]["data"]["exit_code"] == 0
         assert events[0]["data"]["summary"] == "Done"
         assert events[0]["data"]["duration_ms"] == 1234
+        ref = events[0]["data"]["output_ref"]
+        assert ref is not None
+        artifact_path = os.path.join(session_dir, "artifacts", ref)
+        with open(artifact_path, encoding="utf-8") as f:
+            assert f.read() == "task output here"
 
     def test_delegate_denied_event(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
