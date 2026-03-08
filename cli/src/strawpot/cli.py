@@ -34,7 +34,7 @@ def cli():
 # ---------------------------------------------------------------------------
 
 
-def _ensure_agent_installed(name: str, working_dir: str) -> None:
+def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install an agent from StrawHub if it is not found locally."""
     try:
         resolve_agent(name, working_dir)
@@ -69,10 +69,11 @@ def _ensure_agent_installed(name: str, working_dir: str) -> None:
             click.echo(f"Agent '{name}' binary is missing and no install script found.", err=True)
             return
 
-    if not click.confirm(
-        f"Agent '{name}' is not installed. Install from StrawHub?", default=True
-    ):
-        return
+    if not auto_setup:
+        if not click.confirm(
+            f"Agent '{name}' is not installed. Install from StrawHub?", default=True
+        ):
+            return
 
     cmd = shutil.which("strawhub")
     if cmd is None:
@@ -107,7 +108,7 @@ def _ensure_agent_installed(name: str, working_dir: str) -> None:
             click.echo(f"Install script failed for '{name}'.", err=True)
 
 
-def _ensure_skill_installed(name: str, working_dir: str) -> None:
+def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install a skill from StrawHub if it is not found locally."""
     candidates = [
         Path(working_dir) / ".strawpot" / "skills" / name,
@@ -117,10 +118,11 @@ def _ensure_skill_installed(name: str, working_dir: str) -> None:
         if (candidate / "SKILL.md").is_file():
             return  # already installed
 
-    if not click.confirm(
-        f"Skill '{name}' is not installed. Install from StrawHub?", default=True
-    ):
-        return
+    if not auto_setup:
+        if not click.confirm(
+            f"Skill '{name}' is not installed. Install from StrawHub?", default=True
+        ):
+            return
 
     cmd = shutil.which("strawhub")
     if cmd is None:
@@ -138,7 +140,7 @@ def _ensure_skill_installed(name: str, working_dir: str) -> None:
         click.echo(f"Failed to install skill '{name}'.", err=True)
 
 
-def _ensure_memory_installed(name: str, working_dir: str) -> None:
+def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install a memory provider from StrawHub if not found locally."""
     try:
         resolve_memory(name, working_dir)
@@ -147,11 +149,12 @@ def _ensure_memory_installed(name: str, working_dir: str) -> None:
     else:
         return  # already available
 
-    if not click.confirm(
-        f"Memory provider '{name}' is not installed. Install from StrawHub?",
-        default=True,
-    ):
-        return
+    if not auto_setup:
+        if not click.confirm(
+            f"Memory provider '{name}' is not installed. Install from StrawHub?",
+            default=True,
+        ):
+            return
 
     cmd = shutil.which("strawhub")
     if cmd is None:
@@ -235,10 +238,10 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         click.echo(f"Recovered stale session: {run_id}")
 
     # 0b. Auto-install default dependencies if not found
-    _ensure_agent_installed(config.runtime, working_dir)
-    _ensure_skill_installed("denden", working_dir)
+    _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
+    _ensure_skill_installed("denden", working_dir, auto_setup=headless)
     if config.memory:
-        _ensure_memory_installed(config.memory, working_dir)
+        _ensure_memory_installed(config.memory, working_dir, auto_setup=headless)
 
     # 1. Resolve agent spec
     try:
@@ -260,9 +263,16 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
             click.echo(msg, err=True)
         sys.exit(1)
 
-    for var in validation.missing_env:
-        value = click.prompt(f"Enter value for {var}")
-        os.environ[var] = value
+    if validation.missing_env:
+        if headless:
+            click.echo(
+                f"Error: missing environment variables: {', '.join(validation.missing_env)}",
+                err=True,
+            )
+            sys.exit(1)
+        for var in validation.missing_env:
+            value = click.prompt(f"Enter value for {var}")
+            os.environ[var] = value
 
     # 2b. Validate skill env requirements for orchestrator role
     try:
@@ -281,13 +291,21 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         saved_env = _collect_saved_env(config, resolved, global_skills=global_skills or None)
         skill_validation = validate_skill_env(skill_env, saved_env=saved_env)
 
-        for var in skill_validation.missing_env:
-            desc = skill_env[var].get("description", "")
-            prompt_text = f"Enter value for {var}"
-            if desc:
-                prompt_text += f" ({desc})"
-            value = click.prompt(prompt_text)
-            os.environ[var] = value
+        if skill_validation.missing_env:
+            if headless:
+                click.echo(
+                    f"Error: missing skill environment variables: "
+                    f"{', '.join(skill_validation.missing_env)}",
+                    err=True,
+                )
+                sys.exit(1)
+            for var in skill_validation.missing_env:
+                desc = skill_env[var].get("description", "")
+                prompt_text = f"Enter value for {var}"
+                if desc:
+                    prompt_text += f" ({desc})"
+                value = click.prompt(prompt_text)
+                os.environ[var] = value
     except Exception:
         pass  # Role resolution failures handled by Session.start()
 
@@ -337,6 +355,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         resolve_role_dirs=_resolve_role_dirs,
         task=task or "",
         run_id=run_id,
+        headless=headless,
     )
     session.start(working_dir)
 
@@ -516,20 +535,20 @@ def _make_passthrough(strawhub_cmd: str, help_text: str):
 
 
 # Package management
-cli.add_command(_make_passthrough("install", "Install skills or roles from StrawHub."))
-cli.add_command(_make_passthrough("uninstall", "Uninstall a skill or role."))
+cli.add_command(_make_passthrough("install", "Install a skill, role, agent, or memory from StrawHub."))
+cli.add_command(_make_passthrough("uninstall", "Remove an installed skill, role, agent, or memory."))
 cli.add_command(_make_passthrough("update", "Update installed packages to latest versions."))
 cli.add_command(_make_passthrough("init", "Create strawpot.toml from installed packages."))
 cli.add_command(_make_passthrough("install-tools", "Install system tools declared by packages."))
 
 # Discovery
 cli.add_command(_make_passthrough("search", "Search the StrawHub registry."))
-cli.add_command(_make_passthrough("list", "Browse skills and roles on the registry."))
+cli.add_command(_make_passthrough("list", "Browse skills, roles, agents, and memories on the registry."))
 cli.add_command(_make_passthrough("info", "Show detailed information about a package."))
 cli.add_command(_make_passthrough("resolve", "Resolve a slug to its installed path."))
 
 # Publishing
-cli.add_command(_make_passthrough("publish", "Publish a skill or role to StrawHub."))
+cli.add_command(_make_passthrough("publish", "Publish a skill, role, agent, or memory to StrawHub."))
 
 # Authentication
 cli.add_command(_make_passthrough("login", "Authenticate with the StrawHub registry."))

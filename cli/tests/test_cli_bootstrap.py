@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from strawpot.cli import _ensure_agent_installed, _ensure_skill_installed
+from strawpot.cli import (
+    _ensure_agent_installed,
+    _ensure_memory_installed,
+    _ensure_skill_installed,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -162,3 +166,50 @@ def test_ensure_skill_install_fails(mock_confirm, mock_which, mock_run, mock_ech
 
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Failed to install skill" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# auto_setup=True (headless mode)
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm")
+@patch("strawpot.cli.resolve_agent", side_effect=FileNotFoundError("not found"))
+def test_ensure_agent_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock_which, mock_run):
+    """auto_setup=True installs without prompting."""
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_agent_installed("claude_code", "/tmp/project", auto_setup=True)
+
+    mock_confirm.assert_not_called()
+    mock_run.assert_called_once()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm")
+def test_ensure_skill_auto_setup_skips_confirm(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """auto_setup=True installs skill without prompting."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_skill_installed("denden", str(tmp_path / "project"), auto_setup=True)
+
+    mock_confirm.assert_not_called()
+    mock_run.assert_called_once()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm")
+@patch("strawpot.cli.resolve_memory", side_effect=FileNotFoundError("not found"))
+def test_ensure_memory_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock_which, mock_run):
+    """auto_setup=True installs memory provider without prompting."""
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_memory_installed("semantic", "/tmp/project", auto_setup=True)
+
+    mock_confirm.assert_not_called()
+    mock_run.assert_called_once()

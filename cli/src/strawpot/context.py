@@ -26,14 +26,14 @@ def validate_frontmatter_slug(
     """Validate that the frontmatter ``name`` matches the expected slug.
 
     Args:
-        package_path: Directory containing the SKILL.md or ROLE.md file.
+        package_path: Directory containing the package's main markdown file.
         expected_slug: The slug derived from the directory name.
-        kind: ``"skill"`` or ``"role"``.
+        kind: ``"skill"``, ``"role"``, ``"agent"``, or ``"memory"``.
 
     Raises:
         ValueError: If the ``name`` field is missing or does not match *expected_slug*.
     """
-    filename = "SKILL.md" if kind == "skill" else "ROLE.md"
+    filename = {"skill": "SKILL.md", "role": "ROLE.md", "agent": "AGENT.md", "memory": "MEMORY.md"}[kind]
     filepath = Path(package_path) / filename
     if not filepath.exists():
         return
@@ -186,8 +186,8 @@ def read_role_description(role_path: str) -> str:
 
 
 def _read_body(package_path: str, kind: str) -> str:
-    """Read the markdown body from a SKILL.md or ROLE.md, stripping frontmatter."""
-    filename = "SKILL.md" if kind == "skill" else "ROLE.md"
+    """Read the markdown body from a package's main file, stripping frontmatter."""
+    filename = {"skill": "SKILL.md", "role": "ROLE.md", "agent": "AGENT.md", "memory": "MEMORY.md"}[kind]
     filepath = Path(package_path) / filename
     text = filepath.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
