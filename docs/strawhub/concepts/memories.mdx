@@ -7,31 +7,9 @@ A memory is a persistent knowledge bank that stores context, patterns, and learn
 
 ## Format
 
-Every memory is a directory containing a `MEMORY.md` file with YAML frontmatter and a markdown body:
+Every memory is a directory containing a `MEMORY.md` file with YAML frontmatter and a markdown body. The frontmatter declares the provider's package metadata, pip dependency, import path, configurable parameters, system tool requirements, and environment variables.
 
-```yaml
----
-name: project-context
-description: "Persistent project context and conventions"
----
-
-# Project Context
-
-Knowledge and context for the agent to remember across sessions...
-```
-
-### Required Fields
-
-| Field | Description |
-|-------|-------------|
-| `name` | Package slug (unique identifier, used for install/publish) |
-| `description` | One-line summary |
-
-### Optional Fields
-
-| Field | Description |
-|-------|-------------|
-| `version` | Semver version (auto-incremented if omitted) |
+See [Frontmatter Reference](/strawhub/publishing/frontmatter#memory-frontmatter-memorymd) for the complete schema, or the [Memory guide](/concepts/memory) for building a custom provider.
 
 ## Supporting Files
 
@@ -40,27 +18,6 @@ A memory directory can contain additional files alongside `MEMORY.md`:
 - Data files, indexes, binary assets
 - Any file type is allowed (including binaries)
 - Max 50 files, 10 MB each, 50 MB total
-
-## How Agents Use Memories
-
-When StrawPot spawns an agent, memory content is assembled and passed via the `--memory-prompt` argument to the agent wrapper's `build` command. The agent receives this as persistent context alongside the role prompt and skill instructions.
-
-```
-<agent-workspace>/
-├── skills/
-│   └── git-workflow/SKILL.md
-├── roles/
-│   └── implementer/ROLE.md
-└── memories/
-    └── project-context/MEMORY.md
-```
-
-## Use Cases
-
-- **Project conventions** — Coding standards, architectural decisions, naming patterns
-- **Code patterns** — Recurring solutions and preferred approaches for the codebase
-- **Team decisions** — Design choices, trade-offs, and rationale that agents should follow
-- **Debugging insights** — Known issues, workarounds, and troubleshooting steps
 
 ## Skills vs Roles vs Agents vs Memories
 
