@@ -1,6 +1,8 @@
 """Session endpoints."""
 
 import json
+import os
+import signal
 import shutil
 import subprocess
 import uuid
@@ -180,3 +182,54 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
     result["events"] = events
 
     return result
+
+
+@router.post("/sessions/{run_id}/stop")
+def stop_session(run_id: str, conn=Depends(get_db_conn)):
+    """Stop a running session by sending SIGTERM to the orchestrator PID."""
+    row = conn.execute(
+        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    if row["status"] not in ("starting", "running"):
+        raise HTTPException(
+            409, f"Session is not running (status: {row['status']})"
+        )
+
+    # Read PID from session.json
+    session_dir = Path(row["session_dir"])
+    session_json = session_dir / "session.json"
+    try:
+        data = json.loads(session_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Cannot read session.json")
+
+    pid = data.get("pid")
+    if pid is None:
+        raise HTTPException(500, "No PID found in session.json")
+
+    # Check liveness and send SIGTERM
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, OSError):
+        # Process already gone — mark as failed
+        conn.execute(
+            "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+            (run_id,),
+        )
+        return {"run_id": run_id, "status": "failed"}
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        # Race: died between check and kill
+        conn.execute(
+            "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+            (run_id,),
+        )
+        return {"run_id": run_id, "status": "failed"}
+
+    return {"run_id": run_id, "status": "stopping"}
