@@ -273,6 +273,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
     _ensure_skill_installed("denden", working_dir, auto_setup=headless)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=headless)
+    _ensure_role_installed("ai-employee", working_dir, auto_setup=headless)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=headless)
 
