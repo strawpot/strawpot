@@ -24,7 +24,7 @@ class TestTreeStateSessionJson:
             "agents": {
                 "agent_root": {
                     "role": "orchestrator",
-                    "runtime": "claude_code",
+                    "runtime": "strawpot-claude-code",
                     "parent": None,
                     "started_at": "T0",
                 }
@@ -41,7 +41,7 @@ class TestTreeStateSessionJson:
             "agents": {
                 "agent_root": {
                     "role": "orchestrator",
-                    "runtime": "claude_code",
+                    "runtime": "strawpot-claude-code",
                     "parent": None,
                     "started_at": "T0",
                 }
@@ -211,7 +211,7 @@ class TestTreeStateFullLifecycle:
             "agents": {
                 "agent_root": {
                     "role": "orchestrator",
-                    "runtime": "claude_code",
+                    "runtime": "strawpot-claude-code",
                     "parent": None,
                     "started_at": "T0",
                     "pid": 100,

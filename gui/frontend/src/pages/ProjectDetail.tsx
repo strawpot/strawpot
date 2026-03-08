@@ -201,10 +201,10 @@ function LaunchForm({
               onChange={(e) => setRuntime(e.target.value)}
             >
               <option value="">
-                {defaults?.runtime ?? "claude_code"}
+                {defaults?.runtime ?? "strawpot-claude-code"}
               </option>
-              {["claude_code"]
-                .filter((v) => v !== (defaults?.runtime ?? "claude_code"))
+              {["strawpot-claude-code"]
+                .filter((v) => v !== (defaults?.runtime ?? "strawpot-claude-code"))
                 .map((v) => (
                   <option key={v} value={v}>
                     {v}

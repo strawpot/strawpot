@@ -20,8 +20,8 @@ Settings are merged in order (later overrides earlier):
 # strawpot.toml (project root)
 
 # Agent runtime to use for the orchestrator
-# Options: claude_code, codex, openhands, or any custom agent name
-runtime = "claude_code"
+# Options: strawpot-claude-code, codex, openhands, or any custom agent name
+runtime = "strawpot-claude-code"
 
 # Isolation strategy
 # Options: none, worktree, docker
@@ -77,7 +77,7 @@ em_tail_count = 20
 
 # ── Agent-Specific Config ────────────────────────────────
 # Keyed by agent name. Passed as --config JSON to the wrapper.
-[agents.claude_code]
+[agents."strawpot-claude-code"]
 model = "claude-sonnet-4-6"
 
 [agents.my_custom_agent]
@@ -95,7 +95,7 @@ SCANNER_API_KEY = "sk-..."
 # ── Role Overrides ───────────────────────────────────────
 # Override role settings from ROLE.md frontmatter.
 [roles.implementer]
-default_agent = "claude_code"
+default_agent = "strawpot-claude-code"
 
 # ── Tracing ──────────────────────────────────────────────
 # JSONL event stream + content-addressed artifacts per session.
@@ -129,7 +129,7 @@ Common examples:
 
 ```toml
 # Claude Code
-[agents.claude_code]
+[agents."strawpot-claude-code"]
 model = "claude-sonnet-4-6"
 
 # Custom agent with API endpoint
@@ -168,7 +168,7 @@ Override role settings from `ROLE.md` frontmatter via `[roles.<slug>]` sections.
 
 ```toml
 [roles.implementer]
-default_agent = "claude_code"
+default_agent = "strawpot-claude-code"
 ```
 
 This takes precedence over the `default_agent` field in the role's `ROLE.md` frontmatter. The same global/project merge hierarchy applies.

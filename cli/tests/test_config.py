@@ -47,12 +47,12 @@ def test_load_config_global(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "strawpot.toml").write_text(
-        '[agents.claude_code]\nmodel = "claude-opus-4-6"\n'
+        '[agents."strawpot-claude-code"]\nmodel = "claude-opus-4-6"\n'
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     config = load_config(tmp_path / "project")
-    assert config.agents == {"claude_code": {"model": "claude-opus-4-6"}}
+    assert config.agents == {"strawpot-claude-code": {"model": "claude-opus-4-6"}}
     assert config.runtime == "strawpot-claude-code"  # default preserved
 
 
@@ -102,7 +102,7 @@ def test_load_config_full(tmp_path, monkeypatch):
         "[memory_config]\n"
         'storage_dir = "/custom/mem"\n'
         "\n"
-        "[agents.claude_code]\n"
+        '[agents."strawpot-claude-code"]\n'
         'model = "claude-sonnet-4-6"\n'
     )
 
@@ -115,7 +115,7 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.permission_mode == "plan"
     assert config.agent_timeout == 300
     assert config.max_delegate_retries == 2
-    assert config.agents == {"claude_code": {"model": "claude-sonnet-4-6"}}
+    assert config.agents == {"strawpot-claude-code": {"model": "claude-sonnet-4-6"}}
     assert config.memory == "test-provider"
     assert config.memory_config == {"storage_dir": "/custom/mem"}
     assert config.merge_strategy == "pr"
@@ -151,19 +151,19 @@ def test_load_config_agents_merge(tmp_path, monkeypatch):
     global_dir = tmp_path / "global"
     global_dir.mkdir()
     (global_dir / "strawpot.toml").write_text(
-        '[agents.claude_code]\nmodel = "claude-opus-4-6"\ntimeout = 300\n'
+        '[agents."strawpot-claude-code"]\nmodel = "claude-opus-4-6"\ntimeout = 300\n'
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
     project_dir = tmp_path / "project"
     project_dir.mkdir(parents=True)
     (project_dir / "strawpot.toml").write_text(
-        '[agents.claude_code]\nmodel = "claude-sonnet-4-6"\n'
+        '[agents."strawpot-claude-code"]\nmodel = "claude-sonnet-4-6"\n'
     )
 
     config = load_config(project_dir)
     assert config.agents == {
-        "claude_code": {"model": "claude-sonnet-4-6", "timeout": 300}
+        "strawpot-claude-code": {"model": "claude-sonnet-4-6", "timeout": 300}
     }
 
 
@@ -216,11 +216,11 @@ def test_load_config_roles(tmp_path, monkeypatch):
     project_dir.mkdir(parents=True)
     (project_dir / "strawpot.toml").write_text(
         "[roles.implementer]\n"
-        'default_agent = "claude_code"\n'
+        'default_agent = "strawpot-claude-code"\n'
     )
 
     config = load_config(project_dir)
-    assert config.roles == {"implementer": {"default_agent": "claude_code"}}
+    assert config.roles == {"implementer": {"default_agent": "strawpot-claude-code"}}
 
 
 def test_skills_env_merge_global_project(tmp_path, monkeypatch):
@@ -261,11 +261,11 @@ def test_roles_merge_global_project(tmp_path, monkeypatch):
     project_dir.mkdir(parents=True)
     (project_dir / "strawpot.toml").write_text(
         "[roles.implementer]\n"
-        'default_agent = "claude_code"\n'
+        'default_agent = "strawpot-claude-code"\n'
     )
 
     config = load_config(project_dir)
-    assert config.roles == {"implementer": {"default_agent": "claude_code"}}
+    assert config.roles == {"implementer": {"default_agent": "strawpot-claude-code"}}
 
 
 def test_trace_disabled_via_toml(tmp_path, monkeypatch):

@@ -103,7 +103,7 @@ Location: `.strawpot/sessions/<run_id>/session.json`
   "run_id": "a1b2c3d4e5f6",
   "working_dir": "/path/to/project",
   "isolation": "none | worktree",
-  "runtime": "claude_code",
+  "runtime": "strawpot-claude-code",
   "denden_addr": "127.0.0.1:9700",
   "started_at": "2026-01-01T12:00:00+00:00",
   "pid": 12345,
@@ -113,7 +113,7 @@ Location: `.strawpot/sessions/<run_id>/session.json`
   "agents": {
     "agent_abc123": {
       "role": "orchestrator",
-      "runtime": "claude_code",
+      "runtime": "strawpot-claude-code",
       "parent": null,
       "started_at": "2026-01-01T12:00:01+00:00",
       "pid": 12346
@@ -176,7 +176,7 @@ Project: `<project>/strawpot.toml` (overrides global)
 
 | Field | Type | Default |
 |-------|------|---------|
-| `runtime` | str | `"claude_code"` |
+| `runtime` | str | `"strawpot-claude-code"` |
 | `isolation` | str | `"none"` |
 | `denden_addr` | str | `"127.0.0.1:9700"` |
 | `orchestrator_role` | str | `"orchestrator"` |
@@ -377,7 +377,7 @@ All SSE endpoints follow the same reconnection protocol:
     {
       "agent_id": "agent_abc123",
       "role": "orchestrator",
-      "runtime": "claude_code",
+      "runtime": "strawpot-claude-code",
       "status": "running",
       "exit_code": null,
       "started_at": "2026-01-01T12:00:01+00:00",
@@ -387,7 +387,7 @@ All SSE endpoints follow the same reconnection protocol:
     {
       "agent_id": "agent_def456",
       "role": "implementer",
-      "runtime": "claude_code",
+      "runtime": "strawpot-claude-code",
       "status": "completed",
       "exit_code": 0,
       "started_at": "2026-01-01T12:00:10+00:00",

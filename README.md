@@ -49,7 +49,7 @@ metadata:
   strawpot:
     dependencies:
       roles: [pm, implementer, reviewer]
-    default_agent: claude_code
+    default_agent: strawpot-claude-code
 ---
 
 # CEO
@@ -85,7 +85,7 @@ No Python. No orchestration code. One file.
 User task → StrawPot → Role (ai-ceo)
                          ├─ Sub-role (implementer)
                          │   ├─ Skills (git-workflow, python-dev)
-                         │   └─ Agent (claude_code)
+                         │   └─ Agent (strawpot-claude-code)
                          └─ Sub-role (reviewer)
                              ├─ Skills (code-review, security-baseline)
                              └─ Agent (gemini)
@@ -131,7 +131,7 @@ Role: implementer
 ```bash
 # Start a session
 strawpot start
-strawpot start --role ai-ceo --runtime claude_code
+strawpot start --role ai-ceo --runtime strawpot-claude-code
 
 # Install skills and roles from StrawHub
 strawpot install skill git-workflow
@@ -151,7 +151,7 @@ Global: `$STRAWPOT_HOME/strawpot.toml` (default `~/.strawpot/strawpot.toml`)
 Project: `strawpot.toml` (project root)
 
 ```toml
-runtime = "claude_code"       # claude_code | codex | gemini
+runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | gemini
 isolation = "worktree"        # worktree | docker
 
 [denden]

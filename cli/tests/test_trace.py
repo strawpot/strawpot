@@ -173,7 +173,7 @@ class TestSessionEvents:
         tracer, _ = _make_tracer(tmp_path)
         span_id = tracer.session_start(
             run_id="run_1", role="orchestrator",
-            runtime="claude_code", isolation="none",
+            runtime="strawpot-claude-code", isolation="none",
         )
         assert isinstance(span_id, str)
         assert len(span_id) == 12
@@ -182,7 +182,7 @@ class TestSessionEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.session_start(
             run_id="run_1", role="orchestrator",
-            runtime="claude_code", isolation="worktree",
+            runtime="strawpot-claude-code", isolation="worktree",
         )
         events = _read_events(session_dir)
         assert len(events) == 1
@@ -298,7 +298,7 @@ class TestAgentEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.agent_spawn(
             span_id="s1", agent_id="agent_abc",
-            role="ai-ceo", runtime="claude_code", pid=12345,
+            role="ai-ceo", runtime="strawpot-claude-code", pid=12345,
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "agent_spawn"

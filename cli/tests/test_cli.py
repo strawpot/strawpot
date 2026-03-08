@@ -11,7 +11,7 @@ from strawpot.cli import cli
 
 def _make_spec(**overrides):
     defaults = {
-        "name": "claude_code",
+        "name": "strawpot-claude-code",
         "version": "1.0.0",
         "wrapper_cmd": ["/usr/bin/test-wrapper"],
         "config": {},

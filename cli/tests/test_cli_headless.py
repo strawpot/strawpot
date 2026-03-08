@@ -34,7 +34,7 @@ def test_headless_missing_env_exits(
     """Headless mode exits with error when agent has missing env vars."""
     mock_config.return_value = MagicMock(
         orchestrator_role="orchestrator",
-        runtime="claude_code",
+        runtime="strawpot-claude-code",
         isolation="none",
         merge_strategy="auto",
         pull_before_session="never",
@@ -83,7 +83,7 @@ def test_headless_no_missing_env_proceeds(
     """Headless mode proceeds when no env vars are missing."""
     mock_config.return_value = MagicMock(
         orchestrator_role="orchestrator",
-        runtime="claude_code",
+        runtime="strawpot-claude-code",
         isolation="none",
         merge_strategy="auto",
         pull_before_session="never",
@@ -115,7 +115,7 @@ def test_headless_passes_auto_setup_to_bootstrap(
     """Headless mode passes auto_setup=True to bootstrap helpers."""
     mock_config.return_value = MagicMock(
         orchestrator_role="orchestrator",
-        runtime="claude_code",
+        runtime="strawpot-claude-code",
         isolation="none",
         merge_strategy="auto",
         pull_before_session="never",
