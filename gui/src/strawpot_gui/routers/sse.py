@@ -176,3 +176,86 @@ async def session_tree_sse(run_id: str, request: Request):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/sessions/{run_id}/events")
+async def session_events_sse(run_id: str, request: Request):
+    """SSE endpoint for real-time trace event streaming."""
+    db_path = request.app.state.db_path
+    session_dir, status = _resolve_session_dir(db_path, run_id)
+
+    if session_dir is None:
+        async def not_found():
+            yield format_sse(1, {"error": "Session not found"})
+
+        return StreamingResponse(
+            not_found(),
+            media_type="text/event-stream",
+            status_code=404,
+        )
+
+    last_event_id = request.headers.get("last-event-id")
+    start_id = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
+
+    async def event_stream():
+        event_id = start_id
+
+        yield sse_retry(3000)
+
+        trace_path = os.path.join(session_dir, "trace.jsonl")
+        events, trace_offset = _read_trace_lines(trace_path, 0)
+
+        if events:
+            event_id += 1
+            yield format_sse(event_id, {"events": events})
+
+        # Terminal sessions: send all events and close
+        if status in ("completed", "failed", "stopped"):
+            return
+
+        # Check if trace already contains session_end
+        if any(e.get("event") == "session_end" for e in events):
+            return
+
+        # Active sessions: poll for new trace events
+        prev_trace_mtime = _safe_mtime(trace_path)
+
+        while True:
+            await asyncio.sleep(_POLL_INTERVAL)
+
+            if await request.is_disconnected():
+                return
+
+            trace_mtime = _safe_mtime(trace_path)
+            if trace_mtime != prev_trace_mtime:
+                prev_trace_mtime = trace_mtime
+                new_events, trace_offset = _read_trace_lines(
+                    trace_path, trace_offset
+                )
+                if new_events:
+                    event_id += 1
+                    yield format_sse(event_id, {"events": new_events})
+
+                    if any(e.get("event") == "session_end" for e in new_events):
+                        return
+
+            # Check DB status for user-initiated stops
+            _, current_status = _resolve_session_dir(db_path, run_id)
+            if current_status in ("completed", "failed", "stopped"):
+                new_events, trace_offset = _read_trace_lines(
+                    trace_path, trace_offset
+                )
+                if new_events:
+                    event_id += 1
+                    yield format_sse(event_id, {"events": new_events})
+                return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
