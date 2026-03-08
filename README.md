@@ -24,34 +24,34 @@ One engineer. A full AI workforce — CEO, product manager, engineer, tester, re
   Analyst    Tester  Reviewer
 ```
 
-You're an engineer, not a CEO. Building technology is the easy part — strategy, product planning, coordination, documentation, code review, testing, and operations are the rest. StrawPot replaces all of that with AI agents you define in Markdown.
+You're an engineer, not a CEO. Building technology is the easy part — strategy, product planning, coordination, documentation, sales, testing, and finance are the rest. StrawPot replaces all of that with AI agents you define in Markdown.
 
 ## Quick Start
 
 ```bash
 pip install strawpot
-strawpot install role team-lead
+strawpot install role ai-ceo
 strawpot start
 ```
 
 ## Your CEO Is a Markdown File
 
 ```yaml
-# team-lead/ROLE.md
+# ai-ceo/ROLE.md
 ---
-name: team-lead
-description: "Orchestrates implementation and review"
+name: ai-ceo
+description: "Plans strategy and delegates to the team"
 metadata:
   strawpot:
     dependencies:
-      roles: [implementer, reviewer]
+      roles: [pm, implementer, reviewer]
     default_agent: claude_code
 ---
 
-# Team Lead
+# CEO
 
-Break the task into subtasks.
-Delegate implementation and code review to sub-roles.
+Plan strategy and break it into deliverables.
+Delegate planning, implementation, and review to sub-roles.
 ```
 
 No Python. No orchestration code. One file.
@@ -71,14 +71,14 @@ No Python. No orchestration code. One file.
 
 - **Zero boilerplate** — A role is a Markdown file with YAML frontmatter. That's it.
 - **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
-- **Declarative delegation** — A team-lead role depends on other roles. StrawPot handles the orchestration.
+- **Declarative delegation** — An ai-ceo role depends on other roles. StrawPot handles the orchestration.
 - **Installable memory** — Memory banks are packages. Install shared context and patterns from StrawHub.
 - **Agent-agnostic** — Same role works with Claude Code, Codex, Gemini, or your own runtime.
 
 ## How It Works
 
 ```
-User task → StrawPot → Role (team-lead)
+User task → StrawPot → Role (ai-ceo)
                          ├─ Sub-role (implementer)
                          │   ├─ Skills (git-workflow, python-dev)
                          │   └─ Agent (claude_code)
@@ -92,7 +92,7 @@ When you run `strawpot start`:
 1. Creates an isolated git worktree
 2. Starts the Denden gRPC server for agent communication
 3. Retrieves memory context from past sessions
-4. Launches the orchestrator agent (e.g. team-lead)
+4. Launches the orchestrator agent (e.g. ai-ceo)
 5. Agents delegate tasks to sub-roles automatically
 6. Required roles and skills are resolved from StrawHub
 7. On exit, records results to memory and cleans up
@@ -127,7 +127,7 @@ Role: implementer
 ```bash
 # Start a session
 strawpot start
-strawpot start --role team-lead --runtime claude_code
+strawpot start --role ai-ceo --runtime claude_code
 
 # Install skills and roles from StrawHub
 strawpot install skill git-workflow
@@ -154,7 +154,7 @@ isolation = "worktree"        # worktree | docker
 addr = "127.0.0.1:9700"
 
 [orchestrator]
-role = "team-lead"
+role = "ai-ceo"
 
 [policy]
 max_depth = 3
