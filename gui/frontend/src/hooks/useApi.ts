@@ -18,7 +18,8 @@ export function useApi<T>(path: string): UseApiResult<T> {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    // Only show loading spinner on initial fetch, not on refetches
+    if (tick === 0) setLoading(true);
     setError(null);
 
     api

@@ -417,6 +417,7 @@ class Session:
                 self._tracer.agent_spawn(
                     span_id=self._session_span_id,
                     agent_id=agent_id,
+                    role=self.config.orchestrator_role,
                     runtime=self.config.runtime,
                     pid=handle.pid,
                 )
