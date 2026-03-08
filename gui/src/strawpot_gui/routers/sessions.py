@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from strawpot.config import load_config
@@ -120,6 +120,56 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
         raise HTTPException(500, "Failed to start session subprocess")
 
     return {"run_id": run_id, "status": "starting"}
+
+
+@router.get("/sessions")
+def list_all_sessions(
+    project_id: int | None = Query(None),
+    status: str | None = Query(None),
+    since: str | None = Query(None, description="ISO 8601 datetime lower bound"),
+    until: str | None = Query(None, description="ISO 8601 datetime upper bound"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    conn=Depends(get_db_conn),
+):
+    """List sessions across all projects with optional filters and pagination."""
+    clauses: list[str] = []
+    params: list = []
+
+    if project_id is not None:
+        clauses.append("project_id = ?")
+        params.append(project_id)
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    if since is not None:
+        clauses.append("started_at >= ?")
+        params.append(since)
+    if until is not None:
+        clauses.append("started_at <= ?")
+        params.append(until)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    total = conn.execute(
+        f"SELECT count(*) FROM sessions{where}", params
+    ).fetchone()[0]
+
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        f"SELECT run_id, project_id, role, runtime, isolation, status,"
+        f"       started_at, ended_at, duration_ms, exit_code, task, summary"
+        f"  FROM sessions{where} ORDER BY started_at DESC"
+        f"  LIMIT ? OFFSET ?",
+        [*params, per_page, offset],
+    ).fetchall()
+
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 @router.get("/projects/{project_id}/sessions")
