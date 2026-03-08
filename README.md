@@ -1,6 +1,8 @@
 # StrawPot
 
-Define your AI team in Markdown. No Python. No orchestration code.
+One engineer. One laptop. One AI company.
+
+One engineer. A full AI workforce — CEO, product manager, engineer, tester, reviewer — collaborating to ship your product.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -9,10 +11,30 @@ Define your AI team in Markdown. No Python. No orchestration code.
 </p>
 
 ```
-# CrewAI: 40 lines of Python to define a 2-agent team
-# OpenClaw: Skills in Markdown, but no roles or dependency resolution
-# StrawPot: One ROLE.md file. Done.
+             You
+              │
+           ┌──┴──┐
+           │ CEO │
+           └──┬──┘
+     ┌────────┼─────────┐
+  ┌──┴──┐   ┌─┴───┐  ┌──┴──┐
+  │  PM │   │ Eng │  │  QA │
+  └──┬──┘   └──┬──┘  └──┬──┘
+     │         │        │
+  Analyst    Tester  Reviewer
 ```
+
+You're an engineer, not a CEO. Building technology is the easy part — strategy, product planning, coordination, documentation, code review, testing, and operations are the rest. StrawPot replaces all of that with AI agents you define in Markdown.
+
+## Quick Start
+
+```bash
+pip install strawpot
+strawpot install role team-lead
+strawpot start
+```
+
+## Your CEO Is a Markdown File
 
 ```yaml
 # team-lead/ROLE.md
@@ -32,6 +54,10 @@ Break the task into subtasks.
 Delegate implementation and code review to sub-roles.
 ```
 
+No Python. No orchestration code. One file.
+
+## How It Compares
+
 | | CrewAI | OpenClaw | StrawPot |
 |---|---|---|---|
 | **Format** | YAML + Python | JSON5 + Markdown | Markdown only |
@@ -40,14 +66,6 @@ Delegate implementation and code review to sub-roles.
 | **Memory** | Python config | Markdown/YAML (local) | Markdown (installable) |
 | **Skill dependency resolution** | — | — | Automatic |
 | **Multi-agent delegation** | Python config | Runtime (subagent spawn) | Declarative (role deps) |
-
-## Quick Start
-
-```bash
-pip install strawpot
-strawpot install role team-lead
-strawpot start
-```
 
 ## Why StrawPot?
 
@@ -154,3 +172,11 @@ DESIGN.md     System architecture
 ```
 
 See [DESIGN.md](DESIGN.md) for architecture details.
+
+---
+
+<p align="center">
+The future company may look different.<br>
+One human. Hundreds of AI workers.<br>
+<strong>StrawPot is an operating system for that future.</strong>
+</p>
