@@ -1,0 +1,24 @@
+import { Routes, Route } from "react-router-dom";
+import AppLayout from "./layouts/AppLayout";
+import Dashboard from "./pages/Dashboard";
+import ProjectList from "./pages/ProjectList";
+import ProjectDetail from "./pages/ProjectDetail";
+import SessionDetail from "./pages/SessionDetail";
+import NotFound from "./pages/NotFound";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="projects" element={<ProjectList />} />
+        <Route path="projects/:projectId" element={<ProjectDetail />} />
+        <Route
+          path="projects/:projectId/sessions/:runId"
+          element={<SessionDetail />}
+        />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  );
+}
