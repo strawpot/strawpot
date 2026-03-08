@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, field_validator
 
 from strawpot.config import load_config
@@ -382,3 +384,31 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
         (run_id,),
     )
     return {"run_id": run_id, "status": "stopped"}
+
+
+_ARTIFACT_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+@router.get("/sessions/{run_id}/artifacts/{artifact_hash}")
+def get_artifact(run_id: str, artifact_hash: str, conn=Depends(get_db_conn)):
+    """Serve an artifact file by its content hash."""
+    if not _ARTIFACT_HASH_RE.match(artifact_hash):
+        raise HTTPException(400, "Invalid artifact hash")
+
+    row = conn.execute(
+        "SELECT session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    artifact_path = Path(row["session_dir"]) / "artifacts" / artifact_hash
+    if not artifact_path.is_file():
+        raise HTTPException(404, "Artifact not found")
+
+    try:
+        content = artifact_path.read_text(encoding="utf-8")
+    except OSError:
+        raise HTTPException(500, "Failed to read artifact")
+
+    return PlainTextResponse(content)

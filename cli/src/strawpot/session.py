@@ -301,6 +301,7 @@ class Session:
         self._session_span_id: str | None = None
         self._session_start_time: float = 0.0
         self._agent_spans: dict[str, str] = {}
+        self._orchestrator_result: AgentResult | None = None
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -438,6 +439,7 @@ class Session:
             # 8. Block until orchestrator exits
             if self.task:
                 result = self.runtime.wait(handle)
+                self._orchestrator_result = result
                 if result.exit_code != 0:
                     sys.exit(result.exit_code)
             else:
@@ -449,7 +451,38 @@ class Session:
 
     def stop(self) -> None:
         """Clean up the session: kill agents, stop server, merge changes, remove isolation."""
-        # 0. Emit session_end trace event before cleanup that might fail
+        # 0a. Memory dump for orchestrator agent
+        if self._memory_provider is not None and self._run_id is not None:
+            orch_agent_id = None
+            for aid, info in self._agent_info.items():
+                if info.get("parent") is None:
+                    orch_agent_id = aid
+                    break
+            if orch_agent_id is not None:
+                result = self._orchestrator_result
+                status = "success" if (result is None or result.exit_code == 0) else "failure"
+                output = result.output if result else ""
+                try:
+                    self._memory_provider.dump(
+                        session_id=self._run_id,
+                        agent_id=orch_agent_id,
+                        role=self.config.orchestrator_role,
+                        behavior_ref="",
+                        task=self.task,
+                        status=status,
+                        output=output,
+                    )
+                except Exception:
+                    logger.debug("Orchestrator memory.dump failed", exc_info=True)
+                if self._tracer is not None and self._session_span_id is not None:
+                    self._tracer.memory_dump(
+                        span_id=self._session_span_id,
+                        provider=self._memory_provider.name,
+                        entries=output,
+                        entry_count=1,
+                    )
+
+        # 0b. Emit session_end trace event before cleanup that might fail
         if self._tracer is not None and self._session_span_id is not None:
             duration_ms = int(
                 (time.monotonic() - self._session_start_time) * 1000

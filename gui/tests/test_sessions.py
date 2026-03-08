@@ -1,6 +1,7 @@
 """Tests for session list and detail endpoints."""
 
 import shutil
+from pathlib import Path
 
 from strawpot_gui.db import sync_sessions
 
@@ -203,3 +204,41 @@ class TestGetSession:
         assert s["run_id"] == "run_detail"
         assert s["agents"] == {}
         assert s["events"] == []
+
+
+class TestGetArtifact:
+    def _setup(self, client, tmp_path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        _register_project(client, project_dir)
+        session_dir = _write_session(project_dir, "run_art", archived=True)
+        sync_sessions(client.app.state.db_path)
+        return session_dir
+
+    def test_get_artifact(self, client, tmp_path):
+        """Artifact endpoint serves stored content."""
+        session_dir = Path(self._setup(client, tmp_path))
+        artifacts_dir = session_dir / "artifacts"
+        artifacts_dir.mkdir()
+        (artifacts_dir / "abcdef012345").write_text("artifact content")
+
+        resp = client.get("/api/sessions/run_art/artifacts/abcdef012345")
+        assert resp.status_code == 200
+        assert resp.text == "artifact content"
+
+    def test_artifact_not_found(self, client, tmp_path):
+        """Missing artifact returns 404."""
+        self._setup(client, tmp_path)
+        resp = client.get("/api/sessions/run_art/artifacts/000000000000")
+        assert resp.status_code == 404
+
+    def test_artifact_invalid_hash(self, client, tmp_path):
+        """Invalid hash format returns 400."""
+        self._setup(client, tmp_path)
+        resp = client.get("/api/sessions/run_art/artifacts/bad")
+        assert resp.status_code == 400
+
+    def test_artifact_session_not_found(self, client, tmp_path):
+        """Unknown session returns 404."""
+        resp = client.get("/api/sessions/run_nope/artifacts/abcdef012345")
+        assert resp.status_code == 404
