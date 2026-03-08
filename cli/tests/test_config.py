@@ -11,7 +11,7 @@ def test_defaults():
     assert config.runtime == "strawpot-claude-code"
     assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
-    assert config.orchestrator_role == "orchestrator"
+    assert config.orchestrator_role == "ai-ceo"
     assert config.max_depth == 3
     assert config.permission_mode == "default"
     assert config.agent_timeout is None

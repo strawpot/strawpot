@@ -25,7 +25,7 @@ class StrawPotConfig:
     runtime: str = "strawpot-claude-code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
-    orchestrator_role: str = "orchestrator"
+    orchestrator_role: str = "ai-ceo"
     max_depth: int = 3
     permission_mode: str = "default"
     agent_timeout: int | None = None
