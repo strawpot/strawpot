@@ -93,7 +93,7 @@ def _write_stale_session(tmp_path, run_id, **overrides):
         "run_id": run_id,
         "working_dir": str(tmp_path),
         "isolation": "none",
-        "runtime": "claude_code",
+        "runtime": "strawpot-claude-code",
         "denden_addr": "127.0.0.1:9700",
         "started_at": "2026-01-01T00:00:00+00:00",
         "pid": 99999999,  # almost certainly dead
@@ -228,7 +228,7 @@ class TestStartFlow:
 
         # File is removed during stop(), so check session_data was built
         assert session._session_data["isolation"] == "none"
-        assert session._session_data["runtime"] == "claude_code"
+        assert session._session_data["runtime"] == "strawpot-claude-code"
         assert "agents" in session._session_data
 
     @patch("strawpot.session.DenDenServer")
@@ -768,7 +768,7 @@ class TestSessionStateFile:
         assert data["run_id"] == "run_test123"
         assert data["working_dir"] == str(tmp_path)
         assert data["isolation"] == "none"
-        assert data["runtime"] == "claude_code"
+        assert data["runtime"] == "strawpot-claude-code"
         assert "pid" in data
         assert "started_at" in data
         assert "agents" in data

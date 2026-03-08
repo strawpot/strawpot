@@ -51,7 +51,7 @@ def test_start_resolves_agent(
 
     mock_resolve.assert_called_once()
     call_args = mock_resolve.call_args
-    assert call_args[0][0] == "claude_code"  # runtime name
+    assert call_args[0][0] == "strawpot-claude-code"  # runtime name
     assert call_args[0][2] is None  # no agent-specific config
 
 

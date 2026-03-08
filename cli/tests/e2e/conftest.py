@@ -126,15 +126,11 @@ def stub_resolver(strawpot_home):
 @pytest.fixture
 def stub_resolve_role_dirs(strawpot_home):
     """Role-dirs resolver callable against fixture data."""
-    from strawhub.version_spec import parse_dir_name
 
     def _resolve_dirs(slug):
-        roles_dir = strawpot_home / "roles"
-        if roles_dir.is_dir():
-            for entry in roles_dir.iterdir():
-                parsed = parse_dir_name(entry.name)
-                if parsed and parsed[0] == slug:
-                    return str(entry)
+        role_dir = strawpot_home / "roles" / slug
+        if role_dir.is_dir():
+            return str(role_dir)
         return None
 
     return _resolve_dirs
