@@ -29,6 +29,9 @@ timeout = 30
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+strawpot_gui = ["static/**/*"]
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

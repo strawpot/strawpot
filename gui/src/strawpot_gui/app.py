@@ -1,9 +1,12 @@
 """FastAPI application factory."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from strawpot.config import get_strawpot_home
 
@@ -30,9 +33,30 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
     app.state.db_path = db_path
 
+    # CORS — only enabled when developing the frontend with Vite dev server
+    if os.environ.get("STRAWPOT_GUI_DEV"):
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:5173"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(config.router)
     app.include_router(sessions.router)
+
+    # Serve built frontend — check installed package path then dev path
+    static_dir = Path(__file__).resolve().parent / "static"
+    dev_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    frontend_dir = static_dir if static_dir.is_dir() else dev_dir
+    if frontend_dir.is_dir():
+        app.mount(
+            "/", StaticFiles(directory=str(frontend_dir), html=True),
+            name="frontend",
+        )
 
     return app
