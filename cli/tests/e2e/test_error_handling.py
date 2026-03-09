@@ -47,6 +47,21 @@ class TestErrorHandling:
             active = list(running_dir.iterdir())
             assert len(active) == 0
 
+    def test_delegation_subagent_failure_returns_error(self, make_session, git_project):
+        """Sub-agent that exits non-zero causes ERROR response to calling agent."""
+        session = make_session(
+            str(git_project),
+            task="delegate implementer exit 1",
+            agent_script=STUB_AGENT_DELEGATE,
+        )
+        session.start(str(git_project))
+
+        # The orchestrator (stub_agent_delegate) receives ERROR from denden
+        # and prints "Delegation error: ..." — verify it saw the error
+        result = session._orchestrator_result
+        assert result is not None
+        assert "Delegation error:" in result.output
+
     def test_stale_session_recovery(self, git_project, make_config, strawpot_home):
         """Stale session files with dead PIDs are cleaned up."""
         config = make_config()
