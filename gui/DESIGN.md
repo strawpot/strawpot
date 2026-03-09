@@ -501,10 +501,10 @@ directory structure is preserved. Path components are validated on
 upload: reject names containing `..`, absolute paths, or symlinks to
 prevent writing outside the files directory.
 
-**Agent access**: The delegation handler appends the file listing and
-absolute path to the agent's system prompt so agents know where to
-find uploaded files. For worktree sessions the path points back to the
-original project's `.strawpot/files/` (not the worktree copy).
+**Agent access**: The session discovers `.strawpot/files/` and passes it
+via `--files-dir` in the wrapper protocol. Each wrapper maps this to the
+agent's native directory access mechanism (e.g. `--add-dir` for Claude
+Code, `--include-directories` for Gemini, symlinks for OpenHands/Pi).
 
 **Frontend**: Drag-and-drop zone on the project detail page (new Files
 tab). Shows uploaded files with name, size, and upload date. Supports
@@ -1380,13 +1380,13 @@ through the UI.
 | 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install/uninstall | **Done** (Phase 5) |
 | 6.5 | Backend + frontend: per-resource env var and parameter configuration | **Done** (Phase 5) |
 | 7 | Backend + frontend: config editor (project + global) | **Done** (Phase 5) |
-| 7.5 | Backend + frontend: project files upload | Planned |
+| 7.5 | Backend + frontend: project files upload | **Done** (Phase 5) |
 | 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
 | 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
 | 10 | Ongoing session support (ask_user bridge) | Deferred |
 | 11 | Interactive GUI sessions (chat panel) | Deferred |
 
-**Next:** Phase 5 continued — Project files upload.
+**Next:** Deferred features or Phase 6 — Triggers.
 
 **Deferred features:**
 

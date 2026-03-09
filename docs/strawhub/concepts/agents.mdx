@@ -101,6 +101,7 @@ Translate StrawPot protocol args into the agent's native CLI command. Returns JS
   --task <text> \
   --skills-dir <dir> \
   --roles-dir <dir> \
+  --files-dir <dir> \
   --config <json>
 ```
 
@@ -114,8 +115,9 @@ Translate StrawPot protocol args into the agent's native CLI command. Returns JS
 | `--role-prompt` | Assembled role prompt text |
 | `--memory-prompt` | Memory context from memory providers |
 | `--task` | Task description (non-interactive mode) |
-| `--skills-dir` | Directory containing staged skill subdirectories |
-| `--roles-dir` | Directory containing staged role subdirectories (may appear multiple times) |
+| `--skills-dir` | Directory containing staged skill subdirectories (repeatable) |
+| `--roles-dir` | Directory containing staged role subdirectories (repeatable) |
+| `--files-dir` | Directory containing project files for agent access (repeatable) |
 | `--config` | JSON string with merged parameter values |
 
 #### JSON Output

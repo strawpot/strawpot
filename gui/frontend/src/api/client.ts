@@ -35,6 +35,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function uploadRequest<T>(path: string, body: FormData): Promise<T> {
+  const url = `${BASE}${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      body,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    throw new ApiError(res.status, res.statusText, errBody);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
 
@@ -57,4 +78,10 @@ export const api = {
     }),
 
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+
+  upload: <T>(path: string, files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return uploadRequest<T>(path, fd);
+  },
 };

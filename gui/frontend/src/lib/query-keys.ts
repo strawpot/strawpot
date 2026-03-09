@@ -4,6 +4,7 @@ export const queryKeys = {
     detail: (id: number) => ["projects", id] as const,
     config: (id: number) => ["projects", id, "config"] as const,
     sessions: (id: number) => ["projects", id, "sessions"] as const,
+    files: (id: number) => ["projects", id, "files"] as const,
   },
   sessions: {
     all: (filters?: Record<string, string>) => ["sessions", filters] as const,

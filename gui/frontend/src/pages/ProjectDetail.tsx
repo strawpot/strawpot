@@ -4,9 +4,16 @@ import { useProject } from "@/hooks/queries/use-projects";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
+import ProjectFilesTab from "@/components/ProjectFilesTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { AlertCircle, ArrowLeft, Play } from "lucide-react";
 import ProjectDetailSkeleton from "@/components/skeletons/ProjectDetailSkeleton";
 
@@ -95,22 +102,32 @@ export default function ProjectDetail() {
         onOpenChange={setLaunchOpen}
       />
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Sessions ({sessionList.length})
-        </h2>
-        {sessionList.length === 0 ? (
-          <p className="text-sm italic text-muted-foreground">
-            No sessions yet.
-          </p>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              <SessionTable sessions={sessionList} />
-            </CardContent>
-          </Card>
-        )}
-      </section>
+      <Tabs defaultValue="sessions">
+        <TabsList>
+          <TabsTrigger value="sessions">
+            Sessions ({sessionList.length})
+          </TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sessions" className="mt-4 space-y-3">
+          {sessionList.length === 0 ? (
+            <p className="text-sm italic text-muted-foreground">
+              No sessions yet.
+            </p>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <SessionTable sessions={sessionList} />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="files" className="mt-4">
+          <ProjectFilesTab projectId={pid} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

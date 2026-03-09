@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Project } from "@/api/types";
+import type { Project, ProjectFile } from "@/api/types";
 
 export function useProjects() {
   return useQuery({
@@ -22,6 +22,13 @@ export interface ProjectConfig {
   merged: Record<string, unknown>;
   project: Record<string, unknown>;
   global: Record<string, unknown>;
+}
+
+export function useProjectFiles(id: number) {
+  return useQuery({
+    queryKey: queryKeys.projects.files(id),
+    queryFn: () => api.get<ProjectFile[]>(`/projects/${id}/files`),
+  });
 }
 
 export function useProjectConfig(

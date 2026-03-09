@@ -366,8 +366,9 @@ class TestAgentEvents:
             role="ai-ceo", runtime="strawpot-claude-code", pid=12345,
             working_dir="/project",
             agent_workspace_dir="/session/agents/agent_abc",
-            skills_dir="/session/roles/ai-ceo/skills",
+            skills_dirs=["/session/roles/ai-ceo/skills"],
             roles_dirs=["/session/roles/ai-ceo/roles"],
+            files_dirs=["/project/.strawpot/files"],
             task="build the app",
             context="You are the CEO agent.",
         )
@@ -379,8 +380,9 @@ class TestAgentEvents:
         assert data["pid"] == 12345
         assert data["working_dir"] == "/project"
         assert data["agent_workspace_dir"] == "/session/agents/agent_abc"
-        assert data["skills_dir"] == "/session/roles/ai-ceo/skills"
+        assert data["skills_dirs"] == ["/session/roles/ai-ceo/skills"]
         assert data["roles_dirs"] == ["/session/roles/ai-ceo/roles"]
+        assert data["files_dirs"] == ["/project/.strawpot/files"]
         assert data["task_ref"] is not None
         assert data["context_ref"] is not None
         artifact_path = Path(session_dir) / "artifacts" / data["context_ref"]

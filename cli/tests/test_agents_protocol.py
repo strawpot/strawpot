@@ -38,7 +38,7 @@ def test_agent_runtime_protocol():
     class FakeRuntime:
         name = "fake"
 
-        def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt, skills_dir, roles_dirs, task, env):
+        def spawn(self, *, agent_id, working_dir, role_prompt, memory_prompt, skills_dirs, roles_dirs, files_dirs, task, env):
             return AgentHandle(agent_id=agent_id, runtime_name=self.name)
 
         def wait(self, handle, timeout=None):

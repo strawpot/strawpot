@@ -79,6 +79,13 @@ export interface TreeData {
   denied_delegations: DeniedDelegation[];
 }
 
+export interface ProjectFile {
+  name: string;
+  path: string;
+  size: number;
+  modified_at: string;
+}
+
 export interface Resource {
   name: string;
   version: string | null;
