@@ -123,6 +123,7 @@ class SessionLaunch(BaseModel):
     role: str | None = None
     overrides: SessionOverrides | None = None
     context_files: list[str] | None = None
+    system_prompt: str | None = None
 
     @field_validator("task")
     @classmethod
@@ -216,6 +217,8 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             cmd.extend(["--isolation", body.overrides.isolation])
         if body.overrides.merge_strategy:
             cmd.extend(["--merge-strategy", body.overrides.merge_strategy])
+    if body.system_prompt:
+        cmd.extend(["--system-prompt", body.system_prompt])
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.
