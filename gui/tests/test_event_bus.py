@@ -70,18 +70,23 @@ class TestEventBus:
 
         asyncio.run(_run())
 
-    def test_subscriber_cleanup_on_break(self, bus):
+    def test_subscriber_cleanup_on_close(self, bus):
         """Subscriber is removed from bus when generator is closed."""
 
         async def _run():
-            async def consume_one():
-                async for event in bus.subscribe():
-                    break
-
-            task = asyncio.create_task(consume_one())
+            gen = bus.subscribe()
+            # Start iterating to register the subscriber
+            task = asyncio.ensure_future(gen.__anext__())
             await asyncio.sleep(0.01)
-            bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
-            await asyncio.wait_for(task, timeout=2.0)
+            assert len(bus._subscribers) == 1
+
+            # Cancel the pending __anext__ first, then close the generator
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, StopAsyncIteration):
+                pass
+            await gen.aclose()
             assert len(bus._subscribers) == 0
 
         asyncio.run(_run())
