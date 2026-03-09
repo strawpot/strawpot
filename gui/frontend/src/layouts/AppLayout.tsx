@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { LayoutDashboard, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/hooks/queries/use-projects";
@@ -53,7 +53,7 @@ export default function AppLayout() {
       {/* Sidebar */}
       <aside className="flex w-56 flex-col border-r border-border bg-card">
         <div className="flex h-14 items-center border-b border-border px-4">
-          <span className="text-lg font-bold tracking-tight">StrawPot</span>
+          <Link to="/" className="text-lg font-bold tracking-tight hover:text-foreground/80">StrawPot</Link>
         </div>
         <nav className="flex flex-col gap-1 p-3">
           {navItems.map(({ to, label, icon: Icon, end }) => (

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, FolderKanban } from "lucide-react";
+import ActiveAgentsPanel from "@/components/ActiveAgentsPanel";
 import DashboardSkeleton from "@/components/skeletons/DashboardSkeleton";
 
 export default function Dashboard() {
@@ -50,6 +51,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+
+      {/* Active Agents */}
+      <ActiveAgentsPanel />
 
       {/* Projects */}
       <section className="space-y-3">
