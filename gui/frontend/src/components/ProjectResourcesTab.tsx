@@ -23,16 +23,25 @@ const TYPE_LABELS: Record<string, string> = {
   memories: "Memory",
 };
 
+interface Props {
+  projectId: number;
+  installOpen?: boolean;
+  onInstallOpenChange?: (open: boolean) => void;
+}
+
 export default function ProjectResourcesTab({
   projectId,
-}: {
-  projectId: number;
-}) {
+  installOpen: externalInstallOpen,
+  onInstallOpenChange: externalOnInstallOpenChange,
+}: Props) {
   const { data: resources, isLoading } = useProjectResources(projectId);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>("");
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [installOpen, setInstallOpen] = useState(false);
+  const [internalInstallOpen, setInternalInstallOpen] = useState(false);
+
+  const installOpen = externalInstallOpen ?? internalInstallOpen;
+  const setInstallOpen = externalOnInstallOpenChange ?? setInternalInstallOpen;
 
   const { data: detail } = useProjectResourceDetail(
     projectId,
