@@ -36,8 +36,9 @@ async def _watch_session_dir(
             poll_delay_ms=50,
         ):
             yield {path for _, path in changes}
-    except RuntimeError:
-        # awatch can raise if the directory is removed mid-watch
+    except (RuntimeError, FileNotFoundError):
+        # awatch raises FileNotFoundError if the directory doesn't exist,
+        # and RuntimeError if it is removed mid-watch.
         return
 
 
