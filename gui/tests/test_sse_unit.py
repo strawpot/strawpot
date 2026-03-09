@@ -176,6 +176,23 @@ class TestTreeStateTraceEvents:
         assert result["denied_delegations"][0]["role"] == "admin"
         assert result["denied_delegations"][0]["reason"] == "DENY_DEPTH_LIMIT"
 
+    def test_agent_spawn_uses_event_role_when_no_pending(self):
+        """Root agent_spawn (no prior delegate_start) reads role from event data."""
+        state = TreeState()
+        state.process_event({
+            "event": "session_start", "span_id": "s0", "data": {},
+        })
+        state.process_event({
+            "event": "agent_spawn", "span_id": "s0", "ts": "T0",
+            "data": {
+                "agent_id": "agent_root",
+                "role": "ai-ceo",
+                "runtime": "strawpot-claude-code",
+                "pid": 123,
+            },
+        })
+        assert state.nodes["agent_root"].role == "ai-ceo"
+
     def test_session_end_marks_terminal(self):
         state = TreeState()
         state.process_event({

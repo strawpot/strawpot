@@ -91,7 +91,7 @@ class TreeState:
             runtime = data.get("runtime", "unknown")
             parent_agent_id = self._span_to_parent_agent.get(span_id)
             pending = self.pending.pop(span_id, None)
-            role = pending.role if pending else "unknown"
+            role = pending.role if pending else data.get("role", "unknown")
             self.nodes[agent_id] = TreeNode(
                 agent_id=agent_id,
                 role=role,
