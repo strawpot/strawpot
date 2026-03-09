@@ -7,7 +7,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
-from strawpot.agents.registry import parse_agent_md
+from strawpot.agents.registry import (
+    AgentSpec,
+    _current_os,
+    parse_agent_md,
+    validate_agent,
+)
 from strawpot.config import _read_toml, get_strawpot_home, save_resource_config
 from strawpot.context import parse_frontmatter
 from strawpot.memory.registry import parse_memory_md
@@ -204,6 +209,45 @@ def get_resource_config(resource_type: str, name: str):
     }
 
 
+@router.get("/agents/{name}/validate")
+def validate_agent_status(name: str):
+    """Check if an agent's prerequisites are satisfied."""
+    home = get_strawpot_home()
+    agent_dir = home / "agents" / name
+    manifest_path = agent_dir / "AGENT.md"
+    if not manifest_path.is_file():
+        raise HTTPException(404, f"Agent not found: {name}")
+
+    fm, _ = parse_agent_md(manifest_path)
+    strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
+
+    spec = AgentSpec(
+        name=fm.get("name", name),
+        version="0",
+        wrapper_cmd=[],
+        tools=strawpot_meta.get("tools", {}),
+        env_schema=strawpot_meta.get("env", {}),
+    )
+    result = validate_agent(spec)
+
+    bin_map = strawpot_meta.get("bin", {})
+    os_key = _current_os()
+    bin_name = bin_map.get(os_key)
+    setup_command = f"{bin_name} setup" if bin_name else None
+    setup_description = strawpot_meta.get("setup", {}).get("description")
+
+    return {
+        "tools_ok": len(result.missing_tools) == 0,
+        "missing_tools": [
+            {"name": t[0], "install_hint": t[1]} for t in result.missing_tools
+        ],
+        "env_ok": len(result.missing_env) == 0,
+        "missing_env": result.missing_env,
+        "setup_command": setup_command,
+        "setup_description": setup_description,
+    }
+
+
 @router.put("/{resource_type}/{name}/config")
 def put_resource_config(resource_type: str, name: str, data: dict = Body(...)):
     """Save env and param values for a resource."""
@@ -287,7 +331,7 @@ def update_resource(data: dict = Body(...)):
     if not resource_type or not name:
         raise HTTPException(400, "Both 'type' and 'name' are required")
     singular = singular_type(resource_type)
-    return run_strawhub("update", singular, name, "--global")
+    return run_strawhub("update", "-y", singular, name, "--global")
 
 
 @router.post("/reinstall")

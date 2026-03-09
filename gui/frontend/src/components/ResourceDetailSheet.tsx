@@ -20,6 +20,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import AgentSetupGuide from "@/components/AgentSetupGuide";
 import ResourceConfigForm from "@/components/ResourceConfigForm";
 import { toast } from "sonner";
 
@@ -151,6 +152,9 @@ export default function ResourceDetailSheet({
         </div>
 
         <ScrollArea className="min-h-0 flex-1 px-4">
+          {resourceType === "agents" && (
+            <AgentSetupGuide agentName={resource.name} />
+          )}
           <ResourceConfigForm
             resourceType={resourceType}
             resourceName={resource.name}

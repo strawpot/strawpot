@@ -126,3 +126,12 @@ export interface ResourceConfig {
   params_schema: Record<string, ParamSchema>;
   params_values: Record<string, unknown>;
 }
+
+export interface AgentValidation {
+  tools_ok: boolean;
+  missing_tools: { name: string; install_hint: string | null }[];
+  env_ok: boolean;
+  missing_env: string[];
+  setup_command: string | null;
+  setup_description: string | null;
+}
