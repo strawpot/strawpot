@@ -783,3 +783,162 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
   stored in the session directory and referenced in the agent's system
   prompt. The launch dialog gets a drop zone or file picker alongside
   the task textarea.
+
+---
+
+## GUI Roadmap — Features to Adapt from Paperclip
+
+Reference: [github.com/paperclipai/paperclip](https://github.com/paperclipai/paperclip)
+
+Paperclip is an open-source Node.js/React orchestration platform for
+"zero-human companies." Its GUI is substantially more mature (~90 components,
+20+ pages) than StrawPot's current dashboard. The features below are ordered
+by priority — balancing implementation effort against user value.
+
+### Phase A — Foundation (unblocks everything else)
+
+#### A1. shadcn/ui Migration
+
+Replace custom CSS with shadcn/ui component library (button, card, dialog,
+tabs, badge, input, select, dropdown-menu, tooltip, skeleton, etc.).
+
+- **Why first:** Every subsequent feature benefits from a consistent component
+  system. Paperclip uses shadcn throughout — adapting their components becomes
+  copy-paste once we share the same primitives.
+- **Effort:** Medium (one-time migration of existing pages)
+- **Files affected:** `index.css`, all pages and components
+- **Ref:** `ui/src/components/ui/*.tsx`
+
+#### A2. TanStack Query
+
+Replace custom `useApi` hook with `@tanstack/react-query`.
+
+- **Why:** Automatic caching, background refetching, optimistic updates,
+  deduplication. Eliminates manual loading/error state management.
+- **Effort:** Low-Medium (swap fetch calls, remove manual state)
+- **Ref:** Paperclip uses `useQuery` + `queryKeys` pattern everywhere
+
+### Phase B — Quick Wins (high UX/effort ratio)
+
+#### B1. Command Palette (Cmd+K)
+
+Global search overlay to navigate sessions, projects, agents, and trigger
+actions (new session, stop session).
+
+- **Why:** Power-user UX — fast navigation without clicking through menus.
+- **Effort:** Low (frontend only, uses shadcn `<Command>` / cmdk)
+- **Ref:** `ui/src/components/CommandPalette.tsx`
+
+#### B2. Breadcrumb Navigation
+
+Persistent breadcrumb bar showing page hierarchy
+(Dashboard → Project → Session).
+
+- **Why:** Clearer orientation, easy back-navigation.
+- **Effort:** Low (layout component + route metadata)
+- **Ref:** `ui/src/components/BreadcrumbBar.tsx`
+
+#### B3. Skeleton Loaders
+
+Page-specific skeleton placeholders during data fetching (replaces
+spinner/blank states).
+
+- **Why:** Perceived performance improvement, less layout shift.
+- **Effort:** Low (one component with variants)
+- **Ref:** `ui/src/components/PageSkeleton.tsx`
+
+#### B4. Mobile Bottom Nav
+
+Bottom tab bar for mobile viewports (Dashboard, Sessions, Projects).
+
+- **Why:** Monitor agents from phone while away from desk.
+- **Effort:** Low (responsive layout component)
+- **Ref:** `ui/src/components/MobileBottomNav.tsx`
+
+### Phase C — Monitoring & Visibility
+
+#### C1. Active Agents Live Feed
+
+Unified real-time scrolling feed showing what every running agent is doing —
+assistant messages, tool calls, thinking, errors — across all active sessions.
+
+- **Why:** The "20 terminals open" problem. One view to see all agent activity.
+- **Effort:** Medium (aggregate SSE streams, parse agent transcripts)
+- **Ref:** `ui/src/components/ActiveAgentsPanel.tsx`
+
+#### C2. Activity Charts
+
+Visual charts for run patterns over time — runs per day, success rate,
+issue status distribution, priority breakdown.
+
+- **Why:** Understand agent productivity trends at a glance.
+- **Effort:** Medium (needs historical data aggregation + charting lib)
+- **Ref:** `ui/src/components/ActivityCharts.tsx`
+
+#### C3. Cost / Token Tracking
+
+Per-agent and per-project token usage and cost breakdowns with date range
+filters (MTD, 7d, 30d, YTD, custom).
+
+- **Why:** Practical value — know how much each agent run costs.
+- **Effort:** Medium-High (backend: extract token counts from agent output,
+  store in DB. Frontend: new Costs page with summary cards + tables)
+- **Ref:** `ui/src/pages/Costs.tsx`, `server/src/routes/costs.ts`
+
+### Phase D — Task Management
+
+#### D1. Kanban Board
+
+Drag-and-drop board for managing tasks/issues across status columns
+(backlog → todo → in_progress → in_review → done).
+
+- **Why:** Visual task management within StrawPot instead of external tools.
+- **Effort:** Medium (uses `@dnd-kit/core` + `@dnd-kit/sortable`)
+- **Ref:** `ui/src/components/KanbanBoard.tsx`
+
+#### D2. Goal Tree
+
+Hierarchical goal visualization — company mission → sub-goals → tasks.
+Every agent task traces back to a top-level objective.
+
+- **Why:** Ensures agents work toward aligned objectives, not just isolated
+  tasks.
+- **Effort:** Medium (new data model for goals + tree component)
+- **Ref:** `ui/src/components/GoalTree.tsx`, `ui/src/pages/Goals.tsx`
+
+### Phase E — Governance & Autonomy
+
+#### E1. Approval Queue (Human-in-the-Loop)
+
+Interactive approve/reject gates for agent actions — delegation requests,
+strategy changes, budget increases. Agents block until human decides.
+
+- **Why:** Safety and control. Currently StrawPot has static delegation
+  policy (allow/deny by role). An approval queue adds dynamic, per-action
+  human oversight.
+- **Effort:** High (backend: approval model, blocking wait, notification.
+  Frontend: approval list page + approval cards with action buttons)
+- **Ref:** `ui/src/components/ApprovalCard.tsx`, `ui/src/pages/Approvals.tsx`
+
+#### E2. Heartbeat / Scheduled Runs
+
+Agents wake on a cron schedule, check for pending work, and act
+autonomously. Delegation flows up and down the org chart.
+
+- **Why:** Enables continuous autonomous operation instead of one-shot
+  sessions. Agents can handle recurring work (monitoring, reports, support).
+- **Effort:** High (scheduler backend, persistent agent state across
+  heartbeats, wake/sleep lifecycle)
+- **Ref:** `server/src/routes/heartbeats.ts`, Paperclip heartbeat system
+
+### Not Planned
+
+These Paperclip features are intentionally excluded:
+
+| Feature | Reason |
+|---|---|
+| Multi-company isolation | Over-engineering for StrawPot's scope |
+| Auth / login / invite system | StrawPot is local-first |
+| Agent adapter config forms | StrawPot's `WrapperRuntime` is cleaner |
+| Board claim / governance roles | No multi-user collaboration needed yet |
+| PostgreSQL migration | SQLite is sufficient for local-first |
