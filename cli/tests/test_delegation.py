@@ -1554,10 +1554,11 @@ class TestIntegration:
         # Agent workspace created
         assert os.path.isdir(kw["agent_workspace_dir"])
 
-        # Staged skill is accessible inside skills_dir
-        skills_dir = kw["skills_dir"]
-        assert os.path.isdir(skills_dir)
-        assert os.path.isfile(os.path.join(skills_dir, "testing", "SKILL.md"))
+        # Staged skill is accessible inside skills_dirs
+        skills_dirs = kw["skills_dirs"]
+        assert len(skills_dirs) == 1
+        assert os.path.isdir(skills_dirs[0])
+        assert os.path.isfile(os.path.join(skills_dirs[0], "testing", "SKILL.md"))
 
         # Task and env
         assert kw["task"] == "Add login page"
