@@ -147,6 +147,14 @@ def resolve_memory(
     script, pip_package, module_path = _resolve_script(memory_dir, strawpot_meta)
     params = strawpot_meta.get("params", {})
     config = _merge_config(params, user_config or {})
+
+    # Resolve relative storage_dir to absolute path based on project_dir
+    # so the provider doesn't depend on CWD.
+    if "storage_dir" in config:
+        sd = Path(os.path.expandvars(os.path.expanduser(config["storage_dir"])))
+        if not sd.is_absolute():
+            config["storage_dir"] = str(Path(project_dir) / sd)
+
     env_schema = strawpot_meta.get("env", {})
     tools = strawpot_meta.get("tools", {})
     version = metadata.get("version", "0.0.0")
@@ -273,9 +281,12 @@ def load_provider(spec: MemorySpec) -> MemoryProvider:
             and issubclass(attr, object)
         ):
             try:
-                instance = attr()
+                instance = attr(config=spec.config)
             except TypeError:
-                continue
+                try:
+                    instance = attr()
+                except TypeError:
+                    continue
             if isinstance(instance, MemoryProvider):
                 return instance
 

@@ -156,7 +156,8 @@ def test_resolve_project_local(tmp_path, monkeypatch):
     spec = resolve_memory("test-mem", str(project_dir))
     assert spec.name == "test-memory"
     assert spec.version == "0.1.0"
-    assert spec.config == {"storage_dir": ".strawpot/memory", "em_max_events": 10000}
+    assert spec.config["storage_dir"] == str(project_dir / ".strawpot" / "memory")
+    assert spec.config["em_max_events"] == 10000
     assert spec.env_schema["API_KEY"]["required"] is True
     assert "sometool" in spec.tools
     assert spec.script.endswith("provider.py")
@@ -315,6 +316,39 @@ def test_load_provider(tmp_path):
         behavior_ref="desc", task="t",
     )
     assert result.context_cards == []
+
+
+def test_load_provider_passes_config(tmp_path):
+    """load_provider passes spec.config to the provider constructor."""
+    provider_code = dedent("""\
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
+
+        class ConfigProvider:
+            name = "test-config"
+
+            def __init__(self, config=None):
+                self.received_config = config
+
+            def get(self, *, session_id, agent_id, role, behavior_ref,
+                    task, budget=None, parent_agent_id=None):
+                return GetResult()
+
+            def dump(self, *, session_id, agent_id, role, behavior_ref,
+                     task, status, output, tool_trace="",
+                     parent_agent_id=None, artifacts=None):
+                return DumpReceipt()
+
+            def remember(self, *, session_id, agent_id, role, content,
+                         keywords=None, scope="project"):
+                return RememberResult(status="accepted")
+    """)
+    script = tmp_path / "provider.py"
+    script.write_text(provider_code)
+    cfg = {"storage_dir": "/custom/path", "extra": "value"}
+    spec = MemorySpec(name="test", version="1.0", script=str(script), config=cfg)
+
+    provider = load_provider(spec)
+    assert provider.received_config == cfg
 
 
 def test_load_provider_no_class(tmp_path):
