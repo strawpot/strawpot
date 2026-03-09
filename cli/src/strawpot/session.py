@@ -799,6 +799,12 @@ class Session:
                 register_agent=self._register_agent,
                 files_dirs=self._files_dirs,
             )
+            if result.exit_code != 0:
+                return error_response(
+                    request.request_id,
+                    "ERR_SUBAGENT_NONZERO_EXIT",
+                    result.summary,
+                )
             return ok_response(
                 request.request_id,
                 delegate_result=denden_pb2.DelegateResult(

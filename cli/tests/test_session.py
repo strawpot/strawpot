@@ -580,6 +580,37 @@ class TestHandleDelegate:
         mock_error.assert_called_once()
         assert result == "error"
 
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.error_response")
+    def test_nonzero_exit_returns_error_response(
+        self, mock_error, mock_handle, tmp_path
+    ):
+        """Non-zero exit_code from sub-agent returns error_response."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(
+            summary="Agent crashed", output="traceback...", exit_code=1
+        )
+        mock_error.return_value = "error"
+
+        session = _make_session(tmp_path)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_delegate(self._make_denden_request())
+
+        mock_error.assert_called_once_with(
+            "req_123",
+            "ERR_SUBAGENT_NONZERO_EXIT",
+            "Agent crashed",
+        )
+        assert result == "error"
+
 
 # ---------------------------------------------------------------------------
 # Ask user handler
