@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectConfig } from "@/hooks/queries/use-projects";
 import { useRoles } from "@/hooks/queries/use-roles";
+import { useResources } from "@/hooks/queries/use-registry";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ export default function LaunchDialog({
   const navigate = useNavigate();
   const config = useProjectConfig(projectId);
   const roles = useRoles();
+  const { data: agents } = useResources("agents");
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged;
 
@@ -141,10 +143,18 @@ export default function LaunchDialog({
                   <Label htmlFor="runtime">Runtime</Label>
                   <Input
                     id="runtime"
+                    list="datalist-runtime"
                     value={runtime}
                     onChange={(e) => setRuntime(e.target.value)}
                     placeholder={defaults?.runtime ?? "strawpot-claude-code"}
                   />
+                  {agents && (
+                    <datalist id="datalist-runtime">
+                      {agents.map((a) => (
+                        <option key={a.name} value={a.name} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="isolation">Isolation</Label>
