@@ -10,10 +10,11 @@ export function useProjects() {
   });
 }
 
-export function useProject(id: number) {
+export function useProject(id: number, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.projects.detail(id),
     queryFn: () => api.get<Project>(`/projects/${id}`),
+    enabled: options?.enabled,
   });
 }
 
