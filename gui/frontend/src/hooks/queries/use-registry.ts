@@ -1,7 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Resource, ResourceDetail } from "@/api/types";
+import type { AgentValidation, Resource, ResourceDetail } from "@/api/types";
+
+export function useAgentValidation(name: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.registry.validate(name ?? ""),
+    queryFn: () => api.get<AgentValidation>(`/registry/agents/${name}/validate`),
+    enabled: !!name,
+  });
+}
 
 export function useResources(
   type: string,

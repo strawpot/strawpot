@@ -28,5 +28,7 @@ export const queryKeys = {
     detail: (type: string, name: string) => ["registry", type, name] as const,
     config: (type: string, name: string) =>
       ["registry", type, name, "config"] as const,
+    validate: (name: string) =>
+      ["registry", "agents", name, "validate"] as const,
   },
 };
