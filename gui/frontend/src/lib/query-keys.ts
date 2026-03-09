@@ -14,4 +14,8 @@ export const queryKeys = {
   roles: {
     all: ["roles"] as const,
   },
+  registry: {
+    list: (type: string) => ["registry", type] as const,
+    detail: (type: string, name: string) => ["registry", type, name] as const,
+  },
 };

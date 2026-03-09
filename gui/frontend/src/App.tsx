@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
+import ResourceBrowser from "./pages/ResourceBrowser";
 import NotFound from "./pages/NotFound";
 import { useGlobalSSE } from "./hooks/useGlobalSSE";
 
@@ -19,6 +20,10 @@ export default function App() {
         <Route
           path="projects/:projectId/sessions/:runId"
           element={<SessionDetail />}
+        />
+        <Route
+          path="resources/:resourceType"
+          element={<ResourceBrowser />}
         />
         <Route path="*" element={<NotFound />} />
       </Route>

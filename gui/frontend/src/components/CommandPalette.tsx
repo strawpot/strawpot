@@ -18,6 +18,10 @@ import {
   Sun,
   Moon,
   Monitor,
+  Users,
+  Wrench,
+  Bot,
+  Brain,
 } from "lucide-react";
 
 interface CommandPaletteProps {
@@ -87,6 +91,25 @@ export default function CommandPalette({
             ))}
           </CommandGroup>
         )}
+
+        <CommandGroup heading="Resources">
+          <CommandItem onSelect={() => go("/resources/roles")}>
+            <Users />
+            Roles
+          </CommandItem>
+          <CommandItem onSelect={() => go("/resources/skills")}>
+            <Wrench />
+            Skills
+          </CommandItem>
+          <CommandItem onSelect={() => go("/resources/agents")}>
+            <Bot />
+            Agents
+          </CommandItem>
+          <CommandItem onSelect={() => go("/resources/memories")}>
+            <Brain />
+            Memory
+          </CommandItem>
+        </CommandGroup>
 
         <CommandGroup heading="Theme">
           <CommandItem onSelect={() => { setTheme("light"); onOpenChange(false); }}>

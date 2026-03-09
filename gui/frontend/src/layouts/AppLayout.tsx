@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { LayoutDashboard, FolderKanban, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/hooks/queries/use-projects";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -29,6 +29,13 @@ const navItems = [
   { to: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
+const resourceItems = [
+  { to: "/resources/roles", label: "Roles", icon: Users },
+  { to: "/resources/skills", label: "Skills", icon: Wrench },
+  { to: "/resources/agents", label: "Agents", icon: Bot },
+  { to: "/resources/memories", label: "Memory", icon: Brain },
+];
+
 function useBreadcrumbs() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
@@ -51,6 +58,20 @@ function useBreadcrumbs() {
       if (segments[2] === "sessions" && segments[3]) {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
       }
+    }
+  }
+
+  if (segments[0] === "resources") {
+    const typeLabels: Record<string, string> = {
+      roles: "Roles",
+      skills: "Skills",
+      agents: "Agents",
+      memories: "Memory",
+    };
+    crumbs.push({ label: "Resources" });
+    if (segments[1]) {
+      crumbs[crumbs.length - 1].href = `/resources/${segments[1]}`;
+      crumbs.push({ label: typeLabels[segments[1]] ?? segments[1] });
     }
   }
 
@@ -81,6 +102,27 @@ export default function AppLayout() {
               key={to}
               to={to}
               end={end}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
+                )
+              }
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </NavLink>
+          ))}
+
+          <div className="mt-4 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Resources
+          </div>
+          {resourceItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",

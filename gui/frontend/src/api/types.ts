@@ -78,3 +78,22 @@ export interface TreeData {
   pending_delegations: PendingDelegation[];
   denied_delegations: DeniedDelegation[];
 }
+
+export interface Resource {
+  name: string;
+  version: string | null;
+  description: string;
+  source: "global" | "project";
+  path: string;
+}
+
+export interface ResourceDetail extends Resource {
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export interface InstallResult {
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
