@@ -17,7 +17,9 @@ class TestListSessions:
 
         resp = client.get(f"/api/projects/{pid}/sessions")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     def test_lists_sessions(self, client, tmp_path):
         """Returns sessions with correct fields."""
@@ -47,7 +49,9 @@ class TestListSessions:
 
         resp = client.get(f"/api/projects/{pid}/sessions")
         assert resp.status_code == 200
-        sessions = resp.json()
+        body = resp.json()
+        assert body["total"] == 1
+        sessions = body["items"]
         assert len(sessions) == 1
 
         s = sessions[0]
@@ -82,7 +86,8 @@ class TestListSessions:
         sync_sessions(client.app.state.db_path)
 
         resp = client.get(f"/api/projects/{pid}/sessions")
-        sessions = resp.json()
+        body = resp.json()
+        sessions = body["items"]
         assert len(sessions) == 2
         assert sessions[0]["run_id"] == "run_new"
         assert sessions[1]["run_id"] == "run_old"
@@ -101,7 +106,8 @@ class TestListSessions:
         sync_sessions(client.app.state.db_path)
 
         resp = client.get(f"/api/projects/{pid1}/sessions")
-        sessions = resp.json()
+        body = resp.json()
+        sessions = body["items"]
         assert len(sessions) == 1
         assert sessions[0]["run_id"] == "run_p1"
 
