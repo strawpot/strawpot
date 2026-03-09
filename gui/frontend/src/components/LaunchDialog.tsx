@@ -44,7 +44,9 @@ export default function LaunchDialog({
   const roles = useRoles();
   const { data: agents } = useResources("agents");
   const launchSession = useLaunchSession();
-  const defaults = config.data?.merged;
+  const defaults = config.data?.merged as
+    | { orchestrator_role?: string; runtime?: string; isolation?: string; merge_strategy?: string }
+    | undefined;
 
   const [task, setTask] = useState("");
   const [role, setRole] = useState("");

@@ -18,19 +18,19 @@ export function useProject(id: number, options?: { enabled?: boolean }) {
   });
 }
 
-interface ProjectConfig {
-  merged: {
-    orchestrator_role: string;
-    runtime: string;
-    isolation: string;
-    merge_strategy: string;
-    [key: string]: unknown;
-  };
+export interface ProjectConfig {
+  merged: Record<string, unknown>;
+  project: Record<string, unknown>;
+  global: Record<string, unknown>;
 }
 
-export function useProjectConfig(id: number) {
+export function useProjectConfig(
+  id: number,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.projects.config(id),
     queryFn: () => api.get<ProjectConfig>(`/projects/${id}/config`),
+    enabled: options?.enabled,
   });
 }

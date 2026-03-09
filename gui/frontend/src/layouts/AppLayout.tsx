@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Settings, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/hooks/queries/use-projects";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 const resourceItems = [
@@ -59,6 +60,10 @@ function useBreadcrumbs() {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
       }
     }
+  }
+
+  if (segments[0] === "settings") {
+    crumbs.push({ label: "Settings" });
   }
 
   if (segments[0] === "resources") {
