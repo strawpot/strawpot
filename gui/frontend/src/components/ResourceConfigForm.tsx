@@ -63,6 +63,16 @@ export default function ResourceConfigForm({
       return next;
     });
 
+  const agentNames = (agents ?? []).map((a) => a.name);
+  const defaultAgentValue = String(paramsState["default_agent"] ?? "").trim();
+  const defaultAgentError =
+    resourceType === "roles" &&
+    defaultAgentValue &&
+    agentNames.length > 0 &&
+    !agentNames.includes(defaultAgentValue)
+      ? "Agent not found in installed agents"
+      : "";
+
   const handleSave = () => {
     save.mutate(
       {
@@ -231,6 +241,9 @@ export default function ResourceConfigForm({
                       ))}
                     </datalist>
                   )}
+                  {key === "default_agent" && defaultAgentError && (
+                    <p className="text-xs text-destructive">{defaultAgentError}</p>
+                  )}
                 </div>
               );
             })}
@@ -241,7 +254,7 @@ export default function ResourceConfigForm({
       <Button
         size="sm"
         onClick={handleSave}
-        disabled={save.isPending}
+        disabled={save.isPending || !!defaultAgentError}
         className="self-start"
       >
         <Save className="mr-2 h-3.5 w-3.5" />
