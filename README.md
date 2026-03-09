@@ -34,8 +34,7 @@ You're an engineer, not a CEO. Building technology is the easy part — strategy
 
 ```bash
 pip install strawpot
-strawpot install role ai-ceo
-strawpot start
+strawpot gui
 ```
 
 ## Your CEO Is a Markdown File
@@ -44,21 +43,24 @@ strawpot start
 # ai-ceo/ROLE.md
 ---
 name: ai-ceo
-description: "Plans strategy and delegates to the team"
+description: "Orchestrator that analyzes tasks, discovers all installed roles,
+  and delegates to the best-fit role."
 metadata:
   strawpot:
     dependencies:
-      roles: [pm, implementer, reviewer]
+      roles:
+        - "*"
     default_agent: strawpot-claude-code
 ---
 
-# CEO
+# AI CEO
 
-Plan strategy and break it into deliverables.
-Delegate planning, implementation, and review to sub-roles.
+You are a routing layer with judgment. The user brings you a task —
+you figure out which role on your team should handle it, write a clear
+task description, and delegate. That's the entire job.
 ```
 
-No Python. No orchestration code. One file.
+No Python. No orchestration code. One Markdown file.
 
 ## How It Compares
 
@@ -171,7 +173,7 @@ provider = "dial"             # default; "" to disable
 
 ```
 cli/          StrawPot CLI implementation
-gui/          Web GUI (planned)
+gui/          Web GUI dashboard
 DESIGN.md     System architecture
 ```
 
