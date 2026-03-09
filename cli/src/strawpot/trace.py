@@ -205,17 +205,31 @@ class Tracer:
         *,
         span_id: str,
         provider: str,
-        entries: str,
-        entry_count: int,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        behavior_ref: str = "",
+        task: str = "",
+        status: str = "",
+        output: str = "",
+        parent_agent_id: str | None = None,
     ) -> None:
-        """Emit ``memory_dump``.  Stores entries as artifact."""
-        entries_ref = self.store_artifact(entries)
+        """Emit ``memory_dump``.  Stores behavior_ref and output as artifacts."""
+        behavior_artifact = self.store_artifact(behavior_ref)
+        output_ref = self.store_artifact(output)
+        task_ref = self.store_artifact(task)
         self.emit(
             "memory_dump",
             span_id,
             provider=provider,
-            entries_ref=entries_ref,
-            entry_count=entry_count,
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            behavior_ref=behavior_artifact,
+            task_ref=task_ref,
+            status=status,
+            output_ref=output_ref,
+            parent_agent_id=parent_agent_id,
         )
 
     def agent_spawn(
@@ -226,10 +240,16 @@ class Tracer:
         role: str,
         runtime: str,
         pid: int | None,
+        working_dir: str = "",
+        agent_workspace_dir: str = "",
+        skills_dir: str = "",
+        roles_dirs: list[str] | None = None,
+        task: str = "",
         context: str = "",
     ) -> None:
-        """Emit ``agent_spawn``.  Stores context as artifact."""
+        """Emit ``agent_spawn``.  Stores context and task as artifacts."""
         context_ref = self.store_artifact(context)
+        task_ref = self.store_artifact(task)
         self.emit(
             "agent_spawn",
             span_id,
@@ -237,6 +257,11 @@ class Tracer:
             role=role,
             runtime=runtime,
             pid=pid,
+            working_dir=working_dir,
+            agent_workspace_dir=agent_workspace_dir,
+            skills_dir=skills_dir,
+            roles_dirs=roles_dirs or [],
+            task_ref=task_ref,
             context_ref=context_ref,
         )
 

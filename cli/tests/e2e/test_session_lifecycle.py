@@ -18,32 +18,30 @@ class TestSessionLifecycle:
         assert (git_project / "hello.txt").exists()
         assert (git_project / "hello.txt").read_text() == "Written by stub agent\n"
 
-        # Active session dirs should be cleaned up (archive/ may remain)
-        sessions_dir = git_project / ".strawpot" / "sessions"
-        if sessions_dir.exists():
-            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
-            assert len(active) == 0
+        # running/ should be empty after cleanup, archive/ should have the session
+        running_dir = git_project / ".strawpot" / "running"
+        assert not list(running_dir.iterdir()) if running_dir.exists() else True
+        archive_dir = git_project / ".strawpot" / "archive"
+        assert archive_dir.exists()
 
     def test_session_cleanup_removes_artifacts(self, make_session, git_project):
-        """Session directory is removed after normal completion."""
+        """Session directory stays but running symlink is removed."""
         session = make_session(str(git_project), task="noop")
         session.start(str(git_project))
 
-        sessions_dir = git_project / ".strawpot" / "sessions"
-        if sessions_dir.exists():
-            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
-            assert len(active) == 0, f"Stale session dirs: {active}"
+        running_dir = git_project / ".strawpot" / "running"
+        active = list(running_dir.iterdir()) if running_dir.exists() else []
+        assert active == [], f"Stale running symlinks: {active}"
 
     def test_session_cleanup_unconditional(self, make_session, git_project):
-        """Session dir is created during run and fully removed after."""
+        """Session dir is created during run and archived after."""
         session = make_session(str(git_project), task="write cleanup-test.txt")
         session.start(str(git_project))
 
         # File was written, proving the session actually ran
         assert (git_project / "cleanup-test.txt").exists()
 
-        # Active session dirs must be gone — archive/ may remain
-        sessions_dir = git_project / ".strawpot" / "sessions"
-        if sessions_dir.exists():
-            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
-            assert active == [], f"Stale session dirs: {active}"
+        # running/ should be empty, archive/ should have the session
+        running_dir = git_project / ".strawpot" / "running"
+        active = list(running_dir.iterdir()) if running_dir.exists() else []
+        assert active == [], f"Stale running symlinks: {active}"

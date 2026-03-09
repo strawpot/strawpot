@@ -144,13 +144,23 @@ function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
   const artifacts: ArtifactEntry[] = [];
   for (const e of events) {
     const d = e.data;
-    if (e.event === "agent_spawn" && d.context_ref) {
-      artifacts.push({
-        label: `Agent Context (${d.role || "agent"})`,
-        hash: String(d.context_ref),
-        event: e.event,
-        agentId: d.agent_id ? String(d.agent_id) : undefined,
-      });
+    if (e.event === "agent_spawn") {
+      if (d.context_ref) {
+        artifacts.push({
+          label: `Agent Context (${d.role || "agent"})`,
+          hash: String(d.context_ref),
+          event: e.event,
+          agentId: d.agent_id ? String(d.agent_id) : undefined,
+        });
+      }
+      if (d.task_ref) {
+        artifacts.push({
+          label: `Agent Task (${d.role || "agent"})`,
+          hash: String(d.task_ref),
+          event: e.event,
+          agentId: d.agent_id ? String(d.agent_id) : undefined,
+        });
+      }
     }
     if (e.event === "session_end" && d.output_ref) {
       artifacts.push({
@@ -174,12 +184,28 @@ function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
         event: e.event,
       });
     }
-    if (e.event === "memory_dump" && d.entries_ref) {
-      artifacts.push({
-        label: `Memory Dump (${d.provider || "memory"})`,
-        hash: String(d.entries_ref),
-        event: e.event,
-      });
+    if (e.event === "memory_dump") {
+      if (d.output_ref) {
+        artifacts.push({
+          label: `Memory Dump Output (${d.provider || "memory"})`,
+          hash: String(d.output_ref),
+          event: e.event,
+        });
+      }
+      if (d.behavior_ref) {
+        artifacts.push({
+          label: `Memory Dump Behavior (${d.provider || "memory"})`,
+          hash: String(d.behavior_ref),
+          event: e.event,
+        });
+      }
+      if (d.task_ref) {
+        artifacts.push({
+          label: `Memory Dump Task (${d.provider || "memory"})`,
+          hash: String(d.task_ref),
+          event: e.event,
+        });
+      }
     }
     if (e.event === "delegate_start" && d.context_ref) {
       artifacts.push({
@@ -375,32 +401,14 @@ function formatEventData(
   e: TraceEvent,
   onArtifactClick: (hash: string, label: string) => void,
 ): React.ReactNode {
-  const parts: React.ReactNode[] = [];
   const d = e.data;
 
-  if (d.role) parts.push(`role=${d.role}`);
-  if (d.provider) parts.push(`provider=${d.provider}`);
-  if (d.runtime) parts.push(`runtime=${d.runtime}`);
-  if (d.exit_code !== undefined) parts.push(`exit=${d.exit_code}`);
-  if (d.duration_ms !== undefined) parts.push(formatDuration(d.duration_ms as number));
-  if (d.reason) parts.push(String(d.reason));
-  if (d.card_count !== undefined) parts.push(`${d.card_count} cards`);
-  if (d.entry_count !== undefined) parts.push(`${d.entry_count} entries`);
-
-  // Delegation summary — styled for emphasis
-  if (d.summary) {
-    parts.push(
-      <span key="summary" className="delegate-summary">
-        {String(d.summary).slice(0, 120)}
-      </span>,
-    );
-  }
-
-  // Clickable artifact refs
+  // Collect artifact buttons
+  const buttons: React.ReactNode[] = [];
   for (const [key, value] of Object.entries(d)) {
     if (key.endsWith("_ref") && value) {
       const label = key.replace(/_ref$/, "");
-      parts.push(
+      buttons.push(
         <button
           key={key}
           className="btn-artifact"
@@ -412,18 +420,40 @@ function formatEventData(
     }
   }
 
-  if (parts.length === 0 && Object.keys(d).length > 0) {
-    return Object.entries(d)
-      .filter(([k]) => !k.endsWith("_ref"))
-      .map(([k, v]) => `${k}=${v}`)
-      .join(", ");
+  // Collect all non-ref data fields as key=value params
+  const params: React.ReactNode[] = [];
+  for (const [key, value] of Object.entries(d)) {
+    if (key.endsWith("_ref")) continue;
+    if (value === null || value === undefined || value === "") continue;
+    const display = key === "duration_ms"
+      ? formatDuration(value as number)
+      : Array.isArray(value)
+        ? value.join(", ")
+        : String(value);
+    params.push(
+      <span key={key}>
+        <span className="event-param-key">{key}=</span>
+        <span className="event-param-value">{display}</span>
+      </span>,
+    );
   }
 
-  return parts.map((p, i) => (
-    <span key={i}>
-      {i > 0 && typeof p === "string" && ", "}
-      {i > 0 && typeof p !== "string" && " "}
-      {p}
+  // Delegation summary — styled for emphasis
+  const summary = d.summary ? (
+    <span key="summary" className="delegate-summary">
+      {String(d.summary)}
     </span>
-  ));
+  ) : null;
+
+  return (
+    <>
+      {buttons.length > 0 && (
+        <div className="event-artifacts">{buttons}</div>
+      )}
+      {summary}
+      {params.length > 0 && (
+        <div className="event-params">{params}</div>
+      )}
+    </>
+  );
 }

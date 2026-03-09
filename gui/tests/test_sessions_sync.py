@@ -16,15 +16,14 @@ def _register_project(client, working_dir):
 
 
 def _write_session(base_dir, run_id, *, archived=False, **overrides):
-    """Write a minimal session.json and return the session directory path."""
-    if archived:
-        session_dir = os.path.join(
-            str(base_dir), ".strawpot", "sessions", "archive", run_id
-        )
-    else:
-        session_dir = os.path.join(
-            str(base_dir), ".strawpot", "sessions", run_id
-        )
+    """Write a minimal session.json and return the session directory path.
+
+    Session dirs always live at ``sessions/<run_id>/``.  A symlink is
+    created in ``sessions/running/`` or ``sessions/archive/`` depending
+    on the ``archived`` flag.
+    """
+    strawpot_dir = os.path.join(str(base_dir), ".strawpot")
+    session_dir = os.path.join(strawpot_dir, "sessions", run_id)
     os.makedirs(session_dir, exist_ok=True)
 
     data = {
@@ -49,6 +48,13 @@ def _write_session(base_dir, run_id, *, archived=False, **overrides):
 
     with open(os.path.join(session_dir, "session.json"), "w") as f:
         json.dump(data, f)
+
+    # Create symlink in .strawpot/running/ or .strawpot/archive/
+    view_dir = os.path.join(strawpot_dir, "archive" if archived else "running")
+    os.makedirs(view_dir, exist_ok=True)
+    link_path = os.path.join(view_dir, run_id)
+    if not os.path.exists(link_path):
+        os.symlink(os.path.join("..", "sessions", run_id), link_path)
 
     return session_dir
 
@@ -225,12 +231,15 @@ class TestSyncSessions:
         project_dir.mkdir()
         _register_project(client, project_dir)
 
-        session_dir = os.path.join(
-            str(project_dir), ".strawpot", "sessions", "archive", "run_corrupt"
-        )
+        strawpot_dir = os.path.join(str(project_dir), ".strawpot")
+        session_dir = os.path.join(strawpot_dir, "sessions", "run_corrupt")
         os.makedirs(session_dir)
         with open(os.path.join(session_dir, "session.json"), "w") as f:
             f.write("NOT JSON")
+        # Create archive symlink so it's discovered
+        archive_dir = os.path.join(strawpot_dir, "archive")
+        os.makedirs(archive_dir, exist_ok=True)
+        os.symlink(os.path.join("..", "sessions", "run_corrupt"), os.path.join(archive_dir, "run_corrupt"))
 
         sync_sessions(client.app.state.db_path)
 

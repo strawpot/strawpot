@@ -451,12 +451,13 @@ def _format_uptime(started_at: str) -> str:
 def sessions():
     """List all running sessions on this machine."""
     sessions_path = _sessions_dir()
-    if not sessions_path.is_dir():
+    running_path = sessions_path.parent / "running"
+    if not running_path.is_dir():
         click.echo("No sessions found.")
         return
 
-    session_files = sorted(sessions_path.glob("*/session.json"))
-    if not session_files:
+    entries = sorted(running_path.iterdir())
+    if not entries:
         click.echo("No sessions found.")
         return
 
@@ -464,11 +465,14 @@ def sessions():
     click.echo(f"{'RUN ID':<20} {'STATUS':<8} {'ISOLATION':<10} {'RUNTIME':<14} {'DENDEN':<20} {'UPTIME':<10}")
     click.echo("-" * 82)
 
-    for path in session_files:
-        data = _load_session(path)
+    for entry in entries:
+        if not entry.name.startswith("run_"):
+            continue
+        session_file = sessions_path / entry.name / "session.json"
+        data = _load_session(session_file)
         if data is None:
             continue
-        run_id = data.get("run_id", path.parent.name)
+        run_id = data.get("run_id", entry.name)
         pid = data.get("pid")
         alive = is_pid_alive(pid) if pid else False
         status = "running" if alive else "stale"

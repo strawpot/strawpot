@@ -72,14 +72,21 @@ def recover_stale_sessions(
     """
     from strawpot._process import is_pid_alive
 
-    sessions_dir = os.path.join(working_dir, ".strawpot", "sessions")
-    if not os.path.isdir(sessions_dir):
+    strawpot_dir = os.path.join(working_dir, ".strawpot")
+    sessions_dir = os.path.join(strawpot_dir, "sessions")
+    running_dir = os.path.join(strawpot_dir, "running")
+    if not os.path.isdir(running_dir):
         return []
 
     recovered: list[str] = []
 
-    for entry in sorted(os.listdir(sessions_dir)):
-        if entry == "archive" or not entry.startswith("run_"):
+    for entry in sorted(os.listdir(running_dir)):
+        if not entry.startswith("run_"):
+            continue
+        link_path = os.path.join(running_dir, entry)
+        # Clean up orphaned symlinks (target deleted)
+        if os.path.islink(link_path) and not os.path.exists(link_path):
+            os.unlink(link_path)
             continue
         session_file = os.path.join(sessions_dir, entry, "session.json")
         if not os.path.isfile(session_file):
@@ -125,14 +132,14 @@ def recover_stale_sessions(
                     "Isolator cleanup failed for %s", run_id, exc_info=True
                 )
 
-        # --- Archive session directory ---
-        session_dir = os.path.join(sessions_dir, entry)
-        archive_dir = os.path.join(sessions_dir, "archive")
+        # --- Swap running symlink to archive ---
+        if os.path.islink(link_path):
+            os.unlink(link_path)
+        archive_dir = os.path.join(strawpot_dir, "archive")
         os.makedirs(archive_dir, exist_ok=True)
-        try:
-            shutil.move(session_dir, os.path.join(archive_dir, entry))
-        except OSError:
-            logger.debug("Failed to archive session dir %s", session_dir)
+        archive_link = os.path.join(archive_dir, entry)
+        if not os.path.exists(archive_link):
+            os.symlink(os.path.join("..", "sessions", entry), archive_link)
 
         recovered.append(run_id)
 
@@ -440,6 +447,11 @@ class Session:
                     role=self.config.orchestrator_role,
                     runtime=self.config.runtime,
                     pid=handle.pid,
+                    working_dir=self._env.path,
+                    agent_workspace_dir=workspace,
+                    skills_dir=skills_dir,
+                    roles_dirs=[roles_dir],
+                    task=self.task or "",
                     context=agent_context,
                 )
                 self._agent_spans[agent_id] = self._session_span_id
@@ -495,16 +507,16 @@ class Session:
                 except Exception:
                     logger.debug("Orchestrator memory.dump failed", exc_info=True)
                 if self._tracer is not None and self._session_span_id is not None:
-                    dump_summary = (
-                        f"task: {self.task or ''}\n"
-                        f"status: {status}\n"
-                        f"output:\n{output}"
-                    )
                     self._tracer.memory_dump(
                         span_id=self._session_span_id,
                         provider=self._memory_provider.name,
-                        entries=dump_summary,
-                        entry_count=1,
+                        session_id=self._run_id,
+                        agent_id=orch_agent_id,
+                        role=self.config.orchestrator_role,
+                        behavior_ref="",
+                        task=self.task or "",
+                        status=status,
+                        output=output,
                     )
 
         # 0b. Emit session_end trace event before cleanup that might fail
@@ -863,9 +875,19 @@ class Session:
     # ------------------------------------------------------------------
 
     def _session_dir(self) -> str:
-        """Return the session directory: ``.strawpot/sessions/<run_id>/``."""
+        """Return the session directory: ``.strawpot/sessions/<run_id>/``.
+
+        Also creates a ``.strawpot/running/<run_id>`` symlink so active
+        sessions can be discovered without scanning all session directories.
+        """
         d = os.path.join(self._working_dir, ".strawpot", "sessions", self._run_id)
         os.makedirs(d, exist_ok=True)
+        # Create running/ symlink at .strawpot/running/
+        running_dir = os.path.join(self._working_dir, ".strawpot", "running")
+        os.makedirs(running_dir, exist_ok=True)
+        running_link = os.path.join(running_dir, self._run_id)
+        if not os.path.islink(running_link):
+            os.symlink(os.path.join("..", "sessions", self._run_id), running_link)
         return d
 
     def _sessions_base_dir(self) -> str:
@@ -923,24 +945,24 @@ class Session:
             json.dump(self._session_data, f, indent=2)
 
     def _archive_session_dir(self) -> None:
-        """Move the session directory to the archive for GUI history."""
-        if self._working_dir and self._run_id:
-            session_dir = os.path.join(
-                self._working_dir, ".strawpot", "sessions", self._run_id
-            )
-            if os.path.isdir(session_dir):
-                archive_dir = os.path.join(
-                    self._working_dir, ".strawpot", "sessions", "archive"
-                )
-                os.makedirs(archive_dir, exist_ok=True)
-                try:
-                    shutil.move(
-                        session_dir, os.path.join(archive_dir, self._run_id)
-                    )
-                except OSError:
-                    logger.debug(
-                        "Failed to archive session dir %s", session_dir
-                    )
+        """Swap the running symlink for an archive symlink.
+
+        The session directory stays in place at
+        ``.strawpot/sessions/<run_id>/``; only the symlinks change.
+        """
+        if not (self._working_dir and self._run_id):
+            return
+        strawpot_dir = os.path.join(self._working_dir, ".strawpot")
+        # Remove running symlink
+        running_link = os.path.join(strawpot_dir, "running", self._run_id)
+        if os.path.islink(running_link):
+            os.unlink(running_link)
+        # Create archive symlink
+        archive_dir = os.path.join(strawpot_dir, "archive")
+        os.makedirs(archive_dir, exist_ok=True)
+        archive_link = os.path.join(archive_dir, self._run_id)
+        if not os.path.exists(archive_link):
+            os.symlink(os.path.join("..", "sessions", self._run_id), archive_link)
 
     # ------------------------------------------------------------------
     # Agent tracking

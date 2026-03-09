@@ -289,17 +289,29 @@ class TestMemoryEvents:
         events = _read_events(session_dir)
         assert events[0]["data"]["cards_ref"] is None
 
-    def test_memory_dump_stores_entries_artifact(self, tmp_path):
+    def test_memory_dump_stores_all_arguments(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.memory_dump(
             span_id="s1", provider="semantic",
-            entries="agent output text", entry_count=1,
+            session_id="run_abc", agent_id="agent_123",
+            role="implementer", behavior_ref="You are an implementer.",
+            task="write tests", status="success",
+            output="agent output text", parent_agent_id="agent_000",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "memory_dump"
-        ref = events[0]["data"]["entries_ref"]
-        assert ref is not None
-        artifact_path = os.path.join(session_dir, "artifacts", ref)
+        data = events[0]["data"]
+        assert data["provider"] == "semantic"
+        assert data["session_id"] == "run_abc"
+        assert data["agent_id"] == "agent_123"
+        assert data["role"] == "implementer"
+        assert data["status"] == "success"
+        assert data["parent_agent_id"] == "agent_000"
+        # behavior_ref, task_ref, output_ref stored as artifacts
+        assert data["behavior_ref"] is not None
+        assert data["task_ref"] is not None
+        assert data["output_ref"] is not None
+        artifact_path = os.path.join(session_dir, "artifacts", data["output_ref"])
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "agent output text"
 
@@ -315,16 +327,29 @@ class TestAgentEvents:
         tracer.agent_spawn(
             span_id="s1", agent_id="agent_abc",
             role="ai-ceo", runtime="strawpot-claude-code", pid=12345,
+            working_dir="/project",
+            agent_workspace_dir="/session/agents/agent_abc",
+            skills_dir="/session/roles/ai-ceo/skills",
+            roles_dirs=["/session/roles/ai-ceo/roles"],
+            task="build the app",
             context="You are the CEO agent.",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "agent_spawn"
-        assert events[0]["data"]["agent_id"] == "agent_abc"
-        assert events[0]["data"]["role"] == "ai-ceo"
-        assert events[0]["data"]["pid"] == 12345
-        assert events[0]["data"]["context_ref"] is not None
-        artifact_path = Path(session_dir) / "artifacts" / events[0]["data"]["context_ref"]
+        data = events[0]["data"]
+        assert data["agent_id"] == "agent_abc"
+        assert data["role"] == "ai-ceo"
+        assert data["pid"] == 12345
+        assert data["working_dir"] == "/project"
+        assert data["agent_workspace_dir"] == "/session/agents/agent_abc"
+        assert data["skills_dir"] == "/session/roles/ai-ceo/skills"
+        assert data["roles_dirs"] == ["/session/roles/ai-ceo/roles"]
+        assert data["task_ref"] is not None
+        assert data["context_ref"] is not None
+        artifact_path = Path(session_dir) / "artifacts" / data["context_ref"]
         assert artifact_path.read_text() == "You are the CEO agent."
+        task_path = Path(session_dir) / "artifacts" / data["task_ref"]
+        assert task_path.read_text() == "build the app"
 
     def test_agent_end_stores_output_artifact(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
