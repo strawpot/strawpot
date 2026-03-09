@@ -208,8 +208,8 @@ def test_delegation_section_appended(tmp_path):
     assert "\n---\n\n## Delegation" in result
     assert "- **backend-engineer**: Handles backend API implementation" in result
     assert "- **test-writer**: Writes and maintains test suites" in result
-    assert "Use the `denden`" in result
-    assert "skill to request delegation." in result
+    assert "skills/denden/SKILL.md" in result
+    assert "ONLY way to delegate" in result
 
 
 def test_delegation_with_dependencies(tmp_path):
@@ -330,8 +330,11 @@ def test_delegation_section_exact_format(tmp_path):
         "- **test-writer**: Writes and maintains test suites\n"
         "\n"
         "Each role is described in `roles/<role-name>/ROLE.md`. Read the ROLE.md\n"
-        "file to learn more about the role before delegating. Use the `denden`\n"
-        "skill to request delegation."
+        "file to learn more about the role before delegating.\n"
+        "\n"
+        "To delegate, read `skills/denden/SKILL.md` and use the `delegate` "
+        "command documented there. This is the ONLY way to delegate work. "
+        "Never attempt tasks yourself — always delegate via the denden skill."
     )
 
     assert result.endswith(expected_delegation)
