@@ -501,10 +501,10 @@ directory structure is preserved. Path components are validated on
 upload: reject names containing `..`, absolute paths, or symlinks to
 prevent writing outside the files directory.
 
-**Agent access**: The delegation handler appends the file listing and
-absolute path to the agent's system prompt so agents know where to
-find uploaded files. For worktree sessions the path points back to the
-original project's `.strawpot/files/` (not the worktree copy).
+**Agent access**: The session discovers `.strawpot/files/` and passes it
+via `--files-dir` in the wrapper protocol. Each wrapper maps this to the
+agent's native directory access mechanism (e.g. `--add-dir` for Claude
+Code, `--include-directories` for Gemini, symlinks for OpenHands/Pi).
 
 **Frontend**: Drag-and-drop zone on the project detail page (new Files
 tab). Shows uploaded files with name, size, and upload date. Supports

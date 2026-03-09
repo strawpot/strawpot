@@ -117,8 +117,8 @@ class AgentResult:
 class AgentRuntime(Protocol):
     name: str
     def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
-              role_prompt, memory_prompt, skills_dir, roles_dirs,
-              task, env) -> AgentHandle: ...
+              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              files_dirs, task, env) -> AgentHandle: ...
     def wait(self, handle: AgentHandle, timeout: float | None = None) -> AgentResult: ...
     def is_alive(self, handle: AgentHandle) -> bool: ...
     def kill(self, handle: AgentHandle) -> None: ...
@@ -153,8 +153,9 @@ alive, kill) is handled internally by `WrapperRuntime` in strawpot core.
 | `--role-prompt TEXT` | Role system prompt text |
 | `--memory-prompt TEXT` | Memory context text |
 | `--task TEXT` | Task text (empty string = interactive) |
-| `--skills-dir DIR` | Parent directory containing staged skill subdirectories |
+| `--skills-dir DIR` | Parent directory containing staged skill subdirectories (repeatable) |
 | `--roles-dir DIR` | Parent directory containing staged role subdirectories (repeatable) |
+| `--files-dir DIR` | Directory containing project files for agent access (repeatable) |
 | `--config JSON` | Agent-specific extras as JSON blob |
 
 Additional environment variables (e.g. `PERMISSION_MODE`, `DENDEN_ADDR`) are
@@ -273,15 +274,16 @@ class WrapperRuntime:
         return result.returncode == 0
 
     def spawn(self, *, agent_id, working_dir, agent_workspace_dir,
-              role_prompt, memory_prompt, skills_dir, roles_dirs,
-              task, env) -> AgentHandle:
+              role_prompt, memory_prompt, skills_dirs, roles_dirs,
+              files_dirs, task, env) -> AgentHandle:
         # 1. Call <wrapper> build to get translated command
         args = ["build", "--agent-id", agent_id, "--working-dir", working_dir,
                 "--agent-workspace-dir", agent_workspace_dir,
                 "--role-prompt", role_prompt, "--memory-prompt", memory_prompt,
-                "--task", task, "--config", json.dumps(self.spec.config),
-                "--skills-dir", skills_dir]
-        for d in roles_dirs:  args += ["--roles-dir", d]
+                "--task", task, "--config", json.dumps(self.spec.config)]
+        for d in skills_dirs:  args += ["--skills-dir", d]
+        for d in roles_dirs:   args += ["--roles-dir", d]
+        for d in files_dirs:   args += ["--files-dir", d]
         data = self._run_subcommand(args, extra_env=env)
         # 2. Launch via Popen
         proc = subprocess.Popen(data["cmd"], cwd=data["cwd"], ...)
@@ -502,7 +504,7 @@ Convenience methods (each calls `emit` + `store_artifact` as needed):
 | `delegate_denied(role, parent_span, reason, depth=0)` | — | — |
 | `memory_get(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", cards, card_count, parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, cards JSON → `cards_ref` |
 | `memory_dump(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", status="", output="", parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, output → `output_ref` |
-| `agent_spawn(span_id, agent_id, role, runtime, pid, working_dir="", agent_workspace_dir="", skills_dir="", roles_dirs=None, task="", context="", depth=0)` | — | task → `task_ref`, context → `context_ref` |
+| `agent_spawn(span_id, agent_id, role, runtime, pid, working_dir="", agent_workspace_dir="", skills_dirs=None, roles_dirs=None, files_dirs=None, task="", context="", depth=0)` | — | task → `task_ref`, context → `context_ref` |
 | `agent_end(span_id, exit_code, output, duration_ms, agent_id="", role="", session_id="")` | — | output → `output_ref` |
 
 Session output layout:
@@ -629,8 +631,9 @@ enabled = true
         agent_workspace_dir=workspace,
         role_prompt=role_prompt,
         memory_prompt=memory_prompt,
-        skills_dir=skills_dir,
+        skills_dirs=[skills_dir],
         roles_dirs=[roles_dir],
+        files_dirs=files_dirs,           # from .strawpot/files/ discovery
         task="",                         # interactive mode
         env={
           PERMISSION_MODE: config.permission_mode,  # from global config
@@ -641,7 +644,7 @@ enabled = true
       )
       → InteractiveWrapperRuntime calls: <wrapper> build --agent-id ...
         --working-dir ... --agent-workspace-dir ... --role-prompt ...
-        --memory-prompt ... --task "" --skills-dir ... --config '{"model": "..."}'
+        --memory-prompt ... --task "" --skills-dir ... --files-dir ... --config '{"model": "..."}'
         (env vars PERMISSION_MODE, DENDEN_ADDR, etc. passed as subprocess environment)
       → Gets back {"cmd": [...], "cwd": "..."}
       → Launches: tmux new-session -d -s strawpot-<id[:8]> -c <cwd> -- <cmd>
@@ -690,7 +693,8 @@ Denden server dispatches to `Session._handle_delegate`:
      agent_id=agent_id, working_dir=self.env.path,
      agent_workspace_dir=workspace,
      role_prompt=role_prompt, memory_prompt=memory_prompt,
-     skills_dir=skills_dir, roles_dirs=roles_dirs,
+     skills_dirs=[skills_dir], roles_dirs=roles_dirs,
+     files_dirs=files_dirs,
      task=task_text,
      env={PERMISSION_MODE: "auto",    # sub-agents always run non-interactively
           DENDEN_ADDR, DENDEN_AGENT_ID,
@@ -1108,8 +1112,9 @@ build:
   --memory-prompt TEXT  /→ write to <DIR>/prompt.md → --system-prompt FILE
   --task TEXT              → -p TEXT (omit if empty = interactive)
   --config JSON            → extract "model" → --model MODEL
-  --skills-dir DIR         → symlink children to <DIR>/.claude/skills/<name>/
+  --skills-dir DIR         → symlink children to <DIR>/.claude/skills/<name>/ (repeatable, skips existing)
   --roles-dir DIR          → symlink children to <DIR>/roles/<name>/ (repeatable, skips existing)
+  --files-dir DIR          → --add-dir DIR (repeatable, gives agent access to project files)
   PERMISSION_MODE env      → --permission-mode VALUE (passed through directly)
   (all)                    → --add-dir DIR (single add-dir for all)
 
@@ -1913,7 +1918,7 @@ the dependency resolver).
 ### Staging
 
 During `stage_role()`, symlink each discovered global skill into the
-role's `skills_dir` alongside dependency-resolved skills. If a global
+role's skills directory alongside dependency-resolved skills. If a global
 skill slug already exists (added by the dependency resolver), skip it —
 dependency-resolved versions take precedence.
 
