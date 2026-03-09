@@ -1,7 +1,17 @@
-"""SSE utilities and agent tree state builder."""
+"""SSE utilities, shared helpers, and agent tree state builder."""
 
+import asyncio
 import json
 from dataclasses import dataclass, field
+from typing import AsyncIterator
+
+from watchfiles import awatch
+
+from strawpot_gui.db import get_db
+
+# Fallback timeout (ms) for watchfiles — ensures periodic DB status checks
+# even when no file changes occur (e.g., user-initiated stop via API).
+WATCH_TIMEOUT_MS = 5000
 
 
 def format_sse(event_id: int, data: dict) -> str:
@@ -19,6 +29,45 @@ def format_sse_typed(event_id: int, event_type: str, data: dict) -> str:
 def sse_retry(ms: int = 3000) -> str:
     """Format an SSE retry directive."""
     return f"retry: {ms}\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers used by multiple SSE routers
+# ---------------------------------------------------------------------------
+
+
+async def watch_dir(
+    path: str, stop_event: asyncio.Event
+) -> AsyncIterator[set[str]]:
+    """Yield sets of changed file paths whenever a directory changes.
+
+    Yields an empty set on timeout (no file changes detected within
+    WATCH_TIMEOUT_MS), allowing callers to perform periodic checks.
+    """
+    try:
+        async for changes in awatch(
+            path,
+            stop_event=stop_event,
+            rust_timeout=WATCH_TIMEOUT_MS,
+            poll_delay_ms=50,
+        ):
+            yield {p for _, p in changes}
+    except (RuntimeError, FileNotFoundError):
+        # awatch raises FileNotFoundError if the directory doesn't exist,
+        # and RuntimeError if it is removed mid-watch.
+        return
+
+
+def resolve_session_dir(db_path: str, run_id: str) -> tuple[str | None, str | None]:
+    """Look up session_dir and status from the database."""
+    with get_db(db_path) as conn:
+        row = conn.execute(
+            "SELECT session_dir, status FROM sessions WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    if not row:
+        return None, None
+    return row["session_dir"], row["status"]
 
 
 @dataclass

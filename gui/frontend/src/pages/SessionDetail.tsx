@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useSession } from "@/hooks/queries/use-sessions";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import AgentTreeFlow from "@/components/AgentTreeFlow";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -40,6 +41,7 @@ import type { SessionDetail as SessionDetailType, TraceEvent } from "@/api/types
 
 export default function SessionDetail() {
   const { projectId, runId } = useParams();
+  const [searchParams] = useSearchParams();
   const pid = Number(projectId);
 
   const isActive = (status?: string) =>
@@ -90,6 +92,8 @@ export default function SessionDetail() {
   }
 
   const artifacts = extractArtifacts(displayEvents);
+  const defaultTab =
+    searchParams.get("tab") ?? (active ? "agent-tree" : "overview");
 
   return (
     <div className="space-y-6">
@@ -102,58 +106,93 @@ export default function SessionDetail() {
 
       <SessionMetadata session={sessionData} />
 
-      {sessionData.task && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">Task</h2>
-          <Card>
-            <CardContent className="pt-4">
-              <pre className="whitespace-pre-wrap break-words text-sm">
-                {sessionData.task}
-              </pre>
-            </CardContent>
-          </Card>
-        </section>
-      )}
+      <Tabs defaultValue={defaultTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="agent-tree">Agent Tree</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="trace">
+            Trace{displayEvents.length > 0 && ` (${displayEvents.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="artifacts">
+            Artifacts{artifacts.length > 0 && ` (${artifacts.length})`}
+          </TabsTrigger>
+        </TabsList>
 
-      {displayEvents.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Trace Events ({displayEvents.length})
-          </h2>
-          <EventTimeline events={displayEvents} runId={sessionData.run_id} />
-        </section>
-      )}
+        <TabsContent value="overview" className="space-y-4">
+          {sessionData.task && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Task
+              </h2>
+              <Card>
+                <CardContent className="pt-4">
+                  <pre className="whitespace-pre-wrap break-words text-sm">
+                    {sessionData.task}
+                  </pre>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
-      {sessionData.summary && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Summary
-          </h2>
-          <Card>
-            <CardContent className="pt-4">
-              <pre className="whitespace-pre-wrap break-words text-sm">
-                {sessionData.summary}
-              </pre>
-            </CardContent>
-          </Card>
-        </section>
-      )}
+          {sessionData.summary && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Summary
+              </h2>
+              <Card>
+                <CardContent className="pt-4">
+                  <pre className="whitespace-pre-wrap break-words text-sm">
+                    {sessionData.summary}
+                  </pre>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
-      {artifacts.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Artifacts
-          </h2>
-          <ArtifactList artifacts={artifacts} runId={sessionData.run_id} />
-        </section>
-      )}
+          {!sessionData.task && !sessionData.summary && (
+            <p className="text-sm text-muted-foreground">
+              No overview information available yet.
+            </p>
+          )}
+        </TabsContent>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Agent Tree
-        </h2>
-        <AgentTreeFlow runId={sessionData.run_id} />
-      </section>
+        <TabsContent value="agent-tree">
+          <AgentTreeFlow runId={sessionData.run_id} />
+        </TabsContent>
+
+        <TabsContent value="logs">
+          <p className="text-sm text-muted-foreground">
+            Agent log viewer coming in a future update.
+          </p>
+        </TabsContent>
+
+        <TabsContent value="trace">
+          {displayEvents.length > 0 ? (
+            <EventTimeline
+              events={displayEvents}
+              runId={sessionData.run_id}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No trace events recorded yet.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="artifacts">
+          {artifacts.length > 0 ? (
+            <ArtifactList
+              artifacts={artifacts}
+              runId={sessionData.run_id}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No artifacts recorded yet.
+            </p>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
