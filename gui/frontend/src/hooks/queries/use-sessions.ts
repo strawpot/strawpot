@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Session, SessionDetail, SessionList } from "@/api/types";
+import type { SessionDetail, SessionList } from "@/api/types";
 
 export function useSessions(filters?: Record<string, string>) {
   const params = filters
@@ -21,10 +21,13 @@ export function useRecentSessions() {
   return useSessions({ per_page: "10" });
 }
 
-export function useProjectSessions(projectId: number) {
+export function useProjectSessions(projectId: number, page = 1, perPage = 20) {
   return useQuery({
-    queryKey: queryKeys.projects.sessions(projectId),
-    queryFn: () => api.get<Session[]>(`/projects/${projectId}/sessions`),
+    queryKey: [...queryKeys.projects.sessions(projectId), page, perPage],
+    queryFn: () =>
+      api.get<SessionList>(
+        `/projects/${projectId}/sessions?page=${page}&per_page=${perPage}`,
+      ),
   });
 }
 
