@@ -281,7 +281,8 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
     help="Run detached with output to log file (requires --task).",
 )
 @click.option("--run-id", "run_id", default=None, help="Pre-assigned run ID (used by GUI).")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id):
+@click.option("--system-prompt", "system_prompt", default=None, help="Custom system prompt appended to role instructions.")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -431,6 +432,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         task=task or "",
         run_id=run_id,
         headless=headless,
+        system_prompt=system_prompt or "",
     )
     session.start(working_dir)
 

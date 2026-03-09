@@ -284,12 +284,14 @@ class Session:
         run_id: str | None = None,
         ask_user_handler: Callable[[AskUserRequest], AskUserResponse] | None = None,
         headless: bool = False,
+        system_prompt: str = "",
     ) -> None:
         self.config = config
         self.wrapper = wrapper
         self.runtime = runtime
         self.isolator = isolator
         self.task = task
+        self.system_prompt = system_prompt
         self._resolve_role = resolve_role
         self._resolve_role_dirs = resolve_role_dirs
         self._ask_user_handler = ask_user_handler or _default_ask_user_handler
@@ -387,6 +389,7 @@ class Session:
                 resolved,
                 delegatable_roles=delegatable or None,
                 global_skills=[(s, d) for s, d, _ in global_skills] or None,
+                custom_prompt=self.system_prompt or None,
             )
             self._orchestrator_role_prompt = role_prompt
 

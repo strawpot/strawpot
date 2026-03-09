@@ -8,6 +8,7 @@ interface LaunchSessionBody {
   role?: string;
   overrides?: Record<string, string>;
   context_files?: string[];
+  system_prompt?: string;
 }
 
 export function useLaunchSession() {

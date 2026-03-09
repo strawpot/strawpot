@@ -56,6 +56,7 @@ def build_prompt(
     delegatable_roles: list[tuple[str, str]] | None = None,
     requester_role: str | None = None,
     global_skills: list[tuple[str, str]] | None = None,
+    custom_prompt: str | None = None,
 ) -> str:
     """Build a system prompt from a resolved role and its dependencies.
 
@@ -99,6 +100,9 @@ def build_prompt(
 
     if requester_role:
         sections.append(_build_requester_section(requester_role))
+
+    if custom_prompt:
+        sections.append(f"## Custom Instructions\n\n{custom_prompt}")
 
     return "\n---\n\n".join(sections)
 

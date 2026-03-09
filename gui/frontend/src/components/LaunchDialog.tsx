@@ -61,6 +61,7 @@ export default function LaunchDialog({
   const [runtime, setRuntime] = useState("");
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [fileFilter, setFileFilter] = useState("");
 
@@ -70,6 +71,7 @@ export default function LaunchDialog({
     setRuntime("");
     setIsolation("");
     setMergeStrategy("");
+    setSystemPrompt("");
     setSelectedFiles([]);
   };
 
@@ -88,6 +90,7 @@ export default function LaunchDialog({
         role?: string;
         overrides?: Record<string, string>;
         context_files?: string[];
+        system_prompt?: string;
       } = {
         project_id: projectId,
         task: task.trim(),
@@ -100,6 +103,7 @@ export default function LaunchDialog({
       if (mergeStrategy.trim()) overrides.merge_strategy = mergeStrategy.trim();
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
       if (selectedFiles.length > 0) body.context_files = selectedFiles;
+      if (systemPrompt.trim()) body.system_prompt = systemPrompt.trim();
 
       const result = await launchSession.mutateAsync(body);
       resetForm();
@@ -294,6 +298,16 @@ export default function LaunchDialog({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="system-prompt">System Prompt</Label>
+                <Textarea
+                  id="system-prompt"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="Additional instructions for the agent..."
+                  rows={3}
+                />
               </div>
             </CollapsibleContent>
           </Collapsible>
