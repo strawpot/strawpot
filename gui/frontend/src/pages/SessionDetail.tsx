@@ -3,12 +3,13 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useSession } from "@/hooks/queries/use-sessions";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import AgentTreeFlow from "@/components/AgentTreeFlow";
+import AgentLogViewer from "@/components/AgentLogViewer";
 import { formatTime, formatDuration } from "@/components/SessionTable";
 import { useTraceSSE } from "@/hooks/useTraceSSE";
+import SessionDetailSkeleton from "@/components/skeletons/SessionDetailSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -66,13 +67,7 @@ export default function SessionDetail() {
   const displayEvents = sseEvents.length > 0 ? sseEvents : restEvents;
 
   if (session.isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-32 rounded-lg" />
-        <Skeleton className="h-64 rounded-lg" />
-      </div>
-    );
+    return <SessionDetailSkeleton />;
   }
   if (session.error) {
     return (
@@ -162,9 +157,17 @@ export default function SessionDetail() {
         </TabsContent>
 
         <TabsContent value="logs">
-          <p className="text-sm text-muted-foreground">
-            Agent log viewer coming in a future update.
-          </p>
+          {Object.keys(sessionData.agents).length > 0 ? (
+            <AgentLogViewer
+              runId={sessionData.run_id}
+              agents={sessionData.agents}
+              active={active}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No agents registered yet.
+            </p>
+          )}
         </TabsContent>
 
         <TabsContent value="trace">
