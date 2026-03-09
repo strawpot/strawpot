@@ -1,98 +1,142 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api } from "../api/client";
-import SessionTable from "../components/SessionTable";
-import { useApi } from "../hooks/useApi";
-import type { Project, Session } from "../api/types";
+import { useProject, useProjectConfig } from "@/hooks/queries/use-projects";
+import { useProjectSessions } from "@/hooks/queries/use-sessions";
+import { useRoles } from "@/hooks/queries/use-roles";
+import { useLaunchSession } from "@/hooks/mutations/use-sessions";
+import SessionTable from "@/components/SessionTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { AlertCircle, ArrowLeft, ChevronDown, Play } from "lucide-react";
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
-  const { data: project, loading: pLoading, error: pError } =
-    useApi<Project>(`/projects/${projectId}`);
-  const {
-    data: sessions,
-    loading: sLoading,
-    error: sError,
-    refetch,
-  } = useApi<Session[]>(`/projects/${projectId}/sessions`);
+  const pid = Number(projectId);
+  const project = useProject(pid);
+  const sessions = useProjectSessions(pid);
   const [showLaunch, setShowLaunch] = useState(false);
 
-  const loading = pLoading || sLoading;
-  const error = pError || sError;
+  const loading = project.isLoading || sessions.isLoading;
+  const error = project.error || sessions.error;
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p className="error">Error: {error}</p>;
-  if (!project) return <p className="error">Project not found</p>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-24 rounded-lg" />
+        <Skeleton className="h-64 rounded-lg" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Error: {error.message}</span>
+      </div>
+    );
+  }
+  if (!project.data) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Project not found</span>
+      </div>
+    );
+  }
 
-  const sessionList = sessions ?? [];
+  const p = project.data;
+  const sessionList = sessions.data ?? [];
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>{project.display_name}</h1>
-        <div className="page-header-actions">
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowLaunch(true)}
-            disabled={!project.dir_exists}
-          >
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight">{p.display_name}</h1>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowLaunch(true)} disabled={!p.dir_exists}>
+            <Play className="mr-2 h-4 w-4" />
             Launch Session
-          </button>
-          <Link to="/projects" className="btn">
-            Back to Projects
-          </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/projects">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Link>
+          </Button>
         </div>
       </div>
 
-      <div className="project-info">
-        <div className="project-info-row">
-          <span className="project-info-label">Directory</span>
-          <span className="project-info-value">{project.working_dir}</span>
-          {project.dir_exists ? (
-            <span className="badge badge-success">OK</span>
-          ) : (
-            <span className="badge badge-warning">Missing</span>
-          )}
-        </div>
-        <div className="project-info-row">
-          <span className="project-info-label">Created</span>
-          <span className="project-info-value">
-            {new Date(project.created_at).toLocaleString()}
-          </span>
-        </div>
-      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt className="font-medium text-muted-foreground">Directory</dt>
+            <dd className="flex items-center gap-2 break-all">
+              {p.working_dir}
+              {p.dir_exists ? (
+                <Badge
+                  variant="outline"
+                  className="border-green-200 bg-green-50 text-xs text-green-700"
+                >
+                  OK
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-orange-200 bg-orange-50 text-xs text-orange-700"
+                >
+                  Missing
+                </Badge>
+              )}
+            </dd>
+            <dt className="font-medium text-muted-foreground">Created</dt>
+            <dd>{new Date(p.created_at).toLocaleString()}</dd>
+          </dl>
+        </CardContent>
+      </Card>
 
       {showLaunch && (
         <LaunchForm
-          projectId={Number(projectId)}
-          onLaunched={() => {
-            setShowLaunch(false);
-            refetch();
-          }}
+          projectId={pid}
+          onLaunched={() => setShowLaunch(false)}
           onCancel={() => setShowLaunch(false)}
         />
       )}
 
-      <section className="dashboard-section">
-        <h2>Sessions ({sessionList.length})</h2>
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Sessions ({sessionList.length})
+        </h2>
         {sessionList.length === 0 ? (
-          <p className="empty">No sessions yet.</p>
+          <p className="text-sm italic text-muted-foreground">
+            No sessions yet.
+          </p>
         ) : (
-          <SessionTable sessions={sessionList} />
+          <Card>
+            <CardContent className="p-0">
+              <SessionTable sessions={sessionList} />
+            </CardContent>
+          </Card>
         )}
       </section>
     </div>
   );
-}
-
-interface ProjectConfig {
-  merged: {
-    orchestrator_role: string;
-    runtime: string;
-    isolation: string;
-    merge_strategy: string;
-    [key: string]: unknown;
-  };
 }
 
 function LaunchForm({
@@ -105,27 +149,26 @@ function LaunchForm({
   onCancel: () => void;
 }) {
   const navigate = useNavigate();
-  const { data: config } = useApi<ProjectConfig>(
-    `/projects/${projectId}/config`,
-  );
-  const { data: installedRoles } = useApi<string[]>("/roles");
-  const defaults = config?.merged;
+  const config = useProjectConfig(projectId);
+  const roles = useRoles();
+  const launchSession = useLaunchSession();
+  const defaults = config.data?.merged;
 
   const [task, setTask] = useState("");
   const [role, setRole] = useState("");
-  const [showOverrides, setShowOverrides] = useState(false);
   const [runtime, setRuntime] = useState("");
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
-    setError(null);
     try {
-      const body: Record<string, unknown> = {
+      const body: {
+        project_id: number;
+        task: string;
+        role?: string;
+        overrides?: Record<string, string>;
+      } = {
         project_id: projectId,
         task: task.trim(),
       };
@@ -137,127 +180,124 @@ function LaunchForm({
       if (mergeStrategy.trim()) overrides.merge_strategy = mergeStrategy.trim();
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
 
-      const result = await api.post<{ run_id: string }>("/sessions", body);
+      const result = await launchSession.mutateAsync(body);
       onLaunched();
       navigate(`/projects/${projectId}/sessions/${result.run_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch");
-    } finally {
-      setSubmitting(false);
+    } catch {
+      // error state handled by mutation
     }
   };
 
+  const defaultRole = defaults?.orchestrator_role ?? "orchestrator";
+  const installedRoles = (roles.data ?? []).filter((v) => v !== defaultRole);
+
   return (
-    <form className="inline-form" onSubmit={handleSubmit}>
-      <h3 style={{ marginBottom: "0.75rem" }}>Launch Session</h3>
-      <div className="form-row">
-        <label>
-          Task <span className="required">*</span>
-          <textarea
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
-            placeholder="Describe what the agent should do..."
-            required
-            autoFocus
-            rows={3}
-          />
-        </label>
-      </div>
-      <div className="form-row">
-        <label>
-          Role
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          >
-            <option value="">
-              {defaults?.orchestrator_role ?? "orchestrator"}
-            </option>
-            {(installedRoles ?? [])
-              .filter((v) => v !== (defaults?.orchestrator_role ?? "orchestrator"))
-              .map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-          </select>
-        </label>
-      </div>
-      <div style={{ marginBottom: "0.75rem" }}>
-        <button
-          className="btn btn-sm"
-          type="button"
-          onClick={() => setShowOverrides(!showOverrides)}
-        >
-          {showOverrides ? "Hide" : "Show"} Advanced Options
-        </button>
-      </div>
-      {showOverrides && (
-        <div className="form-row">
-          <label>
-            Runtime
-            <select
-              value={runtime}
-              onChange={(e) => setRuntime(e.target.value)}
-            >
-              <option value="">
-                {defaults?.runtime ?? "strawpot-claude-code"}
-              </option>
-              {["strawpot-claude-code"]
-                .filter((v) => v !== (defaults?.runtime ?? "strawpot-claude-code"))
-                .map((v) => (
-                  <option key={v} value={v}>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Launch Session</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="task">
+              Task <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="task"
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              placeholder="Describe what the agent should do..."
+              required
+              autoFocus
+              rows={3}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="role">Role</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger id="role">
+                <SelectValue placeholder={defaultRole} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={defaultRole}>{defaultRole}</SelectItem>
+                {installedRoles.map((v) => (
+                  <SelectItem key={v} value={v}>
                     {v}
-                  </option>
+                  </SelectItem>
                 ))}
-            </select>
-          </label>
-          <label>
-            Isolation
-            <select
-              value={isolation}
-              onChange={(e) => setIsolation(e.target.value)}
-            >
-              <option value="">
-                {defaults?.isolation ?? "none"}
-              </option>
-              {defaults?.isolation !== "none" && (
-                <option value="none">none</option>
-              )}
-              {defaults?.isolation !== "worktree" && (
-                <option value="worktree">worktree</option>
-              )}
-            </select>
-          </label>
-          <label>
-            Merge Strategy
-            <select
-              value={mergeStrategy}
-              onChange={(e) => setMergeStrategy(e.target.value)}
-            >
-              <option value="">
-                {defaults?.merge_strategy ?? "auto"}
-              </option>
-              {["auto", "local", "pr"]
-                .filter((v) => v !== (defaults?.merge_strategy ?? "auto"))
-                .map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-      )}
-      {error && <p className="error">{error}</p>}
-      <div className="form-actions">
-        <button className="btn btn-primary" type="submit" disabled={submitting}>
-          {submitting ? "Launching..." : "Launch"}
-        </button>
-        <button className="btn" type="button" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="ghost" size="sm">
+                <ChevronDown className="mr-1 h-4 w-4" />
+                Advanced Options
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-3 space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="runtime">Runtime</Label>
+                  <Input
+                    id="runtime"
+                    value={runtime}
+                    onChange={(e) => setRuntime(e.target.value)}
+                    placeholder={defaults?.runtime ?? "strawpot-claude-code"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="isolation">Isolation</Label>
+                  <Select value={isolation} onValueChange={setIsolation}>
+                    <SelectTrigger id="isolation">
+                      <SelectValue
+                        placeholder={defaults?.isolation ?? "none"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">none</SelectItem>
+                      <SelectItem value="worktree">worktree</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="merge-strategy">Merge Strategy</Label>
+                  <Select
+                    value={mergeStrategy}
+                    onValueChange={setMergeStrategy}
+                  >
+                    <SelectTrigger id="merge-strategy">
+                      <SelectValue
+                        placeholder={defaults?.merge_strategy ?? "auto"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">auto</SelectItem>
+                      <SelectItem value="local">local</SelectItem>
+                      <SelectItem value="pr">pr</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {launchSession.error && (
+            <p className="text-sm text-destructive">
+              {launchSession.error.message}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" disabled={launchSession.isPending}>
+              {launchSession.isPending ? "Launching..." : "Launch"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
