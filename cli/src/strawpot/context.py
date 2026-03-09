@@ -129,10 +129,13 @@ def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
     lines.append(
         "Each role is described in `roles/<role-name>/ROLE.md`. Read the ROLE.md"
     )
+    lines.append("file to learn more about the role before delegating.")
+    lines.append("")
     lines.append(
-        "file to learn more about the role before delegating. Use the `denden`"
+        "To delegate, read `skills/denden/SKILL.md` and use the `delegate` "
+        "command documented there. This is the ONLY way to delegate work. "
+        "Never attempt tasks yourself — always delegate via the denden skill."
     )
-    lines.append("skill to request delegation.")
     return "\n".join(lines)
 
 

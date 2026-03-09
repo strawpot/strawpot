@@ -779,6 +779,7 @@ class Session:
                 tracer=self._tracer,
                 parent_span=requester_span,
                 agent_spans=self._agent_spans,
+                register_agent=self._register_agent,
             )
             return ok_response(
                 request.request_id,
@@ -792,6 +793,7 @@ class Session:
                     role=delegate_req.role_slug,
                     parent_span=requester_span,
                     reason=exc.reason,
+                    depth=delegate_req.depth,
                 )
             return denied_response(
                 request.request_id, exc.reason, str(exc)

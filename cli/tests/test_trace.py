@@ -235,6 +235,15 @@ class TestDelegateEvents:
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "Review this code please."
 
+    def test_delegate_start_records_depth(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.delegate_start(
+            role="reviewer", parent_span="root",
+            context="review", depth=2,
+        )
+        events = _read_events(session_dir)
+        assert events[0]["data"]["depth"] == 2
+
     def test_delegate_end_event(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.delegate_end(
@@ -261,6 +270,15 @@ class TestDelegateEvents:
         assert events[0]["event"] == "delegate_denied"
         assert events[0]["data"]["role"] == "admin"
         assert events[0]["data"]["reason"] == "DENY_ROLE_NOT_ALLOWED"
+
+    def test_delegate_denied_records_depth(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.delegate_denied(
+            role="admin", parent_span="root",
+            reason="DENY_DEPTH_LIMIT", depth=3,
+        )
+        events = _read_events(session_dir)
+        assert events[0]["data"]["depth"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +368,16 @@ class TestAgentEvents:
         assert artifact_path.read_text() == "You are the CEO agent."
         task_path = Path(session_dir) / "artifacts" / data["task_ref"]
         assert task_path.read_text() == "build the app"
+
+    def test_agent_spawn_records_depth(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.agent_spawn(
+            span_id="s1", agent_id="agent_abc",
+            role="implementer", runtime="strawpot-claude-code", pid=111,
+            depth=1,
+        )
+        events = _read_events(session_dir)
+        assert events[0]["data"]["depth"] == 1
 
     def test_agent_end_stores_output_artifact(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)

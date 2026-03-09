@@ -100,6 +100,13 @@ export default function SessionDetail() {
         </section>
       )}
 
+      {displayEvents.length > 0 && (
+        <section className="dashboard-section">
+          <h2>Trace Events ({displayEvents.length})</h2>
+          <EventTimeline events={displayEvents} runId={session.run_id} />
+        </section>
+      )}
+
       {session.summary && (
         <section className="dashboard-section">
           <h2>Summary</h2>
@@ -118,13 +125,6 @@ export default function SessionDetail() {
         <h2>Agent Tree</h2>
         <AgentTreeFlow runId={session.run_id} />
       </section>
-
-      {displayEvents.length > 0 && (
-        <section className="dashboard-section">
-          <h2>Trace Events ({displayEvents.length})</h2>
-          <EventTimeline events={displayEvents} runId={session.run_id} />
-        </section>
-      )}
     </div>
   );
 }
