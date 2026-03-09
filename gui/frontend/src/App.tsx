@@ -5,8 +5,11 @@ import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
 import NotFound from "./pages/NotFound";
+import { useGlobalSSE } from "./hooks/useGlobalSSE";
 
 export default function App() {
+  useGlobalSSE();
+
   return (
     <Routes>
       <Route element={<AppLayout />}>

@@ -10,6 +10,12 @@ def format_sse(event_id: int, data: dict) -> str:
     return f"id: {event_id}\ndata: {payload}\n\n"
 
 
+def format_sse_typed(event_id: int, event_type: str, data: dict) -> str:
+    """Format an SSE event with a named event type."""
+    payload = json.dumps(data, separators=(",", ":"))
+    return f"id: {event_id}\nevent: {event_type}\ndata: {payload}\n\n"
+
+
 def sse_retry(ms: int = 3000) -> str:
     """Format an SSE retry directive."""
     return f"retry: {ms}\n\n"

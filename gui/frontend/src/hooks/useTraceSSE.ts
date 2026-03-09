@@ -9,6 +9,8 @@ export function useTraceSSE(
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const prevRunIdRef = useRef<string>("");
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const backoffMs = useRef(1000);
 
   useEffect(() => {
     if (!active) return;
@@ -19,33 +21,69 @@ export function useTraceSSE(
       prevRunIdRef.current = runId;
     }
 
-    const es = new EventSource(`/api/sessions/${runId}/events`);
-    esRef.current = es;
+    function connect() {
+      const es = new EventSource(`/api/sessions/${runId}/events`);
+      esRef.current = es;
 
-    es.onopen = () => setConnected(true);
+      es.onopen = () => {
+        setConnected(true);
+        backoffMs.current = 1000; // reset on successful connect
+      };
 
-    es.onmessage = (msg) => {
-      try {
-        const data = JSON.parse(msg.data);
-        if (data.events && Array.isArray(data.events)) {
-          // Backend sends full snapshot each time — replace, don't append
-          setEvents(data.events);
+      // Named event: full snapshot — replace all events
+      es.addEventListener("snapshot", (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.events && Array.isArray(data.events)) {
+            setEvents(data.events);
+          }
+        } catch {
+          /* ignore */
         }
-      } catch {
-        // ignore malformed data
-      }
-    };
+      });
 
-    es.onerror = () => {
-      // Server closed the stream (session ended) — stop reconnecting
-      es.close();
-      esRef.current = null;
-      setConnected(false);
-    };
+      // Named event: incremental delta — append new events
+      es.addEventListener("delta", (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.events && Array.isArray(data.events)) {
+            setEvents((prev) => [...prev, ...data.events]);
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+
+      // Backward compat: unnamed events from old server format
+      es.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.events && Array.isArray(data.events)) {
+            setEvents(data.events);
+          }
+        } catch {
+          /* ignore */
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        setConnected(false);
+        // Reconnect with exponential backoff
+        reconnectTimer.current = setTimeout(() => {
+          backoffMs.current = Math.min(backoffMs.current * 2, 15000);
+          connect();
+        }, backoffMs.current);
+      };
+    }
+
+    connect();
 
     return () => {
-      es.close();
+      esRef.current?.close();
       esRef.current = null;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     };
   }, [runId, active]);
 

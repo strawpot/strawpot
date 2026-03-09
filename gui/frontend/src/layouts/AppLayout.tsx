@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { LayoutDashboard, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useProject } from "@/hooks/queries/use-projects";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,6 +21,9 @@ function useBreadcrumbs() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
 
+  const projectId = segments[0] === "projects" && segments[1] ? Number(segments[1]) : 0;
+  const { data: project } = useProject(projectId, { enabled: projectId > 0 });
+
   const crumbs: { label: string; href?: string }[] = [
     { label: "Dashboard", href: "/" },
   ];
@@ -29,7 +33,8 @@ function useBreadcrumbs() {
 
     if (segments[1]) {
       const projectHref = `/projects/${segments[1]}`;
-      crumbs.push({ label: `Project #${segments[1]}`, href: projectHref });
+      const projectLabel = project?.display_name ?? `Project #${segments[1]}`;
+      crumbs.push({ label: projectLabel, href: projectHref });
 
       if (segments[2] === "sessions" && segments[3]) {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });

@@ -7,23 +7,37 @@ from test_sessions_sync import _register_project, _write_session, _write_trace
 from strawpot_gui.db import sync_sessions
 
 
-def _parse_sse_events(body: str) -> list[dict]:
-    """Parse SSE data events from a response body string."""
+def _parse_sse_named_events(body: str) -> list[tuple[str, dict]]:
+    """Parse SSE events with event types.
+
+    Returns a list of (event_type, data) tuples.
+    Handles both named events (``event: snapshot``) and unnamed events
+    (default type ``message``).
+    """
     events = []
+    current_type = "message"
     for line in body.splitlines():
-        if line.startswith("data: "):
+        if line.startswith("event: "):
+            current_type = line[7:].strip()
+        elif line.startswith("data: "):
             try:
-                events.append(json.loads(line[6:]))
+                events.append((current_type, json.loads(line[6:])))
             except json.JSONDecodeError:
                 pass
+            current_type = "message"  # reset for next event
     return events
+
+
+def _parse_sse_events(body: str) -> list[dict]:
+    """Parse SSE data events (ignoring event types)."""
+    return [data for _, data in _parse_sse_named_events(body)]
 
 
 class TestTraceSSETerminalSession:
     """Tests for completed/failed sessions — batch events then close."""
 
     def test_completed_session_returns_all_events(self, client, tmp_path):
-        """Completed session sends all trace events and closes."""
+        """Completed session sends all trace events as a snapshot and closes."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         _register_project(client, project_dir)
@@ -47,9 +61,11 @@ class TestTraceSSETerminalSession:
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]
 
-        sse_messages = _parse_sse_events(resp.text)
-        assert len(sse_messages) >= 1
-        data = sse_messages[0]
+        named_events = _parse_sse_named_events(resp.text)
+        assert len(named_events) >= 1
+
+        event_type, data = named_events[0]
+        assert event_type == "snapshot"
         assert "events" in data
         assert len(data["events"]) == 3
         assert data["events"][0]["event"] == "session_start"
@@ -101,6 +117,8 @@ class TestTraceSSEActiveSession:
         resp = client.get("/api/sessions/run_ev3/events")
         assert resp.status_code == 200
 
-        sse_messages = _parse_sse_events(resp.text)
-        assert len(sse_messages) >= 1
-        assert len(sse_messages[0]["events"]) == 2
+        named_events = _parse_sse_named_events(resp.text)
+        assert len(named_events) >= 1
+        event_type, data = named_events[0]
+        assert event_type == "snapshot"
+        assert len(data["events"]) == 2

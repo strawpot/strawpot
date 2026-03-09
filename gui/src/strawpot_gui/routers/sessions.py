@@ -16,6 +16,7 @@ from pydantic import BaseModel, field_validator
 
 from strawpot.config import load_config
 from strawpot_gui.db import _parse_trace, get_db_conn
+from strawpot_gui.event_bus import SessionEvent, event_bus
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -219,6 +220,12 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
         raise HTTPException(500, "Failed to start session subprocess")
 
+    event_bus.publish(SessionEvent(
+        kind="session_started",
+        run_id=run_id,
+        project_id=body.project_id,
+    ))
+
     return {"run_id": run_id, "status": "starting"}
 
 
@@ -378,6 +385,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
         return {"run_id": run_id, "status": "stopped"}
 
     pid = data.get("pid")
@@ -387,6 +395,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
         return {"run_id": run_id, "status": "stopped"}
 
     # Check liveness and send SIGTERM
@@ -398,6 +407,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
         return {"run_id": run_id, "status": "stopped"}
 
     try:
@@ -408,12 +418,14 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
         return {"run_id": run_id, "status": "stopped"}
 
     conn.execute(
         "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
         (run_id,),
     )
+    event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
     return {"run_id": run_id, "status": "stopped"}
 
 
