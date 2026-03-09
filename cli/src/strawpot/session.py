@@ -28,7 +28,10 @@ from strawpot.context import build_prompt
 from strawpot.delegation import (
     DelegateRequest,
     PolicyDenied,
+    _build_delegatable_roles,
+    _discover_all_roles,
     _format_memory_prompt,
+    _parse_role_deps,
     create_agent_workspace,
     discover_global_skills,
     handle_delegate,
@@ -332,6 +335,7 @@ class Session:
                 role=self.config.orchestrator_role,
                 runtime=self.config.runtime,
                 isolation=self.config.isolation,
+                task=self.task or "",
             )
             self._session_start_time = time.monotonic()
 
@@ -359,8 +363,20 @@ class Session:
                 self.config.orchestrator_role, kind="role"
             )
             global_skills = discover_global_skills(resolved)
+
+            # Build delegatable roles so the orchestrator prompt lists them
+            _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
+            if wildcard:
+                role_dep_slugs = [slug for slug, _ in _discover_all_roles()]
+            delegatable = _build_delegatable_roles(
+                role_dep_slugs,
+                self.config.orchestrator_role,
+                self._resolve_role_dirs,
+            )
+
             role_prompt = build_prompt(
                 resolved,
+                delegatable_roles=delegatable or None,
                 global_skills=[(s, d) for s, d, _ in global_skills] or None,
             )
 
@@ -415,12 +431,16 @@ class Session:
             )
             self._orchestrator_handle = handle
             if self._tracer is not None:
+                agent_context = role_prompt
+                if memory_prompt:
+                    agent_context += "\n\n" + memory_prompt
                 self._tracer.agent_spawn(
                     span_id=self._session_span_id,
                     agent_id=agent_id,
                     role=self.config.orchestrator_role,
                     runtime=self.config.runtime,
                     pid=handle.pid,
+                    context=agent_context,
                 )
                 self._agent_spans[agent_id] = self._session_span_id
             self._register_agent(
@@ -475,10 +495,15 @@ class Session:
                 except Exception:
                     logger.debug("Orchestrator memory.dump failed", exc_info=True)
                 if self._tracer is not None and self._session_span_id is not None:
+                    dump_summary = (
+                        f"task: {self.task or ''}\n"
+                        f"status: {status}\n"
+                        f"output:\n{output}"
+                    )
                     self._tracer.memory_dump(
                         span_id=self._session_span_id,
                         provider=self._memory_provider.name,
-                        entries=output,
+                        entries=dump_summary,
                         entry_count=1,
                     )
 
@@ -487,10 +512,12 @@ class Session:
             duration_ms = int(
                 (time.monotonic() - self._session_start_time) * 1000
             )
+            result = self._orchestrator_result
             self._tracer.session_end(
                 span_id=self._session_span_id,
                 merge_strategy=self.config.merge_strategy,
                 duration_ms=duration_ms,
+                output=result.output if result else "",
             )
 
         # 1. Kill remaining sub-agents

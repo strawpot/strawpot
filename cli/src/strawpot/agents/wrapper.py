@@ -7,6 +7,7 @@ WrapperRuntime — wrappers never manage processes.
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -15,6 +16,8 @@ import time
 from strawpot._process import is_pid_alive, kill_process_tree
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.agents.registry import AgentSpec
+
+logger = logging.getLogger(__name__)
 
 
 class WrapperRuntime:
@@ -175,9 +178,18 @@ class WrapperRuntime:
         for rd in roles_dirs:
             args.extend(["--roles-dir", rd])
 
+        logger.debug(
+            "spawn agent_id=%s working_dir=%s agent_workspace_dir=%s "
+            "skills_dir=%s roles_dirs=%s task_len=%d role_prompt_len=%d",
+            agent_id, working_dir, agent_workspace_dir,
+            skills_dir, roles_dirs, len(task), len(role_prompt),
+        )
+
         data = self._run_subcommand(args, extra_env=env)
         agent_cmd = data["cmd"]
         cwd = data.get("cwd", working_dir)
+
+        logger.debug("wrapper build returned cmd=%s cwd=%s", agent_cmd, cwd)
 
         # 2. Launch via Popen
         log_path = self._log_file(agent_id)

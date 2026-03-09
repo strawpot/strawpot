@@ -666,12 +666,50 @@ class TestDiscoverAllRoles:
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty"))
         assert _discover_all_roles() == []
 
+    def test_discovers_unversioned_roles(self, tmp_path, monkeypatch):
+        """Finds roles installed as plain slug directories (no version)."""
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        for slug in ["ai-ceo", "ai-employee"]:
+            d = roles_dir / slug
+            d.mkdir(parents=True)
+            (d / "ROLE.md").write_text(f"---\nname: {slug}\n---\nBody.\n")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+        result = _discover_all_roles()
+        slugs = [s for s, _ in result]
+        assert "ai-ceo" in slugs
+        assert "ai-employee" in slugs
+
+    def test_discovers_mixed_versioned_and_unversioned(self, tmp_path, monkeypatch):
+        """Finds both versioned and unversioned role directories."""
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        (roles_dir / "reviewer-1.0.0").mkdir(parents=True)
+        (roles_dir / "reviewer-1.0.0" / "ROLE.md").write_text("---\nname: reviewer\n---\n")
+        (roles_dir / "ai-employee").mkdir(parents=True)
+        (roles_dir / "ai-employee" / "ROLE.md").write_text("---\nname: ai-employee\n---\n")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+        result = _discover_all_roles()
+        slugs = [s for s, _ in result]
+        assert "reviewer" in slugs
+        assert "ai-employee" in slugs
+
     def test_skips_non_dirs(self, tmp_path, monkeypatch):
         """Skips non-directory entries in roles dir."""
         global_home = tmp_path / "global_home"
         roles_dir = global_home / "roles"
         roles_dir.mkdir(parents=True)
         (roles_dir / "not-a-dir.txt").write_text("junk")
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        assert _discover_all_roles() == []
+
+    def test_skips_dirs_without_role_md(self, tmp_path, monkeypatch):
+        """Skips directories that don't contain ROLE.md."""
+        global_home = tmp_path / "global_home"
+        roles_dir = global_home / "roles"
+        (roles_dir / "empty-dir").mkdir(parents=True)
         monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
         assert _discover_all_roles() == []
 
@@ -1776,6 +1814,26 @@ class TestDiscoverGlobalSkills:
         result = discover_global_skills(resolved)
         assert len(result) == 1
         assert result[0][0] == "formatter"
+
+    def test_discovers_unversioned_skills(self, tmp_path, monkeypatch):
+        """Finds skills installed as plain slug directories (no version)."""
+        global_dir = str(tmp_path / "global")
+        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
+        d = os.path.join(global_dir, "skills", "denden")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "SKILL.md"), "w") as f:
+            f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
+
+        role_path = _write_role(str(tmp_path), "worker")
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        result = discover_global_skills(resolved)
+        assert len(result) == 1
+        assert result[0][0] == "denden"
+        assert result[0][1] == "Agent comms"
 
     def test_empty_when_no_dir(self, tmp_path, monkeypatch):
         """Returns empty when ~/.strawpot/skills/ doesn't exist."""

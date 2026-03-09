@@ -102,10 +102,12 @@ class Tracer:
     # ------------------------------------------------------------------
 
     def session_start(
-        self, *, run_id: str, role: str, runtime: str, isolation: str
+        self, *, run_id: str, role: str, runtime: str, isolation: str,
+        task: str = "",
     ) -> str:
-        """Emit ``session_start``.  Returns the root span_id."""
+        """Emit ``session_start``.  Stores task as artifact.  Returns the root span_id."""
         span_id = self._new_span_id()
+        task_ref = self.store_artifact(task)
         self.emit(
             "session_start",
             span_id,
@@ -113,18 +115,22 @@ class Tracer:
             role=role,
             runtime=runtime,
             isolation=isolation,
+            task_ref=task_ref,
         )
         return span_id
 
     def session_end(
-        self, *, span_id: str, merge_strategy: str, duration_ms: int
+        self, *, span_id: str, merge_strategy: str, duration_ms: int,
+        output: str = "",
     ) -> None:
-        """Emit ``session_end``."""
+        """Emit ``session_end``.  Stores output as artifact."""
+        output_ref = self.store_artifact(output)
         self.emit(
             "session_end",
             span_id,
             merge_strategy=merge_strategy,
             duration_ms=duration_ms,
+            output_ref=output_ref,
         )
 
     def delegate_start(
@@ -220,8 +226,10 @@ class Tracer:
         role: str,
         runtime: str,
         pid: int | None,
+        context: str = "",
     ) -> None:
-        """Emit ``agent_spawn``."""
+        """Emit ``agent_spawn``.  Stores context as artifact."""
+        context_ref = self.store_artifact(context)
         self.emit(
             "agent_spawn",
             span_id,
@@ -229,6 +237,7 @@ class Tracer:
             role=role,
             runtime=runtime,
             pid=pid,
+            context_ref=context_ref,
         )
 
     def agent_end(

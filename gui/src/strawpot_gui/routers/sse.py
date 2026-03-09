@@ -203,18 +203,18 @@ async def session_events_sse(run_id: str, request: Request):
         yield sse_retry(3000)
 
         trace_path = os.path.join(session_dir, "trace.jsonl")
-        events, trace_offset = _read_trace_lines(trace_path, 0)
+        all_events, trace_offset = _read_trace_lines(trace_path, 0)
 
-        if events:
+        if all_events:
             event_id += 1
-            yield format_sse(event_id, {"events": events})
+            yield format_sse(event_id, {"events": all_events})
 
         # Terminal sessions: send all events and close
         if status in ("completed", "failed", "stopped"):
             return
 
         # Check if trace already contains session_end
-        if any(e.get("event") == "session_end" for e in events):
+        if any(e.get("event") == "session_end" for e in all_events):
             return
 
         # Active sessions: poll for new trace events
@@ -233,8 +233,9 @@ async def session_events_sse(run_id: str, request: Request):
                     trace_path, trace_offset
                 )
                 if new_events:
+                    all_events.extend(new_events)
                     event_id += 1
-                    yield format_sse(event_id, {"events": new_events})
+                    yield format_sse(event_id, {"events": all_events})
 
                     if any(e.get("event") == "session_end" for e in new_events):
                         return
@@ -246,8 +247,9 @@ async def session_events_sse(run_id: str, request: Request):
                     trace_path, trace_offset
                 )
                 if new_events:
+                    all_events.extend(new_events)
                     event_id += 1
-                    yield format_sse(event_id, {"events": new_events})
+                    yield format_sse(event_id, {"events": all_events})
                 return
 
     return StreamingResponse(
