@@ -1379,14 +1379,14 @@ through the UI.
 | 5.7 | Frontend: command palette, keyboard shortcuts, dark mode | **Done** (Phase 4) |
 | 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install/uninstall | **Done** (Phase 5) |
 | 6.5 | Backend + frontend: per-resource env var and parameter configuration | **Done** (Phase 5) |
-| 7 | Backend + frontend: config editor (project + global) | Planned (Phase 5, backend done) |
+| 7 | Backend + frontend: config editor (project + global) | **Done** (Phase 5) |
 | 7.5 | Backend + frontend: project files upload | Planned |
 | 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
 | 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
 | 10 | Ongoing session support (ask_user bridge) | Deferred |
 | 11 | Interactive GUI sessions (chat panel) | Deferred |
 
-**Next:** Phase 5 continued — Config editor (PR2).
+**Next:** Phase 5 continued — Project files upload.
 
 **Deferred features:**
 

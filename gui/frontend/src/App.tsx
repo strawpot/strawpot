@@ -5,6 +5,7 @@ import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
 import ResourceBrowser from "./pages/ResourceBrowser";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { useGlobalSSE } from "./hooks/useGlobalSSE";
 
@@ -25,6 +26,7 @@ export default function App() {
           path="resources/:resourceType"
           element={<ResourceBrowser />}
         />
+        <Route path="settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
