@@ -23,7 +23,7 @@ RESOURCE_TYPES: dict[str, tuple[str, str]] = {
 }
 
 
-def _validate_type(resource_type: str) -> tuple[str, str]:
+def validate_type(resource_type: str) -> tuple[str, str]:
     """Return (dir_name, manifest) or raise 400."""
     entry = RESOURCE_TYPES.get(resource_type)
     if entry is None:
@@ -35,7 +35,7 @@ def _validate_type(resource_type: str) -> tuple[str, str]:
     return entry
 
 
-def _parse_manifest(manifest_path: Path, resource_type: str) -> tuple[dict, str]:
+def parse_manifest(manifest_path: Path, resource_type: str) -> tuple[dict, str]:
     """Parse a manifest file and return (frontmatter, body)."""
     if resource_type == "agents":
         return parse_agent_md(manifest_path)
@@ -47,7 +47,7 @@ def _parse_manifest(manifest_path: Path, resource_type: str) -> tuple[dict, str]
     return parsed.get("frontmatter", {}), parsed.get("body", "")
 
 
-def _read_version(resource_dir: Path, fm: dict) -> str | None:
+def read_version(resource_dir: Path, fm: dict) -> str | None:
     """Read version from .version file, falling back to frontmatter metadata."""
     version_file = resource_dir / ".version"
     if version_file.is_file():
@@ -59,7 +59,7 @@ def _read_version(resource_dir: Path, fm: dict) -> str | None:
     return metadata.get("version", fm.get("version")) or None
 
 
-def _scan_dir(
+def scan_dir(
     base_dir: Path, dir_name: str, manifest: str, resource_type: str, source: str
 ) -> list[dict]:
     """Scan a directory for installed resources."""
@@ -74,13 +74,13 @@ def _scan_dir(
         if not manifest_path.is_file():
             continue
         try:
-            fm, _body = _parse_manifest(manifest_path, resource_type)
+            fm, _body = parse_manifest(manifest_path, resource_type)
         except (ValueError, Exception):
             fm = {}
         items.append(
             {
                 "name": fm.get("name", entry.name),
-                "version": _read_version(entry, fm),
+                "version": read_version(entry, fm),
                 "description": fm.get("description", ""),
                 "source": source,
                 "path": str(entry),
@@ -92,15 +92,15 @@ def _scan_dir(
 @router.get("/{resource_type}")
 def list_resources(resource_type: str):
     """List all installed resources of a given type."""
-    dir_name, manifest = _validate_type(resource_type)
+    dir_name, manifest = validate_type(resource_type)
     home = get_strawpot_home()
-    return _scan_dir(home, dir_name, manifest, resource_type, "global")
+    return scan_dir(home, dir_name, manifest, resource_type, "global")
 
 
 @router.get("/{resource_type}/{name}")
 def get_resource(resource_type: str, name: str):
     """Get detail for a single installed resource."""
-    dir_name, manifest = _validate_type(resource_type)
+    dir_name, manifest = validate_type(resource_type)
     home = get_strawpot_home()
 
     resource_dir = home / dir_name / name
@@ -108,10 +108,10 @@ def get_resource(resource_type: str, name: str):
     if not manifest_path.is_file():
         raise HTTPException(404, f"Resource not found: {resource_type}/{name}")
 
-    fm, body = _parse_manifest(manifest_path, resource_type)
+    fm, body = parse_manifest(manifest_path, resource_type)
     return {
         "name": fm.get("name", name),
-        "version": _read_version(resource_dir, fm),
+        "version": read_version(resource_dir, fm),
         "description": fm.get("description", ""),
         "frontmatter": fm,
         "body": body,
@@ -120,7 +120,7 @@ def get_resource(resource_type: str, name: str):
     }
 
 
-def _extract_saved_values(
+def extract_saved_values(
     toml_data: dict, resource_type: str, name: str, params_schema: dict
 ) -> tuple[dict, dict]:
     """Extract saved env and param values from parsed TOML data."""
@@ -150,7 +150,7 @@ def _extract_saved_values(
     return env_values, params_values
 
 
-def _coerce_param(value: object, param_type: str | None) -> object:
+def coerce_param(value: object, param_type: str | None) -> object:
     """Coerce a param value to the correct Python type for TOML."""
     if param_type == "int":
         return int(value)  # type: ignore[arg-type]
@@ -166,7 +166,7 @@ def _coerce_param(value: object, param_type: str | None) -> object:
 @router.get("/{resource_type}/{name}/config")
 def get_resource_config(resource_type: str, name: str):
     """Get env/params schema from manifest and saved values from TOML."""
-    dir_name, manifest = _validate_type(resource_type)
+    dir_name, manifest = validate_type(resource_type)
     home = get_strawpot_home()
 
     resource_dir = home / dir_name / name
@@ -174,7 +174,7 @@ def get_resource_config(resource_type: str, name: str):
     if not manifest_path.is_file():
         raise HTTPException(404, f"Resource not found: {resource_type}/{name}")
 
-    fm, _ = _parse_manifest(manifest_path, resource_type)
+    fm, _ = parse_manifest(manifest_path, resource_type)
     strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
 
     env_schema = strawpot_meta.get("env", {})
@@ -192,7 +192,7 @@ def get_resource_config(resource_type: str, name: str):
         }
 
     toml_data = _read_toml(home / "strawpot.toml")
-    env_values, params_values = _extract_saved_values(
+    env_values, params_values = extract_saved_values(
         toml_data, resource_type, name, params_schema
     )
 
@@ -207,7 +207,7 @@ def get_resource_config(resource_type: str, name: str):
 @router.put("/{resource_type}/{name}/config")
 def put_resource_config(resource_type: str, name: str, data: dict = Body(...)):
     """Save env and param values for a resource."""
-    dir_name, manifest = _validate_type(resource_type)
+    dir_name, manifest = validate_type(resource_type)
     home = get_strawpot_home()
     manifest_path = home / dir_name / name / manifest
     if not manifest_path.is_file():
@@ -218,13 +218,13 @@ def put_resource_config(resource_type: str, name: str, data: dict = Body(...)):
 
     # Type-coerce params based on schema
     if params_values:
-        fm, _ = _parse_manifest(manifest_path, resource_type)
+        fm, _ = parse_manifest(manifest_path, resource_type)
         params_schema = fm.get("metadata", {}).get("strawpot", {}).get("params", {})
         coerced = {}
         for k, v in params_values.items():
             schema = params_schema.get(k, {})
             try:
-                coerced[k] = _coerce_param(v, schema.get("type"))
+                coerced[k] = coerce_param(v, schema.get("type"))
             except (ValueError, TypeError):
                 coerced[k] = v
         params_values = coerced
@@ -233,7 +233,7 @@ def put_resource_config(resource_type: str, name: str, data: dict = Body(...)):
     return {"ok": True}
 
 
-def _run_strawhub(*args: str) -> dict:
+def run_strawhub(*args: str) -> dict:
     """Run a strawhub CLI command and return result."""
     cmd = shutil.which("strawhub")
     if cmd is None:
@@ -264,18 +264,18 @@ def install_resource(data: dict = Body(...)):
         raise HTTPException(400, "Both 'type' and 'name' are required")
     # strawhub uses singular type names for install
     singular = resource_type.rstrip("s") if resource_type != "memories" else "memory"
-    return _run_strawhub("install", "-y", singular, name, "--global")
+    return run_strawhub("install", singular, "-y", name, "--global")
 
 
 @router.delete("/{resource_type}/{name}")
 def uninstall_resource(resource_type: str, name: str):
     """Uninstall a resource via strawhub."""
-    _validate_type(resource_type)
+    validate_type(resource_type)
     singular = resource_type.rstrip("s") if resource_type != "memories" else "memory"
-    return _run_strawhub("uninstall", singular, name, "--global")
+    return run_strawhub("uninstall", singular, name, "--global")
 
 
-def _singular_type(resource_type: str) -> str:
+def singular_type(resource_type: str) -> str:
     return resource_type.rstrip("s") if resource_type != "memories" else "memory"
 
 
@@ -286,8 +286,8 @@ def update_resource(data: dict = Body(...)):
     name = data.get("name", "")
     if not resource_type or not name:
         raise HTTPException(400, "Both 'type' and 'name' are required")
-    singular = _singular_type(resource_type)
-    return _run_strawhub("update", singular, name, "--global")
+    singular = singular_type(resource_type)
+    return run_strawhub("update", singular, name, "--global")
 
 
 @router.post("/reinstall")
@@ -298,7 +298,7 @@ def reinstall_resource(data: dict = Body(...)):
     if not resource_type or not name:
         raise HTTPException(400, "Both 'type' and 'name' are required")
 
-    dir_name, _manifest = _validate_type(resource_type)
+    dir_name, _manifest = validate_type(resource_type)
     home = get_strawpot_home()
     version_file = home / dir_name / name / ".version"
     if not version_file.is_file():
@@ -307,5 +307,5 @@ def reinstall_resource(data: dict = Body(...)):
     if not version:
         raise HTTPException(404, f"Empty version file for: {resource_type}/{name}")
 
-    singular = _singular_type(resource_type)
-    return _run_strawhub("install", "-y", singular, name, "--version", version, "--force", "--global")
+    singular = singular_type(resource_type)
+    return run_strawhub("install", singular, "-y", name, "--version", version, "--force", "--global")
