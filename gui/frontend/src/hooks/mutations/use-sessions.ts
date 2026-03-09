@@ -7,6 +7,7 @@ interface LaunchSessionBody {
   task: string;
   role?: string;
   overrides?: Record<string, string>;
+  context_files?: string[];
 }
 
 export function useLaunchSession() {

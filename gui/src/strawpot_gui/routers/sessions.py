@@ -122,6 +122,7 @@ class SessionLaunch(BaseModel):
     task: str
     role: str | None = None
     overrides: SessionOverrides | None = None
+    context_files: list[str] | None = None
 
     @field_validator("task")
     @classmethod
@@ -173,6 +174,28 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
          session_dir, body.task),
     )
 
+    # Resolve context files and append to task
+    task_text = body.task
+    if body.context_files:
+        files_dir = Path(working_dir) / ".strawpot" / "files"
+        resolved: list[str] = []
+        for rel_path in body.context_files:
+            fp = (files_dir / rel_path).resolve()
+            if not fp.is_relative_to(files_dir.resolve()):
+                raise HTTPException(400, f"Invalid file path: {rel_path}")
+            if not fp.is_file():
+                raise HTTPException(404, f"File not found: {rel_path}")
+            resolved.append(str(fp))
+        if resolved:
+            listing = "\n".join(f"- {p}" for p in resolved)
+            task_text = (
+                f"{task_text}\n\n"
+                f"<context-files>\n"
+                f"The following project files are attached as reference. "
+                f"Read them for context:\n{listing}\n"
+                f"</context-files>"
+            )
+
     # Build CLI command
     strawpot_cmd = shutil.which("strawpot")
     if strawpot_cmd is None:
@@ -181,7 +204,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
     cmd = [
         strawpot_cmd, "start",
         "--headless",
-        "--task", body.task,
+        "--task", task_text,
         "--run-id", run_id,
     ]
     if body.role:

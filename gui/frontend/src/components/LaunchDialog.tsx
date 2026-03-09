@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useProjectConfig } from "@/hooks/queries/use-projects";
+import { useProjectConfig, useProjectFiles } from "@/hooks/queries/use-projects";
 import { useRoles } from "@/hooks/queries/use-roles";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,7 +33,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Paperclip, X } from "lucide-react";
 
 interface LaunchDialogProps {
   projectId: number;
@@ -43,6 +50,7 @@ export default function LaunchDialog({
   const config = useProjectConfig(projectId);
   const roles = useRoles();
   const { data: agents } = useResources("agents");
+  const projectFiles = useProjectFiles(projectId);
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged as
     | { orchestrator_role?: string; runtime?: string; isolation?: string; merge_strategy?: string }
@@ -53,6 +61,8 @@ export default function LaunchDialog({
   const [runtime, setRuntime] = useState("");
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [fileFilter, setFileFilter] = useState("");
 
   const resetForm = () => {
     setTask("");
@@ -60,6 +70,13 @@ export default function LaunchDialog({
     setRuntime("");
     setIsolation("");
     setMergeStrategy("");
+    setSelectedFiles([]);
+  };
+
+  const toggleFile = (path: string) => {
+    setSelectedFiles((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path],
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,6 +87,7 @@ export default function LaunchDialog({
         task: string;
         role?: string;
         overrides?: Record<string, string>;
+        context_files?: string[];
       } = {
         project_id: projectId,
         task: task.trim(),
@@ -81,6 +99,7 @@ export default function LaunchDialog({
       if (isolation.trim()) overrides.isolation = isolation.trim();
       if (mergeStrategy.trim()) overrides.merge_strategy = mergeStrategy.trim();
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
+      if (selectedFiles.length > 0) body.context_files = selectedFiles;
 
       const result = await launchSession.mutateAsync(body);
       resetForm();
@@ -127,6 +146,73 @@ export default function LaunchDialog({
               rows={3}
             />
           </div>
+          {(projectFiles.data ?? []).length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                      <Paperclip className="mr-1 h-3.5 w-3.5" />
+                      @ Attach Files
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    <div className="px-2 py-1.5">
+                      <Input
+                        placeholder="Filter files..."
+                        value={fileFilter}
+                        onChange={(e) => setFileFilter(e.target.value)}
+                        className="h-7 text-xs"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {(projectFiles.data ?? [])
+                        .filter((f) =>
+                          f.path.toLowerCase().includes(fileFilter.toLowerCase()),
+                        )
+                        .map((f) => (
+                          <DropdownMenuCheckboxItem
+                            key={f.path}
+                            checked={selectedFiles.includes(f.path)}
+                            onCheckedChange={() => toggleFile(f.path)}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <span className="font-mono text-xs">{f.path}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {selectedFiles.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {selectedFiles.length} file(s) attached
+                  </span>
+                )}
+              </div>
+              {selectedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {selectedFiles.map((path) => (
+                    <Badge
+                      key={path}
+                      variant="secondary"
+                      className="gap-1 font-mono text-xs"
+                    >
+                      @{path}
+                      <button
+                        type="button"
+                        onClick={() => toggleFile(path)}
+                        className="ml-0.5 rounded-sm hover:bg-muted"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="role">Role</Label>
             <Input
