@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useInstallResource } from "@/hooks/mutations/use-registry";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +42,10 @@ export default function InstallDialog({ open, onOpenChange, defaultType }: Props
   const [name, setName] = useState("");
   const [result, setResult] = useState<ResultState>(null);
   const [output, setOutput] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && defaultType) setType(defaultType);
+  }, [open, defaultType]);
   const install = useInstallResource();
   const isDone = result?.status === "success";
 
@@ -119,6 +123,7 @@ export default function InstallDialog({ open, onOpenChange, defaultType }: Props
             <Label htmlFor="install-name">Package Name</Label>
             <Input
               id="install-name"
+              autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. strawpot-claude-code"

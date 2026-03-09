@@ -3,10 +3,14 @@ import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { Resource, ResourceDetail } from "@/api/types";
 
-export function useResources(type: string) {
+export function useResources(
+  type: string,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.registry.list(type),
     queryFn: () => api.get<Resource[]>(`/registry/${type}`),
+    enabled: options?.enabled,
   });
 }
 

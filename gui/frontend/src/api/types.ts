@@ -97,3 +97,21 @@ export interface InstallResult {
   stdout: string;
   stderr: string;
 }
+
+export interface EnvVarSchema {
+  required?: boolean;
+  description?: string;
+}
+
+export interface ParamSchema {
+  type?: string;
+  default?: unknown;
+  description?: string;
+}
+
+export interface ResourceConfig {
+  env_schema: Record<string, EnvVarSchema>;
+  env_values: Record<string, string>;
+  params_schema: Record<string, ParamSchema>;
+  params_values: Record<string, unknown>;
+}

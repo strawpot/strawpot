@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectConfig } from "@/hooks/queries/use-projects";
 import { useRoles } from "@/hooks/queries/use-roles";
+import { useResources } from "@/hooks/queries/use-registry";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ export default function LaunchDialog({
   const navigate = useNavigate();
   const config = useProjectConfig(projectId);
   const roles = useRoles();
+  const { data: agents } = useResources("agents");
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged;
 
@@ -89,6 +91,18 @@ export default function LaunchDialog({
 
   const defaultRole = defaults?.orchestrator_role ?? "orchestrator";
   const installedRoles = (roles.data ?? []).filter((v) => v !== defaultRole);
+  const allRoles = [defaultRole, ...installedRoles];
+  const agentNames = (agents ?? []).map((a) => a.name);
+
+  const roleError =
+    role.trim() && !allRoles.includes(role.trim())
+      ? "Role not found in installed roles"
+      : "";
+  const runtimeError =
+    runtime.trim() && agentNames.length > 0 && !agentNames.includes(runtime.trim())
+      ? "Runtime not found in installed agents"
+      : "";
+  const hasValidationError = !!roleError || !!runtimeError;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -113,19 +127,22 @@ export default function LaunchDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">Role</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger id="role">
-                <SelectValue placeholder={defaultRole} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={defaultRole}>{defaultRole}</SelectItem>
-                {installedRoles.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              id="role"
+              list="datalist-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder={defaultRole}
+            />
+            <datalist id="datalist-role">
+              <option value={defaultRole} />
+              {installedRoles.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
+            {roleError && (
+              <p className="text-xs text-destructive">{roleError}</p>
+            )}
           </div>
 
           <Collapsible>
@@ -141,10 +158,21 @@ export default function LaunchDialog({
                   <Label htmlFor="runtime">Runtime</Label>
                   <Input
                     id="runtime"
+                    list="datalist-runtime"
                     value={runtime}
                     onChange={(e) => setRuntime(e.target.value)}
                     placeholder={defaults?.runtime ?? "strawpot-claude-code"}
                   />
+                  {agents && (
+                    <datalist id="datalist-runtime">
+                      {agents.map((a) => (
+                        <option key={a.name} value={a.name} />
+                      ))}
+                    </datalist>
+                  )}
+                  {runtimeError && (
+                    <p className="text-xs text-destructive">{runtimeError}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="isolation">Isolation</Label>
@@ -188,7 +216,7 @@ export default function LaunchDialog({
             </p>
           )}
           <div className="flex gap-2">
-            <Button type="submit" disabled={launchSession.isPending}>
+            <Button type="submit" disabled={launchSession.isPending || hasValidationError}>
               {launchSession.isPending ? "Launching..." : "Launch"}
             </Button>
             <Button

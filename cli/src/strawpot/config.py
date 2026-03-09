@@ -153,3 +153,64 @@ def save_skill_env(
     toml_path.parent.mkdir(parents=True, exist_ok=True)
     with open(toml_path, "wb") as f:
         tomli_w.dump(existing, f)
+
+
+def save_resource_config(
+    project_dir: Path | None,
+    resource_type: str,
+    name: str,
+    env_values: dict[str, str] | None = None,
+    param_values: dict | None = None,
+) -> None:
+    """Persist resource env/param values to strawpot.toml.
+
+    Writes to the project-local file when *project_dir* is given,
+    otherwise to the global config.  Creates the file if it doesn't
+    exist and merges into existing content.
+
+    TOML paths by resource type:
+        skills:   [skills.<name>.env]
+        agents:   [agents.<name>.env] + [agents.<name>].<param>
+        memories: [memories.<name>.env] + [memory_config].<param>
+        roles:    [roles.<name>].<param>  (e.g. default_agent)
+    """
+    import tomli_w
+
+    if project_dir:
+        toml_path = project_dir / "strawpot.toml"
+    else:
+        toml_path = get_strawpot_home() / "strawpot.toml"
+
+    existing = _read_toml(toml_path)
+
+    if resource_type == "roles":
+        if param_values:
+            role_section = existing.setdefault("roles", {}).setdefault(name, {})
+            role_section.update(param_values)
+
+    elif resource_type == "skills":
+        if env_values:
+            existing.setdefault("skills", {}).setdefault(name, {}).setdefault(
+                "env", {}
+            ).update(env_values)
+
+    elif resource_type == "agents":
+        agent_section = existing.setdefault("agents", {}).setdefault(name, {})
+        if env_values:
+            agent_section.setdefault("env", {}).update(env_values)
+        if param_values:
+            for k, v in param_values.items():
+                if k != "env":
+                    agent_section[k] = v
+
+    elif resource_type == "memories":
+        if env_values:
+            existing.setdefault("memories", {}).setdefault(name, {}).setdefault(
+                "env", {}
+            ).update(env_values)
+        if param_values:
+            existing.setdefault("memory_config", {}).update(param_values)
+
+    toml_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(toml_path, "wb") as f:
+        tomli_w.dump(existing, f)
