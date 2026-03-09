@@ -134,7 +134,14 @@ class Tracer:
         )
 
     def delegate_start(
-        self, *, role: str, parent_span: str, context: str, depth: int = 0
+        self,
+        *,
+        role: str,
+        parent_span: str,
+        context: str,
+        depth: int = 0,
+        session_id: str = "",
+        parent_agent_id: str | None = None,
     ) -> str:
         """Emit ``delegate_start``.  Stores context as artifact.  Returns new span_id."""
         span_id = self._new_span_id()
@@ -146,6 +153,8 @@ class Tracer:
             role=role,
             depth=depth,
             context_ref=context_ref,
+            session_id=session_id,
+            parent_agent_id=parent_agent_id,
         )
         return span_id
 
@@ -157,6 +166,9 @@ class Tracer:
         summary: str,
         duration_ms: int,
         output: str = "",
+        role: str = "",
+        session_id: str = "",
+        agent_id: str = "",
     ) -> None:
         """Emit ``delegate_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -167,6 +179,9 @@ class Tracer:
             summary=summary,
             duration_ms=duration_ms,
             output_ref=output_ref,
+            role=role,
+            session_id=session_id,
+            agent_id=agent_id,
         )
 
     def delegate_denied(
@@ -188,18 +203,32 @@ class Tracer:
         *,
         span_id: str,
         provider: str,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        behavior_ref: str = "",
+        task: str = "",
         cards: list,
         card_count: int,
+        parent_agent_id: str | None = None,
     ) -> None:
         """Emit ``memory_get``.  Stores serialised cards as artifact."""
         cards_content = json.dumps([str(c) for c in cards]) if cards else ""
         cards_ref = self.store_artifact(cards_content)
+        behavior_artifact = self.store_artifact(behavior_ref)
+        task_ref = self.store_artifact(task)
         self.emit(
             "memory_get",
             span_id,
             provider=provider,
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            behavior_ref=behavior_artifact,
+            task_ref=task_ref,
             cards_ref=cards_ref,
             card_count=card_count,
+            parent_agent_id=parent_agent_id,
         )
 
     def memory_dump(
@@ -276,6 +305,9 @@ class Tracer:
         exit_code: int,
         output: str,
         duration_ms: int,
+        agent_id: str = "",
+        role: str = "",
+        session_id: str = "",
     ) -> None:
         """Emit ``agent_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -285,4 +317,7 @@ class Tracer:
             exit_code=exit_code,
             output_ref=output_ref,
             duration_ms=duration_ms,
+            agent_id=agent_id,
+            role=role,
+            session_id=session_id,
         )
