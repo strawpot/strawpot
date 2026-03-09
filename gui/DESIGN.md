@@ -8,20 +8,100 @@ sessions, and reviewing history. Distributed as a separate Python package
 
 1. Register and manage multiple projects (each a working directory with `strawpot.toml`).
 2. Launch, monitor, and review sessions per project.
-3. Browse and install roles, skills, agents, and memory providers.
-4. Edit project and global configuration through the UI.
-5. Provide real-time agent delegation tree and log streaming.
-6. Extensible trigger system for external event sources (Slack, GitHub, etc.).
+3. See what agents are doing *right now* — live output, not just metadata.
+4. Browse and install roles, skills, agents, and memory providers.
+5. Edit project and global configuration through the UI.
+6. Provide real-time agent delegation tree and log streaming.
+7. Extensible trigger system for external event sources (Slack, GitHub, etc.).
+8. Feel like a product, not an ops dashboard — fast, responsive, polished.
+
+---
+
+## Design Philosophy & Wedges
+
+StrawPot's GUI is not a Paperclip clone, a generic admin panel, or a chat
+interface. It has a distinct identity built on six wedges — unique value
+propositions that guide every design decision.
+
+### 1. Local-first, zero-config
+
+`strawpot gui` and you're in. No accounts, no cloud, no Docker, no
+database migration. SQLite on disk, bound to 127.0.0.1, single process.
+This removes an entire category of UX friction that plagues hosted
+platforms. The tradeoff (no collaboration, no remote access) is
+intentional — StrawPot is a developer's personal control plane.
+
+### 2. Agent delegation tree
+
+No other tool shows a live, interactive tree of how agents delegate to
+each other. The delegation tree is our *primary* visualization — it
+belongs front-and-center on the session detail page, not buried in a tab.
+Pending delegations appear as dashed outlines, denied delegations flash
+and show reasons, completed agents show exit codes and durations. The
+tree updates in real time as new agents spawn and complete.
+
+This visualization directly answers: "What is my swarm doing right now,
+and how did it get there?"
+
+### 3. Fire-and-observe
+
+Sessions launched from the GUI run in autonomous mode
+(`permission_mode: auto`). The user provides a task, picks a role, and
+watches the agents work. The GUI is an observation deck, not a steering
+wheel. This is fundamentally different from chat-based AI tools where
+the user drives every turn.
+
+Interactive mode (chat panel via `ask_user` bridge) is planned as a
+future extension but is not the default experience.
+
+### 4. Trace-based debugging
+
+Every session produces a structured trace (`trace.jsonl`) with span
+IDs, parent spans, and content-addressed artifact references. The GUI
+renders this as a timeline where any `*_ref` field is clickable —
+revealing the full context prompt, memory cards, task description, or
+output that was exchanged. This is StrawPot's answer to "what went
+wrong?" — not grepping through logs, but navigating a structured span
+tree.
+
+### 5. StrawHub ecosystem integration
+
+The GUI is the primary interface for discovering and installing reusable
+roles, skills, agents, and memory providers from StrawHub. Search the
+public registry, one-click install scoped to a project or global, browse
+what's installed. This turns the GUI into a package manager UI, not just
+a monitoring dashboard.
+
+### 6. Trigger-driven autonomy
+
+External events (GitHub issues, Slack messages, cron schedules)
+automatically spawn sessions through the trigger adapter system. The GUI
+is the control plane for configuring, monitoring, and debugging triggers.
+This makes StrawPot a persistent autonomous agent platform, not just a
+one-shot task runner.
+
+---
 
 ## Tech Stack
 
-| Layer | Choice |
-|-------|--------|
-| Backend | FastAPI (Python) |
-| Frontend | React + Vite (TypeScript) |
-| Real-time | Server-Sent Events (SSE) |
-| Tree visualization | React Flow |
-| GUI state | SQLite (`~/.strawpot/gui.db`) |
+| Layer | Current | Planned |
+|-------|---------|---------|
+| Backend | FastAPI (Python) | — (no change) |
+| Frontend | React 19 + Vite 6 (TypeScript) | — (no change) |
+| Styling | Custom CSS (index.css) | Tailwind CSS 4 + shadcn/ui |
+| Data fetching | Custom `useApi` hook | TanStack Query v5 |
+| Icons | None | lucide-react |
+| Toasts | None | sonner (via shadcn) |
+| Command palette | None | cmdk (via shadcn) |
+| Real-time | SSE (file polling, 1.5s interval) | SSE (watchfiles, ~100ms) |
+| Tree visualization | React Flow (@xyflow/react) | — (no change) |
+| GUI state | SQLite (`~/.strawpot/gui.db`) | — (no change) |
+| Backend file watching | `asyncio.sleep` + `os.stat` mtime | `watchfiles` (OS-native) |
+
+The frontend framework (React + Vite) and backend framework (FastAPI)
+are not changing. The migration targets the component layer (shadcn
+replaces custom CSS), the data layer (TanStack Query replaces manual
+fetch hooks), and the real-time layer (OS file watchers replace polling).
 
 ## Deployment
 
@@ -65,9 +145,10 @@ FastAPI server                              ← strawpot-gui package
   ├─ /api/sessions/*                        list / detail / launch / stop
   ├─ /api/sessions/:id/tree                 SSE  real-time agent tree
   ├─ /api/sessions/:id/logs/:agent_id       SSE  agent log stream
-  ├─ /api/sessions/:id/trace                SSE  trace event stream
+  ├─ /api/sessions/:id/events               SSE  trace event stream
   ├─ /api/sessions/:id/artifacts/:hash      read artifact content
   ├─ /api/sessions/:id/changed-files        changed file list (worktree)
+  ├─ /api/events                            SSE  global event bus (new)
   ├─ /api/registry/*                        browse installed items
   ├─ /api/registry/install                  install via strawpot CLI
   ├─ /api/registry/search                   search StrawHub
@@ -202,6 +283,13 @@ Project: `<project>/strawpot.toml` (overrides global)
 
 Home page showing everything at a glance.
 
+- **Live agent activity feed** — when agents are running, the dashboard
+  leads with a grid of live activity cards showing what each agent is
+  doing right now. Each card displays the agent's role, runtime badge,
+  elapsed time, and the last few lines of output with a pulsing activity
+  indicator. Clicking a card navigates to the session detail. When no
+  agents are running, the feed collapses and the dashboard shows the
+  standard overview.
 - Active projects with running session counts
 - Running sessions across all projects
 - Active triggers with status indicators
@@ -244,37 +332,116 @@ Sessions launched from the GUI run in **autonomous mode**
 and the GUI provides a fire-and-observe experience: watch the agent
 tree, stream logs, and review results on completion.
 
-**TODO:** Interactive mode — add a chat panel to the session detail
+**Launch session dialog** — a modal dialog (not inline form) with:
+- Auto-focusing task textarea
+- Role selector from installed roles
+- Collapsible advanced options (runtime, isolation, merge strategy)
+- Loading state during launch, success/error toasts on completion
+- Navigation to the new session on success
+
+**Interactive mode (deferred)** — add a chat panel to the session detail
 page where `ask_user` prompts appear and the user can respond inline.
 This reuses the same `ask_user` bridge built for trigger ongoing
-sessions (Phase 8+) and is deferred until that infrastructure exists.
+sessions and is deferred until that infrastructure exists.
 
 ### 3. Session Monitoring
 
-**Session detail page:**
+**Session detail page** — organized into tabs to avoid the wall-of-
+sections problem. The session header (status badge, role, runtime,
+duration, stop button) is always visible above the tabs.
 
-- **Result** — prominent section at the top showing summary, exit code, and duration once the session completes. Quick link to the full output artifact.
-- **Agent Tree** — real-time delegation tree (see [Real-Time Agent Tree](#real-time-agent-tree))
-- **Log Viewer** — streaming `.log` per agent with search/filter. Initial load is capped (last 1000 lines) with a "load more" button for earlier content. Live tail via SSE appends new lines.
-- **Trace Timeline** — span tree from `trace.jsonl` with durations
-- **Artifact Inspector** — click any `*_ref` in the trace to view content
-- **Changed Files** — list of files added, modified, or deleted during the session (from `git diff --name-status` for worktree isolation). Shows file paths and change type only, not content diffs. Deferred to a later phase.
-- **Status** — PID liveness, DenDen gRPC status
-- **Stop Session** — kill the orchestrator process (SIGTERM to session PID) with confirmation dialog
+| Tab | Contents |
+|-----|----------|
+| **Overview** | Task description, summary (on completion), detail grid (status, role, runtime, isolation, started/ended, exit code) |
+| **Agent Tree** | Real-time delegation tree (see [Real-Time Agent Tree](#real-time-agent-tree)) — the primary tab for active sessions |
+| **Logs** | Agent selector + terminal-style log viewer (see [Agent Log Streaming](#agent-log-streaming)) |
+| **Trace Events** | Span timeline from `trace.jsonl` with durations and clickable artifact refs |
+| **Artifacts** | Expandable list of all content-addressed artifacts from the session |
 
-### 4. Notifications
+**Result section** — once the session completes, a prominent banner at
+the top of the Overview tab showing summary, exit code, and duration.
+Quick link to the full output artifact.
 
-Browser notifications (via the Notifications API) for session lifecycle
-events. No external dependencies.
+**Stop session** — kill the orchestrator process (SIGTERM to session PID)
+with confirmation dialog.
 
-- Session completed (success) — green notification with summary
-- Session failed (non-zero exit) — red notification with error info
-- Delegation denied — warning notification
+**Auto-tab selection** — when navigating to an active session, default
+to the Agent Tree tab. When navigating to a completed session, default
+to the Overview tab.
 
-Triggered by SSE events the frontend is already consuming from the
-trace stream. Opt-in via browser permission prompt on first use.
+### 4. Live Agent Activity Feed
 
-### 5. Session History
+The live agent activity feed is the centerpiece of the running-session
+experience. It answers the "20 terminals open" problem: one unified view
+of what every running agent is doing, across all active sessions.
+
+**Dashboard integration:** When any session is active, the dashboard
+leads with a responsive grid of activity cards (1–4 columns depending
+on viewport width).
+
+**Activity card anatomy:**
+
+```
+┌──────────────────────────────────────────┐
+│ ● implementer         strawpot-claude    │
+│   Session: run_a1b2c3  ·  2m 14s        │
+│                                          │
+│ > Reading src/auth/login.ts...           │
+│ > Editing src/auth/login.ts              │
+│ > Running npm test                       │
+│                                          │
+│                          ▸ View Session  │
+└──────────────────────────────────────────┘
+```
+
+- **Pulsing dot** — green when receiving new output, dims after 5s idle
+- **Role + runtime** — identifies the agent
+- **Session link** — run_id prefix + elapsed time
+- **Output preview** — last 3–5 lines of the agent's `.log` file,
+  rendered in monospace. Auto-scrolls as new output arrives.
+- **Click-through** — card links to the session detail page (Logs tab)
+
+**Data flow:**
+
+1. The global SSE connection (see [Real-Time Engine](#real-time-engine))
+   notifies the frontend when agents spawn or complete.
+2. For each active agent, the frontend opens a per-agent log SSE
+   connection (see [Agent Log Streaming](#agent-log-streaming)) to
+   receive output lines.
+3. Activity cards manage their own SSE connection lifecycle — opening
+   when the card mounts, closing on unmount or agent completion.
+
+**Limits:** Maximum 8 activity cards visible simultaneously. If more
+agents are running, show a "+N more" indicator with a link to the
+sessions list.
+
+### 5. Notifications
+
+In-app toast notifications for session lifecycle events. No browser
+Notifications API dependency — toasts appear within the React app using
+the `sonner` library.
+
+**Events and toast styles:**
+
+| Event | Style | Content |
+|-------|-------|---------|
+| Session completed (exit 0) | Success (green) | "Session {id} completed" + summary preview |
+| Session failed (exit ≠ 0) | Error (red) | "Session {id} failed" + exit code |
+| Delegation denied | Warning (amber) | "Delegation denied: {role}" + reason |
+| Session launched | Info (blue) | "Session {id} started" |
+
+**Rate limiting:** Maximum 3 toasts per 10-second window per event
+type. After reconnection, suppress toasts for 2 seconds to avoid a
+flood of stale notifications.
+
+**Toast actions:** Each toast includes a clickable link to the relevant
+session detail page.
+
+**Data source:** Toasts are fired from the global SSE event hook. The
+global SSE connection already receives session lifecycle events — the
+toast system consumes these without additional API calls.
+
+### 6. Session History
 
 Sessions are preserved after completion (see [Session Archival](#session-archival))
 so the GUI can browse past sessions with full trace and log data.
@@ -283,7 +450,7 @@ so the GUI can browse past sessions with full trace and log data.
 - Session list shows: run_id, role, runtime, started_at, duration, exit code, summary
 - Click through to full session detail (same view as live sessions, read-only)
 
-### 6. Config Management
+### 7. Config Management
 
 **Project config** — form-based editor on the project detail page.
 Writes to `<project>/strawpot.toml`.
@@ -294,7 +461,7 @@ Writes to `<project>/strawpot.toml`.
 Both editors show the merged effective config (global + project) with
 indicators showing which values come from which source.
 
-### 7. Registry Browser
+### 8. Registry Browser
 
 Unified view across global and per-project installed items.
 
@@ -311,7 +478,7 @@ install scope (project or global).
 **Install from StrawHub** — search field queries the StrawHub registry.
 Install triggers `strawpot install <slug>` subprocess with a scope flag.
 
-### 8. Project Files
+### 9. Project Files
 
 Drag-and-drop file upload so users can provide reference documents,
 specs, data files, or other context that agents can access during
@@ -331,7 +498,38 @@ original project's `.strawpot/files/` (not the worktree copy).
 tab). Shows uploaded files with name, size, and upload date. Supports
 delete.
 
-### 9. Trigger Management (Lower Priority)
+### 10. Command Palette & Keyboard Shortcuts
+
+**Command palette (Cmd+K / Ctrl+K)** — global search overlay for
+navigating sessions, projects, agents, and triggering actions.
+
+Groups:
+
+| Group | Items |
+|-------|-------|
+| Navigation | Dashboard, Projects, each project by name, active sessions |
+| Actions | Launch Session (opens dialog), Stop Session (if running) |
+| Settings | Toggle Dark Mode |
+
+Powered by `cmdk` via the shadcn `<Command>` component. Searches across
+projects and sessions with fuzzy matching.
+
+**Keyboard shortcuts:**
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+K` / `Ctrl+K` | Open command palette |
+| `g d` | Go to Dashboard |
+| `g p` | Go to Projects |
+| `g s` | Go to Sessions |
+| `n s` | New Session (opens launch dialog) |
+| `?` | Show keyboard shortcuts help |
+
+Shortcuts are suppressed when focus is inside an input, textarea, or
+contenteditable element. A help dialog (triggered by `?`) lists all
+available shortcuts.
+
+### 11. Trigger Management (Deferred)
 
 Triggers are external event sources that automatically create or feed
 sessions. The trigger system is designed as a plugin architecture for
@@ -429,6 +627,233 @@ orchestrator (running, 45s)
 
 ---
 
+## Real-Time Engine
+
+The current SSE implementation polls files at 1.5-second intervals using
+`asyncio.sleep` + `os.stat().st_mtime`. This creates noticeable lag and
+wastes CPU on idle sessions. The new real-time engine replaces polling
+with OS-native file watchers and adds a global event bus for efficient
+cache invalidation.
+
+### File watching with watchfiles
+
+Replace `asyncio.sleep(_POLL_INTERVAL)` loops in the SSE router with
+`watchfiles.awatch()`, which uses FSEvents (macOS), inotify (Linux), or
+ReadDirectoryChangesW (Windows) for near-instant change detection.
+
+```python
+from watchfiles import awatch
+
+async def watch_session_files(session_dir: str, stop_event: asyncio.Event):
+    """Yield changes as they occur (~100ms latency)."""
+    async for changes in awatch(
+        session_dir,
+        stop_event=stop_event,
+        step=100,  # 100ms debounce
+    ):
+        yield changes
+```
+
+Impact: Average latency drops from ~750ms (half the 1.5s polling
+interval) to ~100ms. No frontend changes needed.
+
+### Global SSE event bus
+
+A new endpoint `GET /api/events` provides a single SSE connection that
+broadcasts lightweight notification events across all active sessions.
+The frontend uses these notifications to invalidate TanStack Query
+caches, triggering targeted refetches instead of blind polling.
+
+**Why a global connection?** StrawPot is local-only, single-user. A
+single SSE stream is simpler than per-page connections and avoids the
+browser's 6-connection-per-origin limit for EventSource.
+
+**Event types:**
+
+```json
+{"type": "session_created", "run_id": "...", "project_id": 3}
+{"type": "session_updated", "run_id": "...", "project_id": 3}
+{"type": "session_ended",   "run_id": "...", "project_id": 3, "exit_code": 0, "summary": "..."}
+{"type": "agent_spawned",   "run_id": "...", "agent_id": "...", "role": "implementer"}
+{"type": "agent_ended",     "run_id": "...", "agent_id": "...", "exit_code": 0}
+{"type": "tree_changed",    "run_id": "..."}
+{"type": "trace_appended",  "run_id": "...", "count": 5}
+{"type": "log_appended",    "run_id": "...", "agent_id": "..."}
+```
+
+**Backend architecture:** A central event multiplexer maintains one
+`asyncio.Queue` per connected SSE client. Per-session file watchers
+push lightweight events into the multiplexer, which fans them out to
+all connected clients. The multiplexer is created on first client
+connection and shut down when the last client disconnects.
+
+```python
+class EventBus:
+    """Multiplexes session watcher events to SSE clients."""
+
+    def __init__(self):
+        self._clients: list[asyncio.Queue] = []
+        self._watchers: dict[str, asyncio.Task] = {}
+
+    async def subscribe(self) -> AsyncIterator[dict]:
+        queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._clients.append(queue)
+        try:
+            while True:
+                event = await queue.get()
+                yield event
+        finally:
+            self._clients.remove(queue)
+
+    def publish(self, event: dict):
+        for queue in self._clients:
+            queue.put_nowait(event)
+```
+
+**Frontend integration:** A single `useGlobalSSE()` hook connects to
+`/api/events` at the layout level (always active). On each event, it
+calls `queryClient.invalidateQueries()` with the relevant query keys:
+
+```typescript
+case "session_ended":
+  queryClient.invalidateQueries({ queryKey: ["sessions"] });
+  queryClient.invalidateQueries({ queryKey: ["sessions", event.project_id, event.run_id] });
+  notifySessionComplete(event.run_id, event.summary);  // toast
+  break;
+case "session_created":
+  queryClient.invalidateQueries({ queryKey: ["projects", event.project_id, "sessions"] });
+  queryClient.invalidateQueries({ queryKey: ["sessions"] });
+  break;
+```
+
+### Incremental trace SSE
+
+The current trace events SSE endpoint sends the entire `all_events`
+array on every update. For long sessions with hundreds of events, this
+becomes increasingly wasteful.
+
+**New protocol:**
+
+- **First message (snapshot):** `{"type": "snapshot", "events": [...]}`
+  — full event list on initial connection
+- **Subsequent messages (append):** `{"type": "append", "events": [...]}`
+  — only new events since the last message
+
+The frontend's `useTraceSSE` hook handles both:
+- On `snapshot`: replace state with `data.events`
+- On `append`: append `data.events` to existing state
+
+### Per-session SSE connections
+
+The global event bus handles cache invalidation for REST-fetched data.
+Per-session SSE connections (`/sessions/:id/tree`, `/sessions/:id/events`)
+remain for the SessionDetail page where continuous streaming is needed.
+These also switch from polling to `watchfiles`.
+
+---
+
+## Agent Log Streaming
+
+The ability to see what agents are doing *right now* — not just metadata
+trace events, but actual CLI output — is the biggest gap in the current
+GUI. This section designs the full stack from backend endpoint to
+frontend viewer.
+
+### Backend: SSE endpoint
+
+```
+GET /api/sessions/{run_id}/logs/{agent_id}
+```
+
+Streams the agent's `.log` file as SSE events.
+
+**Protocol:**
+
+1. **Initial load:** Read the log file, send the last 500 lines as the
+   first event:
+   ```json
+   {"type": "snapshot", "lines": ["line1", "line2", ...], "offset": 45678}
+   ```
+
+2. **Live tail:** Watch the log file with `watchfiles.awatch()`. On
+   change, read new bytes from the last offset and send as a delta:
+   ```json
+   {"type": "append", "lines": ["new line1", "new line2"], "offset": 46012}
+   ```
+
+3. **Completion:** When the agent's session reaches a terminal state,
+   send a final event and close the stream:
+   ```json
+   {"type": "done"}
+   ```
+
+**Error handling:**
+- If the log file does not exist yet (agent just spawned), send an
+  empty snapshot and wait for the file to appear.
+- If the session directory is missing, return 404.
+
+**REST companion endpoint:**
+
+```
+GET /api/sessions/{run_id}/logs/{agent_id}/full
+```
+
+Returns the complete log file as `text/plain`. Used by the "Download"
+button in the log viewer.
+
+### Frontend: Agent log viewer
+
+A terminal-style component for viewing streaming agent output.
+
+**Visual design:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Agent: [orchestrator ▾]          🔍 Search   ⬇ Download │
+├─────────────────────────────────────────────────────────┤
+│   1 │ Starting session...                               │
+│   2 │ Resolving role: implementer                       │
+│   3 │ Spawning agent: strawpot-claude-code              │
+│   4 │ Agent implementer started (pid 12345)             │
+│   5 │ Delegating: reviewer                              │
+│   6 │ ...                                               │
+│     │                                    ▼ Auto-scroll  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Features:**
+
+- **Agent selector** — dropdown listing all agents in the session (from
+  `session.json` agents map). Switching agents reconnects the log SSE.
+- **Dark terminal theme** — dark background, monospace font, light text.
+  Distinct from the rest of the UI to signal "this is raw output."
+- **Line numbers** — gutter showing line numbers.
+- **Auto-scroll** — follows the tail by default. When the user scrolls
+  up, auto-scroll pauses and a "Jump to bottom" button appears. Resumes
+  on click or when the user scrolls back to the bottom.
+- **Search** — text filter bar (Ctrl+F within viewer). Highlights
+  matching lines and shows match count.
+- **Download** — downloads the full log via the REST endpoint.
+- **Virtual scrolling** — for performance with large logs (thousands of
+  lines), render only visible lines based on scroll position.
+
+**Data flow:**
+
+```
+SSE: /api/sessions/{runId}/logs/{agentId}
+  ↓
+useAgentLogSSE hook
+  ↓ lines[]
+AgentLogViewer component
+  ↓ renders visible lines
+Virtual scroll viewport
+```
+
+The hook maintains a line buffer capped at 10,000 lines (oldest lines
+evicted). The component renders only the visible window.
+
+---
+
 ## Session Archival
 
 **CLI change**: on session cleanup, move
@@ -503,11 +928,13 @@ each session directory, read `session.json` for core fields (`run_id`,
 During runtime, session rows are created on launch and updated via SSE
 events (status transitions, exit code, summary).
 
-**TODO:** Detect CLI-launched sessions while the GUI is running. The
-startup scan catches sessions created before the GUI starts, but
-sessions launched via `strawpot start` from the CLI while the GUI is
-open are not detected until the next restart. A filesystem watcher on
-each project's `.strawpot/sessions/` directory would close this gap.
+**CLI-launched session detection:** When using `watchfiles` for the
+real-time engine, also watch each project's `.strawpot/sessions/`
+directory for new subdirectories. When a new session directory appears,
+index it in `gui.db` and push a `session_created` event through the
+global event bus. This closes the gap where sessions launched via
+`strawpot start` from the CLI while the GUI is open were not detected
+until restart.
 
 **Session status transitions:**
 
@@ -702,13 +1129,20 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 |--------|------|-------------|
 | GET | `/api/sessions` | List sessions (filter by project, status, date). Paginated: `?page=1&per_page=20`. |
 | POST | `/api/sessions` | Launch new session (project_id, role, task, overrides) |
-| GET | `/api/sessions/:id` | Session detail (session.json snapshot) |
+| GET | `/api/sessions/:id` | Session detail (session.json snapshot + agent list) |
 | GET | `/api/sessions/:id/tree` | SSE: real-time agent tree |
-| GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream |
-| GET | `/api/sessions/:id/trace` | SSE: trace event stream |
+| GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream (snapshot + live tail) |
+| GET | `/api/sessions/:id/logs/:agent_id/full` | Full log file download (text/plain) |
+| GET | `/api/sessions/:id/events` | SSE: trace event stream (snapshot + incremental) |
 | GET | `/api/sessions/:id/artifacts/:hash` | Read artifact content |
 | GET | `/api/sessions/:id/changed-files` | List of changed files with status (added/modified/deleted). Worktree sessions only; returns empty list for non-worktree sessions. |
 | POST | `/api/sessions/:id/stop` | Stop session (SIGTERM to orchestrator PID) |
+
+### Global Events
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/events` | SSE: global event bus (session lifecycle, agent spawn/end, change notifications) |
 
 ### Registry
 
@@ -732,6 +1166,13 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 |--------|------|-------------|
 | GET | `/api/health` | Returns `{"status": "ok"}` |
 
+### Filesystem
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/fs/browse` | List directory contents (for project registration) |
+| POST | `/api/fs/mkdir` | Create directory |
+
 ### Triggers (future)
 
 | Method | Path | Description |
@@ -746,199 +1187,162 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 
 ---
 
-## Implementation Phases
+## Tech Stack Evolution
 
-| Phase | Scope | Depends on |
-|-------|-------|------------|
-| **1** | Backend: project CRUD, global config API, SQLite setup | — |
-| **2** | Backend: session list/detail/launch/stop, session archival CLI change | Phase 1 |
-| **3** | Frontend: dashboard, project pages, session list | Phases 1–2 |
-| **4** | Backend + frontend: real-time agent tree (SSE + React Flow) | Phase 2 |
-| **5** | Backend + frontend: log viewer, trace timeline, artifact inspector | Phase 2 |
-| **6** | Backend + frontend: registry browser + StrawHub install | Phase 1 |
-| **7** | Backend + frontend: config editor (project + global) | Phase 1 |
-| **7.5** | Backend + frontend: project files upload + agent prompt injection | Phase 1 |
-| **8** | Trigger manager + adapter protocol + CRUD API | Phases 1–2 |
-| **9** | Built-in trigger adapters (cron, GitHub) | Phase 8 |
-| **10** | Ongoing session support (ask_user bridge) + Slack/Telegram adapters | Phases 8–9 |
-| **11** | Interactive GUI sessions (chat panel reusing ask_user bridge) | Phase 10 |
+The frontend migration is organized into four phases. Each phase
+delivers standalone value — the GUI is functional after every phase,
+not just after the final one.
 
-**Deferred:**
+### Phase 1 — Foundation
+
+**Goal:** Replace the custom CSS + manual fetch approach with a modern
+component and data layer. Every subsequent feature benefits from this.
+
+| Change | Why |
+|--------|-----|
+| Tailwind CSS 4 + `@tailwindcss/vite` | Utility-first styling, no more 753-line CSS file |
+| shadcn/ui components | Consistent, accessible component library (button, card, dialog, table, tabs, badge, skeleton, etc.) |
+| TanStack Query v5 | Automatic caching, background refetching, deduplication, loading/error states |
+| lucide-react | Consistent icon set across the UI |
+| `@/` path aliases | Clean imports (`@/components/...` instead of `../../../`) |
+
+**Scope:**
+- Initialize Tailwind + shadcn in the existing Vite project
+- Install ~20 shadcn components (button, card, badge, table, dialog,
+  input, select, textarea, label, separator, skeleton, tooltip,
+  dropdown-menu, tabs, scroll-area, sheet, command, sonner, breadcrumb,
+  accordion)
+- Set up TanStack Query with centralized `queryKeys` and query hooks
+- Redesign the layout: collapsible sidebar with icons, top header bar
+  with breadcrumbs
+- Migrate all 5 existing pages to shadcn components + query hooks
+- Delete `index.css` custom styles and `useApi` hook
+
+**New npm dependencies:**
+```
+tailwindcss @tailwindcss/vite @tanstack/react-query lucide-react
+```
+Plus shadcn transitive deps: `class-variance-authority`, `clsx`,
+`tailwind-merge`, `@radix-ui/react-*`, `cmdk`, `sonner`.
+
+### Phase 2 — Real-Time Engine
+
+**Goal:** Make real-time updates feel instant and add agent log
+streaming.
+
+| Change | Why |
+|--------|-----|
+| `watchfiles` (backend) | OS-native file watching, ~100ms latency vs 1.5s polling |
+| Global SSE endpoint `/api/events` | Single connection for all session lifecycle notifications |
+| Agent log SSE endpoint | Stream agent `.log` files to the frontend |
+| Incremental trace SSE | Stop sending full event arrays on every update |
+| TanStack Query invalidation from SSE | Targeted cache busting instead of blind polling |
+
+**New pip dependencies:**
+```
+watchfiles>=1.0
+```
+
+**Scope:**
+- Replace `asyncio.sleep` polling loops with `watchfiles.awatch()` in
+  the SSE router
+- Implement the `EventBus` class and `/api/events` global SSE endpoint
+- Implement `/api/sessions/:id/logs/:agent_id` SSE endpoint
+- Implement `/api/sessions/:id/logs/:agent_id/full` REST endpoint
+- Add `useGlobalSSE()` hook to the frontend layout
+- Modify `useTraceSSE` for incremental snapshot+append protocol
+- Add CLI-launched session detection via directory watching
+
+### Phase 3 — Product UX
+
+**Goal:** The features that make the GUI feel like a product rather
+than an ops tool.
+
+| Feature | Why |
+|---------|-----|
+| Live agent activity feed | "What are my agents doing?" answered at a glance |
+| Agent log viewer | Terminal-style streaming output per agent |
+| Toast notifications | Background awareness of session lifecycle events |
+| Launch session dialog | Polished modal instead of inline form |
+| Skeleton loaders | Perceived performance, no layout shift |
+
+**Scope:**
+- `ActiveAgentsPanel` + `AgentActivityCard` components on Dashboard
+- `AgentLogViewer` component with dark theme, auto-scroll, search
+- `useAgentLogSSE` hook connecting to the log SSE endpoint
+- Session detail page reorganized into tabs (Overview / Agent Tree /
+  Logs / Trace / Artifacts)
+- Toast notification system via `sonner` + global SSE events
+- Launch dialog component replacing inline form
+- Page-specific skeleton components for loading states
+
+### Phase 4 — Navigation & Polish
+
+**Goal:** Power-user features and visual polish.
+
+| Feature | Why |
+|---------|-----|
+| Command palette (Cmd+K) | Fast navigation without clicking through menus |
+| Breadcrumb navigation | Orientation and easy back-navigation |
+| Keyboard shortcuts | Power-user efficiency |
+| Dark mode | Developer preference, reduce eye strain |
+
+**Scope:**
+- `CommandPalette` component using shadcn `<Command>` (cmdk)
+- `Breadcrumbs` component derived from route + query cache
+- `useKeyboardShortcuts` hook with key sequence detection
+- `ThemeToggle` component with light/dark/system options
+- CSS variables for dark theme (built into shadcn)
+
+### Not Planned
+
+| Feature | Reason |
+|---------|--------|
+| Multi-user / auth | StrawPot is local-first, single-user |
+| PostgreSQL migration | SQLite is sufficient for local use |
+| WebSocket (replacing SSE) | SSE is simpler and sufficient for our one-directional monitoring. Bidirectional communication (for interactive sessions) will use the existing DenDen gRPC bridge, not WebSocket. |
+| Agent adapter config forms | StrawPot's `WrapperRuntime` + `setup` subcommand handles this |
+| Kanban / task management | Not our domain; users have existing tools |
+| Cost / token tracking | Requires agent-specific output parsing; deferred until wrapper protocol includes structured cost reporting |
+
+---
+
+## Implementation Status
+
+| # | Scope | Status |
+|---|-------|--------|
+| 1 | Backend: project CRUD, global config API, SQLite setup | **Done** |
+| 2 | Backend: session list/detail/launch/stop | **Done** |
+| 3 | Frontend: dashboard, project pages, session list | **Done** |
+| 4 | Backend + frontend: real-time agent tree (SSE + React Flow) | **Done** |
+| 5 | Backend + frontend: trace timeline, artifact inspector | **Done** (log viewer missing — see Phase 3) |
+| 6 | Backend + frontend: registry browser + StrawHub install | Planned |
+| 7 | Backend + frontend: config editor (project + global) | Planned (backend done, frontend not started) |
+| 7.5 | Backend + frontend: project files upload | Planned |
+| 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
+| 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
+| 10 | Ongoing session support (ask_user bridge) | Deferred |
+| 11 | Interactive GUI sessions (chat panel) | Deferred |
+
+**Next:** Tech Stack Evolution Phases 1–2 (Foundation + Real-Time
+Engine), then Phase 3 (Product UX).
+
+**Deferred features:**
 
 - Session re-run — "Run again" button on archived sessions pre-filling
   launch dialog with the same role, task, and config overrides.
 - Archive retention policy — configurable max age or count per project.
 - Changed files view — file list from `git diff --name-status`.
-- Chat-style task input — replace the plain textarea with a ChatGPT-like
-  prompt box (auto-expanding, Enter to submit, Shift+Enter for newline,
-  rounded border, send button).
 - Chat-style trace view — render session trace events as a chat dialogue
   instead of a table. Delegation requests appear as outgoing messages,
   delegation returns as incoming messages with summary and clickable
   artifact refs. Memory events, agent spawns, and lifecycle events
   render as system messages between chat bubbles.
 - Session attachments — allow attaching files directly to a task prompt
-  when launching a session. Unlike project-level files (Phase 7.5) which
-  persist across sessions, session attachments are one-off context files
-  stored in the session directory and referenced in the agent's system
-  prompt. The launch dialog gets a drop zone or file picker alongside
-  the task textarea.
-
----
-
-## GUI Roadmap — Features to Adapt from Paperclip
-
-Reference: [github.com/paperclipai/paperclip](https://github.com/paperclipai/paperclip)
-
-Paperclip is an open-source Node.js/React orchestration platform for
-"zero-human companies." Its GUI is substantially more mature (~90 components,
-20+ pages) than StrawPot's current dashboard. The features below are ordered
-by priority — balancing implementation effort against user value.
-
-### Phase A — Foundation (unblocks everything else)
-
-#### A1. shadcn/ui Migration
-
-Replace custom CSS with shadcn/ui component library (button, card, dialog,
-tabs, badge, input, select, dropdown-menu, tooltip, skeleton, etc.).
-
-- **Why first:** Every subsequent feature benefits from a consistent component
-  system. Paperclip uses shadcn throughout — adapting their components becomes
-  copy-paste once we share the same primitives.
-- **Effort:** Medium (one-time migration of existing pages)
-- **Files affected:** `index.css`, all pages and components
-- **Ref:** `ui/src/components/ui/*.tsx`
-
-#### A2. TanStack Query
-
-Replace custom `useApi` hook with `@tanstack/react-query`.
-
-- **Why:** Automatic caching, background refetching, optimistic updates,
-  deduplication. Eliminates manual loading/error state management.
-- **Effort:** Low-Medium (swap fetch calls, remove manual state)
-- **Ref:** Paperclip uses `useQuery` + `queryKeys` pattern everywhere
-
-### Phase B — Quick Wins (high UX/effort ratio)
-
-#### B1. Command Palette (Cmd+K)
-
-Global search overlay to navigate sessions, projects, agents, and trigger
-actions (new session, stop session).
-
-- **Why:** Power-user UX — fast navigation without clicking through menus.
-- **Effort:** Low (frontend only, uses shadcn `<Command>` / cmdk)
-- **Ref:** `ui/src/components/CommandPalette.tsx`
-
-#### B2. Breadcrumb Navigation
-
-Persistent breadcrumb bar showing page hierarchy
-(Dashboard → Project → Session).
-
-- **Why:** Clearer orientation, easy back-navigation.
-- **Effort:** Low (layout component + route metadata)
-- **Ref:** `ui/src/components/BreadcrumbBar.tsx`
-
-#### B3. Skeleton Loaders
-
-Page-specific skeleton placeholders during data fetching (replaces
-spinner/blank states).
-
-- **Why:** Perceived performance improvement, less layout shift.
-- **Effort:** Low (one component with variants)
-- **Ref:** `ui/src/components/PageSkeleton.tsx`
-
-#### B4. Mobile Bottom Nav
-
-Bottom tab bar for mobile viewports (Dashboard, Sessions, Projects).
-
-- **Why:** Monitor agents from phone while away from desk.
-- **Effort:** Low (responsive layout component)
-- **Ref:** `ui/src/components/MobileBottomNav.tsx`
-
-### Phase C — Monitoring & Visibility
-
-#### C1. Active Agents Live Feed
-
-Unified real-time scrolling feed showing what every running agent is doing —
-assistant messages, tool calls, thinking, errors — across all active sessions.
-
-- **Why:** The "20 terminals open" problem. One view to see all agent activity.
-- **Effort:** Medium (aggregate SSE streams, parse agent transcripts)
-- **Ref:** `ui/src/components/ActiveAgentsPanel.tsx`
-
-#### C2. Activity Charts
-
-Visual charts for run patterns over time — runs per day, success rate,
-issue status distribution, priority breakdown.
-
-- **Why:** Understand agent productivity trends at a glance.
-- **Effort:** Medium (needs historical data aggregation + charting lib)
-- **Ref:** `ui/src/components/ActivityCharts.tsx`
-
-#### C3. Cost / Token Tracking
-
-Per-agent and per-project token usage and cost breakdowns with date range
-filters (MTD, 7d, 30d, YTD, custom).
-
-- **Why:** Practical value — know how much each agent run costs.
-- **Effort:** Medium-High (backend: extract token counts from agent output,
-  store in DB. Frontend: new Costs page with summary cards + tables)
-- **Ref:** `ui/src/pages/Costs.tsx`, `server/src/routes/costs.ts`
-
-### Phase D — Task Management
-
-#### D1. Kanban Board
-
-Drag-and-drop board for managing tasks/issues across status columns
-(backlog → todo → in_progress → in_review → done).
-
-- **Why:** Visual task management within StrawPot instead of external tools.
-- **Effort:** Medium (uses `@dnd-kit/core` + `@dnd-kit/sortable`)
-- **Ref:** `ui/src/components/KanbanBoard.tsx`
-
-#### D2. Goal Tree
-
-Hierarchical goal visualization — company mission → sub-goals → tasks.
-Every agent task traces back to a top-level objective.
-
-- **Why:** Ensures agents work toward aligned objectives, not just isolated
-  tasks.
-- **Effort:** Medium (new data model for goals + tree component)
-- **Ref:** `ui/src/components/GoalTree.tsx`, `ui/src/pages/Goals.tsx`
-
-### Phase E — Governance & Autonomy
-
-#### E1. Approval Queue (Human-in-the-Loop)
-
-Interactive approve/reject gates for agent actions — delegation requests,
-strategy changes, budget increases. Agents block until human decides.
-
-- **Why:** Safety and control. Currently StrawPot has static delegation
-  policy (allow/deny by role). An approval queue adds dynamic, per-action
-  human oversight.
-- **Effort:** High (backend: approval model, blocking wait, notification.
-  Frontend: approval list page + approval cards with action buttons)
-- **Ref:** `ui/src/components/ApprovalCard.tsx`, `ui/src/pages/Approvals.tsx`
-
-#### E2. Heartbeat / Scheduled Runs
-
-Agents wake on a cron schedule, check for pending work, and act
-autonomously. Delegation flows up and down the org chart.
-
-- **Why:** Enables continuous autonomous operation instead of one-shot
-  sessions. Agents can handle recurring work (monitoring, reports, support).
-- **Effort:** High (scheduler backend, persistent agent state across
-  heartbeats, wake/sleep lifecycle)
-- **Ref:** `server/src/routes/heartbeats.ts`, Paperclip heartbeat system
-
-### Not Planned
-
-These Paperclip features are intentionally excluded:
-
-| Feature | Reason |
-|---|---|
-| Multi-company isolation | Over-engineering for StrawPot's scope |
-| Auth / login / invite system | StrawPot is local-first |
-| Agent adapter config forms | StrawPot's `WrapperRuntime` is cleaner |
-| Board claim / governance roles | No multi-user collaboration needed yet |
-| PostgreSQL migration | SQLite is sufficient for local-first |
+  when launching a session. Unlike project-level files which persist
+  across sessions, session attachments are one-off context files stored
+  in the session directory and referenced in the agent's system prompt.
+- Activity charts — visual charts for run patterns over time (runs per
+  day, success rate, duration distribution).
+- Cost / token tracking — per-agent and per-project token usage and cost
+  breakdowns.
