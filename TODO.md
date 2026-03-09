@@ -12,6 +12,11 @@
   wrapper must support concurrent gRPC calls. Shared worktree conflicts
   can be managed via task decomposition discipline initially.
 
+- [ ] **Session re-run**
+  "Run again" button on archived sessions pre-filling launch dialog with
+  the same role, task, and config overrides. Also covers sub-agent
+  delegation retry from the session detail view.
+
 - [ ] **Hooks**
   Pre/post spawn, pre/post cleanup extension points. Allow users to run
   custom scripts at key session lifecycle events.

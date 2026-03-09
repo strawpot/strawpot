@@ -1410,6 +1410,5 @@ through the UI.
 | 9 | Trigger manager + adapter protocol + CRUD API | Planned |
 | 10 | Trigger adapters (cron; plugin architecture TBD) | Planned |
 | 11 | Interactive sessions (ask_user bridge + chat panel) | Planned |
-| 12 | Session re-run (full session + sub-agent delegation retry) | Planned |
-| 13 | Activity charts (run frequency, success rate, duration trends) | Planned |
-| 14 | Cost / token tracking (requires wrapper protocol extension) | Planned |
+| 12 | Activity charts (run frequency, success rate, duration trends) | Planned |
+| 13 | Cost / token tracking (requires wrapper protocol extension) | Planned |
