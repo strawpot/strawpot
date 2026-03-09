@@ -12,7 +12,7 @@ sessions, and reviewing history. Distributed as a separate Python package
 4. Browse and install roles, skills, agents, and memory providers.
 5. Edit project and global configuration through the UI.
 6. Provide real-time agent delegation tree and log streaming.
-7. Extensible trigger system for external event sources (Slack, GitHub, etc.).
+7. Scheduled tasks — cron-based session launcher with skill-powered integrations.
 8. Feel like a product, not an ops dashboard — fast, responsive, polished.
 
 ---
@@ -72,11 +72,12 @@ public registry, one-click install scoped to a project or global, browse
 what's installed. This turns the GUI into a package manager UI, not just
 a monitoring dashboard.
 
-### 6. Trigger-driven autonomy
+### 6. Schedule-driven autonomy
 
-External events (GitHub issues, Slack messages, cron schedules)
-automatically spawn sessions through the trigger adapter system. The GUI
-is the control plane for configuring, monitoring, and debugging triggers.
+Cron schedules automatically spawn sessions with skill-powered agents.
+A scheduled task to "check GitHub issues" runs an agent with a
+`github-issues` skill; "monitor Slack" uses a `slack` skill. The GUI
+is the control plane for configuring and monitoring schedules.
 This makes StrawPot a persistent autonomous agent platform, not just a
 one-shot task runner.
 
@@ -154,11 +155,11 @@ FastAPI server                              ← strawpot-gui package
   ├─ /api/roles                             list installed role slugs
   ├─ /api/fs/browse                         directory browser
   ├─ /api/health                            health check
-  ├─ /api/triggers/*                        CRUD + start/stop (deferred)
-  └─ /api/triggers/:id/logs                 SSE  trigger logs (deferred)
+  ├─ /api/schedules/*                       CRUD + enable/disable (planned)
+  └─ /api/schedules/:id/history             schedule run history (planned)
 
 Data sources
-  ├─ ~/.strawpot/gui.db                     projects, session history, triggers
+  ├─ ~/.strawpot/gui.db                     projects, session history, schedules
   ├─ ~/.strawpot/strawpot.toml              global config
   ├─ <project>/strawpot.toml                project config
   ├─ <project>/.strawpot/sessions/*/        live + archived session data
@@ -292,7 +293,7 @@ Home page showing everything at a glance.
   standard overview.
 - Active projects with running session counts
 - Running sessions across all projects
-- Active triggers with status indicators
+- Active schedules with next-run indicators
 - Recent completed sessions (last N)
 
 ### 2. Project Management
@@ -349,8 +350,8 @@ header is a dropdown that lists all projects for quick switching.
 
 **Interactive mode (deferred)** — add a chat panel to the session detail
 page where `ask_user` prompts appear and the user can respond inline.
-This reuses the same `ask_user` bridge built for trigger ongoing
-sessions and is deferred until that infrastructure exists.
+This uses the existing DenDen `ask_user` RPC bridge — no protocol
+changes needed, just a GUI-side handler and chat UI component.
 
 ### 3. Session Monitoring
 
@@ -549,15 +550,17 @@ Shortcuts are suppressed when focus is inside an input, textarea, or
 contenteditable element. A help dialog (triggered by `?`) lists all
 available shortcuts.
 
-### 11. Trigger Management (Deferred)
+### 11. Scheduled Tasks (Planned)
 
-Triggers are external event sources that automatically create or feed
-sessions. The trigger system is designed as a plugin architecture for
-extensibility, but implementation is deferred. The features above
-(projects, sessions, config, registry) are designed so they do not
-block or conflict with adding triggers later.
+Cron-based session launcher. Each schedule defines a cron expression,
+project, role, task description, and optional skill requirements.
+When the schedule fires, the GUI runs `strawpot start` with the
+configured parameters. The agent uses installed skills (e.g.,
+`github-issues`, `slack`, `telegram`) to interact with external
+services — no custom adapter framework needed.
 
-See [Trigger Architecture](#trigger-architecture) for the full design.
+See [Scheduled Tasks Architecture](#scheduled-tasks-architecture) for
+the full design.
 
 ---
 
@@ -921,14 +924,16 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_project ON sessions(project_id, started_at DESC);
 CREATE INDEX idx_sessions_status  ON sessions(status);
 
-CREATE TABLE trigger_instances (
+CREATE TABLE scheduled_tasks (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
-    adapter     TEXT NOT NULL,
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role        TEXT NOT NULL,               -- role to launch sessions with
-    config      TEXT NOT NULL DEFAULT '{}',  -- JSON (adapter-specific settings)
-    status      TEXT NOT NULL DEFAULT 'stopped',  -- running | stopped | error
+    task        TEXT NOT NULL,               -- task description for the agent
+    cron_expr   TEXT NOT NULL,               -- cron expression (e.g. "*/5 * * * *")
+    enabled     INTEGER NOT NULL DEFAULT 1,  -- 0 = disabled, 1 = enabled
+    last_run_at TEXT,
+    next_run_at TEXT,
     last_error  TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -967,162 +972,121 @@ running  → failed      (root delegate_end trace with exit_code ≠ 0, or proce
 
 ---
 
-## Trigger Architecture
-
-> Lower priority. Designed here for completeness so the rest of the
-> system does not make choices that block future trigger support.
+## Scheduled Tasks Architecture
 
 ### Concept
 
-Triggers are adapter plugins that bridge external event sources to
-strawpot sessions. Each adapter is a Python module with a standard
-protocol, discovered and loaded dynamically — the same pattern used
-by memory providers.
+Scheduled tasks are cron-based session launchers. Instead of a custom
+trigger adapter framework, scheduled tasks leverage existing skills to
+interact with external services. A schedule fires `strawpot start` on
+a cron expression — the agent uses skills (e.g., `github-issues`,
+`slack`, `telegram`) to poll, process, and respond.
 
-### Two session modes
+This approach eliminates the need for a separate adapter protocol,
+plugin discovery, and session bridge. Skills already know how to talk
+to external services. Cron handles the scheduling. Memory providers
+handle conversation continuity between runs.
 
-| Mode | Examples | Behavior |
-|------|----------|----------|
-| **One-shot** | GitHub issue, email, cron | Event → new session → agent works → session ends → result posted back |
-| **Ongoing** | Slack, Telegram | Persistent session receiving messages continuously via the adapter |
-
-### Plugin structure
-
-```
-~/.strawpot/triggers/trigger-slack/
-├── TRIGGER.md          ← manifest (YAML frontmatter + docs)
-└── adapter.py          ← implements TriggerAdapter protocol
-```
-
-Manifest example:
-
-```yaml
----
-name: trigger-slack
-description: Creates sessions from Slack messages
-version: 0.1.0
-mode: ongoing
-env_schema:
-  SLACK_BOT_TOKEN:
-    required: true
-params:
-  channel:
-    type: string
----
-```
-
-### Adapter protocol
-
-```python
-class TriggerAdapter(Protocol):
-    name: str
-    mode: Literal["one_shot", "ongoing"]
-
-    async def start(self, config: dict, callback: TriggerCallback) -> None:
-        """Start listening. Call callback on each event."""
-        ...
-
-    async def stop(self) -> None:
-        """Graceful shutdown."""
-        ...
-
-    async def send(self, session_id: str, message: str) -> None:
-        """Send response back to source (ongoing mode only)."""
-        ...
-
-@dataclass
-class TriggerEvent:
-    source_id: str          # e.g. Slack channel+thread ID
-    sender: str
-    text: str
-    metadata: dict          # source-specific (issue URL, email headers)
-
-TriggerCallback = Callable[[TriggerEvent], Awaitable[None]]
-```
-
-### Trigger manager
-
-Runs inside the GUI's async event loop (FastAPI is already async).
-Manages adapter lifecycle: start, stop, configure, restart on error.
+### How it works
 
 ```
-External Source          Trigger Adapter              StrawPot
-─────────────────        ───────────────              ────────
-Slack message    ──→    trigger-slack    ──→    session (ongoing)
-GitHub issue     ──→    trigger-github   ──→    strawpot start (one-shot)
-Email            ──→    trigger-email    ──→    strawpot start (one-shot)
-Cron schedule    ──→    trigger-cron     ──→    strawpot start (one-shot)
+GUI Cron Scheduler
+       │
+       ▼
+  strawpot start --task "..." --role ... --project ...
+       │
+       ▼
+  Agent with skills (slack, github, telegram, etc.)
+       │
+       ▼
+  Memory providers for conversation continuity
 ```
 
-### Ongoing sessions via ask_user
+**Examples:**
 
-For ongoing triggers (Slack, Telegram), the adapter reuses the existing
-DenDen `ask_user` RPC. No protocol changes are needed.
+| Schedule | Role | Task | Skills used |
+|----------|------|------|-------------|
+| `*/5 * * * *` | issue-resolver | Check for new GitHub issues labeled "strawpot" and resolve them | `github-issues` |
+| `*/1 * * * *` | support-agent | Check Slack #support for new messages and respond | `slack` |
+| `0 9 * * 1-5` | daily-reporter | Generate and post daily standup summary | `slack`, `github-issues` |
+| `0 */6 * * *` | telegram-bot | Check Telegram for new messages and respond | `telegram` |
 
-**How it works:**
+**Conversation continuity:** Each cron run is a new session. The agent
+remembers previous interactions via memory providers — `memory.get`
+loads context at spawn, `memory.dump` saves state after completion.
+Skills can also track state via markers (e.g., "last processed issue
+ID") stored in memory.
 
-1. The orchestrator agent's role prompt instructs it to call `ask_user`
-   in a conversational loop.
-2. The `Session.on_ask_user` handler checks whether this is a
-   trigger-bound session.
-3. If yes, it pulls the next message from the trigger adapter's queue
-   (blocking until a message arrives) instead of prompting a terminal.
-4. The agent's response is routed back through the trigger adapter
-   to the external source.
-
-```python
-class TriggerSessionBridge:
-    """Bridges a trigger adapter to a session's ask_user handler."""
-
-    def __init__(self, adapter: TriggerAdapter, source_id: str):
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
-        self._adapter = adapter
-        self._source_id = source_id
-
-    async def on_ask_user(self, prompt: str) -> str:
-        """Called by Session when agent calls ask_user."""
-        return await self._queue.get()
-
-    async def on_incoming(self, event: TriggerEvent) -> None:
-        """Called by trigger adapter when external message arrives."""
-        await self._queue.put(event.text)
-
-    async def send_response(self, text: str) -> None:
-        """Send agent output back to external source."""
-        await self._adapter.send(self._source_id, text)
-```
-
-The agent does not know whether it is talking to a terminal or a Slack
-channel. The session layer handles routing.
+**Composability:** Unlike dedicated adapters, a single scheduled task
+can use multiple skills. "Check GitHub for new issues, post a summary
+to Slack" is just a task description — no adapter composition needed.
 
 ### Configuration
 
-**Source of truth:** `gui.db` owns trigger instance state (running,
-stopped, last error). `strawpot.toml` is used only as an optional
-seed — on first GUI startup, any `[[triggers]]` entries in the config
-are imported into `gui.db`. After that, the GUI API is the sole
-interface for creating and managing triggers. The TOML entries are
-not kept in sync.
+**Source of truth:** `gui.db` owns schedule state (enabled, last run,
+next run, errors). `strawpot.toml` is used only as an optional seed —
+on first GUI startup, any `[[schedules]]` entries are imported into
+`gui.db`. After that, the GUI API is the sole interface for creating
+and managing schedules.
 
-Triggers are configured in `strawpot.toml` (seed only):
+Schedules can be seeded in `strawpot.toml`:
 
 ```toml
-[[triggers]]
-name = "slack-support"
-adapter = "trigger-slack"
-project = "/path/to/project"
-role = "support-agent"
-mode = "ongoing"
-config = { channel = "#support", bot_token_env = "SLACK_BOT_TOKEN" }
-
-[[triggers]]
+[[schedules]]
 name = "github-issues"
-adapter = "trigger-github"
 project = "/path/to/project"
 role = "issue-resolver"
-mode = "one-shot"
-config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
+task = "Check for new GitHub issues labeled 'strawpot' and resolve them"
+cron = "*/5 * * * *"
+
+[[schedules]]
+name = "slack-support"
+project = "/path/to/project"
+role = "support-agent"
+task = "Check Slack #support for new messages and respond"
+cron = "*/1 * * * *"
 ```
+
+### Scheduler implementation
+
+The scheduler runs inside the GUI's async event loop (FastAPI is already
+async). It uses APScheduler or a lightweight cron evaluator to manage
+next-run calculations and firing.
+
+**Lifecycle:**
+
+1. On GUI startup, load all enabled schedules from `gui.db`
+2. Calculate `next_run_at` for each schedule
+3. Run an async loop that checks for due schedules every 30 seconds
+4. When a schedule is due, spawn `strawpot start` as a subprocess
+5. Update `last_run_at`, calculate next `next_run_at`
+6. Link the spawned session to the schedule for run history
+
+**Error handling:** If a scheduled session fails, record the error in
+`last_error`. The schedule continues firing on its next interval.
+The GUI shows error badges on schedules with recent failures.
+
+### Why not a trigger adapter framework?
+
+The original design proposed a `TriggerAdapter` protocol with plugin
+discovery, a session bridge for ongoing mode, and per-adapter lifecycle
+management. This was replaced with skill + cron for these reasons:
+
+1. **Skills already do the same thing.** Both trigger adapters and skills
+   interact with external services. Building a parallel plugin framework
+   duplicates existing capability.
+2. **Composability.** An adapter can only talk to one service. A skill-based
+   agent can use `github-issues` + `slack` + `jira` in the same session.
+3. **Simplicity.** No adapter protocol, no plugin discovery, no session
+   bridge, no ongoing mode complexity. Just cron + skills.
+4. **Extensibility.** Adding a new integration is just installing a skill
+   from StrawHub — no trigger-specific packaging needed.
+
+**Tradeoff:** No real-time bidirectional chat (sub-second Slack/Telegram
+responses). Polling interval determines latency (typically 1–5 minutes).
+If real-time interactive sessions become needed, they can be built as a
+separate feature using the existing `ask_user` bridge — independent of
+the scheduling system.
 
 ---
 
@@ -1211,17 +1175,17 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 | GET | `/api/fs/browse` | List directory contents (for project registration) |
 | POST | `/api/fs/mkdir` | Create directory |
 
-### Triggers (future)
+### Scheduled Tasks (planned)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/triggers` | List trigger instances |
-| POST | `/api/triggers` | Create trigger |
-| PUT | `/api/triggers/:id` | Update trigger config |
-| DELETE | `/api/triggers/:id` | Remove trigger |
-| POST | `/api/triggers/:id/start` | Start adapter |
-| POST | `/api/triggers/:id/stop` | Stop adapter |
-| GET | `/api/triggers/:id/logs` | SSE: adapter logs |
+| GET | `/api/schedules` | List all schedules |
+| POST | `/api/schedules` | Create schedule (name, project, role, task, cron_expr) |
+| PUT | `/api/schedules/:id` | Update schedule config |
+| DELETE | `/api/schedules/:id` | Remove schedule |
+| POST | `/api/schedules/:id/enable` | Enable schedule |
+| POST | `/api/schedules/:id/disable` | Disable schedule |
+| GET | `/api/schedules/:id/history` | List sessions spawned by this schedule |
 
 ---
 
@@ -1407,8 +1371,7 @@ through the UI.
 | 7.8 | Frontend: breadcrumb project switcher dropdown | **Done** |
 | 7.9 | Backend + frontend: server-side session pagination for project detail | **Done** |
 | 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
-| 9 | Trigger manager + adapter protocol + CRUD API | Planned |
-| 10 | Trigger adapters (cron; plugin architecture TBD) | Planned |
-| 11 | Interactive sessions (ask_user bridge + chat panel) | Planned |
-| 12 | Activity charts (run frequency, success rate, duration trends) | Planned |
-| 13 | Cost / token tracking (requires wrapper protocol extension) | Planned |
+| 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | Planned |
+| 10 | Interactive sessions (ask_user bridge + chat panel) | Planned |
+| 11 | Activity charts (run frequency, success rate, duration trends) | Planned |
+| 12 | Cost / token tracking (requires wrapper protocol extension) | Planned |
