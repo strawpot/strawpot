@@ -91,6 +91,18 @@ export default function LaunchDialog({
 
   const defaultRole = defaults?.orchestrator_role ?? "orchestrator";
   const installedRoles = (roles.data ?? []).filter((v) => v !== defaultRole);
+  const allRoles = [defaultRole, ...installedRoles];
+  const agentNames = (agents ?? []).map((a) => a.name);
+
+  const roleError =
+    role.trim() && !allRoles.includes(role.trim())
+      ? "Role not found in installed roles"
+      : "";
+  const runtimeError =
+    runtime.trim() && agentNames.length > 0 && !agentNames.includes(runtime.trim())
+      ? "Runtime not found in installed agents"
+      : "";
+  const hasValidationError = !!roleError || !!runtimeError;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -128,6 +140,9 @@ export default function LaunchDialog({
                 <option key={v} value={v} />
               ))}
             </datalist>
+            {roleError && (
+              <p className="text-xs text-destructive">{roleError}</p>
+            )}
           </div>
 
           <Collapsible>
@@ -154,6 +169,9 @@ export default function LaunchDialog({
                         <option key={a.name} value={a.name} />
                       ))}
                     </datalist>
+                  )}
+                  {runtimeError && (
+                    <p className="text-xs text-destructive">{runtimeError}</p>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -198,7 +216,7 @@ export default function LaunchDialog({
             </p>
           )}
           <div className="flex gap-2">
-            <Button type="submit" disabled={launchSession.isPending}>
+            <Button type="submit" disabled={launchSession.isPending || hasValidationError}>
               {launchSession.isPending ? "Launching..." : "Launch"}
             </Button>
             <Button
