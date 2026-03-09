@@ -19,9 +19,9 @@ sessions, and reviewing history. Distributed as a separate Python package
 
 ## Design Philosophy & Wedges
 
-StrawPot's GUI is not a Paperclip clone, a generic admin panel, or a chat
-interface. It has a distinct identity built on six wedges — unique value
-propositions that guide every design decision.
+StrawPot's GUI is not a generic admin panel or a chat interface. It has
+a distinct identity built on six wedges — unique value propositions that
+guide every design decision.
 
 ### 1. Local-first, zero-config
 
