@@ -1,84 +1,164 @@
 import { Link } from "react-router-dom";
-import SessionTable from "../components/SessionTable";
-import { useApi } from "../hooks/useApi";
-import type { Project, SessionList } from "../api/types";
+import { useProjects } from "@/hooks/queries/use-projects";
+import { useRunningSessions, useRecentSessions } from "@/hooks/queries/use-sessions";
+import SessionTable from "@/components/SessionTable";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, FolderKanban } from "lucide-react";
 
 export default function Dashboard() {
-  const projects = useApi<Project[]>("/projects");
-  const running = useApi<SessionList>("/sessions?status=running&per_page=50");
-  const recent = useApi<SessionList>(
-    "/sessions?per_page=10",
-  );
+  const projects = useProjects();
+  const running = useRunningSessions();
+  const recent = useRecentSessions();
 
-  const loading = projects.loading || running.loading || recent.loading;
+  const loading = projects.isLoading || running.isLoading || recent.isLoading;
   const error = projects.error || running.error || recent.error;
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p className="error">Error: {error}</p>;
+  if (loading) return <DashboardSkeleton />;
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Error: {error.message}</span>
+      </div>
+    );
+  }
 
   const projectList = projects.data ?? [];
   const runningSessions = running.data?.items ?? [];
   const recentSessions = recent.data?.items ?? [];
 
-  // Build project name lookup
   const projectNames = new Map<number, string>();
   for (const p of projectList) {
     projectNames.set(p.id, p.display_name);
   }
 
-  // Count running sessions per project
   const runningByProject = new Map<number, number>();
   for (const s of runningSessions) {
-    runningByProject.set(s.project_id, (runningByProject.get(s.project_id) ?? 0) + 1);
+    runningByProject.set(
+      s.project_id,
+      (runningByProject.get(s.project_id) ?? 0) + 1,
+    );
   }
 
   return (
-    <div className="dashboard">
-      <h1>Dashboard</h1>
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
 
-      <section className="dashboard-section">
-        <h2>Projects ({projectList.length})</h2>
+      {/* Projects */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Projects ({projectList.length})
+        </h2>
         {projectList.length === 0 ? (
-          <p className="empty">No projects registered.</p>
+          <p className="text-sm italic text-muted-foreground">
+            No projects registered.
+          </p>
         ) : (
-          <div className="card-grid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
             {projectList.map((p) => (
-              <Link
-                key={p.id}
-                to={`/projects/${p.id}`}
-                className="card"
-              >
-                <div className="card-title">{p.display_name}</div>
-                <div className="card-meta">{p.working_dir}</div>
-                {!p.dir_exists && (
-                  <span className="badge badge-warning">Directory missing</span>
-                )}
-                {(runningByProject.get(p.id) ?? 0) > 0 && (
-                  <span className="badge badge-running">
-                    {runningByProject.get(p.id)} running
-                  </span>
-                )}
+              <Link key={p.id} to={`/projects/${p.id}`} className="group">
+                <Card className="transition-colors group-hover:border-foreground/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <FolderKanban className="h-4 w-4 text-muted-foreground" />
+                      {p.display_name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="break-all text-sm text-muted-foreground">
+                      {p.working_dir}
+                    </p>
+                    <div className="mt-2 flex gap-1.5">
+                      {!p.dir_exists && (
+                        <Badge
+                          variant="outline"
+                          className="border-orange-200 bg-orange-50 text-xs text-orange-700"
+                        >
+                          Directory missing
+                        </Badge>
+                      )}
+                      {(runningByProject.get(p.id) ?? 0) > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-green-200 bg-green-50 text-xs text-green-700"
+                        >
+                          <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                          {runningByProject.get(p.id)} running
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </Link>
             ))}
           </div>
         )}
       </section>
 
+      {/* Running Sessions */}
       {runningSessions.length > 0 && (
-        <section className="dashboard-section">
-          <h2>Running Sessions ({runningSessions.length})</h2>
-          <SessionTable sessions={runningSessions} projectNames={projectNames} />
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Running Sessions ({runningSessions.length})
+          </h2>
+          <Card>
+            <CardContent className="p-0">
+              <SessionTable
+                sessions={runningSessions}
+                projectNames={projectNames}
+              />
+            </CardContent>
+          </Card>
         </section>
       )}
 
-      <section className="dashboard-section">
-        <h2>Recent Sessions</h2>
+      {/* Recent Sessions */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Recent Sessions
+        </h2>
         {recentSessions.length === 0 ? (
-          <p className="empty">No sessions yet.</p>
+          <p className="text-sm italic text-muted-foreground">
+            No sessions yet.
+          </p>
         ) : (
-          <SessionTable sessions={recentSessions} projectNames={projectNames} />
+          <Card>
+            <CardContent className="p-0">
+              <SessionTable
+                sessions={recentSessions}
+                projectNames={projectNames}
+              />
+            </CardContent>
+          </Card>
         )}
       </section>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8">
+      <Skeleton className="h-8 w-40" />
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-24" />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
     </div>
   );
 }
