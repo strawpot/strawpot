@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import AgentTreeFlow from "../components/AgentTreeFlow";
@@ -18,20 +18,22 @@ export default function SessionDetail() {
   const isActive = session?.status === "starting" || session?.status === "running";
   useEffect(() => {
     if (!isActive) return;
-    const id = setInterval(refetch, 5000);
+    const id = setInterval(refetch, 2000);
     return () => clearInterval(id);
   }, [isActive, refetch]);
 
   // SSE for live trace events on active sessions
   const { events: sseEvents } = useTraceSSE(runId ?? "", isActive);
-  const displayEvents = useMemo<TraceEvent[]>(() => {
-    if (isActive && sseEvents.length > 0) return sseEvents;
-    return session?.events ?? [];
-  }, [isActive, sseEvents, session?.events]);
+  const restEvents = session?.events ?? [];
+  // SSE sends full snapshots — prefer SSE when it has data, else REST
+  const displayEvents = sseEvents.length > 0 ? sseEvents : restEvents;
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="error">Error: {error}</p>;
   if (!session) return <p className="error">Session not found</p>;
+
+  // Extract key artifacts from trace events
+  const artifacts = extractArtifacts(displayEvents);
 
   return (
     <div>
@@ -105,6 +107,13 @@ export default function SessionDetail() {
         </section>
       )}
 
+      {artifacts.length > 0 && (
+        <section className="dashboard-section">
+          <h2>Artifacts</h2>
+          <ArtifactList artifacts={artifacts} runId={session.run_id} />
+        </section>
+      )}
+
       <section className="dashboard-section">
         <h2>Agent Tree</h2>
         <AgentTreeFlow runId={session.run_id} />
@@ -120,6 +129,134 @@ export default function SessionDetail() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Artifact extraction from trace events
+// ---------------------------------------------------------------------------
+
+interface ArtifactEntry {
+  label: string;
+  hash: string;
+  event: string;
+  agentId?: string;
+}
+
+function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
+  const artifacts: ArtifactEntry[] = [];
+  for (const e of events) {
+    const d = e.data;
+    if (e.event === "agent_spawn" && d.context_ref) {
+      artifacts.push({
+        label: `Agent Context (${d.role || "agent"})`,
+        hash: String(d.context_ref),
+        event: e.event,
+        agentId: d.agent_id ? String(d.agent_id) : undefined,
+      });
+    }
+    if (e.event === "session_end" && d.output_ref) {
+      artifacts.push({
+        label: "Session Output",
+        hash: String(d.output_ref),
+        event: e.event,
+      });
+    }
+    if (e.event === "agent_end" && d.output_ref) {
+      artifacts.push({
+        label: `Agent Output (${d.agent_id || "agent"})`,
+        hash: String(d.output_ref),
+        event: e.event,
+        agentId: d.agent_id ? String(d.agent_id) : undefined,
+      });
+    }
+    if (e.event === "memory_get" && d.cards_ref) {
+      artifacts.push({
+        label: `Memory Cards (${d.provider || "memory"})`,
+        hash: String(d.cards_ref),
+        event: e.event,
+      });
+    }
+    if (e.event === "memory_dump" && d.entries_ref) {
+      artifacts.push({
+        label: `Memory Dump (${d.provider || "memory"})`,
+        hash: String(d.entries_ref),
+        event: e.event,
+      });
+    }
+    if (e.event === "delegate_start" && d.context_ref) {
+      artifacts.push({
+        label: `Delegation Context (${d.role || "delegate"})`,
+        hash: String(d.context_ref),
+        event: e.event,
+      });
+    }
+    if (e.event === "delegate_end" && d.output_ref) {
+      artifacts.push({
+        label: `Delegation Output (${d.role || "delegate"})`,
+        hash: String(d.output_ref),
+        event: e.event,
+      });
+    }
+  }
+  return artifacts;
+}
+
+// ---------------------------------------------------------------------------
+// Artifact list with expandable content
+// ---------------------------------------------------------------------------
+
+function ArtifactList({
+  artifacts,
+  runId,
+}: {
+  artifacts: ArtifactEntry[];
+  runId: string;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  return (
+    <div className="artifact-list">
+      {artifacts.map((a) => (
+        <div key={`${a.event}-${a.hash}`} className="artifact-item">
+          <button
+            className="artifact-toggle"
+            onClick={() =>
+              setExpanded(expanded === a.hash ? null : a.hash)
+            }
+          >
+            <span className="artifact-icon">{expanded === a.hash ? "▼" : "▶"}</span>
+            <span className="artifact-label">{a.label}</span>
+          </button>
+          {expanded === a.hash && (
+            <ArtifactContent runId={runId} hash={a.hash} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArtifactContent({ runId, hash }: { runId: string; hash: string }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/sessions/${runId}/artifacts/${hash}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.text();
+      })
+      .then(setContent)
+      .catch((err) => setError(err.message));
+  }, [runId, hash]);
+
+  if (error) return <p className="error">Error: {error}</p>;
+  if (content === null) return <p className="loading-text">Loading...</p>;
+  return <pre className="artifact-content">{content}</pre>;
+}
+
+// ---------------------------------------------------------------------------
+// Detail row
+// ---------------------------------------------------------------------------
+
 function DetailRow({
   label,
   children,
@@ -134,6 +271,10 @@ function DetailRow({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Event timeline
+// ---------------------------------------------------------------------------
 
 function EventTimeline({ events, runId }: { events: TraceEvent[]; runId: string }) {
   const [artifact, setArtifact] = useState<{ hash: string; label: string } | null>(null);

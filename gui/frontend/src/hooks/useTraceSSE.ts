@@ -8,9 +8,16 @@ export function useTraceSSE(
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const prevRunIdRef = useRef<string>("");
 
   useEffect(() => {
     if (!active) return;
+
+    // Only reset events when runId changes
+    if (prevRunIdRef.current !== runId) {
+      setEvents([]);
+      prevRunIdRef.current = runId;
+    }
 
     const es = new EventSource(`/api/sessions/${runId}/events`);
     esRef.current = es;
@@ -21,7 +28,8 @@ export function useTraceSSE(
       try {
         const data = JSON.parse(msg.data);
         if (data.events && Array.isArray(data.events)) {
-          setEvents((prev) => [...prev, ...data.events]);
+          // Backend sends full snapshot each time — replace, don't append
+          setEvents(data.events);
         }
       } catch {
         // ignore malformed data
@@ -29,6 +37,9 @@ export function useTraceSSE(
     };
 
     es.onerror = () => {
+      // Server closed the stream (session ended) — stop reconnecting
+      es.close();
+      esRef.current = null;
       setConnected(false);
     };
 

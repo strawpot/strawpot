@@ -134,9 +134,26 @@
   margin-right: 0.25rem;
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .badge-running {
   background: #e8f5e9;
   color: #2e7d32;
+}
+
+.badge-running::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.35em;
+  border: 1.5px solid #a5d6a7;
+  border-top-color: #2e7d32;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
 }
 
 .badge-success {
@@ -647,4 +664,60 @@
 .delegate-summary {
   font-style: italic;
   color: #333;
+}
+
+/* Artifact list — expandable sections */
+
+.artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.artifact-item {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.artifact-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: #f5f5f5;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.artifact-toggle:hover {
+  background: #eeeeee;
+}
+
+.artifact-icon {
+  font-size: 0.7rem;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.artifact-label {
+  font-weight: 500;
+  color: #1565c0;
+}
+
+.artifact-item .artifact-content {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  border-radius: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.loading-text {
+  padding: 0.75rem;
+  color: #666;
+  font-size: 0.85rem;
 }

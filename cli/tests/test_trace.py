@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -183,12 +184,17 @@ class TestSessionEvents:
         tracer.session_start(
             run_id="run_1", role="orchestrator",
             runtime="strawpot-claude-code", isolation="worktree",
+            task="Fix the bug",
         )
         events = _read_events(session_dir)
         assert len(events) == 1
         assert events[0]["event"] == "session_start"
         assert events[0]["data"]["role"] == "orchestrator"
         assert events[0]["data"]["isolation"] == "worktree"
+        assert events[0]["data"]["task_ref"] is not None
+        # Verify artifact was stored
+        artifact_path = Path(session_dir) / "artifacts" / events[0]["data"]["task_ref"]
+        assert artifact_path.read_text() == "Fix the bug"
 
     def test_session_end_event_written(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
@@ -197,11 +203,15 @@ class TestSessionEvents:
         )
         tracer.session_end(
             span_id=span_id, merge_strategy="local", duration_ms=5000,
+            output="Task completed successfully.",
         )
         events = _read_events(session_dir)
         assert events[1]["event"] == "session_end"
         assert events[1]["data"]["duration_ms"] == 5000
         assert events[1]["data"]["merge_strategy"] == "local"
+        assert events[1]["data"]["output_ref"] is not None
+        artifact_path = Path(session_dir) / "artifacts" / events[1]["data"]["output_ref"]
+        assert artifact_path.read_text() == "Task completed successfully."
 
 
 # ---------------------------------------------------------------------------
@@ -305,12 +315,16 @@ class TestAgentEvents:
         tracer.agent_spawn(
             span_id="s1", agent_id="agent_abc",
             role="ai-ceo", runtime="strawpot-claude-code", pid=12345,
+            context="You are the CEO agent.",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "agent_spawn"
         assert events[0]["data"]["agent_id"] == "agent_abc"
         assert events[0]["data"]["role"] == "ai-ceo"
         assert events[0]["data"]["pid"] == 12345
+        assert events[0]["data"]["context_ref"] is not None
+        artifact_path = Path(session_dir) / "artifacts" / events[0]["data"]["context_ref"]
+        assert artifact_path.read_text() == "You are the CEO agent."
 
     def test_agent_end_stores_output_artifact(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)

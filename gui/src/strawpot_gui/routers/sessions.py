@@ -27,13 +27,31 @@ def _refresh_session_status(conn, run_id: str) -> None:
     Updates the DB row if the status has changed.
     """
     row = conn.execute(
-        "SELECT status, session_dir FROM sessions WHERE run_id = ?",
+        "SELECT status, session_dir, started_at FROM sessions WHERE run_id = ?",
         (run_id,),
     ).fetchone()
     if not row or row["status"] not in ("starting", "running"):
         return
 
     session_dir = row["session_dir"]
+
+    # If session directory doesn't exist, give subprocess time to create it
+    if not os.path.isdir(session_dir):
+        started_at = row.get("started_at") if hasattr(row, "get") else None
+        if started_at:
+            from datetime import datetime, timezone
+
+            age = (
+                datetime.now(timezone.utc)
+                - datetime.fromisoformat(started_at)
+            ).total_seconds()
+            if age > 15:
+                conn.execute(
+                    "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+                    (run_id,),
+                )
+        return
+
     session_json = os.path.join(session_dir, "session.json")
 
     # Try to read session.json
@@ -175,6 +193,18 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
         if body.overrides.merge_strategy:
             cmd.extend(["--merge-strategy", body.overrides.merge_strategy])
 
+    # Ensure subprocess can find user-installed tools (claude, etc.)
+    # even when the server was started from a limited-PATH context.
+    env = os.environ.copy()
+    home = Path.home()
+    extra_paths = [
+        str(home / ".local" / "bin"),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+    ]
+    existing = env.get("PATH", "")
+    env["PATH"] = ":".join(extra_paths) + ":" + existing
+
     try:
         subprocess.Popen(
             cmd,
@@ -183,6 +213,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            env=env,
         )
     except OSError:
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))

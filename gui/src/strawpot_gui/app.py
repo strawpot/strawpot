@@ -1,6 +1,8 @@
 """FastAPI application factory."""
 
+import logging
 import os
+import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,7 +14,45 @@ from fastapi.staticfiles import StaticFiles
 from strawpot.config import get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
+
+logger = logging.getLogger(__name__)
 from strawpot_gui.routers import config, fs, health, projects, sessions, sse
+
+
+def _auto_rebuild_frontend(dist_dir: Path) -> None:
+    """Rebuild the frontend if source files are newer than dist."""
+    frontend_dir = dist_dir.parent  # frontend/
+    src_dir = frontend_dir / "src"
+    if not src_dir.is_dir():
+        return
+
+    # Find newest source file mtime
+    src_mtime = max(
+        (f.stat().st_mtime for f in src_dir.rglob("*") if f.is_file()),
+        default=0.0,
+    )
+
+    # Find dist mtime (use index.html as marker)
+    dist_marker = dist_dir / "index.html"
+    dist_mtime = dist_marker.stat().st_mtime if dist_marker.is_file() else 0.0
+
+    if src_mtime <= dist_mtime:
+        return
+
+    logger.info("Frontend sources changed, rebuilding...")
+    try:
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(frontend_dir),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.info("Frontend rebuild complete")
+    except FileNotFoundError:
+        logger.debug("npm not found, skipping frontend rebuild")
+    except subprocess.CalledProcessError as exc:
+        logger.warning("Frontend rebuild failed: %s", exc.stderr[:500])
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -55,6 +95,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     # Serve built frontend — check installed package path then dev path
     static_dir = Path(__file__).resolve().parent / "static"
     dev_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if not static_dir.is_dir():
+        _auto_rebuild_frontend(dev_dir)
     frontend_dir = static_dir if static_dir.is_dir() else dev_dir
     if frontend_dir.is_dir():
         index_html = frontend_dir / "index.html"

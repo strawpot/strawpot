@@ -241,10 +241,11 @@ def discover_global_skills(
     for entry in sorted(skills_dir.iterdir()):
         if not entry.is_dir():
             continue
-        parsed = parse_dir_name(entry.name)
-        if parsed is None:
+        skill_md = entry / "SKILL.md"
+        if not skill_md.is_file():
             continue
-        slug, _version = parsed
+        parsed = parse_dir_name(entry.name)
+        slug = parsed[0] if parsed else entry.name
         if slug in resolved_slugs:
             continue
         validate_frontmatter_slug(str(entry), slug, "skill")
@@ -258,6 +259,8 @@ def _discover_all_roles() -> list[tuple[str, str]]:
     """Discover all globally installed roles.
 
     Scans ``~/.strawpot/roles/`` for installed role directories.
+    Accepts both plain slug directories (``ai-ceo``) and versioned
+    directories (``ai-ceo-1.0.0``).
 
     Returns:
         List of (slug, path) tuples for each installed role.
@@ -272,10 +275,11 @@ def _discover_all_roles() -> list[tuple[str, str]]:
     for entry in sorted(roles_dir.iterdir()):
         if not entry.is_dir():
             continue
-        parsed = parse_dir_name(entry.name)
-        if parsed is None:
+        role_md = entry / "ROLE.md"
+        if not role_md.is_file():
             continue
-        slug, _version = parsed
+        parsed = parse_dir_name(entry.name)
+        slug = parsed[0] if parsed else entry.name
         roles.append((slug, str(entry)))
     return roles
 
