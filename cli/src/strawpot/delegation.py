@@ -124,7 +124,7 @@ def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
 
     skill_specs = deps.get("skills", [])
     role_specs = deps.get("roles", [])
-    skill_slugs = [spec.split()[0] for spec in skill_specs]
+    skill_slugs = [spec.split()[0] for spec in skill_specs if spec.split()[0] != "*"]
     role_slugs = [spec.split()[0] for spec in role_specs if spec.split()[0] != "*"]
     wildcard_roles = any(spec.strip() == "*" for spec in role_specs)
     return skill_slugs, role_slugs, wildcard_roles
