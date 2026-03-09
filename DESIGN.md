@@ -49,6 +49,7 @@ src/strawpot/
   session.py               # Session lifecycle — owns denden server + agent registry
   delegation.py            # Delegate handler — policy → resolve → spawn → wait
   context.py               # Build system prompt from resolved role + skills
+  merge.py                 # Merge strategies (local patch, PR)
   _process.py              # Cross-platform process utilities (is_pid_alive)
   agents/
     protocol.py            # AgentRuntime protocol, AgentHandle, AgentResult
@@ -58,10 +59,12 @@ src/strawpot/
   isolation/
     protocol.py            # Isolator protocol, IsolatedEnv
     worktree.py            # WorktreeIsolator
+  memory/
+    registry.py            # Memory provider discovery and resolution
   trace.py                 # Session tracing — JSONL events + content-addressed artifacts
 ```
 
-14 source files. No agent-specific code in the core — agents are installed
+16 source files. No agent-specific code in the core — agents are installed
 via StrawHub (e.g. `strawhub install agent strawpot_claude_code --global`).
 
 ---
@@ -119,7 +122,13 @@ class AgentRuntime(Protocol):
     def wait(self, handle: AgentHandle, timeout: float | None = None) -> AgentResult: ...
     def is_alive(self, handle: AgentHandle) -> bool: ...
     def kill(self, handle: AgentHandle) -> None: ...
+    def interrupt(self, handle: AgentHandle) -> bool: ...
 ```
+
+`interrupt` sends a soft cancel signal. Returns `True` if the interrupt
+was explicitly forwarded (e.g. via `tmux send-keys`), `False` if the
+agent already received the signal from the OS (direct mode) or does not
+support interrupt (non-interactive).
 
 The runtime is the user's choice via config or `--runtime` flag.
 
@@ -394,13 +403,16 @@ class StrawPotConfig:
     runtime: str = "strawpot-claude-code"
     isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
-    orchestrator_role: str = "orchestrator"
+    orchestrator_role: str = "ai-ceo"
     max_depth: int = 3
     permission_mode: str = "default"   # orchestrator permission mode
     agent_timeout: int | None = None   # sub-agent timeout in seconds (None = no limit)
+    max_delegate_retries: int = 0      # retry on invalid output format
     agents: dict[str, dict] = field(default_factory=dict)  # per-agent extras
     skills: dict[str, dict[str, str]] = field(default_factory=dict)  # persisted skill env
     roles: dict[str, dict] = field(default_factory=dict)   # role overrides (default_agent, etc.)
+    memory: str = "dial"               # memory provider name
+    memory_config: dict[str, str] = field(default_factory=dict)  # provider-specific params
     merge_strategy: str = "auto"       # auto | local | pr
     pull_before_session: str = "prompt" # auto | always | never | prompt
     pr_command: str = "gh pr create --base {base_branch} --head {session_branch}"
@@ -483,15 +495,15 @@ Convenience methods (each calls `emit` + `store_artifact` as needed):
 
 | Method | Returns | Stores artifact |
 |--------|---------|-----------------|
-| `session_start(run_id, role, runtime, isolation)` | span_id | — |
-| `session_end(span_id, merge_strategy, duration_ms)` | — | — |
-| `delegate_start(role, parent_span, context)` | span_id | context → `context_ref` |
-| `delegate_end(span_id, exit_code, summary, duration_ms)` | — | — |
-| `delegate_denied(role, parent_span, reason)` | — | — |
-| `memory_get(span_id, provider, cards, card_count)` | — | cards JSON → `cards_ref` |
-| `memory_dump(span_id, provider, entries, entry_count)` | — | entries → `entries_ref` |
-| `agent_spawn(span_id, agent_id, runtime, pid)` | — | — |
-| `agent_end(span_id, exit_code, output, duration_ms)` | — | output → `output_ref` |
+| `session_start(run_id, role, runtime, isolation, task="")` | span_id | task → `task_ref` |
+| `session_end(span_id, merge_strategy, duration_ms, output="")` | — | output → `output_ref` |
+| `delegate_start(role, parent_span, context, depth=0, session_id="", parent_agent_id=None)` | span_id | context → `context_ref` |
+| `delegate_end(span_id, exit_code, summary, duration_ms, output="", role="", session_id="", agent_id="")` | — | output → `output_ref` |
+| `delegate_denied(role, parent_span, reason, depth=0)` | — | — |
+| `memory_get(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", cards, card_count, parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, cards JSON → `cards_ref` |
+| `memory_dump(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", status="", output="", parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, output → `output_ref` |
+| `agent_spawn(span_id, agent_id, role, runtime, pid, working_dir="", agent_workspace_dir="", skills_dir="", roles_dirs=None, task="", context="", depth=0)` | — | task → `task_ref`, context → `context_ref` |
+| `agent_end(span_id, exit_code, output, duration_ms, agent_id="", role="", session_id="")` | — | output → `output_ref` |
 
 Session output layout:
 
@@ -524,12 +536,13 @@ isolation = "none"               # none | worktree | docker
 addr = "127.0.0.1:9700"
 
 [orchestrator]
-role = "team-lead"           # strawhub role slug (default: "orchestrator")
+role = "team-lead"           # strawhub role slug (default: "ai-ceo")
 permission_mode = "default"  # orchestrator permission mode (sub-agents always "auto")
 
 [policy]
 max_depth = 3
 agent_timeout = 300          # sub-agent timeout in seconds (omit for no limit)
+max_delegate_retries = 0     # retry on invalid output format
 
 [session]
 merge_strategy = "auto"          # auto | local | pr
