@@ -17,5 +17,7 @@ export const queryKeys = {
   registry: {
     list: (type: string) => ["registry", type] as const,
     detail: (type: string, name: string) => ["registry", type, name] as const,
+    config: (type: string, name: string) =>
+      ["registry", type, name, "config"] as const,
   },
 };

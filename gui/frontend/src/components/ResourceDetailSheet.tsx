@@ -11,6 +11,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import ResourceConfigForm from "@/components/ResourceConfigForm";
 import { toast } from "sonner";
 
 interface Props {
@@ -92,7 +93,12 @@ export default function ResourceDetailSheet({
         </div>
 
         <ScrollArea className="min-h-0 flex-1 px-4">
-          <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
+          <ResourceConfigForm
+            resourceType={resourceType}
+            resourceName={resource.name}
+            enabled={open}
+          />
+          <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap mt-4">
             {resource.body || "No content."}
           </div>
         </ScrollArea>

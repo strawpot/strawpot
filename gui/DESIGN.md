@@ -1160,10 +1160,12 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/registry/:type` | List installed items (type = roles/skills/agents/memories). Optional `?project_id=X` returns project + global items with scope indicator; without it returns global only. |
-| GET | `/api/registry/:type/:slug` | Item detail (frontmatter + body) |
-| POST | `/api/registry/install` | Install from StrawHub (slug, scope: project or global) |
-| GET | `/api/registry/search` | Search StrawHub (query string) |
+| GET | `/api/registry/:type` | List installed items (type = roles/skills/agents/memories). Returns `[{ name, version, description, source, path }]`. |
+| GET | `/api/registry/:type/:name` | Item detail (frontmatter + body) |
+| GET | `/api/registry/:type/:name/config` | Env/params schema from manifest + saved values from `strawpot.toml`. Returns `{ env_schema, env_values, params_schema, params_values }`. For roles, synthesizes `default_agent` as a param. |
+| PUT | `/api/registry/:type/:name/config` | Save env var and param values. Body: `{ env_values, params_values }`. Type-coerces params per schema. Roles save to `[roles.<name>]`. |
+| POST | `/api/registry/install` | Install from StrawHub via `strawhub install -y <type> <name> --global`. Returns `{ exit_code, stdout, stderr }`. |
+| DELETE | `/api/registry/:type/:name` | Uninstall via `strawhub uninstall <type> <name> --global`. Returns `{ exit_code, stdout, stderr }`. |
 
 ### Config
 
@@ -1333,16 +1335,22 @@ through the UI.
 | `/api/v1/config/global` | GET/PUT | Read/write global config |
 
 **Scope:**
-- Backend: resource scanner reading `.strawpot/` and `~/.strawpot/`
-  directories, parsing frontmatter for metadata
-- Backend: install/uninstall endpoints wrapping `strawpot install`
-  and `strawpot uninstall` subprocesses
+- Backend: resource scanner reading `~/.strawpot/` directories, parsing
+  frontmatter for metadata. Version read from `.version` file first,
+  then frontmatter fallback
+- Backend: install/uninstall endpoints wrapping `strawhub install -y`
+  and `strawhub uninstall` subprocesses (stdin=DEVNULL for non-interactive)
+- Backend: per-resource config endpoints (GET/PUT) combining manifest
+  env/params schema with saved values from `strawpot.toml`. Roles expose
+  `default_agent` as a configurable parameter; agents/memories expose
+  `params` and `env`; skills expose `env` only
 - Frontend: four resource browser pages (Roles, Skills, Agents, Memory)
   with list view, detail panel, install/uninstall actions
-- Frontend: sidebar navigation updated with resource browser links
+- Frontend: sidebar navigation with resource browser links + command palette
+- Frontend: resource detail sheet with env var editing (masked inputs,
+  required badges) and parameter editing (typed inputs per schema)
 - Frontend: config editor page with form-based editing for project
-  and global `strawpot.toml`
-- Frontend: StrawHub search integration for discovering new resources
+  and global `strawpot.toml` (planned)
 
 ### Not Planned
 
@@ -1351,7 +1359,7 @@ through the UI.
 | Multi-user / auth | StrawPot is local-first, single-user |
 | PostgreSQL migration | SQLite is sufficient for local use |
 | WebSocket (replacing SSE) | SSE is simpler and sufficient for our one-directional monitoring. Bidirectional communication (for interactive sessions) will use the existing DenDen gRPC bridge, not WebSocket. |
-| Agent adapter config forms | StrawPot's `WrapperRuntime` + `setup` subcommand handles this |
+| Agent adapter config forms | Per-resource env/param editing now available in resource detail sheet |
 | Kanban / task management | Not our domain; users have existing tools |
 | Cost / token tracking | Requires agent-specific output parsing; deferred until wrapper protocol includes structured cost reporting |
 
@@ -1369,7 +1377,8 @@ through the UI.
 | 5.5 | Frontend: agent log viewer, launch dialog, skeleton loaders | **Done** (Phase 3) |
 | 5.6 | Frontend: dashboard activity feed, live agent output | **Done** (Phase 3) |
 | 5.7 | Frontend: command palette, keyboard shortcuts, dark mode | **Done** (Phase 4) |
-| 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install | Planned (Phase 5) |
+| 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install/uninstall | **Done** (Phase 5) |
+| 6.5 | Backend + frontend: per-resource env var and parameter configuration | **Done** (Phase 5) |
 | 7 | Backend + frontend: config editor (project + global) | Planned (Phase 5, backend done) |
 | 7.5 | Backend + frontend: project files upload | Planned |
 | 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
@@ -1377,7 +1386,7 @@ through the UI.
 | 10 | Ongoing session support (ask_user bridge) | Deferred |
 | 11 | Interactive GUI sessions (chat panel) | Deferred |
 
-**Next:** Phase 5 — Config & Resource Management.
+**Next:** Phase 5 continued — Config editor (PR2).
 
 **Deferred features:**
 
