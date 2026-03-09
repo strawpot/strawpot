@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useProject } from "@/hooks/queries/use-projects";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
 import ProjectFilesTab from "@/components/ProjectFilesTab";
@@ -15,15 +16,26 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { AlertCircle, ArrowLeft, Play } from "lucide-react";
+import { AlertCircle, ArrowLeft, Download, Play } from "lucide-react";
+import InstallDialog from "@/components/InstallDialog";
 import ProjectDetailSkeleton from "@/components/skeletons/ProjectDetailSkeleton";
+
+const TYPE_LABELS: Record<string, string> = {
+  roles: "Role",
+  skills: "Skill",
+  agents: "Agent",
+  memories: "Memory",
+};
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
   const pid = Number(projectId);
   const project = useProject(pid);
   const sessions = useProjectSessions(pid);
+  const resources = useProjectResources(pid);
   const [launchOpen, setLaunchOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("sessions");
 
   const loading = project.isLoading || sessions.isLoading;
   const error = project.error || sessions.error;
@@ -50,6 +62,12 @@ export default function ProjectDetail() {
 
   const p = project.data;
   const sessionList = sessions.data ?? [];
+  const resourceList = resources.data ?? [];
+
+  const resourceCounts = resourceList.reduce<Record<string, number>>((acc, r) => {
+    acc[r.type] = (acc[r.type] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-6">
@@ -59,6 +77,13 @@ export default function ProjectDetail() {
           <Button onClick={() => setLaunchOpen(true)} disabled={!p.dir_exists}>
             <Play className="mr-2 h-4 w-4" />
             Launch Session
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setActiveTab("resources"); setInstallOpen(true); }}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Install Resource
           </Button>
           <Button variant="outline" asChild>
             <Link to="/projects">
@@ -93,6 +118,25 @@ export default function ProjectDetail() {
             </dd>
             <dt className="font-medium text-muted-foreground">Created</dt>
             <dd>{new Date(p.created_at).toLocaleString()}</dd>
+            <dt className="font-medium text-muted-foreground">Resources</dt>
+            <dd>
+              {resourceList.length === 0 ? (
+                <span className="text-sm text-muted-foreground">None installed</span>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(resourceCounts).map(([type, count]) => (
+                    <Badge
+                      key={type}
+                      variant="secondary"
+                      className="cursor-pointer text-xs"
+                      onClick={() => setActiveTab("resources")}
+                    >
+                      {count} {count === 1 ? (TYPE_LABELS[type] ?? type) : `${TYPE_LABELS[type] ?? type}s`}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </dd>
           </dl>
         </CardContent>
       </Card>
@@ -103,12 +147,20 @@ export default function ProjectDetail() {
         onOpenChange={setLaunchOpen}
       />
 
-      <Tabs defaultValue="sessions">
+      <InstallDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+        projectId={pid}
+      />
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="sessions">
             Sessions ({sessionList.length})
           </TabsTrigger>
-          <TabsTrigger value="resources">Resources</TabsTrigger>
+          <TabsTrigger value="resources">
+            Resources ({resourceList.length})
+          </TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
 
@@ -127,7 +179,11 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="resources" className="mt-4">
-          <ProjectResourcesTab projectId={pid} />
+          <ProjectResourcesTab
+            projectId={pid}
+            installOpen={installOpen}
+            onInstallOpenChange={setInstallOpen}
+          />
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">
