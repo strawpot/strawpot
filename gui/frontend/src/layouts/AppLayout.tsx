@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Settings, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Settings, Sun, Moon, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useProject } from "@/hooks/queries/use-projects";
+import { useProject, useProjects } from "@/hooks/queries/use-projects";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import CommandPalette from "@/components/CommandPalette";
 import KeyboardShortcutsDialog from "@/components/KeyboardShortcutsDialog";
@@ -44,7 +44,7 @@ function useBreadcrumbs() {
   const projectId = segments[0] === "projects" && segments[1] ? Number(segments[1]) : 0;
   const { data: project } = useProject(projectId, { enabled: projectId > 0 });
 
-  const crumbs: { label: string; href?: string }[] = [
+  const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [
     { label: "Dashboard", href: "/" },
   ];
 
@@ -54,7 +54,7 @@ function useBreadcrumbs() {
     if (segments[1]) {
       const projectHref = `/projects/${segments[1]}`;
       const projectLabel = project?.display_name ?? `Project #${segments[1]}`;
-      crumbs.push({ label: projectLabel, href: projectHref });
+      crumbs.push({ label: projectLabel, href: projectHref, projectSwitcher: true });
 
       if (segments[2] === "sessions" && segments[3]) {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
@@ -85,6 +85,8 @@ function useBreadcrumbs() {
 
 export default function AppLayout() {
   const crumbs = useBreadcrumbs();
+  const navigate = useNavigate();
+  const allProjects = useProjects();
   const { setTheme } = useTheme();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -155,7 +157,29 @@ export default function AppLayout() {
                 return (
                   <BreadcrumbItem key={crumb.label}>
                     {i > 0 && <BreadcrumbSeparator />}
-                    {isLast ? (
+                    {crumb.projectSwitcher ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
+                          {crumb.label}
+                          <ChevronsUpDown className="h-3 w-3 text-muted-foreground" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          {(allProjects.data ?? []).map((proj) => (
+                            <DropdownMenuItem
+                              key={proj.id}
+                              onClick={() => navigate(`/projects/${proj.id}`)}
+                            >
+                              {crumb.href === `/projects/${proj.id}` ? (
+                                <Check className="mr-2 h-3.5 w-3.5" />
+                              ) : (
+                                <span className="mr-2 inline-block w-3.5" />
+                              )}
+                              {proj.display_name}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : isLast ? (
                       <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                     ) : (
                       <BreadcrumbLink href={crumb.href}>
