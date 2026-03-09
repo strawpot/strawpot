@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, FolderKanban } from "lucide-react";
+import { useTheme } from "next-themes";
+import { LayoutDashboard, FolderKanban, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/hooks/queries/use-projects";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import CommandPalette from "@/components/CommandPalette";
+import KeyboardShortcutsDialog from "@/components/KeyboardShortcutsDialog";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,6 +15,13 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
@@ -47,6 +59,14 @@ function useBreadcrumbs() {
 
 export default function AppLayout() {
   const crumbs = useBreadcrumbs();
+  const { setTheme } = useTheme();
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  useKeyboardShortcuts({
+    onCommandPalette: () => setCmdOpen(true),
+    onShortcutsHelp: () => setShortcutsOpen(true),
+  });
 
   return (
     <div className="flex min-h-screen">
@@ -75,11 +95,12 @@ export default function AppLayout() {
             </NavLink>
           ))}
         </nav>
+
       </aside>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
-        <header className="flex h-14 items-center border-b border-border px-6">
+        <header className="flex h-14 items-center justify-between border-b border-border px-6">
           <Breadcrumb>
             <BreadcrumbList>
               {crumbs.map((crumb, i) => {
@@ -99,12 +120,47 @@ export default function AppLayout() {
               })}
             </BreadcrumbList>
           </Breadcrumb>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCmdOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
+            >
+              <kbd className="font-mono">⌘K</kbd>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                  <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                  <span className="sr-only">Toggle theme</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setTheme("light")}>
+                  Light
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTheme("dark")}>
+                  Dark
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTheme("system")}>
+                  System
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
         <Separator />
         <main className="flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>
+
+      {/* Command palette + shortcuts help */}
+      <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
+      <KeyboardShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+      />
     </div>
   );
 }

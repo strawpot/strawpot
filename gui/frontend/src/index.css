@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Use class-based dark mode (matches next-themes attribute="class") */
+@custom-variant dark (&:is(.dark *));
+
 /*
  * Map CSS variables to Tailwind 4 theme so that utility classes
  * like bg-primary, text-muted-foreground, border-border work.

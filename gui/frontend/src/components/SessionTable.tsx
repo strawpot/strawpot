@@ -80,13 +80,13 @@ function StatusBadge({ status }: { status: string }) {
       className={cn(
         "text-xs font-medium",
         variant === "running" &&
-          "border-green-200 bg-green-50 text-green-700",
+          "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400",
         variant === "success" &&
-          "border-green-200 bg-green-50 text-green-700",
+          "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400",
         variant === "error" &&
-          "border-red-200 bg-red-50 text-red-700",
+          "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400",
         variant === "warning" &&
-          "border-orange-200 bg-orange-50 text-orange-700",
+          "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400",
         variant === "default" &&
           "border-muted bg-muted text-muted-foreground",
       )}
