@@ -1,5 +1,15 @@
 import { Link } from "react-router-dom";
-import type { Session } from "../api/types";
+import type { Session } from "@/api/types";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 export default function SessionTable({
   sessions,
@@ -9,50 +19,90 @@ export default function SessionTable({
   projectNames?: Map<number, string>;
 }) {
   return (
-    <table className="session-table">
-      <thead>
-        <tr>
-          <th>Run ID</th>
-          {projectNames && <th>Project</th>}
-          <th>Role</th>
-          <th>Status</th>
-          <th>Started</th>
-          <th>Duration</th>
-          <th>Task</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Run ID</TableHead>
+          {projectNames && <TableHead>Project</TableHead>}
+          <TableHead>Role</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Started</TableHead>
+          <TableHead>Duration</TableHead>
+          <TableHead>Task</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {sessions.map((s) => (
-          <tr key={s.run_id}>
-            <td>
-              <Link to={`/projects/${s.project_id}/sessions/${s.run_id}`}>
+          <TableRow key={s.run_id}>
+            <TableCell>
+              <Link
+                to={`/projects/${s.project_id}/sessions/${s.run_id}`}
+                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
                 {s.run_id.slice(0, 16)}
               </Link>
-            </td>
+            </TableCell>
             {projectNames && (
-              <td>
-                <Link to={`/projects/${s.project_id}`}>
+              <TableCell>
+                <Link
+                  to={`/projects/${s.project_id}`}
+                  className="text-sm text-primary underline-offset-4 hover:underline"
+                >
                   {projectNames.get(s.project_id) ?? `#${s.project_id}`}
                 </Link>
-              </td>
+              </TableCell>
             )}
-            <td>{s.role}</td>
-            <td>
-              <span className={`badge badge-${statusColor(s.status)}`}>
-                {s.status}
-              </span>
-            </td>
-            <td>{formatTime(s.started_at)}</td>
-            <td>{formatDuration(s.duration_ms)}</td>
-            <td className="cell-task">{s.task ?? "—"}</td>
-          </tr>
+            <TableCell className="text-sm">{s.role}</TableCell>
+            <TableCell>
+              <StatusBadge status={s.status} />
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {formatTime(s.started_at)}
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {formatDuration(s.duration_ms)}
+            </TableCell>
+            <TableCell className="max-w-[300px] truncate text-sm">
+              {s.task ?? "—"}
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
-export function statusColor(status: string): string {
+function StatusBadge({ status }: { status: string }) {
+  const variant = statusVariant(status);
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "text-xs font-medium",
+        variant === "running" &&
+          "border-green-200 bg-green-50 text-green-700",
+        variant === "success" &&
+          "border-green-200 bg-green-50 text-green-700",
+        variant === "error" &&
+          "border-red-200 bg-red-50 text-red-700",
+        variant === "warning" &&
+          "border-orange-200 bg-orange-50 text-orange-700",
+        variant === "default" &&
+          "border-muted bg-muted text-muted-foreground",
+      )}
+    >
+      {status === "running" && (
+        <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+      )}
+      {status}
+    </Badge>
+  );
+}
+
+// Alias for backward compatibility with unmigrated pages
+export const statusColor = statusVariant;
+
+export function statusVariant(status: string): string {
   switch (status) {
     case "running":
     case "starting":

@@ -73,61 +73,9 @@
   background: #fafafa;
 }
 
-.app-layout {
-  display: flex;
-  min-height: 100vh;
-}
+/* Layout CSS removed — now in AppLayout.tsx with Tailwind */
 
-.sidebar {
-  width: 220px;
-  background: #1a1a2e;
-  color: #e0e0e0;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.sidebar-brand {
-  font-size: 1.25rem;
-  font-weight: 700;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.sidebar nav a {
-  color: #b0b0b0;
-  text-decoration: none;
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
-}
-
-.sidebar nav a:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
-.sidebar nav a.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.main-content {
-  flex: 1;
-  padding: 2rem;
-}
-
-/* Dashboard */
-
-.dashboard h1 {
-  margin-bottom: 1.5rem;
-}
+/* Dashboard (kept: dashboard-section, empty, error used by other pages) */
 
 .dashboard-section {
   margin-bottom: 2rem;
@@ -148,39 +96,7 @@
   color: #c0392b;
 }
 
-/* Cards */
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.75rem;
-}
-
-.card {
-  display: block;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 1rem;
-  text-decoration: none;
-  color: inherit;
-  transition: border-color 0.15s;
-}
-
-.card:hover {
-  border-color: #999;
-}
-
-.card-title {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-.card-meta {
-  font-size: 0.85rem;
-  color: #888;
-  word-break: break-all;
-}
+/* Cards CSS removed — now using shadcn Card component */
 
 /* Badges */
 
