@@ -465,8 +465,9 @@ class Session:
                     pid=handle.pid,
                     working_dir=self._env.path,
                     agent_workspace_dir=workspace,
-                    skills_dir=skills_dir,  # tracer takes single string
+                    skills_dirs=[skills_dir],
                     roles_dirs=[roles_dir],
+                    files_dirs=files_dirs,
                     task=self.task or "",
                     context=agent_context,
                 )
