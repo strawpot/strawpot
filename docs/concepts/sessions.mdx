@@ -107,18 +107,19 @@ This separation keeps the event stream small and scannable while preserving full
 
 | Event | When | Key data |
 |-------|------|----------|
-| `session_start` | Session begins | role, runtime, isolation |
-| `session_end` | Session stops | merge_strategy, duration_ms |
-| `delegate_start` | Delegation begins | role, context_ref (artifact) |
-| `delegate_end` | Delegation completes | exit_code, summary, duration_ms |
-| `delegate_denied` | Policy blocks delegation | role, reason |
-| `memory_get` | Memory context retrieved | provider, cards_ref, card_count |
-| `memory_dump` | Memory recorded after agent | provider, entries_ref, entry_count |
-| `memory_remember` | Agent stores knowledge | provider, entry_id, scope |
-| `agent_spawn` | Agent process launched | agent_id, runtime, pid |
-| `agent_end` | Agent process exits | exit_code, output_ref, duration_ms |
+| `session_start` | Session begins | role, runtime, isolation, task_ref |
+| `session_end` | Session stops | merge_strategy, duration_ms, output_ref |
+| `delegate_start` | Delegation begins | role, depth, context_ref, session_id, parent_agent_id |
+| `delegate_end` | Delegation completes | exit_code, summary, duration_ms, output_ref, role, session_id, agent_id |
+| `delegate_denied` | Policy blocks delegation | role, reason, depth |
+| `memory_get` | Memory context retrieved | provider, session_id, agent_id, role, behavior_ref, task_ref, cards_ref, card_count, parent_agent_id |
+| `memory_dump` | Memory recorded after agent | provider, session_id, agent_id, role, behavior_ref, task_ref, status, output_ref, parent_agent_id |
+| `agent_spawn` | Agent process launched | agent_id, role, runtime, pid, working_dir, agent_workspace_dir, skills_dir, roles_dirs, task_ref, context_ref, depth |
+| `agent_end` | Agent process exits | exit_code, output_ref, duration_ms, agent_id, role, session_id |
 
 ### Call tree reconstruction
+
+All events carry full context parameters (`session_id`, `agent_id`, `role`, `parent_agent_id`) so each event is self-contained. Large payloads (context, output, task, memory cards) are stored as content-addressed artifacts and referenced by `*_ref` fields.
 
 Each event has a `span_id` and optional `parent_span`. The `session_start` span is the root. Delegation spans reference the requesting agent's span as their parent, forming a tree that reflects the actual delegation chain:
 

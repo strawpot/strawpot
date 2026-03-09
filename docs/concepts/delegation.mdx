@@ -96,10 +96,11 @@ Agents can also store knowledge explicitly via `memory.remember()`, which persis
 
 When tracing is enabled (the default), every delegation emits structured events to the session's `trace.jsonl`:
 
-- `delegate_start` — records the role and stores the full context prompt as an artifact
-- `agent_spawn` / `agent_end` — tracks the sub-agent process lifecycle with timing
-- `memory_get` / `memory_dump` — records memory interactions with artifact references
-- `delegate_end` — captures exit code, summary, and total duration
-- `delegate_denied` — logged when policy blocks a delegation request
+- `delegate_start` — records the role, depth, session_id, parent_agent_id, and stores the full context prompt as an artifact
+- `agent_spawn` — records agent_id, role, runtime, pid, working_dir, skills_dir, roles_dirs, depth, and stores task + context as artifacts
+- `agent_end` — captures exit_code, duration_ms, agent_id, role, session_id, and stores output as an artifact
+- `memory_get` / `memory_dump` — records memory interactions with full context (session_id, agent_id, role, behavior_ref, task, parent_agent_id) and artifact references
+- `delegate_end` — captures exit_code, summary, duration_ms, role, session_id, agent_id, and stores output as an artifact
+- `delegate_denied` — logged when policy blocks a delegation request, with role, reason, and depth
 
-These events include span IDs that link to the parent agent's span, enabling full call-tree reconstruction across nested delegations. See [Sessions](/concepts/sessions#tracing) for the complete event reference.
+All trace events carry full context parameters so each event is self-contained. These events include span IDs that link to the parent agent's span, enabling full call-tree reconstruction across nested delegations. See [Sessions](/concepts/sessions#tracing) for the complete event reference.
