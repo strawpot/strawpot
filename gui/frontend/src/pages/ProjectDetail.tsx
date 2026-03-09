@@ -70,14 +70,14 @@ export default function ProjectDetail() {
               {p.dir_exists ? (
                 <Badge
                   variant="outline"
-                  className="border-green-200 bg-green-50 text-xs text-green-700"
+                  className="border-green-200 bg-green-50 text-xs text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
                 >
                   OK
                 </Badge>
               ) : (
                 <Badge
                   variant="outline"
-                  className="border-orange-200 bg-orange-50 text-xs text-orange-700"
+                  className="border-orange-200 bg-orange-50 text-xs text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400"
                 >
                   Missing
                 </Badge>
