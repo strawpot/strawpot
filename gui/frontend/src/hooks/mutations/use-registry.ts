@@ -25,6 +25,28 @@ export function useUninstallResource() {
   });
 }
 
+export function useUpdateResource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { type: string; name: string }) =>
+      api.post<InstallResult>("/registry/update", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry"] });
+    },
+  });
+}
+
+export function useReinstallResource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { type: string; name: string }) =>
+      api.post<InstallResult>("/registry/reinstall", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry"] });
+    },
+  });
+}
+
 export function useSaveResourceConfig() {
   const qc = useQueryClient();
   return useMutation({
