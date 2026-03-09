@@ -84,24 +84,22 @@ one-shot task runner.
 
 ## Tech Stack
 
-| Layer | Current | Planned |
-|-------|---------|---------|
-| Backend | FastAPI (Python) | — (no change) |
-| Frontend | React 19 + Vite 6 (TypeScript) | — (no change) |
-| Styling | Custom CSS (index.css) | Tailwind CSS 4 + shadcn/ui |
-| Data fetching | Custom `useApi` hook | TanStack Query v5 |
-| Icons | None | lucide-react |
-| Toasts | None | sonner (via shadcn) |
-| Command palette | None | cmdk (via shadcn) |
-| Real-time | SSE (file polling, 1.5s interval) | SSE (watchfiles, ~100ms) |
-| Tree visualization | React Flow (@xyflow/react) | — (no change) |
-| GUI state | SQLite (`~/.strawpot/gui.db`) | — (no change) |
-| Backend file watching | `asyncio.sleep` + `os.stat` mtime | `watchfiles` (OS-native) |
+| Layer | Stack |
+|-------|-------|
+| Backend | FastAPI (Python) |
+| Frontend | React 19 + Vite 6 (TypeScript) |
+| Styling | Tailwind CSS 4 + shadcn/ui |
+| Data fetching | TanStack Query v5 |
+| Icons | lucide-react |
+| Toasts | sonner (via shadcn) |
+| Command palette | cmdk (via shadcn) |
+| Real-time | SSE (file polling) |
+| Tree visualization | React Flow (@xyflow/react) |
+| GUI state | SQLite (`~/.strawpot/gui.db`) |
 
-The frontend framework (React + Vite) and backend framework (FastAPI)
-are not changing. The migration targets the component layer (shadcn
-replaces custom CSS), the data layer (TanStack Query replaces manual
-fetch hooks), and the real-time layer (OS file watchers replace polling).
+The frontend uses Tailwind CSS 4 with shadcn/ui for consistent,
+accessible components and TanStack Query v5 for data fetching with
+automatic caching, background refetching, and deduplication.
 
 ## Deployment
 
@@ -142,20 +140,22 @@ FastAPI server                              ← strawpot-gui package
   │
   ├─ /api/projects/*                        CRUD projects (gui.db + dirs)
   ├─ /api/projects/:id/config               read/write strawpot.toml
-  ├─ /api/sessions/*                        list / detail / launch / stop
+  ├─ /api/projects/:id/sessions             paginated session list
+  ├─ /api/projects/:id/resources/*          project-scoped resource CRUD
+  ├─ /api/projects/:id/files                file upload/list/delete
+  ├─ /api/sessions/*                        list / launch / stop
   ├─ /api/sessions/:id/tree                 SSE  real-time agent tree
   ├─ /api/sessions/:id/logs/:agent_id       SSE  agent log stream
   ├─ /api/sessions/:id/events               SSE  trace event stream
   ├─ /api/sessions/:id/artifacts/:hash      read artifact content
-  ├─ /api/sessions/:id/changed-files        changed file list (worktree)
-  ├─ /api/events                            SSE  global event bus (new)
-  ├─ /api/registry/*                        browse installed items
-  ├─ /api/registry/install                  install via strawpot CLI
-  ├─ /api/registry/search                   search StrawHub
+  ├─ /api/events                            SSE  global event bus
+  ├─ /api/registry/*                        global resource CRUD + install
   ├─ /api/config/global                     read/write global config
+  ├─ /api/roles                             list installed role slugs
+  ├─ /api/fs/browse                         directory browser
   ├─ /api/health                            health check
-  ├─ /api/triggers/*                        CRUD + start/stop triggers
-  └─ /api/triggers/:id/logs                 SSE  trigger adapter logs
+  ├─ /api/triggers/*                        CRUD + start/stop (deferred)
+  └─ /api/triggers/:id/logs                 SSE  trigger logs (deferred)
 
 Data sources
   ├─ ~/.strawpot/gui.db                     projects, session history, triggers
@@ -304,11 +304,13 @@ isolation mode.
 
 | Tab | Contents |
 |-----|----------|
-| Sessions | Active + archived sessions for this project |
-| Config | Form-based editor for project `strawpot.toml` |
+| Sessions | Server-side paginated session list with selectable page numbers |
+| Resources | Installed roles / skills / agents / memories scoped to this project, with resource count badges in the project info card |
 | Files | Drag-and-drop upload, file list with delete |
-| Registry | Installed roles / skills / agents / memories scoped to this project |
-| Triggers | Triggers bound to this project |
+
+Project info card shows directory status, creation date, and clickable
+resource summary badges (e.g. "2 Roles", "1 Skill") that switch to the
+Resources tab. Header includes Launch Session and Install Resource buttons.
 
 **Project registration** — point at a working directory. The GUI reads
 the existing `strawpot.toml` or creates one with defaults.
@@ -334,10 +336,16 @@ tree, stream logs, and review results on completion.
 
 **Launch session dialog** — a modal dialog (not inline form) with:
 - Auto-focusing task textarea
-- Role selector from installed roles
-- Collapsible advanced options (runtime, isolation, merge strategy)
+- Context file attachment (@ button to attach project files)
+- Role selector from installed roles (datalist with validation)
+- Collapsible advanced options:
+  - Runtime, isolation, merge strategy overrides
+  - Custom system prompt textarea (appended to role instructions)
 - Loading state during launch, success/error toasts on completion
 - Navigation to the new session on success
+
+**Breadcrumb project switcher** — the project name in the breadcrumb
+header is a dropdown that lists all projects for quick switching.
 
 **Interactive mode (deferred)** — add a chat panel to the session detail
 page where `ask_user` prompts appear and the user can respond inline.
@@ -1140,14 +1148,14 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/sessions` | List sessions (filter by project, status, date). Paginated: `?page=1&per_page=20`. |
-| POST | `/api/sessions` | Launch new session (project_id, role, task, overrides) |
-| GET | `/api/sessions/:id` | Session detail (session.json snapshot + agent list) |
+| GET | `/api/projects/:id/sessions` | List sessions for a project. Paginated: `?page=1&per_page=20`. Returns `{ items, total, page, per_page }`. |
+| POST | `/api/sessions` | Launch new session (project_id, task, role, overrides, context_files, system_prompt) |
+| GET | `/api/projects/:id/sessions/:run_id` | Session detail (metadata + agents + trace events) |
 | GET | `/api/sessions/:id/tree` | SSE: real-time agent tree |
 | GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream (snapshot + live tail) |
 | GET | `/api/sessions/:id/logs/:agent_id/full` | Full log file download (text/plain) |
 | GET | `/api/sessions/:id/events` | SSE: trace event stream (snapshot + incremental) |
 | GET | `/api/sessions/:id/artifacts/:hash` | Read artifact content |
-| GET | `/api/sessions/:id/changed-files` | List of changed files with status (added/modified/deleted). Worktree sessions only; returns empty list for non-worktree sessions. |
 | POST | `/api/sessions/:id/stop` | Stop session (SIGTERM to orchestrator PID) |
 
 ### Global Events
@@ -1156,16 +1164,32 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 |--------|------|-------------|
 | GET | `/api/events` | SSE: global event bus (session lifecycle, agent spawn/end, change notifications) |
 
-### Registry
+### Registry (Global Resources)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/registry/:type` | List installed items (type = roles/skills/agents/memories). Returns `[{ name, version, description, source, path }]`. |
 | GET | `/api/registry/:type/:name` | Item detail (frontmatter + body) |
-| GET | `/api/registry/:type/:name/config` | Env/params schema from manifest + saved values from `strawpot.toml`. Returns `{ env_schema, env_values, params_schema, params_values }`. For roles, synthesizes `default_agent` as a param. |
-| PUT | `/api/registry/:type/:name/config` | Save env var and param values. Body: `{ env_values, params_values }`. Type-coerces params per schema. Roles save to `[roles.<name>]`. |
-| POST | `/api/registry/install` | Install from StrawHub via `strawhub install -y <type> <name> --global`. Returns `{ exit_code, stdout, stderr }`. |
-| DELETE | `/api/registry/:type/:name` | Uninstall via `strawhub uninstall <type> <name> --global`. Returns `{ exit_code, stdout, stderr }`. |
+| GET | `/api/registry/:type/:name/config` | Env/params schema from manifest + saved values from `strawpot.toml`. Returns `{ env_schema, env_values, params_schema, params_values }`. |
+| PUT | `/api/registry/:type/:name/config` | Save env var and param values. Body: `{ env_values, params_values }`. |
+| GET | `/api/registry/agents/:name/validate` | Check agent prerequisites (tools, env vars) and return setup commands. |
+| POST | `/api/registry/install` | Install from StrawHub. Returns `{ exit_code, stdout, stderr }`. |
+| DELETE | `/api/registry/:type/:name` | Uninstall resource. Returns `{ exit_code, stdout, stderr }`. |
+| POST | `/api/registry/update` | Update resource to latest version. |
+| POST | `/api/registry/reinstall` | Reinstall current version. |
+
+### Project Resources
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/projects/:id/resources` | List all resources installed to a project. |
+| GET | `/api/projects/:id/resources/:type/:name` | Project resource detail. |
+| GET | `/api/projects/:id/resources/:type/:name/config` | Project resource config (env/params). |
+| PUT | `/api/projects/:id/resources/:type/:name/config` | Save project resource config. |
+| POST | `/api/projects/:id/resources/install` | Install resource to project. |
+| DELETE | `/api/projects/:id/resources/:type/:name` | Uninstall resource from project. |
+| POST | `/api/projects/:id/resources/update` | Update project resource. |
+| POST | `/api/projects/:id/resources/reinstall` | Reinstall project resource. |
 
 ### Config
 
@@ -1203,11 +1227,9 @@ config = { repo = "org/repo", labels = ["strawpot"], poll_interval = "5m" }
 
 ## Tech Stack Evolution
 
-The frontend migration is organized into four phases. Each phase
-delivers standalone value — the GUI is functional after every phase,
-not just after the final one.
+The frontend was migrated in five phases. All phases are complete.
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation (Done)
 
 **Goal:** Replace the custom CSS + manual fetch approach with a modern
 component and data layer. Every subsequent feature benefits from this.
@@ -1239,7 +1261,7 @@ tailwindcss @tailwindcss/vite @tanstack/react-query lucide-react
 Plus shadcn transitive deps: `class-variance-authority`, `clsx`,
 `tailwind-merge`, `@radix-ui/react-*`, `cmdk`, `sonner`.
 
-### Phase 2 — Real-Time Engine
+### Phase 2 — Real-Time Engine (Done)
 
 **Goal:** Make real-time updates feel instant and add agent log
 streaming.
@@ -1267,7 +1289,7 @@ watchfiles>=1.0
 - Modify `useTraceSSE` for incremental snapshot+append protocol
 - Add CLI-launched session detection via directory watching
 
-### Phase 3 — Product UX
+### Phase 3 — Product UX (Done)
 
 **Goal:** The features that make the GUI feel like a product rather
 than an ops tool.
@@ -1290,7 +1312,7 @@ than an ops tool.
 - Launch dialog component replacing inline form
 - Page-specific skeleton components for loading states
 
-### Phase 4 — Navigation & Polish
+### Phase 4 — Navigation & Polish (Done)
 
 **Goal:** Power-user features and visual polish.
 
@@ -1309,7 +1331,7 @@ than an ops tool.
 - CSS variables for dark theme (built into shadcn)
 - Class-based dark mode variant for Tailwind v4
 
-### Phase 5 — Config & Resource Management
+### Phase 5 — Config & Resource Management (Done)
 
 **Goal:** Let users browse, install, and uninstall roles, skills,
 agents, and memory providers — and edit project/global configuration
@@ -1361,7 +1383,6 @@ through the UI.
 | WebSocket (replacing SSE) | SSE is simpler and sufficient for our one-directional monitoring. Bidirectional communication (for interactive sessions) will use the existing DenDen gRPC bridge, not WebSocket. |
 | Agent adapter config forms | Per-resource env/param editing now available in resource detail sheet |
 | Kanban / task management | Not our domain; users have existing tools |
-| Cost / token tracking | Requires agent-specific output parsing; deferred until wrapper protocol includes structured cost reporting |
 
 ---
 
@@ -1380,30 +1401,15 @@ through the UI.
 | 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install/uninstall | **Done** (Phase 5) |
 | 6.5 | Backend + frontend: per-resource env var and parameter configuration | **Done** (Phase 5) |
 | 7 | Backend + frontend: config editor (project + global) | **Done** (Phase 5) |
-| 7.5 | Backend + frontend: project files upload | **Done** (Phase 5) |
-| 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
-| 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
-| 10 | Ongoing session support (ask_user bridge) | Deferred |
-| 11 | Interactive GUI sessions (chat panel) | Deferred |
-
-**Next:** Deferred features or Phase 6 — Triggers.
-
-**Deferred features:**
-
-- Session re-run — "Run again" button on archived sessions pre-filling
-  launch dialog with the same role, task, and config overrides.
-- Archive retention policy — configurable max age or count per project.
-- Changed files view — file list from `git diff --name-status`.
-- Chat-style trace view — render session trace events as a chat dialogue
-  instead of a table. Delegation requests appear as outgoing messages,
-  delegation returns as incoming messages with summary and clickable
-  artifact refs. Memory events, agent spawns, and lifecycle events
-  render as system messages between chat bubbles.
-- Session attachments — allow attaching files directly to a task prompt
-  when launching a session. Unlike project-level files which persist
-  across sessions, session attachments are one-off context files stored
-  in the session directory and referenced in the agent's system prompt.
-- Activity charts — visual charts for run patterns over time (runs per
-  day, success rate, duration distribution).
-- Cost / token tracking — per-agent and per-project token usage and cost
-  breakdowns.
+| 7.5 | Backend + frontend: project files upload + context file attachment | **Done** (Phase 5) |
+| 7.6 | Frontend: project resource visibility (badges, counts, Install Resource button) | **Done** |
+| 7.7 | Frontend: agent setup guide with API key alternative text | **Done** |
+| 7.8 | Frontend: breadcrumb project switcher dropdown | **Done** |
+| 7.9 | Backend + frontend: server-side session pagination for project detail | **Done** |
+| 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
+| 9 | Trigger manager + adapter protocol + CRUD API | Planned |
+| 10 | Trigger adapters (cron; plugin architecture TBD) | Planned |
+| 11 | Interactive sessions (ask_user bridge + chat panel) | Planned |
+| 12 | Session re-run (full session + sub-agent delegation retry) | Planned |
+| 13 | Activity charts (run frequency, success rate, duration trends) | Planned |
+| 14 | Cost / token tracking (requires wrapper protocol extension) | Planned |

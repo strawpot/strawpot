@@ -775,15 +775,11 @@ provider is configured, returns an error response.
 | Mode | Handler | Wired in |
 |------|---------|----------|
 | All CLI modes | `_default_ask_user_handler` — returns `default_value` or auto-responds | `session.py` (default) |
-| GUI interactive | Bridge to SSE → chat panel → user response | `gui/` (future) |
-| Trigger ongoing | Bridge to adapter queue (Slack, Telegram) | (future) |
 
 All CLI modes (headless, task, interactive) use the default auto-respond
 handler. The orchestrator is an AI agent that can make decisions on
-behalf of the user. A terminal interactive handler that prompts via
-stdin is deferred — it requires routing questions through the
-orchestrator's own UI (e.g., via a denden bidirectional channel) to
-avoid stdin/stdout conflicts with the orchestrator subprocess.
+behalf of the user. Interactive session support (GUI chat panel,
+ask_user bridge) is planned — see `gui/DESIGN.md`.
 
 ### Headless Mode
 
@@ -1617,7 +1613,7 @@ alive.
 10. `cli.py` + `__main__.py` — wire `start` command, add strawhub passthrough
     (`install`, `uninstall`, `search`, `list`, `install-tools`)
 
-### Phase 2 — Session Lifecycle
+### Phase 2 — Session Lifecycle (complete)
 
 11. `session.py` cleanup — worktree merge strategies (local/pr/auto), patch
     application (`git apply` vs `patch`), conflict resolution prompts
@@ -1634,7 +1630,7 @@ alive.
     bind to port 0 (OS assigns free port); record actual bound addr in
     session file and pass to agents via `DENDEN_ADDR` env var
 
-### Phase 3 — Memory
+### Phase 3 — Memory (complete)
 
 17. `strawpot_memory.memory_protocol` (external `strawpot-memory` package) —
     `MemoryProvider` protocol, `ContextCard`, `ControlSignal`, `DumpReceipt` types
@@ -1644,7 +1640,7 @@ alive.
     after wait in the delegation flow
 20. `config.py` — add `memory` and `memory_config` fields
 
-### Phase 4 — Global Skills
+### Phase 4 — Global Skills (complete)
 
 21. `delegation.py` + `context.py` — discover global skills from
     `~/.strawpot/skills/`, stage alongside dependency-resolved skills,
@@ -1653,11 +1649,9 @@ alive.
     `metadata.strawpot.inherit_global_skills` in ROLE.md (default `true`)
     to allow roles to opt out of global skills.
 
-### Phase 5 — Web GUI
+### Phase 5 — Web GUI (complete)
 
-22. Central management platform — project management, multi-session
-    monitoring, session history tracking, agent tree visualization,
-    denden status, EM replay
+22. See `gui/DESIGN.md` for full design and implementation status.
 
 ### Phase 6 — Docker Isolation
 
@@ -1665,13 +1659,6 @@ alive.
     (container create, patch export, cleanup)
 24. `session.py` cleanup — docker merge strategies (local/pr), patch
     extraction from container via `docker exec git diff`
-
-### Phase 7 — Ecosystem & Extensibility
-
-25. Community agents — documentation + strawhub publishing flow
-26. Cron jobs — invoke orchestrator periodically or conditionally
-27. Automation inputs — GitHub issue watcher, email, Telegram → feed tasks
-28. Hooks — pre/post spawn, pre/post cleanup extension points
 
 ---
 
@@ -1901,7 +1888,7 @@ Python package itself is auto-installed by StrawPot on first use when
 
 ---
 
-## Global Skills (Planned)
+## Global Skills
 
 When delegating, strawpot discovers globally installed skills and makes them
 available to agents alongside dependency-resolved skills. This lets users
@@ -1943,134 +1930,4 @@ Already covered: the Delegation and Requester sections in `context.py`
 include denden communication instructions when delegatable roles are
 present. No additional changes needed.
 
----
-
-## Web GUI (Planned)
-
-Central management platform for strawpot. Runs as a local web server that
-reads strawpot runtime state and provides a dashboard for managing projects,
-monitoring sessions, and reviewing history.
-
-### Architecture
-
-```
-Browser
-  │
-  ▼
-Web Server (FastAPI)          ← strawpot-gui package
-  │
-  ├─ reads .strawpot/sessions/*/session.json     (live session state)
-  ├─ reads .strawpot/sessions/*/session.jsonl    (session logs)
-  ├─ reads .strawpot/sessions/*/agents/*/.log    (agent output)
-  ├─ connects to denden gRPC server              (live status)
-  └─ reads EM event store                        (when memory is configured)
-```
-
-The GUI is a separate installable package (`pip install strawpot-gui`), not
-bundled with the core CLI. It has no write access to strawpot state — it is
-a read-only observer that renders existing runtime data.
-
-### Features
-
-**Project Management**
-- Register projects (directories with `strawpot.toml`)
-- View project config and installed agents/skills/roles
-- Quick-launch sessions from the GUI
-
-**Session Monitoring**
-- Real-time dashboard of active sessions across all registered projects
-- Agent tree visualization — hierarchy, roles, status (running/exited)
-- Live denden status — connected agents, pending requests
-- Session log stream — tail JSONL logs in real time
-
-**Session History**
-- Browse past sessions with timestamps, duration, isolation mode
-- View session logs and agent output for completed sessions
-- Filter by project, date range, role, or outcome
-
-**EM Replay** (when memory is configured)
-- Timeline view of event memory for a session
-- Step through agent spawns, tool calls, and results
-- Visualize delegation chains and agent communication
-
-### Data Sources
-
-The GUI reads existing runtime artifacts — no new data formats needed:
-
-| Data | Source | Format |
-|---|---|---|
-| Active sessions | `.strawpot/sessions/*/session.json` | JSON |
-| Session logs | `.strawpot/sessions/*/session.jsonl` | JSONL |
-| Agent output | `.strawpot/sessions/*/agents/*/.log` | Text |
-| Denden status | gRPC connection to running server | Live |
-| Event memory | Memory provider store | Provider-specific |
-| Project config | `strawpot.toml` | TOML |
-
-### CLI Integration
-
-```
-strawpot gui                         # start web server on localhost:9800
-strawpot gui --port 9801             # custom port
-strawpot gui --host 0.0.0.0         # bind to all interfaces
-```
-
-The `gui` command is a thin launcher — available only when `strawpot-gui` is
-installed. If not installed, `strawpot gui` prints an install hint and exits.
-
----
-
-## Future Work
-
-### Secret Handling for Persisted Env Values
-
-Skill env values are stored as plain text in `strawpot.toml`. Consider OS
-keychain integration or external secret managers for sensitive values.
-
-### Config Validation Against Frontmatter Declarations
-
-Validate saved env/config values against frontmatter-declared types and
-`required` flags at load time.
-
-### Parallel Sub-Agent Delegation
-
-Currently delegation is sequential — an agent calls `stub.Send()` which
-blocks until the sub-agent finishes. The architecture is designed so that
-parallel delegation can be added incrementally without restructuring.
-
-**What already supports parallelism (no changes needed):**
-
-- **gRPC server thread pool** — `DenDenServer(max_workers=10_000)` can
-  handle concurrent `Send()` calls from the same or different agents.
-- **`handle_delegate()`** — stateless function; each call independently
-  spawns, waits, and returns. Multiple concurrent invocations are safe.
-- **Agent workspaces** — UUID-based per-agent directories, no conflicts.
-- **Role staging** — idempotent `stage_role()` returns early if already
-  staged; safe for concurrent calls to the same role.
-- **Tracing spans** — the parent/child span model already supports
-  multiple children under the same parent span.
-
-**Incremental changes required:**
-
-| Area | Issue | Fix |
-|------|-------|-----|
-| `Session._agents`, `_agent_info`, `_agent_spans` | Plain dicts, not thread-safe | Add `threading.Lock` |
-| `Tracer` JSONL writes | Concurrent appends could interleave | Lock or write queue |
-| `_write_session_file()` | Not safe for concurrent updates | Lock or atomic write |
-| Client-side agent | Blocks on `stub.Send()` | Agent wrapper must support concurrent gRPC calls (threads or async) |
-
-**Design decision — shared worktree:**
-
-All agents share one working directory. Parallel agents editing the same
-files will conflict. Options when the time comes:
-
-1. **Task decomposition discipline** — rely on role/task design to avoid
-   file overlap (simplest, no code change).
-2. **Per-agent worktrees** — give each sub-agent its own worktree, merge
-   results (requires isolation layer changes).
-3. **File-level coordination** — locking or ownership semantics
-   (complex, likely overkill).
-
-Option 1 is the likely first approach. The proto, server, and handler
-layers do not need changes — parallelism is a client-side concern plus
-a few locks in `Session`.
 
