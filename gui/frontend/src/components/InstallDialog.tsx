@@ -123,6 +123,7 @@ export default function InstallDialog({ open, onOpenChange, defaultType }: Props
             <Label htmlFor="install-name">Package Name</Label>
             <Input
               id="install-name"
+              autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. strawpot-claude-code"
