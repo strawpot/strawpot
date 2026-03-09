@@ -618,7 +618,9 @@ def _format_memory_prompt(get_result: GetResult) -> str:
     parts = []
     for card in get_result.context_cards:
         parts.append(f"[{card.kind.value}] {card.content}")
-    return "\n\n".join(parts)
+    if not parts:
+        return ""
+    return "## Memory\n\n" + "\n\n".join(parts)
 
 
 def _agent_status(result: AgentResult, *, timed_out: bool = False) -> str:

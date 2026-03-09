@@ -1621,7 +1621,7 @@ class TestFormatMemoryPrompt:
             context_cards=[ContextCard(kind=MemoryKind.PM, content="Do X")]
         )
         result = _format_memory_prompt(get_result)
-        assert result == "[PM] Do X"
+        assert result == "## Memory\n\n[PM] Do X"
 
     def test_multiple_cards(self):
         get_result = GetResult(
@@ -1632,6 +1632,7 @@ class TestFormatMemoryPrompt:
             ]
         )
         result = _format_memory_prompt(get_result)
+        assert result.startswith("## Memory\n\n")
         assert "[PM] instructions" in result
         assert "[SM] fact A" in result
         assert "[STM] scratch" in result
