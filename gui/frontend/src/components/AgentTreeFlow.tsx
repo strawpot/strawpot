@@ -12,9 +12,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useTreeSSE } from "../hooks/useTreeSSE";
-import { statusColor, formatDuration } from "./SessionTable";
-import type { TreeNode, PendingDelegation, DeniedDelegation } from "../api/types";
+import { useTreeSSE } from "@/hooks/useTreeSSE";
+import { statusColor, formatDuration } from "@/components/SessionTable";
+import type { TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 70;
@@ -261,7 +261,7 @@ function AgentTreeFlowInner({ runId }: { runId: string }) {
           elementsSelectable={false}
           proOptions={{ hideAttribution: true }}
         />
-        <button className="btn btn-sm tree-reset-btn" onClick={handleReset}>
+        <button className="tree-reset-btn" onClick={handleReset}>
           Reset View
         </button>
       </div>

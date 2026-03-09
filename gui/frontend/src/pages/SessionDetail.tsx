@@ -1,131 +1,306 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api/client";
-import AgentTreeFlow from "../components/AgentTreeFlow";
-import { statusColor, formatTime, formatDuration } from "../components/SessionTable";
-import { useApi } from "../hooks/useApi";
-import { useTraceSSE } from "../hooks/useTraceSSE";
-import type { SessionDetail as SessionDetailType, TraceEvent } from "../api/types";
+import { useSession } from "@/hooks/queries/use-sessions";
+import { useStopSession } from "@/hooks/mutations/use-sessions";
+import AgentTreeFlow from "@/components/AgentTreeFlow";
+import { formatTime, formatDuration } from "@/components/SessionTable";
+import { useTraceSSE } from "@/hooks/useTraceSSE";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ChevronRight,
+  OctagonX,
+} from "lucide-react";
+import type { SessionDetail as SessionDetailType, TraceEvent } from "@/api/types";
 
 export default function SessionDetail() {
   const { projectId, runId } = useParams();
-  const { data: session, loading, error, refetch } = useApi<SessionDetailType>(
-    `/projects/${projectId}/sessions/${runId}`,
-  );
-  const [confirming, setConfirming] = useState(false);
+  const pid = Number(projectId);
+
+  const isActive = (status?: string) =>
+    status === "starting" || status === "running";
+
+  const session = useSession(pid, runId ?? "", {
+    refetchInterval: undefined,
+  });
 
   // Auto-poll session metadata while active
-  const isActive = session?.status === "starting" || session?.status === "running";
+  const sessionData = session.data;
+  const active = isActive(sessionData?.status);
   useEffect(() => {
-    if (!isActive) return;
-    const id = setInterval(refetch, 2000);
+    if (!active) return;
+    const id = setInterval(() => session.refetch(), 2000);
     return () => clearInterval(id);
-  }, [isActive, refetch]);
+  }, [active, session]);
 
   // SSE for live trace events on active sessions
-  const { events: sseEvents } = useTraceSSE(runId ?? "", isActive);
-  const restEvents = session?.events ?? [];
-  // SSE sends full snapshots — prefer SSE when it has data, else REST
+  const { events: sseEvents } = useTraceSSE(runId ?? "", active);
+  const restEvents = sessionData?.events ?? [];
   const displayEvents = sseEvents.length > 0 ? sseEvents : restEvents;
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p className="error">Error: {error}</p>;
-  if (!session) return <p className="error">Session not found</p>;
+  if (session.isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-32 rounded-lg" />
+        <Skeleton className="h-64 rounded-lg" />
+      </div>
+    );
+  }
+  if (session.error) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Error: {session.error.message}</span>
+      </div>
+    );
+  }
+  if (!sessionData) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Session not found</span>
+      </div>
+    );
+  }
 
-  // Extract key artifacts from trace events
   const artifacts = extractArtifacts(displayEvents);
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Session {session.run_id.slice(0, 16)}</h1>
-        <div className="page-header-actions">
-          {(session.status === "starting" || session.status === "running") &&
-            (confirming ? (
-              <span className="confirm-group">
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={async () => {
-                    await api.post(`/sessions/${runId}/stop`);
-                    setConfirming(false);
-                    refetch();
-                  }}
-                >
-                  Confirm
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => setConfirming(false)}
-                >
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <button
-                className="btn btn-danger"
-                onClick={() => setConfirming(true)}
-              >
-                Stop Session
-              </button>
-            ))}
-          <Link to={`/projects/${projectId}`} className="btn">
-            Back to Project
-          </Link>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <SessionHeader
+        session={sessionData}
+        projectId={pid}
+        runId={runId ?? ""}
+        onStopped={() => session.refetch()}
+      />
 
-      <div className="detail-grid">
-        <DetailRow label="Status">
-          <span className={`badge badge-${statusColor(session.status)}`}>
-            {session.status}
-          </span>
-        </DetailRow>
-        <DetailRow label="Role">{session.role}</DetailRow>
-        <DetailRow label="Runtime">{session.runtime}</DetailRow>
-        <DetailRow label="Isolation">{session.isolation}</DetailRow>
-        <DetailRow label="Started">{formatTime(session.started_at)}</DetailRow>
-        {session.ended_at && (
-          <DetailRow label="Ended">{formatTime(session.ended_at)}</DetailRow>
-        )}
-        <DetailRow label="Duration">{formatDuration(session.duration_ms)}</DetailRow>
-        {session.exit_code !== null && (
-          <DetailRow label="Exit Code">{session.exit_code}</DetailRow>
-        )}
-      </div>
+      <SessionMetadata session={sessionData} />
 
-      {session.task && (
-        <section className="dashboard-section">
-          <h2>Task</h2>
-          <div className="detail-block">{session.task}</div>
+      {sessionData.task && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Task</h2>
+          <Card>
+            <CardContent className="pt-4">
+              <pre className="whitespace-pre-wrap break-words text-sm">
+                {sessionData.task}
+              </pre>
+            </CardContent>
+          </Card>
         </section>
       )}
 
       {displayEvents.length > 0 && (
-        <section className="dashboard-section">
-          <h2>Trace Events ({displayEvents.length})</h2>
-          <EventTimeline events={displayEvents} runId={session.run_id} />
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Trace Events ({displayEvents.length})
+          </h2>
+          <EventTimeline events={displayEvents} runId={sessionData.run_id} />
         </section>
       )}
 
-      {session.summary && (
-        <section className="dashboard-section">
-          <h2>Summary</h2>
-          <div className="detail-block">{session.summary}</div>
+      {sessionData.summary && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Summary
+          </h2>
+          <Card>
+            <CardContent className="pt-4">
+              <pre className="whitespace-pre-wrap break-words text-sm">
+                {sessionData.summary}
+              </pre>
+            </CardContent>
+          </Card>
         </section>
       )}
 
       {artifacts.length > 0 && (
-        <section className="dashboard-section">
-          <h2>Artifacts</h2>
-          <ArtifactList artifacts={artifacts} runId={session.run_id} />
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Artifacts
+          </h2>
+          <ArtifactList artifacts={artifacts} runId={sessionData.run_id} />
         </section>
       )}
 
-      <section className="dashboard-section">
-        <h2>Agent Tree</h2>
-        <AgentTreeFlow runId={session.run_id} />
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Agent Tree
+        </h2>
+        <AgentTreeFlow runId={sessionData.run_id} />
       </section>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Session header with stop button
+// ---------------------------------------------------------------------------
+
+function SessionHeader({
+  session,
+  projectId,
+  runId,
+  onStopped,
+}: {
+  session: SessionDetailType;
+  projectId: number;
+  runId: string;
+  onStopped: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const stopSession = useStopSession();
+  const active =
+    session.status === "starting" || session.status === "running";
+
+  return (
+    <div className="flex items-center justify-between">
+      <h1 className="text-2xl font-bold tracking-tight">
+        Session {session.run_id.slice(0, 16)}
+      </h1>
+      <div className="flex gap-2">
+        {active &&
+          (confirming ? (
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  await stopSession.mutateAsync(runId);
+                  setConfirming(false);
+                  onStopped();
+                }}
+                disabled={stopSession.isPending}
+              >
+                Confirm
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="destructive" onClick={() => setConfirming(true)}>
+              <OctagonX className="mr-2 h-4 w-4" />
+              Stop Session
+            </Button>
+          ))}
+        <Button variant="outline" asChild>
+          <Link to={`/projects/${projectId}`}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Session metadata card
+// ---------------------------------------------------------------------------
+
+function StatusBadge({ status }: { status: string }) {
+  const variant = statusVariant(status);
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "text-xs font-medium",
+        variant === "running" && "border-green-200 bg-green-50 text-green-700",
+        variant === "success" && "border-green-200 bg-green-50 text-green-700",
+        variant === "error" && "border-red-200 bg-red-50 text-red-700",
+        variant === "warning" &&
+          "border-orange-200 bg-orange-50 text-orange-700",
+        variant === "default" && "border-muted bg-muted text-muted-foreground",
+      )}
+    >
+      {status === "running" && (
+        <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+      )}
+      {status}
+    </Badge>
+  );
+}
+
+function statusVariant(status: string): string {
+  switch (status) {
+    case "running":
+    case "starting":
+      return "running";
+    case "completed":
+      return "success";
+    case "failed":
+      return "error";
+    case "stopped":
+      return "warning";
+    default:
+      return "default";
+  }
+}
+
+function SessionMetadata({ session }: { session: SessionDetailType }) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="font-medium text-muted-foreground">Status</dt>
+          <dd>
+            <StatusBadge status={session.status} />
+          </dd>
+          <dt className="font-medium text-muted-foreground">Role</dt>
+          <dd>{session.role}</dd>
+          <dt className="font-medium text-muted-foreground">Runtime</dt>
+          <dd>{session.runtime}</dd>
+          <dt className="font-medium text-muted-foreground">Isolation</dt>
+          <dd>{session.isolation}</dd>
+          <dt className="font-medium text-muted-foreground">Started</dt>
+          <dd>{formatTime(session.started_at)}</dd>
+          {session.ended_at && (
+            <>
+              <dt className="font-medium text-muted-foreground">Ended</dt>
+              <dd>{formatTime(session.ended_at)}</dd>
+            </>
+          )}
+          <dt className="font-medium text-muted-foreground">Duration</dt>
+          <dd>{formatDuration(session.duration_ms)}</dd>
+          {session.exit_code !== null && (
+            <>
+              <dt className="font-medium text-muted-foreground">Exit Code</dt>
+              <dd>{session.exit_code}</dd>
+            </>
+          )}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -252,25 +427,18 @@ function ArtifactList({
   artifacts: ArtifactEntry[];
   runId: string;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-
   return (
-    <div className="artifact-list">
+    <div className="space-y-1">
       {artifacts.map((a) => (
-        <div key={`${a.event}-${a.hash}`} className="artifact-item">
-          <button
-            className="artifact-toggle"
-            onClick={() =>
-              setExpanded(expanded === a.hash ? null : a.hash)
-            }
-          >
-            <span className="artifact-icon">{expanded === a.hash ? "▼" : "▶"}</span>
-            <span className="artifact-label">{a.label}</span>
-          </button>
-          {expanded === a.hash && (
+        <Collapsible key={`${a.event}-${a.hash}`}>
+          <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm hover:bg-muted">
+            <ChevronRight className="h-3 w-3 transition-transform [[data-state=open]>&]:rotate-90" />
+            <span className="font-medium text-primary">{a.label}</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
             <ArtifactContent runId={runId} hash={a.hash} />
-          )}
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
       ))}
     </div>
   );
@@ -290,27 +458,22 @@ function ArtifactContent({ runId, hash }: { runId: string; hash: string }) {
       .catch((err) => setError(err.message));
   }, [runId, hash]);
 
-  if (error) return <p className="error">Error: {error}</p>;
-  if (content === null) return <p className="loading-text">Loading...</p>;
-  return <pre className="artifact-content">{content}</pre>;
-}
-
-// ---------------------------------------------------------------------------
-// Detail row
-// ---------------------------------------------------------------------------
-
-function DetailRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+  if (error) {
+    return (
+      <p className="px-3 py-2 text-sm text-destructive">Error: {error}</p>
+    );
+  }
+  if (content === null) {
+    return (
+      <p className="px-3 py-2 text-sm text-muted-foreground">Loading...</p>
+    );
+  }
   return (
-    <div className="project-info-row">
-      <span className="project-info-label">{label}</span>
-      <span className="project-info-value">{children}</span>
-    </div>
+    <ScrollArea className="max-h-[300px]">
+      <pre className="whitespace-pre-wrap break-words rounded-b-md bg-muted/30 px-3 py-2 font-mono text-xs leading-relaxed">
+        {content}
+      </pre>
+    </ScrollArea>
   );
 }
 
@@ -318,99 +481,127 @@ function DetailRow({
 // Event timeline
 // ---------------------------------------------------------------------------
 
-function EventTimeline({ events, runId }: { events: TraceEvent[]; runId: string }) {
-  const [artifact, setArtifact] = useState<{ hash: string; label: string } | null>(null);
+function EventBadge({ event }: { event: string }) {
+  const variant = eventVariant(event);
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "text-xs font-medium",
+        variant === "running" && "border-green-200 bg-green-50 text-green-700",
+        variant === "success" && "border-green-200 bg-green-50 text-green-700",
+        variant === "error" && "border-red-200 bg-red-50 text-red-700",
+        variant === "default" && "border-muted bg-muted text-muted-foreground",
+      )}
+    >
+      {event}
+    </Badge>
+  );
+}
+
+function eventVariant(event: string): string {
+  if (event.endsWith("_start") || event === "agent_spawn") return "running";
+  if (event.endsWith("_end")) return "success";
+  if (event.includes("denied") || event.includes("error")) return "error";
+  return "default";
+}
+
+function EventTimeline({
+  events,
+  runId,
+}: {
+  events: TraceEvent[];
+  runId: string;
+}) {
+  const [artifact, setArtifact] = useState<{
+    hash: string;
+    label: string;
+  } | null>(null);
 
   return (
     <>
-      <table className="session-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Event</th>
-            <th>Span</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((e, i) => (
-            <tr key={i}>
-              <td>{formatTime(e.ts)}</td>
-              <td>
-                <span className={`badge badge-${eventColor(e.event)}`}>
-                  {e.event}
-                </span>
-              </td>
-              <td className="agent-meta">{e.span_id.slice(0, 8)}</td>
-              <td className="cell-task">
-                {formatEventData(e, (hash, label) => setArtifact({ hash, label }))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {artifact && (
-        <ArtifactModal
-          runId={runId}
-          artifactHash={artifact.hash}
-          label={artifact.label}
-          onClose={() => setArtifact(null)}
-        />
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Event</TableHead>
+                <TableHead>Span</TableHead>
+                <TableHead>Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {events.map((e, i) => (
+                <TableRow key={i}>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatTime(e.ts)}
+                  </TableCell>
+                  <TableCell>
+                    <EventBadge event={e.event} />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {e.span_id.slice(0, 8)}
+                  </TableCell>
+                  <TableCell className="max-w-[400px] text-sm">
+                    {formatEventData(e, (hash, label) =>
+                      setArtifact({ hash, label }),
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!artifact} onOpenChange={() => setArtifact(null)}>
+        <DialogContent className="max-w-3xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{artifact?.label}</DialogTitle>
+          </DialogHeader>
+          {artifact && (
+            <ArtifactModalContent runId={runId} hash={artifact.hash} />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-function ArtifactModal({
+function ArtifactModalContent({
   runId,
-  artifactHash,
-  label,
-  onClose,
+  hash,
 }: {
   runId: string;
-  artifactHash: string;
-  label: string;
-  onClose: () => void;
+  hash: string;
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/sessions/${runId}/artifacts/${artifactHash}`)
+    fetch(`/api/sessions/${runId}/artifacts/${hash}`)
       .then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.text();
       })
       .then(setContent)
       .catch((err) => setError(err.message));
-  }, [runId, artifactHash]);
+  }, [runId, hash]);
 
+  if (error) {
+    return <p className="text-sm text-destructive">Error: {error}</p>;
+  }
+  if (content === null) {
+    return <p className="text-sm text-muted-foreground">Loading...</p>;
+  }
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{label}</h3>
-          <button className="btn btn-sm" onClick={onClose}>Close</button>
-        </div>
-        <div className="modal-body">
-          {error ? (
-            <p className="error">Error: {error}</p>
-          ) : content === null ? (
-            <p>Loading...</p>
-          ) : (
-            <pre className="artifact-content">{content}</pre>
-          )}
-        </div>
-      </div>
-    </div>
+    <ScrollArea className="max-h-[60vh]">
+      <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+        {content}
+      </pre>
+    </ScrollArea>
   );
-}
-
-function eventColor(event: string): string {
-  if (event.endsWith("_start") || event === "agent_spawn") return "running";
-  if (event.endsWith("_end")) return "success";
-  if (event.includes("denied") || event.includes("error")) return "error";
-  return "default";
 }
 
 function formatEventData(
@@ -419,7 +610,6 @@ function formatEventData(
 ): React.ReactNode {
   const d = e.data;
 
-  // Collect artifact buttons
   const buttons: React.ReactNode[] = [];
   for (const [key, value] of Object.entries(d)) {
     if (key.endsWith("_ref") && value) {
@@ -427,7 +617,7 @@ function formatEventData(
       buttons.push(
         <button
           key={key}
-          className="btn-artifact"
+          className="rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-xs text-primary hover:bg-primary/10"
           onClick={() => onArtifactClick(String(value), label)}
         >
           {label}
@@ -436,27 +626,26 @@ function formatEventData(
     }
   }
 
-  // Collect all non-ref data fields as key=value params
   const params: React.ReactNode[] = [];
   for (const [key, value] of Object.entries(d)) {
     if (key.endsWith("_ref")) continue;
     if (value === null || value === undefined || value === "") continue;
-    const display = key === "duration_ms"
-      ? formatDuration(value as number)
-      : Array.isArray(value)
-        ? value.join(", ")
-        : String(value);
+    const display =
+      key === "duration_ms"
+        ? formatDuration(value as number)
+        : Array.isArray(value)
+          ? value.join(", ")
+          : String(value);
     params.push(
       <span key={key}>
-        <span className="event-param-key">{key}=</span>
-        <span className="event-param-value">{display}</span>
+        <span className="text-muted-foreground">{key}=</span>
+        <span>{display}</span>
       </span>,
     );
   }
 
-  // Delegation summary — styled for emphasis
   const summary = d.summary ? (
-    <span key="summary" className="delegate-summary">
+    <span key="summary" className="italic text-foreground/80">
       {String(d.summary)}
     </span>
   ) : null;
@@ -464,11 +653,13 @@ function formatEventData(
   return (
     <>
       {buttons.length > 0 && (
-        <div className="event-artifacts">{buttons}</div>
+        <div className="mb-1 flex flex-wrap gap-1">{buttons}</div>
       )}
       {summary}
       {params.length > 0 && (
-        <div className="event-params">{params}</div>
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          {params}
+        </div>
       )}
     </>
   );

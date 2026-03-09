@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { api } from "@/api/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Folder, FolderUp } from "lucide-react";
 
 interface DirEntry {
   name: string;
@@ -56,49 +67,57 @@ export default function DirBrowser({
   }, []);
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Select Directory</h3>
-          <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-            &times;
-          </button>
-        </div>
-        <div className="dir-browser-path">{current?.path}</div>
-        {error && <p className="error" style={{ padding: "0.5rem 1rem" }}>{error}</p>}
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Select Directory</DialogTitle>
+        </DialogHeader>
+
+        {current && (
+          <div className="break-all rounded-md bg-muted px-3 py-1.5 font-mono text-xs">
+            {current.path}
+          </div>
+        )}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
         {loading && !current ? (
-          <p style={{ padding: "1rem" }}>Loading...</p>
+          <p className="py-4 text-sm text-muted-foreground">Loading...</p>
         ) : (
-          <ul className="dir-browser-list">
-            {current?.parent && (
-              <li>
+          <ScrollArea className="h-[300px]">
+            <div className="space-y-0.5">
+              {current?.parent && (
                 <button
-                  className="dir-entry"
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-primary hover:bg-accent"
                   onClick={() => browse(current.parent!)}
                 >
+                  <FolderUp className="h-4 w-4" />
                   ..
                 </button>
-              </li>
-            )}
-            {current?.entries.map((e) => (
-              <li key={e.path}>
-                <button className="dir-entry" onClick={() => browse(e.path)}>
+              )}
+              {current?.entries.map((e) => (
+                <button
+                  key={e.path}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-primary hover:bg-accent"
+                  onClick={() => browse(e.path)}
+                >
+                  <Folder className="h-4 w-4" />
                   {e.name}
                 </button>
-              </li>
-            ))}
-            {current?.entries.length === 0 && (
-              <li className="empty" style={{ padding: "0.75rem" }}>
-                No subdirectories
-              </li>
-            )}
-          </ul>
+              ))}
+              {current?.entries.length === 0 && (
+                <p className="px-3 py-4 text-sm italic text-muted-foreground">
+                  No subdirectories
+                </p>
+              )}
+            </div>
+          </ScrollArea>
         )}
-        <div className="modal-footer">
+
+        <DialogFooter>
           {newFolderName !== null ? (
-            <div className="input-with-button" style={{ flex: 1 }}>
-              <input
-                type="text"
+            <div className="flex w-full gap-2">
+              <Input
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => {
@@ -107,38 +126,42 @@ export default function DirBrowser({
                 }}
                 placeholder="Folder name"
                 autoFocus
+                className="flex-1"
               />
-              <button className="btn btn-primary btn-sm" onClick={createFolder}>
+              <Button size="sm" onClick={createFolder}>
                 Create
-              </button>
-              <button className="btn btn-sm" onClick={() => setNewFolderName(null)}>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setNewFolderName(null)}
+              >
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
             <>
-              <button
-                className="btn"
+              <Button
+                variant="outline"
                 onClick={() => setNewFolderName("")}
                 disabled={!current}
               >
                 New Folder
-              </button>
-              <div style={{ flex: 1 }} />
-              <button
-                className="btn btn-primary"
+              </Button>
+              <div className="flex-1" />
+              <Button
                 onClick={() => current && onSelect(current.path)}
                 disabled={!current}
               >
                 Select
-              </button>
-              <button className="btn" onClick={onCancel}>
+              </Button>
+              <Button variant="outline" onClick={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
