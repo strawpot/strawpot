@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  MarkerType,
   type Node,
   type Edge,
   type NodeProps,
@@ -132,7 +135,20 @@ function assignPositions(
 // ---- Main component ----
 
 export default function AgentTreeFlow({ runId }: { runId: string }) {
+  return (
+    <ReactFlowProvider>
+      <AgentTreeFlowInner runId={runId} />
+    </ReactFlowProvider>
+  );
+}
+
+function AgentTreeFlowInner({ runId }: { runId: string }) {
   const { tree, connected } = useTreeSSE(runId);
+  const { fitView } = useReactFlow();
+
+  const handleReset = useCallback(() => {
+    fitView({ duration: 300 });
+  }, [fitView]);
 
   const { flowNodes, flowEdges } = useMemo(() => {
     if (!tree) return { flowNodes: [], flowEdges: [] };
@@ -202,6 +218,7 @@ export default function AgentTreeFlow({ runId }: { runId: string }) {
           source: n.parent,
           target: n.agent_id,
           type: "smoothstep",
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
         });
       }
     }
@@ -212,6 +229,7 @@ export default function AgentTreeFlow({ runId }: { runId: string }) {
           source: p.requested_by,
           target: `pending-${p.span_id}`,
           type: "smoothstep",
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
           style: { strokeDasharray: "5 3" },
         });
       }
@@ -243,6 +261,9 @@ export default function AgentTreeFlow({ runId }: { runId: string }) {
           elementsSelectable={false}
           proOptions={{ hideAttribution: true }}
         />
+        <button className="btn btn-sm tree-reset-btn" onClick={handleReset}>
+          Reset View
+        </button>
       </div>
 
       {tree.denied_delegations.length > 0 && (
