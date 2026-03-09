@@ -313,6 +313,7 @@ class Session:
         self._agent_spans: dict[str, str] = {}
         self._orchestrator_result: AgentResult | None = None
         self._orchestrator_role_prompt: str = ""
+        self._files_dirs: list[str] = []
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -424,7 +425,14 @@ class Session:
                         card_count=len(get_result.context_cards) if get_result.context_cards else 0,
                     )
 
-            # 5b. Spawn orchestrator (interactive mode)
+            # 5b. Resolve project files directories
+            files_dirs: list[str] = []
+            files_dir = os.path.join(self._working_dir, ".strawpot", "files")
+            if os.path.isdir(files_dir):
+                files_dirs.append(files_dir)
+            self._files_dirs = files_dirs
+
+            # 5c. Spawn orchestrator (interactive mode)
             env = {
                 "PERMISSION_MODE": self.config.permission_mode,
                 "DENDEN_ADDR": self._denden_addr,
@@ -438,8 +446,9 @@ class Session:
                 agent_workspace_dir=workspace,
                 role_prompt=role_prompt,
                 memory_prompt=memory_prompt,
-                skills_dir=skills_dir,
+                skills_dirs=[skills_dir],
                 roles_dirs=[roles_dir],
+                files_dirs=files_dirs,
                 task=self.task,
                 env=env,
             )
@@ -456,7 +465,7 @@ class Session:
                     pid=handle.pid,
                     working_dir=self._env.path,
                     agent_workspace_dir=workspace,
-                    skills_dir=skills_dir,
+                    skills_dir=skills_dir,  # tracer takes single string
                     roles_dirs=[roles_dir],
                     task=self.task or "",
                     context=agent_context,
@@ -787,6 +796,7 @@ class Session:
                 parent_span=requester_span,
                 agent_spans=self._agent_spans,
                 register_agent=self._register_agent,
+                files_dirs=self._files_dirs,
             )
             return ok_response(
                 request.request_id,

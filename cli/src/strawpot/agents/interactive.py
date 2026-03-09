@@ -71,8 +71,9 @@ class InteractiveWrapperRuntime:
         agent_workspace_dir: str,
         role_prompt: str,
         memory_prompt: str,
-        skills_dir: str,
+        skills_dirs: list[str],
         roles_dirs: list[str],
+        files_dirs: list[str],
         task: str,
         env: dict[str, str],
     ) -> AgentHandle:
@@ -91,10 +92,13 @@ class InteractiveWrapperRuntime:
             "--memory-prompt", memory_prompt,
             "--task", task,
             "--config", json.dumps(self.inner.spec.config),
-            "--skills-dir", skills_dir,
         ]
+        for sd in skills_dirs:
+            args.extend(["--skills-dir", sd])
         for rd in roles_dirs:
             args.extend(["--roles-dir", rd])
+        for fd in files_dirs:
+            args.extend(["--files-dir", fd])
 
         data = self.inner._run_subcommand(args, extra_env=env)
         agent_cmd = data["cmd"]
@@ -228,8 +232,9 @@ class DirectWrapperRuntime:
         agent_workspace_dir: str,
         role_prompt: str,
         memory_prompt: str,
-        skills_dir: str,
+        skills_dirs: list[str],
         roles_dirs: list[str],
+        files_dirs: list[str],
         task: str,
         env: dict[str, str],
     ) -> AgentHandle:
@@ -248,10 +253,13 @@ class DirectWrapperRuntime:
             "--memory-prompt", memory_prompt,
             "--task", task,
             "--config", json.dumps(self.inner.spec.config),
-            "--skills-dir", skills_dir,
         ]
+        for sd in skills_dirs:
+            args.extend(["--skills-dir", sd])
         for rd in roles_dirs:
             args.extend(["--roles-dir", rd])
+        for fd in files_dirs:
+            args.extend(["--files-dir", fd])
 
         data = self.inner._run_subcommand(args, extra_env=env)
         agent_cmd = data["cmd"]

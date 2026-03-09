@@ -153,8 +153,9 @@ class WrapperRuntime:
         agent_workspace_dir: str,
         role_prompt: str,
         memory_prompt: str,
-        skills_dir: str,
+        skills_dirs: list[str],
         roles_dirs: list[str],
+        files_dirs: list[str],
         task: str,
         env: dict[str, str],
     ) -> AgentHandle:
@@ -173,16 +174,19 @@ class WrapperRuntime:
             "--memory-prompt", memory_prompt,
             "--task", task,
             "--config", json.dumps(self.spec.config),
-            "--skills-dir", skills_dir,
         ]
+        for sd in skills_dirs:
+            args.extend(["--skills-dir", sd])
         for rd in roles_dirs:
             args.extend(["--roles-dir", rd])
+        for fd in files_dirs:
+            args.extend(["--files-dir", fd])
 
         logger.debug(
             "spawn agent_id=%s working_dir=%s agent_workspace_dir=%s "
-            "skills_dir=%s roles_dirs=%s task_len=%d role_prompt_len=%d",
+            "skills_dirs=%s roles_dirs=%s task_len=%d role_prompt_len=%d",
             agent_id, working_dir, agent_workspace_dir,
-            skills_dir, roles_dirs, len(task), len(role_prompt),
+            skills_dirs, roles_dirs, len(task), len(role_prompt),
         )
 
         data = self._run_subcommand(args, extra_env=env)

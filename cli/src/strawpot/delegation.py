@@ -676,6 +676,7 @@ def handle_delegate(
     parent_span: str | None = None,
     agent_spans: dict[str, str] | None = None,
     register_agent: Callable[[str, str, str, int | None], None] | None = None,
+    files_dirs: list[str] | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -869,8 +870,9 @@ def handle_delegate(
             agent_workspace_dir=workspace,
             role_prompt=role_prompt,
             memory_prompt=memory_prompt,
-            skills_dir=skills_dir,
+            skills_dirs=[skills_dir],
             roles_dirs=roles_dirs,
+            files_dirs=files_dirs or [],
             task=task_text,
             env=env,
         )
