@@ -83,7 +83,7 @@ export default function Dashboard() {
                       {!p.dir_exists && (
                         <Badge
                           variant="outline"
-                          className="border-orange-200 bg-orange-50 text-xs text-orange-700"
+                          className="border-orange-200 bg-orange-50 text-xs text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400"
                         >
                           Directory missing
                         </Badge>
@@ -91,7 +91,7 @@ export default function Dashboard() {
                       {(runningByProject.get(p.id) ?? 0) > 0 && (
                         <Badge
                           variant="outline"
-                          className="border-green-200 bg-green-50 text-xs text-green-700"
+                          className="border-green-200 bg-green-50 text-xs text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
                         >
                           <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
                           {runningByProject.get(p.id)} running
