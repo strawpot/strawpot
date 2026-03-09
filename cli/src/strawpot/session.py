@@ -312,6 +312,7 @@ class Session:
         self._session_start_time: float = 0.0
         self._agent_spans: dict[str, str] = {}
         self._orchestrator_result: AgentResult | None = None
+        self._orchestrator_role_prompt: str = ""
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -386,6 +387,7 @@ class Session:
                 delegatable_roles=delegatable or None,
                 global_skills=[(s, d) for s, d, _ in global_skills] or None,
             )
+            self._orchestrator_role_prompt = role_prompt
 
             # 4. Stage role + create agent workspace
             agent_id = f"agent_{uuid.uuid4().hex[:12]}"
@@ -499,7 +501,7 @@ class Session:
                         session_id=self._run_id,
                         agent_id=orch_agent_id,
                         role=self.config.orchestrator_role,
-                        behavior_ref="",
+                        behavior_ref=self._orchestrator_role_prompt,
                         task=self.task,
                         status=status,
                         output=output,
@@ -513,7 +515,7 @@ class Session:
                         session_id=self._run_id,
                         agent_id=orch_agent_id,
                         role=self.config.orchestrator_role,
-                        behavior_ref="",
+                        behavior_ref=self._orchestrator_role_prompt,
                         task=self.task or "",
                         status=status,
                         output=output,

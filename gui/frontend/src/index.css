@@ -544,10 +544,18 @@
 /* React Flow agent tree */
 
 .react-flow-wrapper {
+  position: relative;
   height: 400px;
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 6px;
+}
+
+.tree-reset-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
 }
 
 .agent-flow-node {
