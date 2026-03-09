@@ -17,68 +17,74 @@ class TestEventBus:
         """Publishing with no subscribers should not raise."""
         bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
 
-    @pytest.mark.asyncio
-    async def test_subscribe_receives_events(self, bus):
+    def test_subscribe_receives_events(self, bus):
         """Subscriber receives published events."""
-        received = []
 
-        async def consumer():
-            async for event in bus.subscribe():
-                received.append(event)
-                if len(received) >= 2:
-                    break
+        async def _run():
+            received = []
 
-        task = asyncio.create_task(consumer())
+            async def consumer():
+                async for event in bus.subscribe():
+                    received.append(event)
+                    if len(received) >= 2:
+                        break
 
-        # Give subscriber time to register
-        await asyncio.sleep(0.01)
+            task = asyncio.create_task(consumer())
+            await asyncio.sleep(0.01)
 
-        bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
-        bus.publish(SessionEvent(kind="session_completed", run_id="run_1"))
+            bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
+            bus.publish(SessionEvent(kind="session_completed", run_id="run_1"))
 
-        await asyncio.wait_for(task, timeout=2.0)
+            await asyncio.wait_for(task, timeout=2.0)
 
-        assert len(received) == 2
-        assert received[0].kind == "session_started"
-        assert received[1].kind == "session_completed"
+            assert len(received) == 2
+            assert received[0].kind == "session_started"
+            assert received[1].kind == "session_completed"
 
-    @pytest.mark.asyncio
-    async def test_multiple_subscribers(self, bus):
+        asyncio.run(_run())
+
+    def test_multiple_subscribers(self, bus):
         """Multiple subscribers each receive all events."""
-        received_1 = []
-        received_2 = []
 
-        async def consumer(target):
-            async for event in bus.subscribe():
-                target.append(event)
-                if len(target) >= 1:
-                    break
+        async def _run():
+            received_1 = []
+            received_2 = []
 
-        t1 = asyncio.create_task(consumer(received_1))
-        t2 = asyncio.create_task(consumer(received_2))
+            async def consumer(target):
+                async for event in bus.subscribe():
+                    target.append(event)
+                    if len(target) >= 1:
+                        break
 
-        await asyncio.sleep(0.01)
+            t1 = asyncio.create_task(consumer(received_1))
+            t2 = asyncio.create_task(consumer(received_2))
 
-        bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
+            await asyncio.sleep(0.01)
 
-        await asyncio.wait_for(asyncio.gather(t1, t2), timeout=2.0)
+            bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
 
-        assert len(received_1) == 1
-        assert len(received_2) == 1
+            await asyncio.wait_for(asyncio.gather(t1, t2), timeout=2.0)
 
-    @pytest.mark.asyncio
-    async def test_subscriber_cleanup_on_break(self, bus):
+            assert len(received_1) == 1
+            assert len(received_2) == 1
+
+        asyncio.run(_run())
+
+    def test_subscriber_cleanup_on_break(self, bus):
         """Subscriber is removed from bus when generator is closed."""
 
-        async def consume_one():
-            async for event in bus.subscribe():
-                break  # immediately exit after first event
+        async def _run():
+            async def consume_one():
+                async for event in bus.subscribe():
+                    break
 
-        task = asyncio.create_task(consume_one())
-        await asyncio.sleep(0.01)
-        bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
-        await asyncio.wait_for(task, timeout=2.0)
-        assert len(bus._subscribers) == 0
+            task = asyncio.create_task(consume_one())
+            await asyncio.sleep(0.01)
+            bus.publish(SessionEvent(kind="session_started", run_id="run_1"))
+            await asyncio.wait_for(task, timeout=2.0)
+            assert len(bus._subscribers) == 0
+
+        asyncio.run(_run())
 
     def test_full_queue_drops_event(self, bus):
         """Events are dropped when a subscriber's queue is full."""
