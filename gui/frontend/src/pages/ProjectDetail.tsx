@@ -5,6 +5,7 @@ import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
 import ProjectFilesTab from "@/components/ProjectFilesTab";
+import ProjectResourcesTab from "@/components/ProjectResourcesTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -107,6 +108,7 @@ export default function ProjectDetail() {
           <TabsTrigger value="sessions">
             Sessions ({sessionList.length})
           </TabsTrigger>
+          <TabsTrigger value="resources">Resources</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
 
@@ -122,6 +124,10 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="resources" className="mt-4">
+          <ProjectResourcesTab projectId={pid} />
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">

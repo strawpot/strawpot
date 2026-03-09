@@ -99,6 +99,10 @@ export interface ResourceDetail extends Resource {
   body: string;
 }
 
+export interface ProjectResource extends Resource {
+  type: string; // "roles" | "skills" | "agents" | "memories"
+}
+
 export interface InstallResult {
   exit_code: number;
   stdout: string;

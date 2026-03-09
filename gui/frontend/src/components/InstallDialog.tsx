@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useInstallResource } from "@/hooks/mutations/use-registry";
+import { useInstallProjectResource } from "@/hooks/mutations/use-project-resources";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,11 +34,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultType?: string;
+  projectId?: number;
 }
 
 type ResultState = { status: "success" | "error"; message: string } | null;
 
-export default function InstallDialog({ open, onOpenChange, defaultType }: Props) {
+export default function InstallDialog({ open, onOpenChange, defaultType, projectId }: Props) {
   const [type, setType] = useState(defaultType ?? "roles");
   const [name, setName] = useState("");
   const [result, setResult] = useState<ResultState>(null);
@@ -46,7 +48,9 @@ export default function InstallDialog({ open, onOpenChange, defaultType }: Props
   useEffect(() => {
     if (open && defaultType) setType(defaultType);
   }, [open, defaultType]);
-  const install = useInstallResource();
+  const globalInstall = useInstallResource();
+  const projectInstall = useInstallProjectResource(projectId ?? 0);
+  const install = projectId ? projectInstall : globalInstall;
   const isDone = result?.status === "success";
 
   const handleInstall = () => {
@@ -87,7 +91,7 @@ export default function InstallDialog({ open, onOpenChange, defaultType }: Props
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Install Resource</DialogTitle>
+          <DialogTitle>{projectId ? "Install Resource to Project" : "Install Resource"}</DialogTitle>
           <DialogDescription>
             Install a resource from StrawHub by name.
           </DialogDescription>

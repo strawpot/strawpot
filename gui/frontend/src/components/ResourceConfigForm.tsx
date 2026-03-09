@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useResourceConfig } from "@/hooks/queries/use-resource-config";
+import { useProjectResourceConfig } from "@/hooks/queries/use-project-resources";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useSaveResourceConfig } from "@/hooks/mutations/use-registry";
+import { useSaveProjectResourceConfig } from "@/hooks/mutations/use-project-resources";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -21,19 +23,31 @@ interface Props {
   resourceType: string;
   resourceName: string;
   enabled: boolean;
+  projectId?: number;
 }
 
 export default function ResourceConfigForm({
   resourceType,
   resourceName,
   enabled,
+  projectId,
 }: Props) {
-  const { data: config, isLoading } = useResourceConfig(
+  const globalConfig = useResourceConfig(
     resourceType,
     resourceName,
-    { enabled },
+    { enabled: enabled && !projectId },
   );
-  const save = useSaveResourceConfig();
+  const projectConfig = useProjectResourceConfig(
+    projectId ?? 0,
+    resourceType,
+    resourceName,
+    { enabled: enabled && !!projectId },
+  );
+  const { data: config, isLoading } = projectId ? projectConfig : globalConfig;
+
+  const globalSave = useSaveResourceConfig();
+  const projectSave = useSaveProjectResourceConfig(projectId ?? 0);
+  const save = projectId ? projectSave : globalSave;
   const { data: agents } = useResources("agents", {
     enabled: enabled && resourceType === "roles",
   });

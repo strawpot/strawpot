@@ -5,6 +5,11 @@ import {
   useUpdateResource,
   useReinstallResource,
 } from "@/hooks/mutations/use-registry";
+import {
+  useUninstallProjectResource,
+  useUpdateProjectResource,
+  useReinstallProjectResource,
+} from "@/hooks/mutations/use-project-resources";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +28,7 @@ interface Props {
   resourceType: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectId?: number;
 }
 
 export default function ResourceDetailSheet({
@@ -30,10 +36,23 @@ export default function ResourceDetailSheet({
   resourceType,
   open,
   onOpenChange,
+  projectId,
 }: Props) {
-  const uninstall = useUninstallResource();
-  const updateResource = useUpdateResource();
-  const reinstall = useReinstallResource();
+  // Global mutations
+  const globalUninstall = useUninstallResource();
+  const globalUpdate = useUpdateResource();
+  const globalReinstall = useReinstallResource();
+
+  // Project mutations (always instantiated; idle when not used)
+  const projUninstall = useUninstallProjectResource(projectId ?? 0);
+  const projUpdate = useUpdateProjectResource(projectId ?? 0);
+  const projReinstall = useReinstallProjectResource(projectId ?? 0);
+
+  // Pick the right set based on scope
+  const uninstall = projectId ? projUninstall : globalUninstall;
+  const updateResource = projectId ? projUpdate : globalUpdate;
+  const reinstall = projectId ? projReinstall : globalReinstall;
+
   const [confirming, setConfirming] = useState(false);
   const actionPending = updateResource.isPending || reinstall.isPending || uninstall.isPending;
 
@@ -136,6 +155,7 @@ export default function ResourceDetailSheet({
             resourceType={resourceType}
             resourceName={resource.name}
             enabled={open}
+            projectId={projectId}
           />
           <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap mt-4">
             {resource.body || "No content."}
