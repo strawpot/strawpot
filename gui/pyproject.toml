@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "strawpot",
     "tomli_w>=1.0",
+    "watchfiles>=1.0",
 ]
 
 [project.scripts]

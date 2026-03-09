@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from strawpot.config import get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
+from strawpot_gui.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
 from strawpot_gui.routers import config, fs, health, projects, sessions, sse
@@ -73,6 +74,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
     app.state.db_path = db_path
+    app.state.event_bus = event_bus
 
     # CORS — only enabled when developing the frontend with Vite dev server
     if os.environ.get("STRAWPOT_GUI_DEV"):
