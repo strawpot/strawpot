@@ -209,10 +209,31 @@
 }
 
 .cell-task {
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+}
+
+.event-artifacts {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.event-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  font-size: 0.82rem;
+  color: #444;
+}
+
+.event-param-key {
+  color: #888;
+}
+
+.event-param-value {
+  color: #222;
+  word-break: break-all;
 }
 
 /* Page header */

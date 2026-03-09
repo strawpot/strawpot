@@ -157,25 +157,30 @@ def _sync_project_sessions(
     conn: sqlite3.Connection, project_id: int, working_dir: str
 ) -> None:
     """Scan a single project's session directories and upsert rows."""
-    sessions_base = os.path.join(working_dir, ".strawpot", "sessions")
+    strawpot_dir = os.path.join(working_dir, ".strawpot")
+    sessions_base = os.path.join(strawpot_dir, "sessions")
     if not os.path.isdir(sessions_base):
         return
 
-    # Scan active sessions
-    for entry in os.listdir(sessions_base):
-        if entry == "archive" or not entry.startswith("run_"):
-            continue
-        session_dir = os.path.join(sessions_base, entry)
-        _upsert_session(conn, project_id, session_dir, is_archived=False)
+    # Scan running sessions (symlinks in .strawpot/running/)
+    running_dir = os.path.join(strawpot_dir, "running")
+    if os.path.isdir(running_dir):
+        for entry in os.listdir(running_dir):
+            if not entry.startswith("run_"):
+                continue
+            session_dir = os.path.join(sessions_base, entry)
+            if os.path.isdir(session_dir):
+                _upsert_session(conn, project_id, session_dir, is_archived=False)
 
-    # Scan archived sessions
-    archive_dir = os.path.join(sessions_base, "archive")
+    # Scan archived sessions (symlinks in .strawpot/archive/)
+    archive_dir = os.path.join(strawpot_dir, "archive")
     if os.path.isdir(archive_dir):
         for entry in os.listdir(archive_dir):
             if not entry.startswith("run_"):
                 continue
-            session_dir = os.path.join(archive_dir, entry)
-            _upsert_session(conn, project_id, session_dir, is_archived=True)
+            session_dir = os.path.join(sessions_base, entry)
+            if os.path.isdir(session_dir):
+                _upsert_session(conn, project_id, session_dir, is_archived=True)
 
 
 def _upsert_session(

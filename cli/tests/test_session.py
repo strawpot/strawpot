@@ -84,7 +84,11 @@ def _make_resolved(tmp_path, slug="orchestrator", body="You orchestrate."):
 
 
 def _write_stale_session(tmp_path, run_id, **overrides):
-    """Write a session.json file with the given run_id and a dead PID."""
+    """Write a session.json file with the given run_id and a dead PID.
+
+    Also creates a ``running/<run_id>`` symlink so
+    ``recover_stale_sessions`` can discover the session.
+    """
     session_dir = os.path.join(
         str(tmp_path), ".strawpot", "sessions", run_id
     )
@@ -102,6 +106,10 @@ def _write_stale_session(tmp_path, run_id, **overrides):
     data.update(overrides)
     with open(os.path.join(session_dir, "session.json"), "w") as f:
         json.dump(data, f)
+    # Create running/ symlink at .strawpot/running/
+    running_dir = os.path.join(str(tmp_path), ".strawpot", "running")
+    os.makedirs(running_dir, exist_ok=True)
+    os.symlink(os.path.join("..", "sessions", run_id), os.path.join(running_dir, run_id))
     return session_dir
 
 
@@ -326,8 +334,8 @@ class TestStop:
         isolator.cleanup.assert_called_once()
 
     @patch("strawpot.session.DenDenServer")
-    def test_removes_session_dir(self, mock_server_cls, tmp_path):
-        """stop() removes the entire session directory."""
+    def test_archives_session_dir(self, mock_server_cls, tmp_path):
+        """stop() swaps running symlink to archive symlink."""
         mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
@@ -335,11 +343,13 @@ class TestStop:
 
         session.start(str(tmp_path))
 
-        # After stop, session directory should be removed
-        session_dir = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", session._run_id
-        )
-        assert not os.path.exists(session_dir)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        # Session dir stays in place
+        session_dir = os.path.join(strawpot_dir, "sessions", session._run_id)
+        assert os.path.isdir(session_dir)
+        # Running symlink removed, archive symlink created
+        assert not os.path.islink(os.path.join(strawpot_dir, "running", session._run_id))
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", session._run_id))
 
 
 # ---------------------------------------------------------------------------
@@ -807,24 +817,29 @@ class TestSessionStateFile:
         assert data["worktree_branch"] == "strawpot/run_wt"
 
     def test_archive_session_dir(self, tmp_path):
-        """_archive_session_dir moves session directory to archive/."""
+        """_archive_session_dir swaps running symlink for archive symlink."""
         session = _make_session(tmp_path)
         session._working_dir = str(tmp_path)
         session._run_id = "run_rm"
         session._env = IsolatedEnv(path=str(tmp_path))
         session._write_session_file()
 
-        session_dir = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "run_rm"
-        )
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        session_dir = os.path.join(strawpot_dir, "sessions", "run_rm")
+        running_link = os.path.join(strawpot_dir, "running", "run_rm")
         assert os.path.isdir(session_dir)
+        assert os.path.islink(running_link)
+
         session._archive_session_dir()
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_rm"
-        )
-        assert os.path.isdir(archived)
-        assert os.path.isfile(os.path.join(archived, "session.json"))
+
+        # Session dir stays in place
+        assert os.path.isdir(session_dir)
+        assert os.path.isfile(os.path.join(session_dir, "session.json"))
+        # Running symlink removed, archive symlink created
+        assert not os.path.islink(running_link)
+        archive_link = os.path.join(strawpot_dir, "archive", "run_rm")
+        assert os.path.islink(archive_link)
+        assert os.path.isdir(archive_link)
 
 
 # ---------------------------------------------------------------------------
@@ -845,17 +860,18 @@ class TestRecoverStaleSessions:
         assert result == []
 
     def test_stale_none_isolation(self, tmp_path):
-        """Stale session with isolation=none — archives session dir."""
+        """Stale session with isolation=none — swaps running→archive symlink."""
         session_dir = _write_stale_session(tmp_path, "run_stale1")
 
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
         assert result == ["run_stale1"]
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_stale1"
-        )
-        assert os.path.isdir(archived)
+        # Session dir stays in place
+        assert os.path.isdir(session_dir)
+        # Running symlink removed, archive symlink created
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        assert not os.path.islink(os.path.join(strawpot_dir, "running", "run_stale1"))
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_stale1"))
 
     def test_running_session_skipped(self, tmp_path):
         """Session with a live PID is not recovered."""
@@ -881,12 +897,15 @@ class TestRecoverStaleSessions:
 
     def test_corrupt_session_json_skipped(self, tmp_path):
         """Corrupt session.json is skipped without crashing."""
-        session_dir = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "run_corrupt"
-        )
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        session_dir = os.path.join(strawpot_dir, "sessions", "run_corrupt")
         os.makedirs(session_dir, exist_ok=True)
         with open(os.path.join(session_dir, "session.json"), "w") as f:
             f.write("NOT JSON")
+        # Create running/ symlink so it's discovered
+        running_dir = os.path.join(strawpot_dir, "running")
+        os.makedirs(running_dir, exist_ok=True)
+        os.symlink(os.path.join("..", "sessions", "run_corrupt"), os.path.join(running_dir, "run_corrupt"))
 
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
@@ -900,11 +919,13 @@ class TestRecoverStaleSessions:
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
         assert sorted(result) == ["run_a", "run_b"]
-        assert not os.path.exists(dir1)
-        assert not os.path.exists(dir2)
-        archive = os.path.join(str(tmp_path), ".strawpot", "sessions", "archive")
-        assert os.path.isdir(os.path.join(archive, "run_a"))
-        assert os.path.isdir(os.path.join(archive, "run_b"))
+        # Session dirs stay in place
+        assert os.path.isdir(dir1)
+        assert os.path.isdir(dir2)
+        # Archive symlinks created
+        archive = os.path.join(str(tmp_path), ".strawpot", "archive")
+        assert os.path.islink(os.path.join(archive, "run_a"))
+        assert os.path.islink(os.path.join(archive, "run_b"))
 
     @patch("strawpot.session._recover_merge", return_value=True)
     @patch("strawpot.session.WorktreeIsolator")
@@ -930,11 +951,10 @@ class TestRecoverStaleSessions:
         mock_wt_cls.return_value.cleanup.assert_called_once()
         cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
         assert cleanup_kwargs["delete_branch"] is True
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_wt"
-        )
-        assert os.path.isdir(archived)
+        # Session dir stays, archive symlink created
+        assert os.path.isdir(session_dir)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_wt"))
 
     @patch("strawpot.session._recover_merge", return_value=False)
     @patch("strawpot.session.WorktreeIsolator")
@@ -975,11 +995,10 @@ class TestRecoverStaleSessions:
 
         assert result == ["run_noinfo"]
         mock_wt_cls.return_value.cleanup.assert_called_once()
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_noinfo"
-        )
-        assert os.path.isdir(archived)
+        # Session dir stays, archive symlink created
+        assert os.path.isdir(session_dir)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_noinfo"))
 
     def test_worktree_dir_missing_skips_merge(self, tmp_path):
         """Worktree dir already removed — skips merge, still cleans up."""
@@ -998,11 +1017,10 @@ class TestRecoverStaleSessions:
         assert result == ["run_gone"]
         # Cleanup still called even though worktree is missing (idempotent)
         mock_wt_cls.return_value.cleanup.assert_called_once()
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_gone"
-        )
-        assert os.path.isdir(archived)
+        # Session dir stays, archive symlink created
+        assert os.path.isdir(session_dir)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_gone"))
 
     @patch("strawpot.session.WorktreeIsolator")
     def test_isolator_cleanup_failure_still_archives_dir(
@@ -1023,26 +1041,28 @@ class TestRecoverStaleSessions:
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
         assert result == ["run_fail"]
-        assert not os.path.exists(session_dir)
-        archived = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_fail"
-        )
-        assert os.path.isdir(archived)
+        # Session dir stays, archive symlink created
+        assert os.path.isdir(session_dir)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_fail"))
 
     def test_archive_dir_skipped_during_scan(self, tmp_path):
-        """The archive/ directory itself is not treated as a session."""
-        # Create a real stale session and an archive dir with old sessions
+        """Archived sessions (only in archive/) are not re-recovered."""
+        # Create a real stale session with running/ symlink
         _write_stale_session(tmp_path, "run_real")
-        archive_dir = os.path.join(
-            str(tmp_path), ".strawpot", "sessions", "archive", "run_old"
-        )
-        os.makedirs(archive_dir)
-        with open(os.path.join(archive_dir, "session.json"), "w") as f:
+        # Create an already-archived session (no running/ symlink)
+        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
+        old_dir = os.path.join(strawpot_dir, "sessions", "run_old")
+        os.makedirs(old_dir, exist_ok=True)
+        with open(os.path.join(old_dir, "session.json"), "w") as f:
             json.dump({"run_id": "run_old", "working_dir": str(tmp_path), "pid": 1}, f)
+        archive_dir = os.path.join(strawpot_dir, "archive")
+        os.makedirs(archive_dir, exist_ok=True)
+        os.symlink(os.path.join("..", "sessions", "run_old"), os.path.join(archive_dir, "run_old"))
 
         result = recover_stale_sessions(str(tmp_path), _make_config())
 
-        # Only the real session is recovered, not the archived one
+        # Only the session with a running/ symlink is recovered
         assert result == ["run_real"]
 
 

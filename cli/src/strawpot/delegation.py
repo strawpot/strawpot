@@ -854,12 +854,21 @@ def handle_delegate(
             env=env,
         )
         if tracer is not None and delegate_span_id is not None:
+            agent_context = role_prompt
+            if memory_prompt:
+                agent_context += "\n\n" + memory_prompt
             tracer.agent_spawn(
                 span_id=delegate_span_id,
                 agent_id=agent_id,
                 role=request.role_slug,
                 runtime=runtime.name,
                 pid=handle.pid,
+                working_dir=working_dir,
+                agent_workspace_dir=workspace,
+                skills_dir=skills_dir,
+                roles_dirs=roles_dirs,
+                task=task_text,
+                context=agent_context,
             )
             if agent_spans is not None:
                 agent_spans[agent_id] = delegate_span_id
@@ -896,8 +905,14 @@ def handle_delegate(
                 tracer.memory_dump(
                     span_id=delegate_span_id,
                     provider=memory_provider.name,
-                    entries=result.output,
-                    entry_count=1,
+                    session_id=request.run_id,
+                    agent_id=agent_id,
+                    role=request.role_slug,
+                    behavior_ref=role_prompt,
+                    task=task_text,
+                    status=_agent_status(result, timed_out=timed_out),
+                    output=result.output,
+                    parent_agent_id=request.parent_agent_id,
                 )
 
         # 8b. Handle timeout — no retry on timeout

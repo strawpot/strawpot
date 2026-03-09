@@ -24,10 +24,10 @@ class TestErrorHandling:
             session.start(str(git_project))
         assert exc_info.value.code == 1
 
-        # Session should still clean up (archive/ may remain)
-        sessions_dir = git_project / ".strawpot" / "sessions"
-        if sessions_dir.exists():
-            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
+        # Session should still clean up (running/ should be empty)
+        running_dir = git_project / ".strawpot" / "running"
+        if running_dir.exists():
+            active = list(running_dir.iterdir())
             assert len(active) == 0
 
     def test_delegation_timeout(self, make_session, git_project):
@@ -41,20 +41,21 @@ class TestErrorHandling:
         # Should not hang — timeout kills the sub-agent
         session.start(str(git_project))
 
-        # Session should still clean up after timeout (archive/ may remain)
-        sessions_dir = git_project / ".strawpot" / "sessions"
-        if sessions_dir.exists():
-            active = [p for p in sessions_dir.iterdir() if p.name != "archive"]
+        # Session should still clean up (running/ should be empty)
+        running_dir = git_project / ".strawpot" / "running"
+        if running_dir.exists():
+            active = list(running_dir.iterdir())
             assert len(active) == 0
 
     def test_stale_session_recovery(self, git_project, make_config, strawpot_home):
         """Stale session files with dead PIDs are cleaned up."""
         config = make_config()
 
-        # Write a fake stale session file with a dead PID
-        sessions_dir = git_project / ".strawpot" / "sessions" / "run_stale123"
-        sessions_dir.mkdir(parents=True)
-        session_file = sessions_dir / "session.json"
+        # Write a fake stale session file with a dead PID + running symlink
+        strawpot_dir = git_project / ".strawpot"
+        session_dir = strawpot_dir / "sessions" / "run_stale123"
+        session_dir.mkdir(parents=True)
+        session_file = session_dir / "session.json"
         session_file.write_text(
             json.dumps(
                 {
@@ -68,11 +69,15 @@ class TestErrorHandling:
                 }
             )
         )
+        running_dir = strawpot_dir / "running"
+        running_dir.mkdir(parents=True, exist_ok=True)
+        (running_dir / "run_stale123").symlink_to("../sessions/run_stale123")
 
         recovered = recover_stale_sessions(str(git_project), config)
         assert "run_stale123" in recovered
 
-        # Session directory should be archived, not in active sessions
-        assert not sessions_dir.exists()
-        archived = git_project / ".strawpot" / "sessions" / "archive" / "run_stale123"
-        assert archived.exists()
+        # Session dir stays, running symlink removed, archive symlink created
+        assert session_dir.is_dir()
+        assert not (running_dir / "run_stale123").is_symlink()
+        archived = strawpot_dir / "archive" / "run_stale123"
+        assert archived.is_symlink()
