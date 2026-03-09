@@ -115,19 +115,19 @@ export default function LaunchDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">Role</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger id="role">
-                <SelectValue placeholder={defaultRole} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={defaultRole}>{defaultRole}</SelectItem>
-                {installedRoles.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              id="role"
+              list="datalist-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder={defaultRole}
+            />
+            <datalist id="datalist-role">
+              <option value={defaultRole} />
+              {installedRoles.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
           </div>
 
           <Collapsible>
