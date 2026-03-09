@@ -3,55 +3,21 @@
 import asyncio
 import json
 import os
-from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from watchfiles import awatch
 
-from strawpot_gui.db import get_db
 from strawpot_gui.event_bus import EventBus, SessionEvent, event_bus
-from strawpot_gui.sse import TreeState, format_sse, format_sse_typed, sse_retry
+from strawpot_gui.sse import (
+    TreeState,
+    format_sse,
+    format_sse_typed,
+    resolve_session_dir,
+    sse_retry,
+    watch_dir,
+)
 
 router = APIRouter(prefix="/api", tags=["sse"])
-
-# Fallback timeout (ms) for watchfiles — ensures periodic DB status checks
-# even when no file changes occur (e.g., user-initiated stop via API).
-_WATCH_TIMEOUT_MS = 5000
-
-
-async def _watch_session_dir(
-    session_dir: str, stop_event: asyncio.Event
-) -> AsyncIterator[set[str]]:
-    """Yield sets of changed file paths whenever the session directory changes.
-
-    Yields an empty set on timeout (no file changes detected within
-    _WATCH_TIMEOUT_MS), allowing callers to perform periodic checks.
-    """
-    try:
-        async for changes in awatch(
-            session_dir,
-            stop_event=stop_event,
-            rust_timeout=_WATCH_TIMEOUT_MS,
-            poll_delay_ms=50,
-        ):
-            yield {path for _, path in changes}
-    except (RuntimeError, FileNotFoundError):
-        # awatch raises FileNotFoundError if the directory doesn't exist,
-        # and RuntimeError if it is removed mid-watch.
-        return
-
-
-def _resolve_session_dir(db_path: str, run_id: str) -> tuple[str | None, str | None]:
-    """Look up session_dir and status from the database."""
-    with get_db(db_path) as conn:
-        row = conn.execute(
-            "SELECT session_dir, status FROM sessions WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
-    if not row:
-        return None, None
-    return row["session_dir"], row["status"]
 
 
 def _read_session_json(session_dir: str) -> dict | None:
@@ -116,7 +82,7 @@ def _publish_terminal(run_id: str, status: str) -> None:
 async def session_tree_sse(run_id: str, request: Request):
     """SSE endpoint for real-time agent tree updates."""
     db_path = request.app.state.db_path
-    session_dir, status = _resolve_session_dir(db_path, run_id)
+    session_dir, status = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         async def not_found():
@@ -154,7 +120,7 @@ async def session_tree_sse(run_id: str, request: Request):
         stop = asyncio.Event()
 
         try:
-            async for changed_files in _watch_session_dir(session_dir, stop):
+            async for changed_files in watch_dir(session_dir, stop):
                 if await request.is_disconnected():
                     return
 
@@ -162,7 +128,7 @@ async def session_tree_sse(run_id: str, request: Request):
 
                 if not changed_files:
                     # Timeout — no file changes; check DB status only
-                    _, current_status = _resolve_session_dir(db_path, run_id)
+                    _, current_status = resolve_session_dir(db_path, run_id)
                     if current_status in ("completed", "failed", "stopped"):
                         # Final read before closing
                         new_events, trace_offset = _read_trace_lines(
@@ -228,7 +194,7 @@ async def session_events_sse(run_id: str, request: Request):
     - Subsequent updates: sends ``event: delta`` with only new events
     """
     db_path = request.app.state.db_path
-    session_dir, status = _resolve_session_dir(db_path, run_id)
+    session_dir, status = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         async def not_found():
@@ -267,13 +233,13 @@ async def session_events_sse(run_id: str, request: Request):
         stop = asyncio.Event()
 
         try:
-            async for changed_files in _watch_session_dir(session_dir, stop):
+            async for changed_files in watch_dir(session_dir, stop):
                 if await request.is_disconnected():
                     return
 
                 if not changed_files:
                     # Timeout — check DB status
-                    _, current_status = _resolve_session_dir(db_path, run_id)
+                    _, current_status = resolve_session_dir(db_path, run_id)
                     if current_status in ("completed", "failed", "stopped"):
                         new_events, trace_offset = _read_trace_lines(
                             trace_path, trace_offset
