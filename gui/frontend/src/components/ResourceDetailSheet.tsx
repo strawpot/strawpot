@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { ResourceDetail } from "@/api/types";
-import { useUninstallResource } from "@/hooks/mutations/use-registry";
+import {
+  useUninstallResource,
+  useUpdateResource,
+  useReinstallResource,
+} from "@/hooks/mutations/use-registry";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +32,10 @@ export default function ResourceDetailSheet({
   onOpenChange,
 }: Props) {
   const uninstall = useUninstallResource();
+  const updateResource = useUpdateResource();
+  const reinstall = useReinstallResource();
   const [confirming, setConfirming] = useState(false);
+  const actionPending = updateResource.isPending || reinstall.isPending || uninstall.isPending;
 
   if (!resource) return null;
 
@@ -53,6 +60,38 @@ export default function ResourceDetailSheet({
           toast.error("Uninstall request failed");
           setConfirming(false);
         },
+      },
+    );
+  };
+
+  const handleUpdate = () => {
+    updateResource.mutate(
+      { type: resourceType, name: resource.name },
+      {
+        onSuccess: (result) => {
+          if (result.exit_code === 0) {
+            toast.success(`Updated ${resource.name}`);
+          } else {
+            toast.error(`Update failed: ${result.stderr || result.stdout}`);
+          }
+        },
+        onError: () => toast.error("Update request failed"),
+      },
+    );
+  };
+
+  const handleReinstall = () => {
+    reinstall.mutate(
+      { type: resourceType, name: resource.name },
+      {
+        onSuccess: (result) => {
+          if (result.exit_code === 0) {
+            toast.success(`Reinstalled ${resource.name}`);
+          } else {
+            toast.error(`Reinstall failed: ${result.stderr || result.stdout}`);
+          }
+        },
+        onError: () => toast.error("Reinstall request failed"),
       },
     );
   };
@@ -103,12 +142,28 @@ export default function ResourceDetailSheet({
           </div>
         </ScrollArea>
 
-        <div className="shrink-0 border-t border-border p-4">
+        <div className="shrink-0 border-t border-border p-4 flex gap-2">
+          <Button
+            size="sm"
+            onClick={handleUpdate}
+            disabled={actionPending}
+          >
+            {updateResource.isPending ? "Updating..." : "Update"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReinstall}
+            disabled={actionPending}
+          >
+            {reinstall.isPending ? "Reinstalling..." : "Reinstall"}
+          </Button>
+          <div className="flex-1" />
           <Button
             variant={confirming ? "destructive" : "outline"}
             size="sm"
             onClick={handleUninstall}
-            disabled={uninstall.isPending}
+            disabled={actionPending}
           >
             {uninstall.isPending
               ? "Uninstalling..."
@@ -120,7 +175,6 @@ export default function ResourceDetailSheet({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-2"
               onClick={() => setConfirming(false)}
             >
               Cancel

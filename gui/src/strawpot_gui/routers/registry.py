@@ -273,3 +273,39 @@ def uninstall_resource(resource_type: str, name: str):
     _validate_type(resource_type)
     singular = resource_type.rstrip("s") if resource_type != "memories" else "memory"
     return _run_strawhub("uninstall", singular, name, "--global")
+
+
+def _singular_type(resource_type: str) -> str:
+    return resource_type.rstrip("s") if resource_type != "memories" else "memory"
+
+
+@router.post("/update")
+def update_resource(data: dict = Body(...)):
+    """Update a resource to its latest version via strawhub."""
+    resource_type = data.get("type", "")
+    name = data.get("name", "")
+    if not resource_type or not name:
+        raise HTTPException(400, "Both 'type' and 'name' are required")
+    singular = _singular_type(resource_type)
+    return _run_strawhub("update", singular, name, "--global")
+
+
+@router.post("/reinstall")
+def reinstall_resource(data: dict = Body(...)):
+    """Reinstall a resource (re-download the current version) via strawhub."""
+    resource_type = data.get("type", "")
+    name = data.get("name", "")
+    if not resource_type or not name:
+        raise HTTPException(400, "Both 'type' and 'name' are required")
+
+    dir_name, _manifest = _validate_type(resource_type)
+    home = get_strawpot_home()
+    version_file = home / dir_name / name / ".version"
+    if not version_file.is_file():
+        raise HTTPException(404, f"Resource not found or has no version: {resource_type}/{name}")
+    version = version_file.read_text(encoding="utf-8").strip()
+    if not version:
+        raise HTTPException(404, f"Empty version file for: {resource_type}/{name}")
+
+    singular = _singular_type(resource_type)
+    return _run_strawhub("install", "-y", singular, name, "--version", version, "--force", "--global")
