@@ -22,3 +22,39 @@ export function useDeleteProject() {
     },
   });
 }
+
+export function useUploadProjectFiles() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      files,
+    }: {
+      projectId: number;
+      files: File[];
+    }) => api.upload(`/projects/${projectId}/files`, files),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.projects.files(variables.projectId),
+      });
+    },
+  });
+}
+
+export function useDeleteProjectFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      filePath,
+    }: {
+      projectId: number;
+      filePath: string;
+    }) => api.delete(`/projects/${projectId}/files/${filePath}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.projects.files(variables.projectId),
+      });
+    },
+  });
+}

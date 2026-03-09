@@ -1380,13 +1380,13 @@ through the UI.
 | 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install/uninstall | **Done** (Phase 5) |
 | 6.5 | Backend + frontend: per-resource env var and parameter configuration | **Done** (Phase 5) |
 | 7 | Backend + frontend: config editor (project + global) | **Done** (Phase 5) |
-| 7.5 | Backend + frontend: project files upload | Planned |
+| 7.5 | Backend + frontend: project files upload | **Done** (Phase 5) |
 | 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
 | 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
 | 10 | Ongoing session support (ask_user bridge) | Deferred |
 | 11 | Interactive GUI sessions (chat panel) | Deferred |
 
-**Next:** Phase 5 continued — Project files upload.
+**Next:** Deferred features or Phase 6 — Triggers.
 
 **Deferred features:**
 

@@ -17,7 +17,7 @@ from strawpot_gui.db import init_db, sync_sessions
 from strawpot_gui.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
-from strawpot_gui.routers import config, fs, health, logs, projects, registry, sessions, sse
+from strawpot_gui.routers import config, files, fs, health, logs, projects, registry, sessions, sse
 
 
 def _auto_rebuild_frontend(dist_dir: Path) -> None:
@@ -90,6 +90,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(config.router)
+    app.include_router(files.router)
     app.include_router(sessions.router)
     app.include_router(sse.router)
     app.include_router(logs.router)
