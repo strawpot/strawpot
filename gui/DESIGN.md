@@ -461,22 +461,34 @@ Writes to `<project>/strawpot.toml`.
 Both editors show the merged effective config (global + project) with
 indicators showing which values come from which source.
 
-### 8. Registry Browser
+### 8. Resource Browsers (Roles, Skills, Agents, Memory)
 
-Unified view across global and per-project installed items.
+Four dedicated browser pages — one for each resource type — accessible
+from the sidebar. Each browser provides a unified view across global
+and per-project installed items.
 
-| Tab | Project path | Global path |
-|-----|-------------|-------------|
+| Resource | Project path | Global path |
+|----------|-------------|-------------|
 | Roles | `.strawpot/roles/` | `~/.strawpot/roles/` |
 | Skills | `.strawpot/skills/` | `~/.strawpot/skills/` |
 | Agents | `.strawpot/agents/` | `~/.strawpot/agents/` |
-| Memories | `.strawpot/memory/` | `~/.strawpot/memory/` |
+| Memory | `.strawpot/memory/` | `~/.strawpot/memory/` |
 
 Each item displays: name, version, description (from frontmatter),
-install scope (project or global).
+install scope (project or global), and actions (install/uninstall).
 
-**Install from StrawHub** — search field queries the StrawHub registry.
-Install triggers `strawpot install <slug>` subprocess with a scope flag.
+**Browse**: List all installed items with scope indicator (project vs
+global). Filter by name, tag, or scope.
+
+**Install from StrawHub**: Search field queries the StrawHub registry.
+Install triggers `strawpot install <slug>` subprocess with a scope
+flag (`--project` or `--global`).
+
+**Uninstall**: Remove button triggers `strawpot uninstall <slug>`
+subprocess. Confirmation dialog before removal.
+
+**View details**: Click an item to see its full definition (YAML/MD
+frontmatter), usage instructions, and which projects reference it.
 
 ### 9. Project Files
 
@@ -1293,6 +1305,44 @@ than an ops tool.
 - `useKeyboardShortcuts` hook with key sequence detection
 - `ThemeToggle` component with light/dark/system options
 - CSS variables for dark theme (built into shadcn)
+- Class-based dark mode variant for Tailwind v4
+
+### Phase 5 — Config & Resource Management
+
+**Goal:** Let users browse, install, and uninstall roles, skills,
+agents, and memory providers — and edit project/global configuration
+through the UI.
+
+| Feature | Why |
+|---------|-----|
+| Role browser | Browse/install/uninstall roles per project or globally |
+| Skill browser | Browse/install/uninstall skills per project or globally |
+| Agent browser | Browse/install/uninstall agent definitions |
+| Memory browser | Browse/install/uninstall memory providers |
+| Config editor | Edit project and global `strawpot.toml` via forms |
+
+**Backend API endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/resources/{type}` | GET | List installed resources (roles/skills/agents/memory) |
+| `/api/v1/resources/{type}/{name}` | GET | Get resource detail (content, frontmatter) |
+| `/api/v1/resources/{type}/{name}` | DELETE | Uninstall a resource |
+| `/api/v1/resources/install` | POST | Install from StrawHub registry |
+| `/api/v1/config/project/{id}` | GET/PUT | Read/write project config |
+| `/api/v1/config/global` | GET/PUT | Read/write global config |
+
+**Scope:**
+- Backend: resource scanner reading `.strawpot/` and `~/.strawpot/`
+  directories, parsing frontmatter for metadata
+- Backend: install/uninstall endpoints wrapping `strawpot install`
+  and `strawpot uninstall` subprocesses
+- Frontend: four resource browser pages (Roles, Skills, Agents, Memory)
+  with list view, detail panel, install/uninstall actions
+- Frontend: sidebar navigation updated with resource browser links
+- Frontend: config editor page with form-based editing for project
+  and global `strawpot.toml`
+- Frontend: StrawHub search integration for discovering new resources
 
 ### Not Planned
 
@@ -1315,17 +1365,19 @@ than an ops tool.
 | 2 | Backend: session list/detail/launch/stop | **Done** |
 | 3 | Frontend: dashboard, project pages, session list | **Done** |
 | 4 | Backend + frontend: real-time agent tree (SSE + React Flow) | **Done** |
-| 5 | Backend + frontend: trace timeline, artifact inspector | **Done** (log viewer missing — see Phase 3) |
-| 6 | Backend + frontend: registry browser + StrawHub install | Planned |
-| 7 | Backend + frontend: config editor (project + global) | Planned (backend done, frontend not started) |
+| 5 | Backend + frontend: trace timeline, artifact inspector | **Done** |
+| 5.5 | Frontend: agent log viewer, launch dialog, skeleton loaders | **Done** (Phase 3) |
+| 5.6 | Frontend: dashboard activity feed, live agent output | **Done** (Phase 3) |
+| 5.7 | Frontend: command palette, keyboard shortcuts, dark mode | **Done** (Phase 4) |
+| 6 | Backend + frontend: resource browsers (roles, skills, agents, memory) + StrawHub install | Planned (Phase 5) |
+| 7 | Backend + frontend: config editor (project + global) | Planned (Phase 5, backend done) |
 | 7.5 | Backend + frontend: project files upload | Planned |
 | 8 | Trigger manager + adapter protocol + CRUD API | Deferred |
 | 9 | Built-in trigger adapters (cron, GitHub) | Deferred |
 | 10 | Ongoing session support (ask_user bridge) | Deferred |
 | 11 | Interactive GUI sessions (chat panel) | Deferred |
 
-**Next:** Tech Stack Evolution Phases 1–2 (Foundation + Real-Time
-Engine), then Phase 3 (Product UX).
+**Next:** Phase 5 — Config & Resource Management.
 
 **Deferred features:**
 
