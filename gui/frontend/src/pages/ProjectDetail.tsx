@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useProject } from "@/hooks/queries/use-projects";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
+import Pagination from "@/components/Pagination";
 import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
 import ProjectFilesTab from "@/components/ProjectFilesTab";
@@ -31,7 +32,8 @@ export default function ProjectDetail() {
   const { projectId } = useParams();
   const pid = Number(projectId);
   const project = useProject(pid);
-  const sessions = useProjectSessions(pid);
+  const [sessionPage, setSessionPage] = useState(1);
+  const sessions = useProjectSessions(pid, sessionPage);
   const resources = useProjectResources(pid);
   const [launchOpen, setLaunchOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
@@ -61,7 +63,10 @@ export default function ProjectDetail() {
   }
 
   const p = project.data;
-  const sessionList = sessions.data ?? [];
+  const sessionData = sessions.data;
+  const sessionList = sessionData?.items ?? [];
+  const sessionTotal = sessionData?.total ?? 0;
+  const sessionTotalPages = sessionData ? Math.ceil(sessionData.total / sessionData.per_page) : 0;
   const resourceList = resources.data ?? [];
 
   const resourceCounts = resourceList.reduce<Record<string, number>>((acc, r) => {
@@ -156,7 +161,7 @@ export default function ProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="sessions">
-            Sessions ({sessionList.length})
+            Sessions ({sessionTotal})
           </TabsTrigger>
           <TabsTrigger value="resources">
             Resources ({resourceList.length})
@@ -165,16 +170,23 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="sessions" className="mt-4 space-y-3">
-          {sessionList.length === 0 ? (
+          {sessionTotal === 0 ? (
             <p className="text-sm italic text-muted-foreground">
               No sessions yet.
             </p>
           ) : (
-            <Card>
-              <CardContent className="p-0">
-                <SessionTable sessions={sessionList} />
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardContent className="p-0">
+                  <SessionTable sessions={sessionList} />
+                </CardContent>
+              </Card>
+              <Pagination
+                page={sessionPage}
+                totalPages={sessionTotalPages}
+                onPageChange={setSessionPage}
+              />
+            </>
           )}
         </TabsContent>
 

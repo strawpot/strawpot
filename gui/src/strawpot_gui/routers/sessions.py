@@ -310,7 +310,12 @@ def list_all_sessions(
 
 
 @router.get("/projects/{project_id}/sessions")
-def list_sessions(project_id: int, conn=Depends(get_db_conn)):
+def list_sessions(
+    project_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    conn=Depends(get_db_conn),
+):
     project = conn.execute(
         "SELECT id FROM projects WHERE id = ?", (project_id,)
     ).fetchone()
@@ -325,13 +330,25 @@ def list_sessions(project_id: int, conn=Depends(get_db_conn)):
     for r in active:
         _refresh_session_status(conn, r["run_id"])
 
+    total = conn.execute(
+        "SELECT count(*) FROM sessions WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+
+    offset = (page - 1) * per_page
     rows = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
         "       started_at, ended_at, duration_ms, exit_code, task, summary"
-        "  FROM sessions WHERE project_id = ? ORDER BY started_at DESC",
-        (project_id,),
+        "  FROM sessions WHERE project_id = ? ORDER BY started_at DESC"
+        "  LIMIT ? OFFSET ?",
+        (project_id, per_page, offset),
     ).fetchall()
-    return [dict(row) for row in rows]
+
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 @router.get("/projects/{project_id}/sessions/{run_id}")
