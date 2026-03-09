@@ -640,6 +640,9 @@ def _emit_delegate_end(
     summary: str,
     start_time: float,
     output: str = "",
+    role: str = "",
+    session_id: str = "",
+    agent_id: str = "",
 ) -> None:
     """Emit delegate_end if tracer is active."""
     if tracer is not None and span_id is not None:
@@ -650,6 +653,9 @@ def _emit_delegate_end(
             summary=summary,
             duration_ms=duration_ms,
             output=output,
+            role=role,
+            session_id=session_id,
+            agent_id=agent_id,
         )
 
 
@@ -723,6 +729,8 @@ def handle_delegate(
             parent_span=parent_span,
             context=request.task_text,
             depth=request.depth,
+            session_id=request.run_id,
+            parent_agent_id=request.parent_agent_id,
         )
 
     # 2. Resolve role + skills
@@ -833,8 +841,14 @@ def handle_delegate(
                 tracer.memory_get(
                     span_id=delegate_span_id,
                     provider=memory_provider.name,
+                    session_id=request.run_id,
+                    agent_id=agent_id,
+                    role=request.role_slug,
+                    behavior_ref=role_prompt,
+                    task=task_text,
                     cards=get_result.context_cards or [],
                     card_count=len(get_result.context_cards) if get_result.context_cards else 0,
+                    parent_agent_id=request.parent_agent_id,
                 )
 
         # 7b. Spawn
@@ -894,6 +908,9 @@ def handle_delegate(
                 exit_code=result.exit_code,
                 output=result.output,
                 duration_ms=agent_duration_ms,
+                agent_id=agent_id,
+                role=request.role_slug,
+                session_id=request.run_id,
             )
 
         # 8a. Memory dump — record result after wait
@@ -932,6 +949,8 @@ def handle_delegate(
                 tracer, delegate_span_id, 1,
                 f"Agent timed out after {config.agent_timeout}s",
                 delegate_start_time, output=result.output,
+                role=request.role_slug, session_id=request.run_id,
+                agent_id=agent_id,
             )
             return DelegateResult(
                 summary=f"Agent timed out after {config.agent_timeout}s",
@@ -944,6 +963,8 @@ def handle_delegate(
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
                 result.summary, delegate_start_time, output=result.output,
+                role=request.role_slug, session_id=request.run_id,
+                agent_id=agent_id,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -959,6 +980,8 @@ def handle_delegate(
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
                 result.summary, delegate_start_time, output=result.output,
+                role=request.role_slug, session_id=request.run_id,
+                agent_id=agent_id,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -978,6 +1001,8 @@ def handle_delegate(
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
                 result.summary, delegate_start_time, output=result.output,
+                role=request.role_slug, session_id=request.run_id,
+                agent_id=agent_id,
             )
             return DelegateResult(
                 summary=result.summary,
@@ -1004,6 +1029,8 @@ def handle_delegate(
     _emit_delegate_end(
         tracer, delegate_span_id, result.exit_code,
         result.summary, delegate_start_time, output=result.output,
+        role=request.role_slug, session_id=request.run_id,
+        agent_id=agent_id,
     )
     return DelegateResult(
         summary=result.summary,

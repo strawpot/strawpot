@@ -177,12 +177,28 @@ function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
         agentId: d.agent_id ? String(d.agent_id) : undefined,
       });
     }
-    if (e.event === "memory_get" && d.cards_ref) {
-      artifacts.push({
-        label: `Memory Cards (${d.provider || "memory"})`,
-        hash: String(d.cards_ref),
-        event: e.event,
-      });
+    if (e.event === "memory_get") {
+      if (d.cards_ref) {
+        artifacts.push({
+          label: `Memory Cards (${d.provider || "memory"})`,
+          hash: String(d.cards_ref),
+          event: e.event,
+        });
+      }
+      if (d.behavior_ref) {
+        artifacts.push({
+          label: `Memory Get Behavior (${d.role || "agent"})`,
+          hash: String(d.behavior_ref),
+          event: e.event,
+        });
+      }
+      if (d.task_ref) {
+        artifacts.push({
+          label: `Memory Get Task (${d.role || "agent"})`,
+          hash: String(d.task_ref),
+          event: e.event,
+        });
+      }
     }
     if (e.event === "memory_dump") {
       if (d.output_ref) {

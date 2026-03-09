@@ -225,10 +225,13 @@ class TestDelegateEvents:
         span_id = tracer.delegate_start(
             role="reviewer", parent_span="root",
             context="Review this code please.",
+            session_id="run_abc", parent_agent_id="agent_000",
         )
         assert isinstance(span_id, str)
         events = _read_events(session_dir)
         assert events[0]["event"] == "delegate_start"
+        assert events[0]["data"]["session_id"] == "run_abc"
+        assert events[0]["data"]["parent_agent_id"] == "agent_000"
         ref = events[0]["data"]["context_ref"]
         assert ref is not None
         artifact_path = os.path.join(session_dir, "artifacts", ref)
@@ -249,12 +252,16 @@ class TestDelegateEvents:
         tracer.delegate_end(
             span_id="s1", exit_code=0, summary="Done", duration_ms=1234,
             output="task output here",
+            role="reviewer", session_id="run_abc", agent_id="agent_123",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "delegate_end"
         assert events[0]["data"]["exit_code"] == 0
         assert events[0]["data"]["summary"] == "Done"
         assert events[0]["data"]["duration_ms"] == 1234
+        assert events[0]["data"]["role"] == "reviewer"
+        assert events[0]["data"]["session_id"] == "run_abc"
+        assert events[0]["data"]["agent_id"] == "agent_123"
         ref = events[0]["data"]["output_ref"]
         assert ref is not None
         artifact_path = os.path.join(session_dir, "artifacts", ref)
@@ -291,18 +298,30 @@ class TestMemoryEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.memory_get(
             span_id="s1", provider="semantic",
+            session_id="run_abc", agent_id="agent_123",
+            role="implementer", behavior_ref="You are an implementer.",
+            task="write tests",
             cards=["card1", "card2"], card_count=2,
+            parent_agent_id="agent_000",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "memory_get"
         assert events[0]["data"]["card_count"] == 2
+        assert events[0]["data"]["session_id"] == "run_abc"
+        assert events[0]["data"]["agent_id"] == "agent_123"
+        assert events[0]["data"]["role"] == "implementer"
+        assert events[0]["data"]["behavior_ref"] is not None
+        assert events[0]["data"]["task_ref"] is not None
+        assert events[0]["data"]["parent_agent_id"] == "agent_000"
         ref = events[0]["data"]["cards_ref"]
         assert ref is not None
 
     def test_memory_get_empty_cards(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.memory_get(
-            span_id="s1", provider="noop", cards=[], card_count=0,
+            span_id="s1", provider="noop",
+            session_id="run_x", agent_id="agent_x", role="worker",
+            cards=[], card_count=0,
         )
         events = _read_events(session_dir)
         assert events[0]["data"]["cards_ref"] is None
@@ -384,11 +403,15 @@ class TestAgentEvents:
         tracer.agent_end(
             span_id="s1", exit_code=0,
             output="task completed successfully", duration_ms=9876,
+            agent_id="agent_123", role="implementer", session_id="run_abc",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "agent_end"
         assert events[0]["data"]["exit_code"] == 0
         assert events[0]["data"]["duration_ms"] == 9876
+        assert events[0]["data"]["agent_id"] == "agent_123"
+        assert events[0]["data"]["role"] == "implementer"
+        assert events[0]["data"]["session_id"] == "run_abc"
         ref = events[0]["data"]["output_ref"]
         assert ref is not None
         artifact_path = os.path.join(session_dir, "artifacts", ref)
