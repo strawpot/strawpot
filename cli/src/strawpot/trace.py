@@ -134,7 +134,7 @@ class Tracer:
         )
 
     def delegate_start(
-        self, *, role: str, parent_span: str, context: str
+        self, *, role: str, parent_span: str, context: str, depth: int = 0
     ) -> str:
         """Emit ``delegate_start``.  Stores context as artifact.  Returns new span_id."""
         span_id = self._new_span_id()
@@ -144,6 +144,7 @@ class Tracer:
             span_id,
             parent_span=parent_span,
             role=role,
+            depth=depth,
             context_ref=context_ref,
         )
         return span_id
@@ -169,7 +170,7 @@ class Tracer:
         )
 
     def delegate_denied(
-        self, *, role: str, parent_span: str, reason: str
+        self, *, role: str, parent_span: str, reason: str, depth: int = 0
     ) -> None:
         """Emit ``delegate_denied``."""
         span_id = self._new_span_id()
@@ -179,6 +180,7 @@ class Tracer:
             parent_span=parent_span,
             role=role,
             reason=reason,
+            depth=depth,
         )
 
     def memory_get(
@@ -246,6 +248,7 @@ class Tracer:
         roles_dirs: list[str] | None = None,
         task: str = "",
         context: str = "",
+        depth: int = 0,
     ) -> None:
         """Emit ``agent_spawn``.  Stores context and task as artifacts."""
         context_ref = self.store_artifact(context)
@@ -263,6 +266,7 @@ class Tracer:
             roles_dirs=roles_dirs or [],
             task_ref=task_ref,
             context_ref=context_ref,
+            depth=depth,
         )
 
     def agent_end(

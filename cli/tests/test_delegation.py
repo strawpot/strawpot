@@ -1565,6 +1565,46 @@ class TestIntegration:
         assert kw["env"]["DENDEN_PARENT_AGENT_ID"] == "agent_orch"
         assert kw["env"]["DENDEN_RUN_ID"] == "run_session"
 
+    def test_register_agent_called_on_spawn(self, tmp_path):
+        """register_agent callback is called with spawned agent info."""
+        base = str(tmp_path / "registry")
+        role_path = _write_role(base, "worker", "You work.")
+
+        resolved = {
+            "slug": "worker",
+            "kind": "role",
+            "version": "1.0",
+            "path": role_path,
+            "source": "local",
+            "dependencies": [],
+        }
+
+        runtime = _mock_runtime(summary="Done", output="ok")
+        registered = []
+
+        handle_delegate(
+            request=_make_request(
+                role_slug="worker",
+                task_text="do work",
+                parent_agent_id="agent_parent",
+                depth=1,
+            ),
+            config=_make_config(),
+            runtime=runtime,
+            working_dir=str(tmp_path / "worktree"),
+            session_dir=str(tmp_path / "session"),
+            resolve_role=lambda slug, kind="role": resolved,
+            resolve_role_dirs=lambda s: None,
+            register_agent=lambda aid, role, pid, ppid: registered.append(
+                (aid, role, pid, ppid)
+            ),
+        )
+
+        assert len(registered) == 1
+        agent_id, role, parent_id, pid = registered[0]
+        assert role == "worker"
+        assert parent_id == "agent_parent"
+
 
 # ---------------------------------------------------------------------------
 # Memory helpers

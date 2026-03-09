@@ -667,6 +667,7 @@ def handle_delegate(
     tracer: Tracer | None = None,
     parent_span: str | None = None,
     agent_spans: dict[str, str] | None = None,
+    register_agent: Callable[[str, str, str, int | None], None] | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -700,6 +701,9 @@ def handle_delegate(
         agent_spans: Shared dict mapping agent_id to its delegation
             span_id.  Populated here so sub-delegations from the
             spawned agent can look up the correct parent span.
+        register_agent: Optional callback to register spawned agents
+            in the session state. Signature:
+            ``(agent_id, role, parent_id, pid)``.
 
     Returns:
         DelegateResult with summary and output from the sub-agent.
@@ -718,6 +722,7 @@ def handle_delegate(
             role=request.role_slug,
             parent_span=parent_span,
             context=request.task_text,
+            depth=request.depth,
         )
 
     # 2. Resolve role + skills
@@ -869,9 +874,14 @@ def handle_delegate(
                 roles_dirs=roles_dirs,
                 task=task_text,
                 context=agent_context,
+                depth=request.depth + 1,
             )
             if agent_spans is not None:
                 agent_spans[agent_id] = delegate_span_id
+
+        # 7c. Register agent in session state for depth tracking
+        if register_agent is not None:
+            register_agent(agent_id, request.role_slug, request.parent_agent_id, handle.pid)
 
         # 8. Wait
         result = runtime.wait(handle, timeout=config.agent_timeout)
