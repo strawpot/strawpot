@@ -16,7 +16,7 @@ from strawpot.agents.interactive import (
     DirectWrapperRuntime,
     InteractiveWrapperRuntime,
 )
-from strawpot.agents.registry import resolve_agent, validate_agent
+from strawpot.agents.registry import parse_agent_md, resolve_agent, validate_agent
 from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, load_config
@@ -34,6 +34,17 @@ def cli():
 # ---------------------------------------------------------------------------
 
 
+def _get_agent_install_cmd(agent_dir: Path) -> str | None:
+    """Read metadata.strawpot.install.<os> from AGENT.md frontmatter."""
+    try:
+        from strawpot.agents.registry import _current_os
+        frontmatter, _ = parse_agent_md(agent_dir / "AGENT.md")
+        install_map = frontmatter.get("metadata", {}).get("strawpot", {}).get("install", {})
+        return install_map.get(_current_os())
+    except (ValueError, OSError):
+        return None
+
+
 def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install an agent from StrawHub if it is not found locally."""
     try:
@@ -45,13 +56,29 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     else:
         return  # already available
 
-    # Check if agent files exist but binary is missing (needs install script)
+    # Check if agent files exist but binary is missing (needs install)
     agent_dirs = [
         Path(working_dir) / ".strawpot" / "agents" / name,
         get_strawpot_home() / "agents" / name,
     ]
     for agent_dir in agent_dirs:
         if (agent_dir / "AGENT.md").is_file():
+            # 1. Try metadata.strawpot.install.<os> from AGENT.md frontmatter
+            install_cmd = _get_agent_install_cmd(agent_dir)
+            if install_cmd:
+                click.echo(f"Running install for '{name}'...")
+                result = subprocess.run(
+                    ["sh", "-c", install_cmd],
+                    cwd=str(agent_dir),
+                    env={**os.environ, "INSTALL_DIR": str(agent_dir)},
+                    stdin=sys.stdin,
+                    stdout=sys.stdout,
+                    stderr=sys.stderr,
+                )
+                if result.returncode != 0:
+                    click.echo(f"Install failed for '{name}'.", err=True)
+                return
+            # 2. Fallback to install.sh on disk
             install_script = agent_dir / "install.sh"
             if install_script.is_file():
                 click.echo(f"Running install script for '{name}'...")
@@ -66,7 +93,7 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
                 if result.returncode != 0:
                     click.echo(f"Install script failed for '{name}'.", err=True)
                 return
-            click.echo(f"Agent '{name}' binary is missing and no install script found.", err=True)
+            click.echo(f"Agent '{name}' binary is missing and no install command found.", err=True)
             return
 
     if not auto_setup:
@@ -91,13 +118,13 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
         click.echo(f"Failed to install agent '{name}'.", err=True)
         return
 
-    # Run install.sh if present (downloads compiled binary into agent dir)
+    # Run install command from AGENT.md or fallback to install.sh
     global_agent_dir = get_strawpot_home() / "agents" / name
-    install_script = global_agent_dir / "install.sh"
-    if install_script.is_file():
-        click.echo(f"Running install script for '{name}'...")
+    install_cmd = _get_agent_install_cmd(global_agent_dir)
+    if install_cmd:
+        click.echo(f"Running install for '{name}'...")
         result = subprocess.run(
-            ["sh", str(install_script)],
+            ["sh", "-c", install_cmd],
             cwd=str(global_agent_dir),
             env={**os.environ, "INSTALL_DIR": str(global_agent_dir)},
             stdin=sys.stdin,
@@ -105,7 +132,21 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
             stderr=sys.stderr,
         )
         if result.returncode != 0:
-            click.echo(f"Install script failed for '{name}'.", err=True)
+            click.echo(f"Install failed for '{name}'.", err=True)
+    else:
+        install_script = global_agent_dir / "install.sh"
+        if install_script.is_file():
+            click.echo(f"Running install script for '{name}'...")
+            result = subprocess.run(
+                ["sh", str(install_script)],
+                cwd=str(global_agent_dir),
+                env={**os.environ, "INSTALL_DIR": str(global_agent_dir)},
+                stdin=sys.stdin,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+            if result.returncode != 0:
+                click.echo(f"Install script failed for '{name}'.", err=True)
 
 
 def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
