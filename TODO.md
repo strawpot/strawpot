@@ -21,6 +21,16 @@
   Pre/post spawn, pre/post cleanup extension points. Allow users to run
   custom scripts at key session lifecycle events.
 
+- [ ] **Cost / token tracking**
+  Requires wrapper protocol extension. The wrapper protocol is stateless
+  (called once to translate args to CLI command) — no callback to return
+  metrics. Needs a sidecar file approach: wrapper writes
+  `<workspace>/.metrics.json` after agent exits, `WrapperRuntime` reads
+  it and passes to tracer via extended `AgentResult.metrics` field.
+  Each runtime reports usage differently (Claude Code, Gemini, etc.),
+  so per-wrapper parsing is needed. GUI side is straightforward once
+  trace events carry the data.
+
 ## Security
 
 - [ ] **Sanitize summary field in session API responses**
