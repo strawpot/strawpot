@@ -114,7 +114,10 @@ class SessionOverrides(BaseModel):
     runtime: str | None = None
     isolation: str | None = None
     merge_strategy: str | None = None
+    memory: str | None = None
     cache_delegations: bool | None = None
+    cache_max_entries: int | None = None
+    cache_ttl_seconds: int | None = None
 
 
 class SessionLaunch(BaseModel):
@@ -145,7 +148,10 @@ def launch_session_subprocess(
     isolation_override: str | None = None,
     merge_strategy_override: str | None = None,
     context_files: list[str] | None = None,
+    memory_override: str | None = None,
     cache_delegations: bool | None = None,
+    cache_max_entries: int | None = None,
+    cache_ttl_seconds: int | None = None,
     schedule_id: int | None = None,
     interactive: bool = False,
 ) -> str:
@@ -242,10 +248,16 @@ def launch_session_subprocess(
         cmd.extend(["--isolation", isolation_override])
     if merge_strategy_override:
         cmd.extend(["--merge-strategy", merge_strategy_override])
+    if memory_override:
+        cmd.extend(["--memory", memory_override])
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
     if cache_delegations is False:
         cmd.append("--no-cache-delegations")
+    if cache_max_entries is not None:
+        cmd.extend(["--cache-max-entries", str(cache_max_entries)])
+    if cache_ttl_seconds is not None:
+        cmd.extend(["--cache-ttl-seconds", str(cache_ttl_seconds)])
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.
@@ -302,7 +314,10 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             runtime_override=body.overrides.runtime if body.overrides else None,
             isolation_override=body.overrides.isolation if body.overrides else None,
             merge_strategy_override=body.overrides.merge_strategy if body.overrides else None,
+            memory_override=body.overrides.memory if body.overrides else None,
             cache_delegations=body.overrides.cache_delegations if body.overrides else None,
+            cache_max_entries=body.overrides.cache_max_entries if body.overrides else None,
+            cache_ttl_seconds=body.overrides.cache_ttl_seconds if body.overrides else None,
             context_files=body.context_files,
             interactive=body.interactive,
         )

@@ -32,6 +32,8 @@ interface FlatState {
   policy_agent_timeout: string;
   policy_max_delegate_retries: string;
   policy_cache_delegations: string;
+  policy_cache_max_entries: string;
+  policy_cache_ttl_seconds: string;
   session_merge_strategy: string;
   session_pull_before_session: string;
   session_pr_command: string;
@@ -53,6 +55,8 @@ function toFlat(v: Record<string, unknown>): FlatState {
     policy_agent_timeout: str(policy.agent_timeout),
     policy_max_delegate_retries: str(policy.max_delegate_retries),
     policy_cache_delegations: str(policy.cache_delegations),
+    policy_cache_max_entries: str(policy.cache_max_entries),
+    policy_cache_ttl_seconds: str(policy.cache_ttl_seconds),
     session_merge_strategy: str(session.merge_strategy),
     session_pull_before_session: str(session.pull_before_session),
     session_pr_command: str(session.pr_command),
@@ -87,6 +91,10 @@ function toNested(flat: FlatState): Record<string, unknown> {
     policy.max_delegate_retries = Number(flat.policy_max_delegate_retries);
   if (flat.policy_cache_delegations)
     policy.cache_delegations = flat.policy_cache_delegations === "true";
+  if (flat.policy_cache_max_entries)
+    policy.cache_max_entries = Number(flat.policy_cache_max_entries);
+  if (flat.policy_cache_ttl_seconds)
+    policy.cache_ttl_seconds = Number(flat.policy_cache_ttl_seconds);
   if (Object.keys(policy).length > 0) result.policy = policy;
 
   const session: Record<string, unknown> = {};
@@ -124,12 +132,16 @@ export default function ConfigForm({
   const [state, setState] = useState<FlatState>(toFlat(values));
   const { data: agents } = useResources("agents");
   const { data: roles } = useResources("roles");
+  const { data: memories } = useResources("memories");
 
   const ph = placeholders ? toFlat(placeholders) : undefined;
 
+  // Compare by content, not reference, so stale React Query cache hits still sync
+  const valuesKey = JSON.stringify(values);
   useEffect(() => {
     setState(toFlat(values));
-  }, [values]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valuesKey]);
 
   const set = (key: keyof FlatState) => (val: string) =>
     setState((prev) => ({ ...prev, [key]: val }));
@@ -140,6 +152,9 @@ export default function ConfigForm({
 
   const agentNames = (agents ?? []).map((a) => a.name);
   const roleNames = (roles ?? []).map((r) => r.name);
+  const memoryNames = new Set((memories ?? []).map((m) => m.name));
+  memoryNames.add("none");
+  const memoryOptions = [...memoryNames].sort();
 
   return (
     <div className="flex flex-col gap-6">
@@ -175,11 +190,17 @@ export default function ConfigForm({
           </Field>
           <Field label="Memory">
             <Input
+              list="cfg-dl-memory"
               value={state.memory}
               onChange={(e) => set("memory")(e.target.value)}
               placeholder={ph?.memory || "dial"}
               className="h-8 text-xs"
             />
+            <datalist id="cfg-dl-memory">
+              {memoryOptions.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
           </Field>
         </div>
       </section>
@@ -252,18 +273,33 @@ export default function ConfigForm({
             />
           </Field>
           <Field label="Cache Delegations">
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={state.policy_cache_delegations === "true"}
-                onChange={(e) =>
-                  set("policy_cache_delegations")(
-                    e.target.checked ? "true" : ""
-                  )
-                }
-              />
-              Reuse results for identical delegation requests within a session
-            </label>
+            <SelectField
+              value={state.policy_cache_delegations}
+              onChange={set("policy_cache_delegations")}
+              options={BOOL_OPTIONS}
+              placeholder={ph?.policy_cache_delegations === "false" ? "false" : "true"}
+              allowEmpty
+            />
+          </Field>
+          <Field label="Cache Max Entries">
+            <Input
+              value={state.policy_cache_max_entries}
+              onChange={(e) =>
+                set("policy_cache_max_entries")(e.target.value)
+              }
+              placeholder={ph?.policy_cache_max_entries || "0 (unlimited)"}
+              className="h-8 text-xs"
+            />
+          </Field>
+          <Field label="Cache TTL (seconds)">
+            <Input
+              value={state.policy_cache_ttl_seconds}
+              onChange={(e) =>
+                set("policy_cache_ttl_seconds")(e.target.value)
+              }
+              placeholder={ph?.policy_cache_ttl_seconds || "0 (unlimited)"}
+              className="h-8 text-xs"
+            />
           </Field>
         </div>
       </section>

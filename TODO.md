@@ -53,6 +53,31 @@
   stdout/stderr in plaintext. Consider optional at-rest encryption with key
   management via OS keychain. Low priority for single-user local machines.
 
+## Dependency Management
+
+- [ ] **Unified denden installation and updates**
+  denden-server (Python gRPC lib) and denden CLI (Go binary) share proto
+  definitions and are released in lockstep, but installed through separate
+  channels (PyPI vs GitHub Releases). Version drift between the two causes
+  silent failures (e.g. empty `delegateResult`). Current mitigations: skill
+  PATH prepending ensures agents use the managed binary, and install scripts
+  default to the skill directory. Longer-term options:
+  - **Option A: strawpot manages CLI at session start** — download the CLI
+    binary matching `denden.__version__` from GitHub Releases to a cache dir
+    (`~/.strawpot/bin/`). Simplest change (~50 lines in session.py), no CI
+    changes to denden repo.
+  - **Option B: Bundle CLI in denden-server platform wheels** — produce
+    per-platform wheels (linux/amd64, darwin/arm64, etc.) containing the Go
+    binary. One `pip install` gets both. Requires CI matrix build with
+    `cibuildwheel` and a `hatch_build.py` hook. More complex but eliminates
+    the separate install channel entirely.
+  - **Option C: Version check at session start** — compare
+    `denden.__version__` against `denden status` output, warn or error on
+    mismatch. Quick win that catches drift without solving it.
+  Also need to consider how denden-server itself gets updated — currently
+  unpinned in strawpot's pyproject.toml, so `pip install --upgrade strawpot`
+  may or may not pull a newer denden-server depending on resolver state.
+
 ## Housekeeping
 
 - [ ] **Archive retention policy**

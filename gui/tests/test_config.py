@@ -9,7 +9,10 @@ class TestGlobalConfig:
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "home"))
         resp = client.get("/api/config/global")
         assert resp.status_code == 200
-        assert resp.json() == {}
+        body = resp.json()
+        assert body["values"] == {}
+        assert "defaults" in body
+        assert body["defaults"]["runtime"] == "strawpot-claude-code"
 
     def test_put_and_get_global_config(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "home"))
@@ -28,7 +31,9 @@ class TestGlobalConfig:
 
         # Verify round-trip via GET
         resp = client.get("/api/config/global")
-        assert resp.json() == data
+        body = resp.json()
+        assert body["values"] == data
+        assert "defaults" in body
 
 
 class TestProjectConfig:

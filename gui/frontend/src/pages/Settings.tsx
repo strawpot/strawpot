@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useProjects, useProjectConfig } from "@/hooks/queries/use-projects";
 import { useGlobalConfig } from "@/hooks/queries/use-config";
 import { useSaveGlobalConfig, useSaveProjectConfig } from "@/hooks/mutations/use-config";
+import { queryKeys } from "@/lib/query-keys";
 import ConfigForm from "@/components/ConfigForm";
 import {
   Tabs,
@@ -20,7 +22,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export default function Settings() {
+  const [tab, setTab] = useState("global");
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const qc = useQueryClient();
 
   const globalConfig = useGlobalConfig();
   const projects = useProjects();
@@ -49,10 +53,19 @@ export default function Settings() {
     );
   };
 
+  // Refetch project config when switching to project tab
+  useEffect(() => {
+    if (tab === "project" && selectedProjectId != null) {
+      qc.invalidateQueries({
+        queryKey: queryKeys.projects.config(selectedProjectId),
+      });
+    }
+  }, [tab, selectedProjectId, qc]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-      <Tabs defaultValue="global">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="global">Global</TabsTrigger>
           <TabsTrigger value="project">Project</TabsTrigger>
@@ -62,7 +75,8 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : (
             <ConfigForm
-              values={globalConfig.data ?? {}}
+              values={globalConfig.data?.values ?? {}}
+              placeholders={globalConfig.data?.defaults}
               onSave={handleSaveGlobal}
               saving={saveGlobal.isPending}
             />
@@ -93,8 +107,9 @@ export default function Settings() {
             )}
             {selectedProjectId != null && projectConfig.data && (
               <ConfigForm
+                key={selectedProjectId}
                 values={projectConfig.data.project}
-                placeholders={projectConfig.data.merged}
+                placeholders={projectConfig.data.merged_nested}
                 onSave={handleSaveProject}
                 saving={saveProject.isPending}
               />

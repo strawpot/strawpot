@@ -1,6 +1,7 @@
 """Tests for per-session delegation cache."""
 
 import hashlib
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -286,3 +287,115 @@ class TestDelegationCacheIntegration:
 
         assert resp.delegate_result.json["key"] == "value"
         assert mock_hd.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Cache eviction policy
+# ---------------------------------------------------------------------------
+
+
+class TestDelegationCacheEviction:
+    """Test max_entries and TTL eviction."""
+
+    def _setup_session(self, tmp_path, **config_overrides):
+        config_overrides.setdefault("cache_delegations", True)
+        config = _make_config(**config_overrides)
+        session = _make_session(tmp_path, config=config)
+        session._tracer = MagicMock()
+        session._tracer.delegate_start.return_value = "span_001"
+        session._session_span_id = "session_span"
+        session._agent_info = {
+            "agent_abc": {"role": "parent_role", "parent": None}
+        }
+        session._agent_spans = {"agent_abc": "span_parent"}
+        session._env = MagicMock()
+        session._env.path = str(tmp_path)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_123"
+        session._denden_addr = "127.0.0.1:9700"
+        session._memory_provider = None
+        session._files_dirs = []
+        import os
+        session_dir = os.path.join(str(tmp_path), ".strawpot", "sessions", "run_123")
+        os.makedirs(session_dir, exist_ok=True)
+        return session
+
+    @patch("strawpot.session.handle_delegate")
+    def test_max_entries_evicts_oldest(self, mock_hd, tmp_path):
+        session = self._setup_session(tmp_path, cache_max_entries=2)
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+
+        req_a = _make_delegate_request(task="task_a")
+        req_b = _make_delegate_request(task="task_b")
+        req_c = _make_delegate_request(task="task_c")
+
+        session._handle_delegate(req_a)  # cache: [a]
+        session._handle_delegate(req_b)  # cache: [a, b]
+        session._handle_delegate(req_c)  # cache: [b, c] — a evicted
+
+        assert len(session._delegation_cache) == 2
+
+        # a should be evicted — calling it again triggers handle_delegate
+        call_count_before = mock_hd.call_count
+        session._handle_delegate(req_a)
+        assert mock_hd.call_count == call_count_before + 1  # cache miss
+
+        # c should still be cached
+        call_count_before = mock_hd.call_count
+        session._handle_delegate(req_c)
+        assert mock_hd.call_count == call_count_before  # cache hit
+
+        # cache never exceeds max_entries
+        assert len(session._delegation_cache) == 2
+
+    @patch("strawpot.session.handle_delegate")
+    def test_ttl_expires_entry(self, mock_hd, tmp_path, monkeypatch):
+        session = self._setup_session(tmp_path, cache_ttl_seconds=60)
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+
+        fake_time = 1000.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_time)
+
+        req = _make_delegate_request()
+        session._handle_delegate(req)  # cached at t=1000
+        assert mock_hd.call_count == 1
+
+        # Within TTL — cache hit
+        fake_time = 1050.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_time)
+        session._handle_delegate(req)
+        assert mock_hd.call_count == 1  # still cached
+
+        # Beyond TTL — cache miss
+        fake_time = 1061.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_time)
+        session._handle_delegate(req)
+        assert mock_hd.call_count == 2  # re-delegated
+
+    @patch("strawpot.session.handle_delegate")
+    def test_zero_max_entries_means_unlimited(self, mock_hd, tmp_path):
+        session = self._setup_session(tmp_path, cache_max_entries=0)
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+
+        for i in range(20):
+            req = _make_delegate_request(task=f"task_{i}")
+            session._handle_delegate(req)
+
+        assert len(session._delegation_cache) == 20
+
+    @patch("strawpot.session.handle_delegate")
+    def test_zero_ttl_means_unlimited(self, mock_hd, tmp_path, monkeypatch):
+        session = self._setup_session(tmp_path, cache_ttl_seconds=0)
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+
+        fake_time = 1000.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_time)
+
+        req = _make_delegate_request()
+        session._handle_delegate(req)
+
+        # Far in the future — still cached
+        fake_time = 999999.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_time)
+        session._handle_delegate(req)
+        assert mock_hd.call_count == 1  # cache hit
