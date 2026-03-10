@@ -1346,6 +1346,51 @@ through the UI.
 - Frontend: config editor page with form-based editing for project
   and global `strawpot.toml` (planned)
 
+### Phase 6 — Chat-Mode Sessions (Planned)
+
+**Goal:** Allow users to submit sequential tasks through a persistent chat
+interface. Each task spawns a new short-lived strawpot instance, but the
+chat panel provides conversational continuity across runs.
+
+**Motivation:** The current fire-and-forget model requires navigating back
+to the project page and launching a new session for each follow-up task.
+Chat-mode lets the user say "now add tests for it" immediately after a
+session completes — the GUI spawns a fresh strawpot process with prior
+context injected, maintaining the feel of a continuous conversation.
+
+| Concept | Description |
+|---------|-------------|
+| Conversation | A logical thread grouping sequential sessions. Persisted as a `conversations` table with `project_id` and `created_at`. Each session gets an optional `conversation_id` FK. |
+| Chat panel | Persistent UI component displaying interleaved user messages and session outputs. Stays open across session boundaries. |
+| Context injection | Each new strawpot instance receives a summary of prior turns in the conversation (via prepended context or memory provider). The agent sees continuity without being long-running. |
+| Session lifecycle | Each task still runs as an independent strawpot process — starts, executes, terminates. No long-running processes. Failure in one turn doesn't crash the conversation. |
+
+**Backend changes:**
+
+| Change | Description |
+|--------|-------------|
+| `conversations` table | `id`, `project_id`, `created_at`, `updated_at` |
+| `sessions.conversation_id` | Nullable FK linking session to conversation |
+| `POST /api/conversations` | Create a new conversation for a project |
+| `GET /api/conversations/{id}` | Get conversation with its ordered sessions |
+| `POST /api/conversations/{id}/tasks` | Submit a new task — creates session within the conversation, injects prior context |
+
+**Frontend changes:**
+
+| Component | Description |
+|-----------|-------------|
+| `ChatPanel` | Persistent panel showing message bubbles (user tasks + agent outputs). Streams session output in real-time via existing SSE. |
+| `ConversationView` | Full-page view for an active conversation, with ChatPanel + agent tree sidebar. |
+| Project detail | "New Conversation" button alongside "Launch Session". |
+
+**Relationship to other features:**
+- **Item 10 (ask_user bridge):** Orthogonal. Chat-mode handles *between-session*
+  user input. `ask_user` handles *within-session* agent-initiated prompts. A
+  conversation can contain sessions that use `ask_user` internally.
+- **IMU:** IMU uses PTY + WebSocket for a single persistent process (self-operation
+  agent). Chat-mode uses sequential short-lived processes. They share the chat
+  panel UI component but differ in transport and lifecycle.
+
 ### Not Planned
 
 | Feature | Reason |
@@ -1380,5 +1425,7 @@ through the UI.
 | 7.9 | Backend + frontend: server-side session pagination for project detail | **Done** |
 | 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
 | 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | **Done** |
-| 10 | Interactive sessions (ask_user bridge + chat panel) | Planned |
-| 11 | Activity charts (run frequency, success rate, duration trends) | **Done** |
+| 10 | Activity charts (run frequency, success rate, duration trends) | **Done** |
+| 11 | Interactive sessions (ask_user bridge + chat panel) | Planned |
+| 12 | Chat-mode sessions (conversation threading + sequential task submission) | Planned |
+| 13 | IMU — embedded self-operation agent (PTY + WebSocket chat panel). See [`imu/DESIGN.md`](../imu/DESIGN.md). | Planned |
