@@ -286,7 +286,7 @@ def schedule_history(schedule_id: int, conn=Depends(get_db_conn)):
 
     rows = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
-        "       started_at, ended_at, duration_ms, exit_code, task, summary"
+        "       started_at, ended_at, duration_ms, exit_code, task"
         "  FROM sessions WHERE schedule_id = ? ORDER BY started_at DESC"
         "  LIMIT 50",
         (schedule_id,),

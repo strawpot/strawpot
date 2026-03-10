@@ -2433,6 +2433,7 @@ class TestHandleDelegateDefaultAgent:
         # Alt runtime was used, not the session default
         mock_alt_runtime.spawn.assert_called_once()
         session_runtime.spawn.assert_not_called()
+        assert result.output == "alt ok"
 
     def test_falls_back_on_missing_agent(self, tmp_path, monkeypatch):
         """When default_agent is not found, falls back to session runtime."""
@@ -2476,6 +2477,7 @@ class TestHandleDelegateDefaultAgent:
 
         # Session default runtime was used
         session_runtime.spawn.assert_called_once()
+        assert result.output == "ok"
 
     def test_skips_when_same_as_current(self, tmp_path, monkeypatch):
         """When default_agent matches current runtime, no re-resolution happens."""
@@ -2519,6 +2521,7 @@ class TestHandleDelegateDefaultAgent:
 
         assert resolve_called == []
         session_runtime.spawn.assert_called_once()
+        assert result.output == "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -2634,6 +2637,7 @@ class TestHandleDelegateSkillEnvSaved:
             resolve_role=mock_resolve,
             resolve_role_dirs=lambda s: None,
         )
+        assert result.output == "ok"
 
 
 class TestHandleDelegateDefaultAgentConfigOverride:
@@ -2700,3 +2704,4 @@ class TestHandleDelegateDefaultAgentConfigOverride:
         assert resolve_calls == ["config_agent"]
         mock_config_runtime.spawn.assert_called_once()
         session_runtime.spawn.assert_not_called()
+        assert result.output == "ok"

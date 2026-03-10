@@ -103,6 +103,7 @@ export default function SessionDetail() {
   }
 
   const artifacts = extractArtifacts(displayEvents);
+  const outputRef = extractOutputRef(displayEvents);
   const defaultTab =
     searchParams.get("tab") ?? (active ? "agent-tree" : "overview");
 
@@ -157,7 +158,25 @@ export default function SessionDetail() {
             </section>
           )}
 
-          {!sessionData.task && (
+          {outputRef && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Output
+              </h2>
+              <Card>
+                <CardContent className="pt-4">
+                  <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                    <ArtifactText
+                      runId={sessionData.run_id}
+                      hash={outputRef}
+                    />
+                  </pre>
+                </CardContent>
+              </Card>
+            </section>
+          )}
+
+          {!sessionData.task && !outputRef && (
             <p className="text-sm text-muted-foreground">
               No overview information available yet.
             </p>
@@ -376,6 +395,35 @@ interface ArtifactEntry {
   hash: string;
   event: string;
   agentId?: string;
+}
+
+function ArtifactText({ runId, hash }: { runId: string; hash: string }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/sessions/${runId}/artifacts/${hash}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.text();
+      })
+      .then(setContent)
+      .catch((err) => setError(err.message));
+  }, [runId, hash]);
+
+  if (error) return <span className="text-destructive">Error: {error}</span>;
+  if (content === null)
+    return <span className="text-muted-foreground">Loading...</span>;
+  return <>{content}</>;
+}
+
+function extractOutputRef(events: TraceEvent[]): string | null {
+  for (const e of events) {
+    if (e.event === "session_end" && e.data.output_ref) {
+      return String(e.data.output_ref);
+    }
+  }
+  return null;
 }
 
 function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
