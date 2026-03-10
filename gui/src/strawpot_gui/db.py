@@ -168,10 +168,10 @@ def sync_sessions(db_path: str) -> None:
         for project in projects:
             project_id = project["id"]
             working_dir = project["working_dir"]
-            _sync_project_sessions(conn, project_id, working_dir)
+            sync_project_sessions(conn, project_id, working_dir)
 
 
-def _sync_project_sessions(
+def sync_project_sessions(
     conn: sqlite3.Connection, project_id: int, working_dir: str
 ) -> None:
     """Scan a single project's session directories and upsert rows."""

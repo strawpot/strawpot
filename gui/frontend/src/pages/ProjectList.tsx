@@ -48,7 +48,7 @@ export default function ProjectList() {
         <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
         <Button onClick={() => setShowForm(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          New Project
+          Add Project
         </Button>
       </div>
 
@@ -202,7 +202,7 @@ function RegisterForm({
           )}
           <div className="flex gap-2">
             <Button type="submit" disabled={createProject.isPending}>
-              {createProject.isPending ? "Creating..." : "Create"}
+              {createProject.isPending ? "Adding..." : "Add"}
             </Button>
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel

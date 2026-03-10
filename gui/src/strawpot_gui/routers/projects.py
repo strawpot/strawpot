@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from strawpot_gui.db import get_db_conn
+from strawpot_gui.db import get_db_conn, sync_project_sessions
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
@@ -61,6 +61,7 @@ def create_project(body: ProjectCreate, conn=Depends(get_db_conn)):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A project with this working directory already exists")
     conn.commit()
+    sync_project_sessions(conn, cursor.lastrowid, resolved)
     row = conn.execute(
         "SELECT id, display_name, working_dir, created_at FROM projects WHERE id = ?",
         (cursor.lastrowid,),
