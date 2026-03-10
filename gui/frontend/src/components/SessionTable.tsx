@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Session } from "@/api/types";
+import { useDeleteSession } from "@/hooks/mutations/use-sessions";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -10,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { Trash2 } from "lucide-react";
 
 export default function SessionTable({
   sessions,
@@ -29,6 +33,7 @@ export default function SessionTable({
           <TableHead>Started</TableHead>
           <TableHead>Duration</TableHead>
           <TableHead>Task</TableHead>
+          <TableHead className="w-[80px]" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -64,6 +69,12 @@ export default function SessionTable({
             </TableCell>
             <TableCell className="max-w-[300px] truncate text-sm">
               {s.task ?? "—"}
+            </TableCell>
+            <TableCell>
+              <DeleteSessionButton
+                runId={s.run_id}
+                disabled={s.status === "starting" || s.status === "running"}
+              />
             </TableCell>
           </TableRow>
         ))}
@@ -133,4 +144,57 @@ export function formatDuration(ms: number | null): string {
   const mins = Math.floor(secs / 60);
   const rem = secs % 60;
   return `${mins}m ${rem}s`;
+}
+
+function DeleteSessionButton({
+  runId,
+  disabled,
+}: {
+  runId: string;
+  disabled: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const deleteSession = useDeleteSession();
+
+  const handleDelete = async () => {
+    try {
+      await deleteSession.mutateAsync(runId);
+    } catch {
+      // error state handled by mutation
+    }
+  };
+
+  if (confirming) {
+    return (
+      <div className="flex gap-1">
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={handleDelete}
+          disabled={deleteSession.isPending}
+        >
+          Confirm
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setConfirming(false)}
+        >
+          No
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="text-muted-foreground hover:text-destructive"
+      onClick={() => setConfirming(true)}
+      disabled={disabled}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  );
 }

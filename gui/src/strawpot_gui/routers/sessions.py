@@ -504,6 +504,48 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     return {"run_id": run_id, "status": "stopped"}
 
 
+@router.delete("/sessions/{run_id}")
+def delete_session(run_id: str, conn=Depends(get_db_conn)):
+    """Delete an archived session (DB row + on-disk files)."""
+    row = conn.execute(
+        "SELECT run_id, status, session_dir, project_id FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    if row["status"] in ("starting", "running"):
+        raise HTTPException(409, "Cannot delete a running session — stop it first")
+
+    session_dir = row["session_dir"]
+    project_id = row["project_id"]
+
+    # Remove DB row
+    conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
+    conn.commit()
+
+    # Remove on-disk session directory
+    if session_dir:
+        shutil.rmtree(session_dir, ignore_errors=True)
+
+        # Clean up symlinks in archive/ and running/
+        strawpot_dir = str(Path(session_dir).parent.parent)
+        for subdir in ("archive", "running"):
+            link = os.path.join(strawpot_dir, subdir, run_id)
+            try:
+                os.remove(link)
+            except OSError:
+                pass
+
+    event_bus.publish(SessionEvent(
+        kind="session_deleted",
+        run_id=run_id,
+        project_id=project_id,
+    ))
+
+    return {"ok": True}
+
+
 _ARTIFACT_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
 
 
