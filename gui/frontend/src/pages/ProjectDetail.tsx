@@ -8,6 +8,7 @@ import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
 import ProjectFilesTab from "@/components/ProjectFilesTab";
 import ProjectResourcesTab from "@/components/ProjectResourcesTab";
+import { ProjectActivityTab } from "@/components/ProjectActivityTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -163,6 +164,7 @@ export default function ProjectDetail() {
           <TabsTrigger value="sessions">
             Sessions ({sessionTotal})
           </TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="resources">
             Resources ({resourceList.length})
           </TabsTrigger>
@@ -188,6 +190,10 @@ export default function ProjectDetail() {
               />
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <ProjectActivityTab projectId={pid} />
         </TabsContent>
 
         <TabsContent value="resources" className="mt-4">

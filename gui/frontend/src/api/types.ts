@@ -136,6 +136,26 @@ export interface AgentValidation {
   setup_description: string | null;
 }
 
+export interface DailyStats {
+  date: string;
+  total: number;
+  completed: number;
+  failed: number;
+  avg_duration_ms: number | null;
+}
+
+export interface ProjectStats {
+  period: string;
+  since: string;
+  until: string;
+  total_runs: number;
+  completed: number;
+  failed: number;
+  success_rate: number;
+  avg_duration_ms: number | null;
+  daily: DailyStats[];
+}
+
 export interface Schedule {
   id: number;
   name: string;
