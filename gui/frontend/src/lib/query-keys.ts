@@ -5,6 +5,7 @@ export const queryKeys = {
     config: (id: number) => ["projects", id, "config"] as const,
     sessions: (id: number) => ["projects", id, "sessions"] as const,
     files: (id: number) => ["projects", id, "files"] as const,
+    stats: (id: number, period: string) => ["projects", id, "stats", period] as const,
     resources: (id: number) => ["projects", id, "resources"] as const,
     resourceDetail: (id: number, type: string, name: string) =>
       ["projects", id, "resources", type, name] as const,

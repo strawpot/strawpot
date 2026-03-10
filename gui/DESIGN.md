@@ -1381,4 +1381,4 @@ through the UI.
 | 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
 | 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | **Done** |
 | 10 | Interactive sessions (ask_user bridge + chat panel) | Planned |
-| 11 | Activity charts (run frequency, success rate, duration trends) | Planned |
+| 11 | Activity charts (run frequency, success rate, duration trends) | **Done** |
