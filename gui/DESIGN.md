@@ -1371,7 +1371,6 @@ through the UI.
 | 7.8 | Frontend: breadcrumb project switcher dropdown | **Done** |
 | 7.9 | Backend + frontend: server-side session pagination for project detail | **Done** |
 | 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
-| 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | Planned |
+| 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | **Done** |
 | 10 | Interactive sessions (ask_user bridge + chat panel) | Planned |
 | 11 | Activity charts (run frequency, success rate, duration trends) | Planned |
-| 12 | Cost / token tracking (requires wrapper protocol extension) | Planned |
