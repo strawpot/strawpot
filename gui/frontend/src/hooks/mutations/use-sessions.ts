@@ -34,3 +34,13 @@ export function useStopSession() {
     },
   });
 }
+
+export function useDeleteSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => api.delete(`/sessions/${runId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
