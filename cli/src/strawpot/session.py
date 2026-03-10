@@ -319,6 +319,7 @@ class Session:
         self._orchestrator_role_prompt: str = ""
         self._files_dirs: list[str] = []
         self._delegation_cache: OrderedDict[str, tuple[str, "denden_pb2.DelegateResult", float]] = OrderedDict()
+        self._delegation_count: int = 0
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -796,6 +797,24 @@ class Session:
         requester_span = self._agent_spans.get(
             trace.agent_instance_id, self._session_span_id
         )
+
+        # --- Max delegations check (before cache — cache hits count too) ---
+        max_del = self.config.max_num_delegations
+        if max_del > 0 and self._delegation_count >= max_del:
+            reason = "DENY_DELEGATIONS_LIMIT"
+            if self._tracer is not None:
+                self._tracer.delegate_denied(
+                    role=delegate_req.role_slug,
+                    parent_span=requester_span,
+                    reason=reason,
+                    depth=delegate_req.depth,
+                )
+            return denied_response(
+                request.request_id,
+                reason,
+                f"Session delegation limit reached ({max_del})",
+            )
+        self._delegation_count += 1
 
         # --- Cache check ---
         cache_key: str | None = None

@@ -31,6 +31,7 @@ def _config_to_nested(config: StrawPotConfig) -> dict:
             "cache_delegations": config.cache_delegations,
             "cache_max_entries": config.cache_max_entries,
             "cache_ttl_seconds": config.cache_ttl_seconds,
+            "max_num_delegations": config.max_num_delegations,
         },
         "session": {
             "merge_strategy": config.merge_strategy,

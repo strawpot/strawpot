@@ -1488,3 +1488,137 @@ class TestGlobalSkills:
 
         spawn_kwargs = runtime.spawn.call_args.kwargs
         assert "Available Skills" not in spawn_kwargs["role_prompt"]
+
+
+# ---------------------------------------------------------------------------
+# Max delegations per session
+# ---------------------------------------------------------------------------
+
+
+class TestMaxNumDelegations:
+    def _make_denden_request(
+        self,
+        delegate_to="implementer",
+        task_text="Do something",
+        agent_id="agent_orch",
+        run_id="run_test",
+    ):
+        request = MagicMock()
+        request.request_id = "req_123"
+        request.delegate.delegate_to = delegate_to
+        request.delegate.task.text = task_text
+        request.delegate.task.return_format = 0  # TEXT
+        request.trace.agent_instance_id = agent_id
+        request.trace.run_id = run_id
+        return request
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    def test_delegation_allowed_under_limit(
+        self, mock_ok, mock_handle, tmp_path
+    ):
+        """Delegations below the limit succeed normally."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(output="ok", exit_code=0)
+        mock_ok.return_value = "ok"
+
+        config = _make_config(max_num_delegations=3)
+        session = _make_session(tmp_path, config=config)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent("agent_orch", role="orchestrator", parent_id=None)
+
+        result = session._handle_delegate(self._make_denden_request())
+        assert result == "ok"
+        assert session._delegation_count == 1
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    @patch("strawpot.session.denied_response")
+    def test_delegation_denied_at_limit(
+        self, mock_denied, mock_ok, mock_handle, tmp_path
+    ):
+        """Delegations at the limit are denied without spawning."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(output="ok", exit_code=0)
+        mock_ok.return_value = "ok"
+        mock_denied.return_value = "denied"
+
+        config = _make_config(max_num_delegations=2)
+        session = _make_session(tmp_path, config=config)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent("agent_orch", role="orchestrator", parent_id=None)
+
+        # First two succeed (different tasks to avoid cache hits)
+        session._handle_delegate(self._make_denden_request(task_text="task 1"))
+        session._handle_delegate(self._make_denden_request(task_text="task 2"))
+        assert session._delegation_count == 2
+
+        # Third is denied
+        result = session._handle_delegate(self._make_denden_request(task_text="task 3"))
+        assert result == "denied"
+        mock_denied.assert_called_once()
+        assert "DENY_DELEGATIONS_LIMIT" in mock_denied.call_args.args
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    def test_zero_means_unlimited(self, mock_ok, mock_handle, tmp_path):
+        """max_num_delegations=0 means no limit."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(output="ok", exit_code=0)
+        mock_ok.return_value = "ok"
+
+        config = _make_config(max_num_delegations=0)
+        session = _make_session(tmp_path, config=config)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent("agent_orch", role="orchestrator", parent_id=None)
+
+        for i in range(10):
+            session._handle_delegate(self._make_denden_request(task_text=f"task {i}"))
+
+        assert session._delegation_count == 10
+        assert mock_handle.call_count == 10
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    def test_cache_hits_count_toward_limit(self, mock_ok, mock_handle, tmp_path):
+        """Cache hits should also increment the delegation counter."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(output="result", exit_code=0)
+        mock_ok.return_value = "ok"
+
+        config = _make_config(
+            max_num_delegations=2,
+            cache_delegations=True,
+        )
+        session = _make_session(tmp_path, config=config)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent("agent_orch", role="orchestrator", parent_id=None)
+
+        # First call spawns an agent — count goes to 1
+        session._handle_delegate(self._make_denden_request())
+        assert session._delegation_count == 1
+
+        # Same request again — cache hit, count still increments to 2
+        session._handle_delegate(self._make_denden_request())
+        assert session._delegation_count == 2
+        assert mock_handle.call_count == 1  # only spawned once (cache hit)
+
+        # Third call — limit reached, denied
+        resp = session._handle_delegate(self._make_denden_request())
+        assert "DENY_DELEGATIONS_LIMIT" in str(resp)

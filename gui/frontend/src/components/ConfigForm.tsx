@@ -34,6 +34,7 @@ interface FlatState {
   policy_cache_delegations: string;
   policy_cache_max_entries: string;
   policy_cache_ttl_seconds: string;
+  policy_max_num_delegations: string;
   session_merge_strategy: string;
   session_pull_before_session: string;
   session_pr_command: string;
@@ -57,6 +58,7 @@ function toFlat(v: Record<string, unknown>): FlatState {
     policy_cache_delegations: str(policy.cache_delegations),
     policy_cache_max_entries: str(policy.cache_max_entries),
     policy_cache_ttl_seconds: str(policy.cache_ttl_seconds),
+    policy_max_num_delegations: str(policy.max_num_delegations),
     session_merge_strategy: str(session.merge_strategy),
     session_pull_before_session: str(session.pull_before_session),
     session_pr_command: str(session.pr_command),
@@ -95,6 +97,8 @@ function toNested(flat: FlatState): Record<string, unknown> {
     policy.cache_max_entries = Number(flat.policy_cache_max_entries);
   if (flat.policy_cache_ttl_seconds)
     policy.cache_ttl_seconds = Number(flat.policy_cache_ttl_seconds);
+  if (flat.policy_max_num_delegations)
+    policy.max_num_delegations = Number(flat.policy_max_num_delegations);
   if (Object.keys(policy).length > 0) result.policy = policy;
 
   const session: Record<string, unknown> = {};
@@ -321,6 +325,18 @@ export default function ConfigForm({
                 set("policy_cache_ttl_seconds")(e.target.value)
               }
               placeholder={ph?.policy_cache_ttl_seconds || "0 (unlimited)"}
+              className="h-8 text-xs"
+            />
+          </Field>
+          <Field label="Max Delegations">
+            <Input
+              type="number"
+              min="0"
+              value={state.policy_max_num_delegations}
+              onChange={(e) =>
+                set("policy_max_num_delegations")(e.target.value)
+              }
+              placeholder={ph?.policy_max_num_delegations || "0 (unlimited)"}
               className="h-8 text-xs"
             />
           </Field>

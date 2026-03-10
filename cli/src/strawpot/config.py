@@ -33,6 +33,7 @@ class StrawPotConfig:
     cache_delegations: bool = True
     cache_max_entries: int = 0  # 0 = unlimited
     cache_ttl_seconds: int = 0  # 0 = unlimited
+    max_num_delegations: int = 0  # 0 = unlimited
     agents: dict[str, dict] = field(default_factory=dict)
     skills: dict[str, dict[str, str]] = field(default_factory=dict)
     roles: dict[str, dict] = field(default_factory=dict)
@@ -82,6 +83,8 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.cache_max_entries = policy["cache_max_entries"]
     if "cache_ttl_seconds" in policy:
         config.cache_ttl_seconds = policy["cache_ttl_seconds"]
+    if "max_num_delegations" in policy:
+        config.max_num_delegations = policy["max_num_delegations"]
 
     agents = data.get("agents", {})
     for name, agent_data in agents.items():
