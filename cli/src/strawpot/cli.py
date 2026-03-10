@@ -356,6 +356,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
         from strawpot.delegation import (
             _collect_saved_env,
+            _get_default_agent,
             collect_skill_env,
             discover_global_skills,
             validate_skill_env,
@@ -382,6 +383,31 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
                     prompt_text += f" ({desc})"
                 value = click.prompt(prompt_text)
                 os.environ[var] = value
+
+        # 2c. Check orchestrator role's default_agent (config > frontmatter)
+        # Only apply when no explicit --runtime flag was given.
+        if not runtime:
+            orch_role_cfg = config.roles.get(config.orchestrator_role, {})
+            orch_default_agent = orch_role_cfg.get(
+                "default_agent", _get_default_agent(resolved["path"])
+            )
+        else:
+            orch_default_agent = None
+        if orch_default_agent and orch_default_agent != config.runtime:
+            try:
+                spec = resolve_agent(
+                    orch_default_agent,
+                    working_dir,
+                    config.agents.get(orch_default_agent),
+                )
+                config.runtime = orch_default_agent
+            except FileNotFoundError:
+                click.echo(
+                    f"Warning: default_agent '{orch_default_agent}' not found "
+                    f"for role '{config.orchestrator_role}'; "
+                    f"using '{config.runtime}'",
+                    err=True,
+                )
     except Exception:
         pass  # Role resolution failures handled by Session.start()
 

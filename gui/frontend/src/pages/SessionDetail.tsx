@@ -157,22 +157,7 @@ export default function SessionDetail() {
             </section>
           )}
 
-          {sessionData.summary && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Summary
-              </h2>
-              <Card>
-                <CardContent className="pt-4">
-                  <pre className="whitespace-pre-wrap break-words text-sm">
-                    {sessionData.summary}
-                  </pre>
-                </CardContent>
-              </Card>
-            </section>
-          )}
-
-          {!sessionData.task && !sessionData.summary && (
+          {!sessionData.task && (
             <p className="text-sm text-muted-foreground">
               No overview information available yet.
             </p>
@@ -722,18 +707,11 @@ function formatEventData(
     );
   }
 
-  const summary = d.summary ? (
-    <span key="summary" className="italic text-foreground/80">
-      {String(d.summary)}
-    </span>
-  ) : null;
-
   return (
     <>
       {buttons.length > 0 && (
         <div className="mb-1 flex flex-wrap gap-1">{buttons}</div>
       )}
-      {summary}
       {params.length > 0 && (
         <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           {params}

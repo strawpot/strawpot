@@ -99,12 +99,11 @@ class TestParseTrace:
                 "event": "session_end",
                 "trace_id": "run_x",
                 "span_id": "span1",
-                "data": {"duration_ms": 300000, "exit_code": 1, "summary": "Failed"},
+                "data": {"duration_ms": 300000, "exit_code": 1},
             }
         ])
         result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
         assert result["exit_code"] == 1
-        assert result["summary"] == "Failed"
 
     def test_delegate_end_does_not_set_exit_code(self, tmp_path):
         """delegate_end alone should not determine session exit_code."""
@@ -115,7 +114,7 @@ class TestParseTrace:
                 "trace_id": "run_x",
                 "span_id": "span2",
                 "parent_span": None,
-                "data": {"exit_code": 0, "summary": "Done", "duration_ms": 250000},
+                "data": {"exit_code": 0, "duration_ms": 250000},
             }
         ])
         result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
@@ -181,7 +180,7 @@ class TestSyncSessions:
                 "event": "session_end",
                 "trace_id": "run_traced",
                 "span_id": "s1",
-                "data": {"merge_strategy": "auto", "duration_ms": 300100, "exit_code": 0, "summary": "All done"},
+                "data": {"merge_strategy": "auto", "duration_ms": 300100, "exit_code": 0},
             },
         ])
 
@@ -194,7 +193,6 @@ class TestSyncSessions:
             ).fetchone()
         assert row["status"] == "completed"
         assert row["exit_code"] == 0
-        assert row["summary"] == "All done"
         assert row["duration_ms"] == 300100
         assert row["ended_at"] == "2026-01-01T12:05:01+00:00"
 

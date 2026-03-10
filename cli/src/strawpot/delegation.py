@@ -61,7 +61,6 @@ class DelegateRequest:
 class DelegateResult:
     """Outcome of a completed delegation."""
 
-    summary: str
     output: str = ""
     exit_code: int = 0
 
@@ -639,7 +638,6 @@ def _emit_delegate_end(
     tracer: Tracer | None,
     span_id: str | None,
     exit_code: int,
-    summary: str,
     start_time: float,
     output: str = "",
     role: str = "",
@@ -652,7 +650,6 @@ def _emit_delegate_end(
         tracer.delegate_end(
             span_id=span_id,
             exit_code=exit_code,
-            summary=summary,
             duration_ms=duration_ms,
             output=output,
             role=role,
@@ -952,13 +949,11 @@ def handle_delegate(
             runtime.kill(handle)
             _emit_delegate_end(
                 tracer, delegate_span_id, 1,
-                f"Agent timed out after {config.agent_timeout}s",
                 delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
                 agent_id=agent_id,
             )
             return DelegateResult(
-                summary=f"Agent timed out after {config.agent_timeout}s",
                 output=result.output,
                 exit_code=1,
             )
@@ -967,12 +962,11 @@ def handle_delegate(
         if result.exit_code != 0:
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time, output=result.output,
+                delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
                 agent_id=agent_id,
             )
             return DelegateResult(
-                summary=result.summary,
                 output=result.output,
                 exit_code=result.exit_code,
             )
@@ -984,12 +978,11 @@ def handle_delegate(
         if validation_error is None:
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time, output=result.output,
+                delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
                 agent_id=agent_id,
             )
             return DelegateResult(
-                summary=result.summary,
                 output=result.output,
                 exit_code=result.exit_code,
             )
@@ -1005,12 +998,11 @@ def handle_delegate(
             )
             _emit_delegate_end(
                 tracer, delegate_span_id, result.exit_code,
-                result.summary, delegate_start_time, output=result.output,
+                delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
                 agent_id=agent_id,
             )
             return DelegateResult(
-                summary=result.summary,
                 output=result.output,
                 exit_code=result.exit_code,
             )
@@ -1033,12 +1025,11 @@ def handle_delegate(
     assert result is not None
     _emit_delegate_end(
         tracer, delegate_span_id, result.exit_code,
-        result.summary, delegate_start_time, output=result.output,
+        delegate_start_time, output=result.output,
         role=request.role_slug, session_id=request.run_id,
         agent_id=agent_id,
     )
     return DelegateResult(
-        summary=result.summary,
         output=result.output,
         exit_code=result.exit_code,
     )

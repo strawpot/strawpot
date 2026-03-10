@@ -490,7 +490,7 @@ class TestHandleDelegate:
         from strawpot.delegation import DelegateResult
 
         mock_handle.return_value = DelegateResult(
-            summary="Task done", output="output", exit_code=0
+            output="output", exit_code=0
         )
         mock_ok.return_value = "ok"
 
@@ -518,7 +518,7 @@ class TestHandleDelegate:
         from strawpot.delegation import DelegateResult
 
         mock_handle.return_value = DelegateResult(
-            summary="Done", output="ok", exit_code=0
+            output="ok", exit_code=0
         )
         mock_ok.return_value = "ok"
 
@@ -589,7 +589,7 @@ class TestHandleDelegate:
         from strawpot.delegation import DelegateResult
 
         mock_handle.return_value = DelegateResult(
-            summary="Agent crashed", output="traceback...", exit_code=1
+            output="traceback...", exit_code=1
         )
         mock_error.return_value = "error"
 
