@@ -62,6 +62,7 @@ export default function LaunchDialog({
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [interactive, setInteractive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [fileFilter, setFileFilter] = useState("");
 
@@ -72,6 +73,7 @@ export default function LaunchDialog({
     setIsolation("");
     setMergeStrategy("");
     setSystemPrompt("");
+    setInteractive(false);
     setSelectedFiles([]);
   };
 
@@ -91,6 +93,7 @@ export default function LaunchDialog({
         overrides?: Record<string, string>;
         context_files?: string[];
         system_prompt?: string;
+        interactive?: boolean;
       } = {
         project_id: projectId,
         task: task.trim(),
@@ -104,6 +107,7 @@ export default function LaunchDialog({
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
       if (selectedFiles.length > 0) body.context_files = selectedFiles;
       if (systemPrompt.trim()) body.system_prompt = systemPrompt.trim();
+      if (interactive) body.interactive = true;
 
       const result = await launchSession.mutateAsync(body);
       resetForm();
@@ -309,6 +313,20 @@ export default function LaunchDialog({
                   rows={3}
                 />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={interactive}
+                  onChange={(e) => setInteractive(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <span className="text-sm">
+                  Interactive mode
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Allow the agent to ask you questions via a chat panel
+                </span>
+              </label>
             </CollapsibleContent>
           </Collapsible>
 

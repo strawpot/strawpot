@@ -80,11 +80,29 @@ def init_db(db_path: str) -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply incremental schema migrations for existing databases."""
+    # Add schedule_id column to sessions (added 2026-03-09)
+    try:
+        conn.execute(
+            "ALTER TABLE sessions "
+            "ADD COLUMN schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Add skip_if_running column to scheduled_tasks (added 2026-03-09)
     try:
         conn.execute(
             "ALTER TABLE scheduled_tasks "
             "ADD COLUMN skip_if_running INTEGER NOT NULL DEFAULT 1"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add interactive column to sessions (added 2026-03-09)
+    try:
+        conn.execute(
+            "ALTER TABLE sessions "
+            "ADD COLUMN interactive INTEGER NOT NULL DEFAULT 0"
         )
     except sqlite3.OperationalError:
         pass  # Column already exists
@@ -141,8 +159,7 @@ def _parse_trace(trace_path: str) -> dict:
                     result["ended_at"] = event.get("ts")
                     if "duration_ms" in data:
                         result["duration_ms"] = data["duration_ms"]
-                elif etype == "delegate_end" and not event.get("parent_span"):
-                    result["exit_code"] = data.get("exit_code")
+                    result["exit_code"] = data.get("exit_code", 0)
                     result["summary"] = data.get("summary")
     except OSError:
         pass

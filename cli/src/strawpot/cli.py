@@ -308,8 +308,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0. Recover stale sessions from previous crashes
     recovered = recover_stale_sessions(working_dir, config)
-    for run_id in recovered:
-        click.echo(f"Recovered stale session: {run_id}")
+    for rid in recovered:
+        click.echo(f"Recovered stale session: {rid}")
 
     # 0b. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)

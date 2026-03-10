@@ -23,16 +23,10 @@ def _setup_sessions(client, tmp_path):
     )
     _write_trace(sd1, [
         {
-            "ts": "2026-01-01T10:05:00+00:00",
-            "event": "delegate_end",
-            "trace_id": "run_a", "span_id": "s1", "parent_span": None,
-            "data": {"exit_code": 0, "summary": "Done A", "duration_ms": 300000},
-        },
-        {
             "ts": "2026-01-01T10:05:01+00:00",
             "event": "session_end",
             "trace_id": "run_a", "span_id": "s0",
-            "data": {"duration_ms": 300100},
+            "data": {"duration_ms": 300100, "exit_code": 0, "summary": "Done A"},
         },
     ])
 
@@ -43,9 +37,9 @@ def _setup_sessions(client, tmp_path):
     _write_trace(sd2, [
         {
             "ts": "2026-01-02T10:01:00+00:00",
-            "event": "delegate_end",
-            "trace_id": "run_b", "span_id": "s1", "parent_span": None,
-            "data": {"exit_code": 1, "summary": "Failed B", "duration_ms": 60000},
+            "event": "session_end",
+            "trace_id": "run_b", "span_id": "s0",
+            "data": {"duration_ms": 60000, "exit_code": 1, "summary": "Failed B"},
         },
     ])
 

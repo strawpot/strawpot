@@ -46,8 +46,19 @@ export interface TraceEvent {
 }
 
 export interface SessionDetail extends Session {
+  interactive: boolean;
   agents: Record<string, AgentInfo>;
   events: TraceEvent[];
+}
+
+export interface AskUserPending {
+  request_id: string;
+  question: string;
+  choices: string[] | null;
+  default_value: string | null;
+  why: string | null;
+  response_format: string | null;
+  timestamp: number;
 }
 
 export interface TreeNode {

@@ -4,8 +4,10 @@ import { useSession } from "@/hooks/queries/use-sessions";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import AgentTreeFlow from "@/components/AgentTreeFlow";
 import AgentLogViewer from "@/components/AgentLogViewer";
+import ChatPanel from "@/components/ChatPanel";
 import { formatTime, formatDuration } from "@/components/SessionTable";
 import { useTraceSSE } from "@/hooks/useTraceSSE";
+import { useAskUserSSE } from "@/hooks/useAskUserSSE";
 import SessionDetailSkeleton from "@/components/skeletons/SessionDetailSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +68,20 @@ export default function SessionDetail() {
   const restEvents = sessionData?.events ?? [];
   const displayEvents = sseEvents.length > 0 ? sseEvents : restEvents;
 
+  // SSE for interactive ask_user events
+  const isInteractive = !!sessionData?.interactive;
+  const { pendingAskUser } = useAskUserSSE(
+    runId ?? "",
+    active && isInteractive,
+  );
+
+  // Auto-switch to Chat tab when a question arrives
+  const [activeTab, setActiveTab] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (pendingAskUser) setActiveTab("chat");
+  }, [pendingAskUser]);
+
   if (session.isLoading) {
     return <SessionDetailSkeleton />;
   }
@@ -101,11 +117,22 @@ export default function SessionDetail() {
 
       <SessionMetadata session={sessionData} />
 
-      <Tabs defaultValue={defaultTab}>
+      <Tabs
+        value={activeTab ?? defaultTab}
+        onValueChange={setActiveTab}
+      >
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="agent-tree">Agent Tree</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          {isInteractive && (
+            <TabsTrigger value="chat" className="relative">
+              Chat
+              {pendingAskUser && (
+                <span className="ml-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="trace">
             Trace{displayEvents.length > 0 && ` (${displayEvents.length})`}
           </TabsTrigger>
@@ -169,6 +196,15 @@ export default function SessionDetail() {
             </p>
           )}
         </TabsContent>
+
+        {isInteractive && (
+          <TabsContent value="chat">
+            <ChatPanel
+              runId={sessionData.run_id}
+              pendingAskUser={pendingAskUser}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="trace">
           {displayEvents.length > 0 ? (

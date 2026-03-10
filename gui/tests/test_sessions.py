@@ -42,7 +42,7 @@ class TestListSessions:
                 "event": "session_end",
                 "trace_id": "run_abc",
                 "span_id": "s0",
-                "data": {"duration_ms": 300100},
+                "data": {"duration_ms": 300100, "exit_code": 0, "summary": "Done"},
             },
         ])
         sync_sessions(client.app.state.db_path)
@@ -134,7 +134,7 @@ class TestGetSession:
                 "event": "session_end",
                 "trace_id": "run_detail",
                 "span_id": "s0",
-                "data": {"duration_ms": 60100},
+                "data": {"duration_ms": 60100, "exit_code": 0, "summary": "All done"},
             },
         ])
         sync_sessions(client.app.state.db_path)

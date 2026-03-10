@@ -92,8 +92,22 @@ class TestParseTrace:
         assert result["ended_at"] == "2026-01-01T12:05:00+00:00"
         assert result["duration_ms"] == 300000
 
-    def test_delegate_end_root(self, tmp_path):
-        path = str(tmp_path / "trace.jsonl")
+    def test_session_end_with_exit_code(self, tmp_path):
+        _write_trace(str(tmp_path), [
+            {
+                "ts": "2026-01-01T12:05:00+00:00",
+                "event": "session_end",
+                "trace_id": "run_x",
+                "span_id": "span1",
+                "data": {"duration_ms": 300000, "exit_code": 1, "summary": "Failed"},
+            }
+        ])
+        result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
+        assert result["exit_code"] == 1
+        assert result["summary"] == "Failed"
+
+    def test_delegate_end_does_not_set_exit_code(self, tmp_path):
+        """delegate_end alone should not determine session exit_code."""
         _write_trace(str(tmp_path), [
             {
                 "ts": "2026-01-01T12:04:00+00:00",
@@ -102,21 +116,6 @@ class TestParseTrace:
                 "span_id": "span2",
                 "parent_span": None,
                 "data": {"exit_code": 0, "summary": "Done", "duration_ms": 250000},
-            }
-        ])
-        result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
-        assert result["exit_code"] == 0
-        assert result["summary"] == "Done"
-
-    def test_non_root_delegate_end_ignored(self, tmp_path):
-        _write_trace(str(tmp_path), [
-            {
-                "ts": "2026-01-01T12:04:00+00:00",
-                "event": "delegate_end",
-                "trace_id": "run_x",
-                "span_id": "span2",
-                "parent_span": "span1",
-                "data": {"exit_code": 1, "summary": "Sub failed", "duration_ms": 5000},
             }
         ])
         result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
@@ -178,19 +177,11 @@ class TestSyncSessions:
                          "runtime": "strawpot-claude-code", "isolation": "none"},
             },
             {
-                "ts": "2026-01-01T12:05:00+00:00",
-                "event": "delegate_end",
-                "trace_id": "run_traced",
-                "span_id": "s2",
-                "parent_span": None,
-                "data": {"exit_code": 0, "summary": "All done", "duration_ms": 300000},
-            },
-            {
                 "ts": "2026-01-01T12:05:01+00:00",
                 "event": "session_end",
                 "trace_id": "run_traced",
                 "span_id": "s1",
-                "data": {"merge_strategy": "auto", "duration_ms": 300100},
+                "data": {"merge_strategy": "auto", "duration_ms": 300100, "exit_code": 0, "summary": "All done"},
             },
         ])
 

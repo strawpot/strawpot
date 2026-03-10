@@ -124,6 +124,7 @@ class SessionLaunch(BaseModel):
     overrides: SessionOverrides | None = None
     context_files: list[str] | None = None
     system_prompt: str | None = None
+    interactive: bool = False
 
     @field_validator("task")
     @classmethod
@@ -145,6 +146,7 @@ def launch_session_subprocess(
     merge_strategy_override: str | None = None,
     context_files: list[str] | None = None,
     schedule_id: int | None = None,
+    interactive: bool = False,
 ) -> str:
     """Launch a headless session subprocess. Returns run_id.
 
@@ -176,10 +178,10 @@ def launch_session_subprocess(
     conn.execute(
         """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
-            started_at, session_dir, task, schedule_id)
-           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?)""",
+            started_at, session_dir, task, schedule_id, interactive)
+           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?)""",
         (run_id, project_id, resolved_role, runtime, isolation, now,
-         session_dir, task, schedule_id),
+         session_dir, task, schedule_id, 1 if interactive else 0),
     )
 
     # Resolve context files and append to task
@@ -238,6 +240,9 @@ def launch_session_subprocess(
     existing = env.get("PATH", "")
     env["PATH"] = ":".join(extra_paths) + ":" + existing
 
+    if interactive:
+        env["STRAWPOT_ASK_USER_BRIDGE"] = "file"
+
     try:
         subprocess.Popen(
             cmd,
@@ -279,6 +284,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             isolation_override=body.overrides.isolation if body.overrides else None,
             merge_strategy_override=body.overrides.merge_strategy if body.overrides else None,
             context_files=body.context_files,
+            interactive=body.interactive,
         )
     except RuntimeError as e:
         status = _ERROR_STATUS.get(str(e), 500)
@@ -394,7 +400,7 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
     row = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
         "       started_at, ended_at, duration_ms, exit_code, task, summary,"
-        "       session_dir"
+        "       session_dir, interactive"
         "  FROM sessions WHERE project_id = ? AND run_id = ?",
         (project_id, run_id),
     ).fetchone()
@@ -404,8 +410,9 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
     result = {
         k: row[k]
         for k in row.keys()
-        if k != "session_dir"
+        if k not in ("session_dir",)
     }
+    result["interactive"] = bool(result.get("interactive"))
 
     session_dir = Path(row["session_dir"])
 
@@ -542,6 +549,56 @@ def delete_session(run_id: str, conn=Depends(get_db_conn)):
         run_id=run_id,
         project_id=project_id,
     ))
+
+    return {"ok": True}
+
+
+class AskUserResponseBody(BaseModel):
+    request_id: str
+    text: str = ""
+
+
+@router.post("/sessions/{run_id}/respond")
+def respond_to_ask_user(
+    run_id: str,
+    body: AskUserResponseBody,
+    conn=Depends(get_db_conn),
+):
+    """Write a response to a pending ask_user request."""
+    row = conn.execute(
+        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    if row["status"] not in ("starting", "running"):
+        raise HTTPException(409, f"Session is not active (status: {row['status']})")
+
+    session_dir = Path(row["session_dir"])
+    pending_path = session_dir / "ask_user_pending.json"
+
+    if not pending_path.is_file():
+        raise HTTPException(404, "No pending ask_user request")
+
+    try:
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Failed to read pending request")
+
+    if pending.get("request_id") != body.request_id:
+        raise HTTPException(409, "request_id does not match pending request")
+
+    response_path = session_dir / "ask_user_response.json"
+    resp_data = {
+        "request_id": body.request_id,
+        "text": body.text,
+    }
+
+    tmp_path = str(response_path) + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(resp_data, f, indent=2)
+    os.replace(tmp_path, str(response_path))
 
     return {"ok": True}
 

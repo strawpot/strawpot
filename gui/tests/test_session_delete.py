@@ -12,8 +12,7 @@ def _create_completed_session(client, tmp_path, run_id="run_test123"):
     pid = _register_project(client, tmp_path)
     session_dir = _write_session(tmp_path, run_id, archived=True)
     _write_trace(session_dir, [
-        {"event": "delegate_end", "ts": "2026-01-01T12:05:00+00:00", "data": {"exit_code": 0}},
-        {"event": "session_end", "ts": "2026-01-01T12:05:00+00:00", "data": {"duration_ms": 300000}},
+        {"event": "session_end", "ts": "2026-01-01T12:05:00+00:00", "data": {"duration_ms": 300000, "exit_code": 0}},
     ])
     sync_sessions(client.app.state.db_path)
     return pid, run_id
