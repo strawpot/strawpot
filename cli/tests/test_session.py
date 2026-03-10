@@ -607,7 +607,7 @@ class TestHandleDelegate:
         mock_error.assert_called_once_with(
             "req_123",
             "ERR_SUBAGENT_NONZERO_EXIT",
-            "Agent crashed",
+            "Sub-agent exited with code 1\n\nAgent output:\ntraceback...",
         )
         assert result == "error"
 

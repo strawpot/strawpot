@@ -813,10 +813,14 @@ class Session:
                 files_dirs=self._files_dirs,
             )
             if result.exit_code != 0:
+                msg = f"Sub-agent exited with code {result.exit_code}"
+                if result.output:
+                    tail = result.output[-2000:] if len(result.output) > 2000 else result.output
+                    msg = f"{msg}\n\nAgent output:\n{tail}"
                 return error_response(
                     request.request_id,
                     "ERR_SUBAGENT_NONZERO_EXIT",
-                    result.summary,
+                    msg,
                 )
             # Build DelegateResult with output
             delegate_res = denden_pb2.DelegateResult(
