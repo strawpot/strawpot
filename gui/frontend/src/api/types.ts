@@ -135,3 +135,19 @@ export interface AgentValidation {
   setup_command: string | null;
   setup_description: string | null;
 }
+
+export interface Schedule {
+  id: number;
+  name: string;
+  project_id: number;
+  project_name: string;
+  role: string | null;
+  task: string;
+  cron_expr: string;
+  enabled: boolean;
+  system_prompt: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}

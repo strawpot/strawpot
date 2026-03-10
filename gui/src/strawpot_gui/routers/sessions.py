@@ -133,33 +133,40 @@ class SessionLaunch(BaseModel):
         return v.strip()
 
 
-@router.post("/sessions", status_code=201)
-def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
-    """Launch a new headless session as a detached subprocess."""
+def launch_session_subprocess(
+    conn,
+    project_id: int,
+    task: str,
+    *,
+    role: str | None = None,
+    system_prompt: str | None = None,
+    runtime_override: str | None = None,
+    isolation_override: str | None = None,
+    merge_strategy_override: str | None = None,
+    context_files: list[str] | None = None,
+    schedule_id: int | None = None,
+) -> str:
+    """Launch a headless session subprocess. Returns run_id.
+
+    Shared by the HTTP endpoint and the cron scheduler.
+    Raises RuntimeError on failure (caller decides HTTP vs log response).
+    """
     project = conn.execute(
         "SELECT id, working_dir FROM projects WHERE id = ?",
-        (body.project_id,),
+        (project_id,),
     ).fetchone()
     if not project:
-        raise HTTPException(404, "Project not found")
+        raise RuntimeError("Project not found")
 
     working_dir = project["working_dir"]
     if not Path(working_dir).is_dir():
-        raise HTTPException(
-            422, "Project working directory does not exist"
-        )
+        raise RuntimeError("Project working directory does not exist")
 
     # Load project config for defaults
     config = load_config(Path(working_dir))
-    role = body.role or config.orchestrator_role
-    runtime = config.runtime
-    isolation = config.isolation
-
-    if body.overrides:
-        if body.overrides.runtime:
-            runtime = body.overrides.runtime
-        if body.overrides.isolation:
-            isolation = body.overrides.isolation
+    resolved_role = role or config.orchestrator_role
+    runtime = runtime_override or config.runtime
+    isolation = isolation_override or config.isolation
 
     # Pre-generate run_id
     run_id = f"run_{uuid.uuid4().hex[:12]}"
@@ -169,23 +176,23 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
     conn.execute(
         """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
-            started_at, session_dir, task)
-           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?)""",
-        (run_id, body.project_id, role, runtime, isolation, now,
-         session_dir, body.task),
+            started_at, session_dir, task, schedule_id)
+           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?)""",
+        (run_id, project_id, resolved_role, runtime, isolation, now,
+         session_dir, task, schedule_id),
     )
 
     # Resolve context files and append to task
-    task_text = body.task
-    if body.context_files:
+    task_text = task
+    if context_files:
         files_dir = Path(working_dir) / ".strawpot" / "files"
         resolved: list[str] = []
-        for rel_path in body.context_files:
+        for rel_path in context_files:
             fp = (files_dir / rel_path).resolve()
             if not fp.is_relative_to(files_dir.resolve()):
-                raise HTTPException(400, f"Invalid file path: {rel_path}")
+                raise RuntimeError(f"Invalid file path: {rel_path}")
             if not fp.is_file():
-                raise HTTPException(404, f"File not found: {rel_path}")
+                raise RuntimeError(f"File not found: {rel_path}")
             resolved.append(str(fp))
         if resolved:
             listing = "\n".join(f"- {p}" for p in resolved)
@@ -200,7 +207,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
     # Build CLI command
     strawpot_cmd = shutil.which("strawpot")
     if strawpot_cmd is None:
-        raise HTTPException(500, "strawpot CLI not found on PATH")
+        raise RuntimeError("strawpot CLI not found on PATH")
 
     cmd = [
         strawpot_cmd, "start",
@@ -208,17 +215,16 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
         "--task", task_text,
         "--run-id", run_id,
     ]
-    if body.role:
-        cmd.extend(["--role", body.role])
-    if body.overrides:
-        if body.overrides.runtime:
-            cmd.extend(["--runtime", body.overrides.runtime])
-        if body.overrides.isolation:
-            cmd.extend(["--isolation", body.overrides.isolation])
-        if body.overrides.merge_strategy:
-            cmd.extend(["--merge-strategy", body.overrides.merge_strategy])
-    if body.system_prompt:
-        cmd.extend(["--system-prompt", body.system_prompt])
+    if role:
+        cmd.extend(["--role", role])
+    if runtime_override:
+        cmd.extend(["--runtime", runtime_override])
+    if isolation_override:
+        cmd.extend(["--isolation", isolation_override])
+    if merge_strategy_override:
+        cmd.extend(["--merge-strategy", merge_strategy_override])
+    if system_prompt:
+        cmd.extend(["--system-prompt", system_prompt])
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.
@@ -244,13 +250,39 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
         )
     except OSError:
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
-        raise HTTPException(500, "Failed to start session subprocess")
+        raise RuntimeError("Failed to start session subprocess")
 
     event_bus.publish(SessionEvent(
         kind="session_started",
         run_id=run_id,
-        project_id=body.project_id,
+        project_id=project_id,
     ))
+
+    return run_id
+
+
+@router.post("/sessions", status_code=201)
+def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
+    """Launch a new headless session as a detached subprocess."""
+    _ERROR_STATUS = {
+        "Project not found": 404,
+        "Project working directory does not exist": 422,
+    }
+    try:
+        run_id = launch_session_subprocess(
+            conn,
+            body.project_id,
+            body.task,
+            role=body.role,
+            system_prompt=body.system_prompt,
+            runtime_override=body.overrides.runtime if body.overrides else None,
+            isolation_override=body.overrides.isolation if body.overrides else None,
+            merge_strategy_override=body.overrides.merge_strategy if body.overrides else None,
+            context_files=body.context_files,
+        )
+    except RuntimeError as e:
+        status = _ERROR_STATUS.get(str(e), 500)
+        raise HTTPException(status, str(e))
 
     return {"run_id": run_id, "status": "starting"}
 

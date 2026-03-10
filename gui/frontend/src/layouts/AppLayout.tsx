@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { LayoutDashboard, FolderKanban, Users, Wrench, Bot, Brain, Settings, Sun, Moon, Check, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Clock, Users, Wrench, Bot, Brain, Settings, Sun, Moon, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject, useProjects } from "@/hooks/queries/use-projects";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/schedules", label: "Schedules", icon: Clock },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -60,6 +61,10 @@ function useBreadcrumbs() {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
       }
     }
+  }
+
+  if (segments[0] === "schedules") {
+    crumbs.push({ label: "Scheduled Tasks" });
   }
 
   if (segments[0] === "settings") {

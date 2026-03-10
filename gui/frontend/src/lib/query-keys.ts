@@ -31,4 +31,9 @@ export const queryKeys = {
     validate: (name: string) =>
       ["registry", "agents", name, "validate"] as const,
   },
+  schedules: {
+    all: ["schedules"] as const,
+    detail: (id: number) => ["schedules", id] as const,
+    history: (id: number) => ["schedules", id, "history"] as const,
+  },
 };

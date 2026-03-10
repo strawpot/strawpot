@@ -32,22 +32,26 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_code   INTEGER,
     session_dir TEXT NOT NULL,
     task        TEXT,
-    summary     TEXT
+    summary     TEXT,
+    schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_status  ON sessions(status);
 
-CREATE TABLE IF NOT EXISTS trigger_instances (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE,
-    adapter     TEXT NOT NULL,
-    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    role        TEXT NOT NULL,
-    config      TEXT NOT NULL DEFAULT '{}',
-    status      TEXT NOT NULL DEFAULT 'stopped',
-    last_error  TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL UNIQUE,
+    project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    role          TEXT,
+    task          TEXT NOT NULL,
+    cron_expr     TEXT NOT NULL,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    system_prompt TEXT,
+    last_run_at   TEXT,
+    next_run_at   TEXT,
+    last_error    TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
