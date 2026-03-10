@@ -338,6 +338,13 @@ class Session:
         # Set session_dir on wrapper so PID/log files go to the right place
         self.wrapper.session_dir = self._session_dir()
 
+        # Activate file-based ask_user bridge when env var is set
+        bridge_mode = os.environ.get("STRAWPOT_ASK_USER_BRIDGE")
+        if bridge_mode == "file" and self._ask_user_handler is _default_ask_user_handler:
+            from strawpot.ask_user_bridge import make_file_bridge_handler
+
+            self._ask_user_handler = make_file_bridge_handler(self._session_dir())
+
         # Initialize tracer (before try block so session_dir exists)
         if self.config.trace:
             self._tracer = Tracer(self._session_dir(), self._run_id)
@@ -358,7 +365,7 @@ class Session:
             )
 
             # 1b. Resolve memory provider (if configured)
-            if self.config.memory:
+            if self.config.memory and self.config.memory != "none":
                 spec = resolve_memory(
                     self.config.memory,
                     working_dir,
@@ -545,11 +552,14 @@ class Session:
                 (time.monotonic() - self._session_start_time) * 1000
             )
             result = self._orchestrator_result
+            exit_code = result.exit_code if result else 0
             self._tracer.session_end(
                 span_id=self._session_span_id,
                 merge_strategy=self.config.merge_strategy,
                 duration_ms=duration_ms,
                 output=result.output if result else "",
+                exit_code=exit_code,
+                summary=result.summary if result else "",
             )
 
         # 1. Kill remaining sub-agents
@@ -808,11 +818,24 @@ class Session:
                     "ERR_SUBAGENT_NONZERO_EXIT",
                     result.summary,
                 )
+            # Build DelegateResult with output
+            delegate_res = denden_pb2.DelegateResult(
+                summary=result.summary,
+                output_format=fmt,
+            )
+            if result.output:
+                if return_format == "JSON":
+                    try:
+                        parsed = json.loads(result.output)
+                        if isinstance(parsed, dict):
+                            delegate_res.output.update(parsed)
+                    except (json.JSONDecodeError, ValueError):
+                        delegate_res.output.update({"text": result.output})
+                else:
+                    delegate_res.output.update({"text": result.output})
             return ok_response(
                 request.request_id,
-                delegate_result=denden_pb2.DelegateResult(
-                    summary=result.summary,
-                ),
+                delegate_result=delegate_res,
             )
         except PolicyDenied as exc:
             if self._tracer is not None:

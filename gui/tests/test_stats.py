@@ -33,17 +33,12 @@ def _setup_project_with_sessions(client, tmp_path, sessions_data):
             end_data = {}
             if s.get("duration_ms") is not None:
                 end_data["duration_ms"] = s["duration_ms"]
+            exit_code = 0 if status == "completed" else 1
+            end_data["exit_code"] = exit_code
             events.append({
                 "event": "session_end",
                 "ts": s.get("started_at", "2026-01-15T12:00:00+00:00"),
                 "data": end_data,
-            })
-            # delegate_end with exit_code determines completed vs failed
-            exit_code = 0 if status == "completed" else 1
-            events.append({
-                "event": "delegate_end",
-                "ts": s.get("started_at", "2026-01-15T12:00:00+00:00"),
-                "data": {"exit_code": exit_code},
             })
         _write_trace(session_dir, events)
 
@@ -143,8 +138,7 @@ class TestStatsEndpoint:
             started_at=today.isoformat(),
         )
         _write_trace(session_dir, [
-            {"event": "session_end", "ts": today.isoformat(), "data": {"duration_ms": 60000}},
-            {"event": "delegate_end", "ts": today.isoformat(), "data": {"exit_code": 0}},
+            {"event": "session_end", "ts": today.isoformat(), "data": {"duration_ms": 60000, "exit_code": 0}},
         ])
 
         # Create a running session (not archived, no trace)

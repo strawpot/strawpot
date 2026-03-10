@@ -107,6 +107,17 @@ async def session_tree_sse(run_id: str, request: Request):
         event_id += 1
         yield format_sse(event_id, state.to_dict())
 
+        # Check for pending ask_user on initial connect
+        ask_user_path = os.path.join(session_dir, "ask_user_pending.json")
+        if os.path.isfile(ask_user_path):
+            try:
+                with open(ask_user_path, encoding="utf-8") as f:
+                    ask_data = json.load(f)
+                event_id += 1
+                yield format_sse_typed(event_id, "ask_user", ask_data)
+            except (OSError, json.JSONDecodeError):
+                pass
+
         # Terminal sessions: send final state and close
         if status in ("completed", "failed", "stopped"):
             return
@@ -158,6 +169,28 @@ async def session_tree_sse(run_id: str, request: Request):
                         state.process_event(ev)
                     if new_events:
                         changed = True
+
+                # Detect ask_user bridge files
+                if any(
+                    f.endswith("ask_user_pending.json")
+                    or f.endswith("ask_user_response.json")
+                    for f in changed_files
+                ):
+                    pending = os.path.join(session_dir, "ask_user_pending.json")
+                    if os.path.isfile(pending):
+                        try:
+                            with open(pending, encoding="utf-8") as f:
+                                ask_data = json.load(f)
+                            event_id += 1
+                            yield format_sse_typed(event_id, "ask_user", ask_data)
+                        except (OSError, json.JSONDecodeError):
+                            pass
+                    else:
+                        # Pending file removed → question resolved
+                        event_id += 1
+                        yield format_sse_typed(
+                            event_id, "ask_user_resolved", {}
+                        )
 
                 if changed:
                     event_id += 1

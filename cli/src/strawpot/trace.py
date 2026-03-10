@@ -121,7 +121,7 @@ class Tracer:
 
     def session_end(
         self, *, span_id: str, merge_strategy: str, duration_ms: int,
-        output: str = "",
+        output: str = "", exit_code: int = 0, summary: str = "",
     ) -> None:
         """Emit ``session_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -131,6 +131,8 @@ class Tracer:
             merge_strategy=merge_strategy,
             duration_ms=duration_ms,
             output_ref=output_ref,
+            exit_code=exit_code,
+            summary=summary,
         )
 
     def delegate_start(
