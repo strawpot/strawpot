@@ -47,11 +47,12 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     task          TEXT NOT NULL,
     cron_expr     TEXT NOT NULL,
     enabled       INTEGER NOT NULL DEFAULT 1,
-    system_prompt TEXT,
-    last_run_at   TEXT,
-    next_run_at   TEXT,
-    last_error    TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    system_prompt   TEXT,
+    skip_if_running INTEGER NOT NULL DEFAULT 1,
+    last_run_at     TEXT,
+    next_run_at     TEXT,
+    last_error      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -71,9 +72,22 @@ def init_db(db_path: str) -> None:
     conn = _connect(db_path)
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema migrations for existing databases."""
+    # Add skip_if_running column to scheduled_tasks (added 2026-03-09)
+    try:
+        conn.execute(
+            "ALTER TABLE scheduled_tasks "
+            "ADD COLUMN skip_if_running INTEGER NOT NULL DEFAULT 1"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
 
 @contextmanager

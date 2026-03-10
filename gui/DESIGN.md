@@ -930,8 +930,9 @@ CREATE TABLE scheduled_tasks (
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role        TEXT NOT NULL,               -- role to launch sessions with
     task        TEXT NOT NULL,               -- task description for the agent
-    cron_expr   TEXT NOT NULL,               -- cron expression (e.g. "*/5 * * * *")
-    enabled     INTEGER NOT NULL DEFAULT 1,  -- 0 = disabled, 1 = enabled
+    cron_expr        TEXT NOT NULL,               -- cron expression (e.g. "*/5 * * * *")
+    enabled          INTEGER NOT NULL DEFAULT 1,  -- 0 = disabled, 1 = enabled
+    skip_if_running  INTEGER NOT NULL DEFAULT 1,  -- skip trigger when session active
     last_run_at TEXT,
     next_run_at TEXT,
     last_error  TEXT,
@@ -1010,6 +1011,13 @@ GUI Cron Scheduler
 | `*/1 * * * *` | support-agent | Check Slack #support for new messages and respond | `slack` |
 | `0 9 * * 1-5` | daily-reporter | Generate and post daily standup summary | `slack`, `github-issues` |
 | `0 */6 * * *` | telegram-bot | Check Telegram for new messages and respond | `telegram` |
+
+**Overlap prevention:** Each schedule has a `skip_if_running` flag
+(default on). When enabled, the scheduler checks for active sessions
+(`status IN ('starting', 'running')`) linked to the schedule before
+firing. If one exists, the trigger is skipped and `next_run_at` is
+advanced. This prevents duplicate work from overlapping runs on
+short-interval schedules.
 
 **Conversation continuity:** Each cron run is a new session. The agent
 remembers previous interactions via memory providers — `memory.get`

@@ -24,6 +24,7 @@ class ScheduleCreate(BaseModel):
     cron_expr: str
     role: str | None = None
     system_prompt: str | None = None
+    skip_if_running: bool = True
 
     @field_validator("name")
     @classmethod
@@ -54,6 +55,7 @@ class ScheduleUpdate(BaseModel):
     cron_expr: str | None = None
     role: str | None = None
     system_prompt: str | None = None
+    skip_if_running: bool | None = None
 
     @field_validator("cron_expr")
     @classmethod
@@ -73,6 +75,7 @@ class ScheduleUpdate(BaseModel):
 def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["enabled"] = bool(d.get("enabled", 0))
+    d["skip_if_running"] = bool(d.get("skip_if_running", 1))
     return d
 
 
@@ -116,10 +119,12 @@ def create_schedule(body: ScheduleCreate, conn=Depends(get_db_conn)):
     try:
         cursor = conn.execute(
             """INSERT INTO scheduled_tasks
-               (name, project_id, role, task, cron_expr, system_prompt, next_run_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (name, project_id, role, task, cron_expr, system_prompt,
+                skip_if_running, next_run_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.name, body.project_id, body.role, body.task,
-             body.cron_expr, body.system_prompt, next_run),
+             body.cron_expr, body.system_prompt,
+             int(body.skip_if_running), next_run),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A schedule with this name already exists")
@@ -183,6 +188,9 @@ def update_schedule(
             next_run = _compute_next_run(body.cron_expr)
             updates.append("next_run_at = ?")
             params.append(next_run)
+    if body.skip_if_running is not None:
+        updates.append("skip_if_running = ?")
+        params.append(int(body.skip_if_running))
 
     if not updates:
         raise HTTPException(422, "No fields to update")
