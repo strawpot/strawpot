@@ -20,6 +20,7 @@ export function useProject(id: number, options?: { enabled?: boolean }) {
 
 export interface ProjectConfig {
   merged: Record<string, unknown>;
+  merged_nested: Record<string, unknown>;
   project: Record<string, unknown>;
   global: Record<string, unknown>;
 }

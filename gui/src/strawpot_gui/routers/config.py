@@ -8,6 +8,39 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from strawpot.config import StrawPotConfig, _read_toml, get_strawpot_home, load_config
 
+
+def _config_to_nested(config: StrawPotConfig) -> dict:
+    """Convert a StrawPotConfig to nested TOML-shaped dict.
+
+    This is the reverse of ``_apply()`` — maps flat dataclass fields back
+    to the nested structure that TOML files and ConfigForm expect.
+    Includes all fields so it can serve as placeholders.
+    """
+    result: dict = {
+        "runtime": config.runtime,
+        "isolation": config.isolation,
+        "memory": config.memory,
+        "orchestrator": {
+            "role": config.orchestrator_role,
+            "permission_mode": config.permission_mode,
+        },
+        "policy": {
+            "max_depth": config.max_depth,
+            "agent_timeout": config.agent_timeout,
+            "max_delegate_retries": config.max_delegate_retries,
+            "cache_delegations": config.cache_delegations,
+            "cache_max_entries": config.cache_max_entries,
+            "cache_ttl_seconds": config.cache_ttl_seconds,
+        },
+        "session": {
+            "merge_strategy": config.merge_strategy,
+            "pull_before_session": config.pull_before_session,
+            "pr_command": config.pr_command,
+        },
+        "trace": {"enabled": config.trace},
+    }
+    return result
+
 from strawpot_gui.db import get_db_conn
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -42,9 +75,12 @@ def list_roles():
 
 @router.get("/config/global")
 def get_global_config():
-    """Read the raw global strawpot.toml."""
+    """Read raw global strawpot.toml with code defaults as placeholders."""
     path = get_strawpot_home() / "strawpot.toml"
-    return _read_toml(path)
+    return {
+        "values": _read_toml(path),
+        "defaults": _config_to_nested(StrawPotConfig()),
+    }
 
 
 @router.put("/config/global")
@@ -79,8 +115,12 @@ def get_project_config(project_id: int, conn=Depends(get_db_conn)):
     merged = load_config(Path(working_dir))
     raw_project = _read_toml(Path(working_dir) / "strawpot.toml")
     raw_global = _read_toml(get_strawpot_home() / "strawpot.toml")
+    # merged: flat asdict for LaunchDialog defaults
+    # merged_nested: TOML-shaped for ConfigForm placeholders (global+defaults, without project)
+    global_merged = load_config(None)
     return {
         "merged": asdict(merged),
+        "merged_nested": _config_to_nested(global_merged),
         "project": raw_project,
         "global": raw_global,
     }

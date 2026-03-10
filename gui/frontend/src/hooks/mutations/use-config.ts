@@ -7,7 +7,12 @@ export function useSaveGlobalConfig() {
   return useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       api.put<Record<string, unknown>>("/config/global", data),
-    onSuccess: () => {
+    onSuccess: (_response, savedData) => {
+      // Immediately update the cache so ConfigForm re-syncs state
+      qc.setQueryData(queryKeys.config.global, (old: unknown) => ({
+        ...((old as Record<string, unknown>) ?? {}),
+        values: savedData,
+      }));
       qc.invalidateQueries({ queryKey: queryKeys.config.global });
     },
   });
@@ -27,7 +32,14 @@ export function useSaveProjectConfig() {
         `/projects/${projectId}/config`,
         data,
       ),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_response, variables) => {
+      qc.setQueryData(
+        queryKeys.projects.config(variables.projectId),
+        (old: unknown) => ({
+          ...((old as Record<string, unknown>) ?? {}),
+          project: variables.data,
+        }),
+      );
       qc.invalidateQueries({
         queryKey: queryKeys.projects.config(variables.projectId),
       });

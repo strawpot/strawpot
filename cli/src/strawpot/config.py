@@ -31,6 +31,8 @@ class StrawPotConfig:
     agent_timeout: int | None = None
     max_delegate_retries: int = 0
     cache_delegations: bool = True
+    cache_max_entries: int = 0  # 0 = unlimited
+    cache_ttl_seconds: int = 0  # 0 = unlimited
     agents: dict[str, dict] = field(default_factory=dict)
     skills: dict[str, dict[str, str]] = field(default_factory=dict)
     roles: dict[str, dict] = field(default_factory=dict)
@@ -76,6 +78,10 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.max_delegate_retries = policy["max_delegate_retries"]
     if "cache_delegations" in policy:
         config.cache_delegations = policy["cache_delegations"]
+    if "cache_max_entries" in policy:
+        config.cache_max_entries = policy["cache_max_entries"]
+    if "cache_ttl_seconds" in policy:
+        config.cache_ttl_seconds = policy["cache_ttl_seconds"]
 
     agents = data.get("agents", {})
     for name, agent_data in agents.items():
@@ -108,6 +114,29 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     trace_section = data.get("trace", {})
     if "enabled" in trace_section:
         config.trace = trace_section["enabled"]
+
+
+def ensure_global_config() -> Path:
+    """Create the global strawpot.toml with recommended defaults if missing.
+
+    Returns the path to the global config file.
+    """
+    import tomli_w
+
+    path = get_strawpot_home() / "strawpot.toml"
+    if path.is_file():
+        return path
+
+    defaults = {
+        "memory": "dial",
+        "policy": {
+            "cache_delegations": True,
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        tomli_w.dump(defaults, f)
+    return path
 
 
 def load_config(project_dir: Path | None = None) -> StrawPotConfig:

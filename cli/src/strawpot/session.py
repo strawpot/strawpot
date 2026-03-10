@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -317,7 +318,7 @@ class Session:
         self._orchestrator_result: AgentResult | None = None
         self._orchestrator_role_prompt: str = ""
         self._files_dirs: list[str] = []
-        self._delegation_cache: dict[str, tuple[str, "denden_pb2.DelegateResult"]] = {}
+        self._delegation_cache: OrderedDict[str, tuple[str, "denden_pb2.DelegateResult", float]] = OrderedDict()
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -806,7 +807,14 @@ class Session:
             )
             cached = self._delegation_cache.get(cache_key)
             if cached is not None:
-                cached_output, cached_delegate_res = cached
+                cached_output, cached_delegate_res, cached_at = cached
+                # TTL eviction
+                ttl = self.config.cache_ttl_seconds
+                if ttl > 0 and (time.monotonic() - cached_at) > ttl:
+                    del self._delegation_cache[cache_key]
+                    cached = None
+            if cached is not None:
+                cached_output, cached_delegate_res, _ = cached
                 logger.info(
                     "Delegation cache hit for role=%s, output_len=%d, format=%s",
                     delegate_req.role_slug,
@@ -868,9 +876,13 @@ class Session:
             )
             # Cache successful results with non-empty output
             if cache_key is not None and result.output:
+                max_entries = self.config.cache_max_entries
+                if max_entries > 0 and len(self._delegation_cache) >= max_entries:
+                    self._delegation_cache.popitem(last=False)
                 self._delegation_cache[cache_key] = (
                     result.output,
                     delegate_res,
+                    time.monotonic(),
                 )
             return ok_response(
                 request.request_id,

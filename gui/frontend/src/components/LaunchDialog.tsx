@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useProjectConfig, useProjectFiles } from "@/hooks/queries/use-projects";
 import { useRoles } from "@/hooks/queries/use-roles";
 import { useResources } from "@/hooks/queries/use-registry";
+import { useResourceConfig } from "@/hooks/queries/use-resource-config";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,18 +51,34 @@ export default function LaunchDialog({
   const config = useProjectConfig(projectId);
   const roles = useRoles();
   const { data: agents } = useResources("agents");
+  const { data: memories } = useResources("memories");
   const projectFiles = useProjectFiles(projectId);
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged as
-    | { orchestrator_role?: string; runtime?: string; isolation?: string; merge_strategy?: string; cache_delegations?: boolean }
+    | {
+        orchestrator_role?: string;
+        runtime?: string;
+        isolation?: string;
+        memory?: string;
+        merge_strategy?: string;
+        cache_delegations?: boolean;
+        cache_max_entries?: number;
+        cache_ttl_seconds?: number;
+      }
     | undefined;
+
+  // placeholder value for "Default" option in selects
+  const EMPTY = "__empty__";
 
   const [task, setTask] = useState("");
   const [role, setRole] = useState("");
   const [runtime, setRuntime] = useState("");
   const [isolation, setIsolation] = useState("");
+  const [memory, setMemory] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
-  const [cacheDelegations, setCacheDelegations] = useState(true);
+  const [cacheDelegations, setCacheDelegations] = useState("");
+  const [cacheMaxEntries, setCacheMaxEntries] = useState("");
+  const [cacheTtlSeconds, setCacheTtlSeconds] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [interactive, setInteractive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -72,8 +89,11 @@ export default function LaunchDialog({
     setRole("");
     setRuntime("");
     setIsolation("");
+    setMemory("");
     setMergeStrategy("");
-    setCacheDelegations(true);
+    setCacheDelegations("");
+    setCacheMaxEntries("");
+    setCacheTtlSeconds("");
     setSystemPrompt("");
     setInteractive(false);
     setSelectedFiles([]);
@@ -104,9 +124,12 @@ export default function LaunchDialog({
 
       const overrides: Record<string, unknown> = {};
       if (runtime.trim()) overrides.runtime = runtime.trim();
-      if (isolation.trim()) overrides.isolation = isolation.trim();
-      if (mergeStrategy.trim()) overrides.merge_strategy = mergeStrategy.trim();
-      if (!cacheDelegations) overrides.cache_delegations = false;
+      if (isolation) overrides.isolation = isolation;
+      if (memory.trim()) overrides.memory = memory.trim();
+      if (mergeStrategy) overrides.merge_strategy = mergeStrategy;
+      if (cacheDelegations) overrides.cache_delegations = cacheDelegations === "true";
+      if (cacheMaxEntries.trim()) overrides.cache_max_entries = Number(cacheMaxEntries.trim());
+      if (cacheTtlSeconds.trim()) overrides.cache_ttl_seconds = Number(cacheTtlSeconds.trim());
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
       if (selectedFiles.length > 0) body.context_files = selectedFiles;
       if (systemPrompt.trim()) body.system_prompt = systemPrompt.trim();
@@ -125,6 +148,23 @@ export default function LaunchDialog({
   const installedRoles = (roles.data ?? []).filter((v) => v !== defaultRole);
   const allRoles = [defaultRole, ...installedRoles];
   const agentNames = (agents ?? []).map((a) => a.name);
+  const memoryNames = new Set((memories ?? []).map((m) => m.name));
+  memoryNames.add("none");
+  const memoryOptions = [...memoryNames].sort();
+
+  // Resolve runtime placeholder: role's default_agent (if available) > project runtime
+  const effectiveRole = role.trim() || defaultRole;
+  const roleConfig = useResourceConfig("roles", effectiveRole, {
+    enabled: !!effectiveRole,
+  });
+  const roleDefaultAgent =
+    (roleConfig.data?.params_values?.default_agent as string) ??
+    (roleConfig.data?.params_schema?.default_agent?.default as string) ??
+    "";
+  const runtimePlaceholder =
+    roleDefaultAgent && agentNames.includes(roleDefaultAgent)
+      ? roleDefaultAgent
+      : defaults?.runtime ?? "strawpot-claude-code";
 
   const roleError =
     role.trim() && !allRoles.includes(role.trim())
@@ -138,7 +178,7 @@ export default function LaunchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Launch Session</DialogTitle>
         </DialogHeader>
@@ -252,7 +292,21 @@ export default function LaunchDialog({
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={interactive}
+                  onChange={(e) => setInteractive(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <span className="text-sm">
+                  Interactive mode
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Allow the agent to ask you questions via a chat panel
+                </span>
+              </label>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="runtime">Runtime</Label>
                   <Input
@@ -260,7 +314,7 @@ export default function LaunchDialog({
                     list="datalist-runtime"
                     value={runtime}
                     onChange={(e) => setRuntime(e.target.value)}
-                    placeholder={defaults?.runtime ?? "strawpot-claude-code"}
+                    placeholder={runtimePlaceholder}
                   />
                   {agents && (
                     <datalist id="datalist-runtime">
@@ -274,14 +328,37 @@ export default function LaunchDialog({
                   )}
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="memory">Memory</Label>
+                  <Input
+                    id="memory"
+                    list="datalist-memory"
+                    value={memory}
+                    onChange={(e) => setMemory(e.target.value)}
+                    placeholder={defaults?.memory || "dial"}
+                  />
+                  <datalist id="datalist-memory">
+                    {memoryOptions.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="isolation">Isolation</Label>
-                  <Select value={isolation} onValueChange={setIsolation}>
+                  <Select
+                    value={isolation || EMPTY}
+                    onValueChange={(v) => setIsolation(v === EMPTY ? "" : v)}
+                  >
                     <SelectTrigger id="isolation">
                       <SelectValue
                         placeholder={defaults?.isolation ?? "none"}
                       />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={EMPTY} className="text-muted-foreground">
+                        Default ({defaults?.isolation ?? "none"})
+                      </SelectItem>
                       <SelectItem value="none">none</SelectItem>
                       <SelectItem value="worktree">worktree</SelectItem>
                     </SelectContent>
@@ -290,8 +367,8 @@ export default function LaunchDialog({
                 <div className="space-y-2">
                   <Label htmlFor="merge-strategy">Merge Strategy</Label>
                   <Select
-                    value={mergeStrategy}
-                    onValueChange={setMergeStrategy}
+                    value={mergeStrategy || EMPTY}
+                    onValueChange={(v) => setMergeStrategy(v === EMPTY ? "" : v)}
                   >
                     <SelectTrigger id="merge-strategy">
                       <SelectValue
@@ -299,6 +376,9 @@ export default function LaunchDialog({
                       />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={EMPTY} className="text-muted-foreground">
+                        Default ({defaults?.merge_strategy ?? "auto"})
+                      </SelectItem>
                       <SelectItem value="auto">auto</SelectItem>
                       <SelectItem value="local">local</SelectItem>
                       <SelectItem value="pr">pr</SelectItem>
@@ -316,34 +396,50 @@ export default function LaunchDialog({
                   rows={3}
                 />
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cacheDelegations}
-                  onChange={(e) => setCacheDelegations(e.target.checked)}
-                  className="rounded border-input"
-                />
-                <span className="text-sm">
-                  Cache delegations
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Reuse results for identical delegation requests within this session
-                </span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={interactive}
-                  onChange={(e) => setInteractive(e.target.checked)}
-                  className="rounded border-input"
-                />
-                <span className="text-sm">
-                  Interactive mode
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Allow the agent to ask you questions via a chat panel
-                </span>
-              </label>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Cache Delegations</Label>
+                  <Select
+                    value={cacheDelegations || EMPTY}
+                    onValueChange={(v) => setCacheDelegations(v === EMPTY ? "" : v)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue
+                        placeholder={defaults?.cache_delegations !== false ? "true" : "false"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={EMPTY} className="text-muted-foreground">
+                        Default ({defaults?.cache_delegations !== false ? "true" : "false"})
+                      </SelectItem>
+                      <SelectItem value="true">true</SelectItem>
+                      <SelectItem value="false">false</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Cache Max Entries</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={cacheMaxEntries}
+                    onChange={(e) => setCacheMaxEntries(e.target.value)}
+                    placeholder={defaults?.cache_max_entries ? String(defaults.cache_max_entries) : "0 (unlimited)"}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cache TTL (seconds)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={cacheTtlSeconds}
+                    onChange={(e) => setCacheTtlSeconds(e.target.value)}
+                    placeholder={defaults?.cache_ttl_seconds ? String(defaults.cache_ttl_seconds) : "0 (unlimited)"}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
             </CollapsibleContent>
           </Collapsible>
 

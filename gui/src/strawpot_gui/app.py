@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from strawpot.config import get_strawpot_home
+from strawpot.config import ensure_global_config, get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
 from strawpot_gui.event_bus import event_bus
@@ -69,6 +69,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        ensure_global_config()
         init_db(db_path)
         sync_sessions(db_path)
         from strawpot_gui.routers.sessions import launch_session_subprocess
