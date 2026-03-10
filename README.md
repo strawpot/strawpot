@@ -33,7 +33,7 @@ You're an engineer, not a CEO. Building technology is the easy part — strategy
 ## Quick Start
 
 ```bash
-pip install strawpot
+pip install strawpot-gui
 strawpot gui
 ```
 
