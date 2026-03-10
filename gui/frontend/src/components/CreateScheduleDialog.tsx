@@ -65,6 +65,7 @@ export default function CreateScheduleDialog({
   const [cronExpr, setCronExpr] = useState("");
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [skipIfRunning, setSkipIfRunning] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export default function CreateScheduleDialog({
       setCronExpr(editing.cron_expr);
       setRole(editing.role ?? "");
       setSystemPrompt(editing.system_prompt ?? "");
+      setSkipIfRunning(editing.skip_if_running);
     } else if (open && !editing) {
       resetForm();
     }
@@ -87,6 +89,7 @@ export default function CreateScheduleDialog({
     setCronExpr("");
     setRole("");
     setSystemPrompt("");
+    setSkipIfRunning(true);
     setAdvancedOpen(false);
   }
 
@@ -99,6 +102,7 @@ export default function CreateScheduleDialog({
         cron_expr: cronExpr.trim(),
         role: role.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
+        skip_if_running: skipIfRunning,
       };
       if (editing) {
         await updateSchedule.mutateAsync({ id: editing.id, ...body });
@@ -240,6 +244,21 @@ export default function CreateScheduleDialog({
               ))}
             </datalist>
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={skipIfRunning}
+              onChange={(e) => setSkipIfRunning(e.target.checked)}
+              className="rounded border-input"
+            />
+            <span className="text-sm">
+              Skip if already running
+            </span>
+            <span className="text-xs text-muted-foreground">
+              — don't start a new session while a previous one is still active
+            </span>
+          </label>
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger asChild>

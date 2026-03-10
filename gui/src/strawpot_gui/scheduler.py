@@ -76,11 +76,37 @@ class Scheduler:
             for row in rows:
                 next_run_str = row["next_run_at"]
                 try:
-                    next_run = datetime.fromisoformat(next_run_str)
+                    next_dt = datetime.fromisoformat(next_run_str)
                 except (ValueError, TypeError):
                     continue
-                if next_run <= now:
-                    self._fire(conn, dict(row), now)
+                if next_dt > now:
+                    continue
+                if row["skip_if_running"] and self._has_running_session(
+                    conn, row["id"]
+                ):
+                    logger.info(
+                        "Schedule '%s' skipped: session already running",
+                        row["name"],
+                    )
+                    next_run = _next_run(row["cron_expr"], now)
+                    conn.execute(
+                        "UPDATE scheduled_tasks SET next_run_at = ? "
+                        "WHERE id = ?",
+                        (next_run, row["id"]),
+                    )
+                    continue
+                self._fire(conn, dict(row), now)
+
+    @staticmethod
+    def _has_running_session(conn, schedule_id: int) -> bool:
+        """Return True if a session spawned by this schedule is still active."""
+        row = conn.execute(
+            "SELECT 1 FROM sessions "
+            "WHERE schedule_id = ? AND status IN ('starting', 'running') "
+            "LIMIT 1",
+            (schedule_id,),
+        ).fetchone()
+        return row is not None
 
     def _fire(self, conn, schedule: dict, now: datetime) -> None:
         """Fire a single scheduled task."""

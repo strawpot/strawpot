@@ -10,6 +10,7 @@ interface CreateScheduleBody {
   cron_expr: string;
   role?: string;
   system_prompt?: string;
+  skip_if_running?: boolean;
 }
 
 interface UpdateScheduleBody {
@@ -18,6 +19,7 @@ interface UpdateScheduleBody {
   cron_expr?: string;
   role?: string;
   system_prompt?: string;
+  skip_if_running?: boolean;
 }
 
 export function useCreateSchedule() {

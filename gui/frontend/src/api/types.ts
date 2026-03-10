@@ -146,6 +146,7 @@ export interface Schedule {
   cron_expr: string;
   enabled: boolean;
   system_prompt: string | null;
+  skip_if_running: boolean;
   last_run_at: string | null;
   next_run_at: string | null;
   last_error: string | null;
