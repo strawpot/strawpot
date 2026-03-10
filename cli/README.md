@@ -47,6 +47,8 @@ role = "team-lead"
 
 [policy]
 max_depth = 3
+cache_delegations = true     # cache delegation results (default: true)
+max_num_delegations = 0      # max delegation calls per session (0 = unlimited)
 ```
 
 ## Links

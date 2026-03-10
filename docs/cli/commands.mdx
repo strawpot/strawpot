@@ -26,6 +26,15 @@ strawpot start [options]
 | `--headless` | Run detached with output to log file (requires `--task`) | `false` |
 | `--system-prompt TEXT` | Custom system prompt appended to role instructions | — |
 | `--run-id ID` | Pre-assigned run ID (used by the GUI) | Auto-generated |
+| `--merge-strategy MODE` | Merge strategy: `auto`, `local`, `pr` | From config or `auto` |
+| `--pull MODE` | Pull before session: `prompt`, `auto`, `always`, `never` | From config or `prompt` |
+| `--host HOST` | Denden gRPC host | From config |
+| `--port PORT` | Denden gRPC port | From config |
+| `--no-cache-delegations` | Disable delegation caching for this session | `false` |
+| `--cache-max-entries N` | Max cached delegation results (0 = unlimited) | From config |
+| `--cache-ttl-seconds N` | Max age for cached results in seconds (0 = unlimited) | From config |
+| `--memory PROVIDER` | Memory provider override | From config |
+| `--max-num-delegations N` | Max delegation calls per session (0 = unlimited) | From config |
 
 **Examples:**
 

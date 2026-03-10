@@ -13,13 +13,15 @@ Orchestrator agent
   │  denden: {"delegate": {"role": "implementer", "task": "..."}}
   ▼
 StrawPot delegation handler:
-  1. Policy check
-  2. Resolve role from StrawHub
-  3. Build system prompt (role + skills + memory)
-  4. Create agent workspace
-  5. Spawn sub-agent
-  6. Wait for completion
-  7. Return result to caller
+  1. Policy checks (depth limit, delegation count)
+  2. Cache check (return cached result if hit)
+  3. Resolve role from StrawHub
+  4. Build system prompt (role + skills + memory)
+  5. Create agent workspace
+  6. Spawn sub-agent
+  7. Wait for completion
+  8. Cache result (if caching enabled)
+  9. Return result to caller
 ```
 
 ## Policy Controls
@@ -56,6 +58,30 @@ Control how many times a failed delegation can be retried:
 [policy]
 max_delegate_retries = 0
 ```
+
+### Max Delegations
+
+Limit the total number of delegation calls in a session:
+
+```toml
+[policy]
+max_num_delegations = 0  # 0 = unlimited
+```
+
+Both cache hits and spawned agents count toward this limit, preventing infinite loops from repeated cached delegations. When the limit is reached, further delegation requests are denied with `DENY_DELEGATIONS_LIMIT`.
+
+### Delegation Cache
+
+Cache delegation results within a session to avoid re-spawning agents for identical requests:
+
+```toml
+[policy]
+cache_delegations = true   # enabled by default
+cache_max_entries = 0      # 0 = unlimited
+cache_ttl_seconds = 0      # 0 = unlimited
+```
+
+When enabled, identical delegation requests (same role, task text, and return format) return cached results immediately without spawning a new agent. The cache uses FIFO eviction when `cache_max_entries` is set, and entries expire after `cache_ttl_seconds`.
 
 ## Role Resolution
 

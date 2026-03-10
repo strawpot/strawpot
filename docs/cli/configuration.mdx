@@ -52,6 +52,20 @@ agent_timeout = 300
 # Max retries for failed delegations
 max_delegate_retries = 0
 
+# Cache delegation results within a session
+# Identical (role, task, format) requests return cached results without spawning
+cache_delegations = true
+
+# Max cached delegation entries (0 = unlimited)
+cache_max_entries = 0
+
+# Max cache age in seconds (0 = unlimited)
+cache_ttl_seconds = 0
+
+# Max delegation calls per session (0 = unlimited)
+# Counts both cache hits and spawned agents to prevent infinite loops
+max_num_delegations = 0
+
 # ── Session ──────────────────────────────────────────────
 [session]
 # How to merge session changes back
