@@ -116,6 +116,15 @@ export default function ResourceDetailSheet({
     );
   };
 
+  const PROTECTED: Record<string, string[]> = {
+    skills: ["denden"],
+    roles: ["ai-ceo", "ai-employee"],
+    agents: ["strawpot-claude-code"],
+    memories: ["dial"],
+  };
+  const isProtected =
+    !projectId && PROTECTED[resourceType]?.includes(resource.name);
+
   const metadata = resource.frontmatter?.metadata as Record<string, unknown> | undefined;
 
   return (
@@ -183,26 +192,30 @@ export default function ResourceDetailSheet({
             {reinstall.isPending ? "Reinstalling..." : "Reinstall"}
           </Button>
           <div className="flex-1" />
-          <Button
-            variant={confirming ? "destructive" : "outline"}
-            size="sm"
-            onClick={handleUninstall}
-            disabled={actionPending}
-          >
-            {uninstall.isPending
-              ? "Uninstalling..."
-              : confirming
-                ? "Confirm Uninstall"
-                : "Uninstall"}
-          </Button>
-          {confirming && !uninstall.isPending && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </Button>
+          {!isProtected && (
+            <>
+              <Button
+                variant={confirming ? "destructive" : "outline"}
+                size="sm"
+                onClick={handleUninstall}
+                disabled={actionPending}
+              >
+                {uninstall.isPending
+                  ? "Uninstalling..."
+                  : confirming
+                    ? "Confirm Uninstall"
+                    : "Uninstall"}
+              </Button>
+              {confirming && !uninstall.isPending && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </Button>
+              )}
+            </>
           )}
         </div>
       </SheetContent>
