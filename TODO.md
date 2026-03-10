@@ -31,6 +31,14 @@
   so per-wrapper parsing is needed. GUI side is straightforward once
   trace events carry the data.
 
+## Self-Improvement
+
+- [ ] **Support self-improvement**
+  Allow agents to improve themselves across sessions through three mechanisms:
+  - ~~**Memory** — persistent knowledge that agents accumulate and reference~~ (done)
+  - **System Prompt** — self-authored or refined system prompts tuned to the project
+  - **Skill** — agent-created skills that automate recurring patterns
+
 ## Security
 
 - [ ] **Sanitize summary field in session API responses**
