@@ -1,0 +1,79 @@
+---
+title: Web Dashboard
+description: Browser-based GUI for managing projects, sessions, and schedules
+---
+
+The StrawPot web dashboard provides a browser-based interface for managing
+projects, launching sessions, browsing resources, and scheduling automated
+tasks — all without touching the command line.
+
+```bash
+strawpot gui
+```
+
+Opens [http://localhost:8741](http://localhost:8741) in your browser.
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Dashboard" icon="gauge">
+    Live overview of running sessions and recent activity across all projects.
+  </Card>
+  <Card title="Project Management" icon="folder-kanban">
+    Register projects, upload context files, install resources, and launch sessions from a single page.
+  </Card>
+  <Card title="Session Detail" icon="list-tree">
+    View agent delegation trees, trace events, and live log output for any session.
+  </Card>
+  <Card title="Scheduled Tasks" icon="clock">
+    Create cron-based schedules that automatically launch sessions on a recurring basis.
+  </Card>
+  <Card title="Resource Browser" icon="puzzle-piece">
+    Browse installed roles, skills, agents, and memory providers. Install new ones from StrawHub.
+  </Card>
+  <Card title="Configuration" icon="gear">
+    Edit project and global `strawpot.toml` settings through the UI.
+  </Card>
+</CardGroup>
+
+## Install
+
+The GUI is a separate package:
+
+```bash
+pip install strawpot-gui
+```
+
+## How It Works
+
+The dashboard runs a FastAPI server that:
+
+1. Stores project registrations and session metadata in a local SQLite database (`~/.strawpot/gui.db`)
+2. Launches sessions as headless subprocesses via `strawpot start --headless --task "..."`
+3. Reads trace files (`.strawpot/sessions/*/trace.jsonl`) for session detail views
+4. Runs a background cron scheduler that fires scheduled tasks automatically
+
+All data stays local. No external services or accounts are required.
+
+## Pages
+
+| Page | Path | Description |
+|------|------|-------------|
+| Dashboard | `/` | Running sessions, recent sessions, quick launch |
+| Projects | `/projects` | List and register projects |
+| Project Detail | `/projects/:id` | Sessions, resources, files, and config for a project |
+| Session Detail | `/projects/:id/sessions/:runId` | Agent tree, trace events, logs |
+| Schedules | `/schedules` | Manage cron-based scheduled tasks |
+| Resources | `/resources/:kind` | Browse installed roles, skills, agents, memories |
+| Settings | `/settings` | Global configuration |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="play" href="/gui/quickstart">
+    Register a project and launch your first session from the browser.
+  </Card>
+  <Card title="Scheduled Tasks" icon="clock" href="/gui/scheduled-tasks">
+    Automate recurring tasks with cron schedules.
+  </Card>
+</CardGroup>

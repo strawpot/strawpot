@@ -1,0 +1,102 @@
+---
+title: Scheduled Tasks
+description: Automate recurring sessions with cron schedules
+---
+
+Scheduled tasks let you run agent sessions on a recurring basis using cron
+expressions. The scheduler runs as a background task inside the GUI server and
+fires `strawpot start --headless` when a schedule is due.
+
+## Creating a Schedule
+
+1. Go to **Schedules** in the sidebar
+2. Click **Create Schedule**
+3. Fill in the form:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Name** | Yes | Unique identifier (e.g. `daily-code-review`) |
+| **Project** | Yes | Which project to run the session in |
+| **Task** | Yes | The task string passed to the agent |
+| **Cron Expression** | Yes | Standard 5-field cron expression |
+| **Role** | No | Override the project's default orchestrator role |
+| **System Prompt** | No | Additional instructions appended to the role prompt |
+
+## Cron Expressions
+
+Standard 5-field format: `minute hour day-of-month month day-of-week`
+
+| Expression | Meaning |
+|-----------|---------|
+| `* * * * *` | Every minute |
+| `*/5 * * * *` | Every 5 minutes |
+| `0 * * * *` | Every hour |
+| `0 0 * * *` | Daily at midnight |
+| `0 9 * * 1-5` | Weekdays at 9 AM |
+| `0 9 * * 1` | Every Monday at 9 AM |
+
+The dialog includes a **Presets** dropdown for common expressions. As you type,
+a human-readable description is shown below the input (e.g. "Every weekday at
+9:00 AM").
+
+## Managing Schedules
+
+The schedules list shows all scheduled tasks with their status:
+
+- **Active** — enabled and running on schedule
+- **Disabled** — paused, won't fire until re-enabled
+- **Error** — last run failed (hover to see the error message)
+
+### Actions
+
+- **Enable / Disable** — toggle whether the schedule fires
+- **Edit** — modify name, task, cron expression, or role
+- **Delete** — remove the schedule permanently
+
+## How It Works
+
+The scheduler is a lightweight asyncio background loop that:
+
+1. Checks every 30 seconds for schedules where `next_run_at <= now`
+2. Launches a headless session via the same path as the Launch Session button
+3. Updates `last_run_at` and computes the next `next_run_at` from the cron expression
+4. Records any errors in `last_error` on the schedule
+
+Sessions spawned by a schedule are linked back to it. Use the schedule's
+**History** endpoint to see all sessions it has triggered.
+
+<Note>
+The scheduler only runs while the GUI server is running. If you stop
+`strawpot gui`, scheduled tasks will not fire. Missed runs are not
+retroactively executed — the scheduler simply computes the next future
+run time on startup.
+</Note>
+
+## REST API
+
+All schedule operations are available via the REST API:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/schedules` | List all schedules |
+| `POST` | `/api/schedules` | Create a schedule |
+| `GET` | `/api/schedules/:id` | Get schedule details |
+| `PUT` | `/api/schedules/:id` | Update a schedule |
+| `DELETE` | `/api/schedules/:id` | Delete a schedule |
+| `POST` | `/api/schedules/:id/enable` | Enable a schedule |
+| `POST` | `/api/schedules/:id/disable` | Disable a schedule |
+| `GET` | `/api/schedules/:id/history` | List sessions spawned by this schedule |
+
+### Create Example
+
+```bash
+curl -X POST http://localhost:8741/api/schedules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "daily-review",
+    "project_id": 1,
+    "task": "Review open PRs and summarize findings",
+    "cron_expr": "0 9 * * 1-5",
+    "role": "reviewer"
+  }'
+```

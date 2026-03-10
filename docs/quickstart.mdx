@@ -105,8 +105,22 @@ When the orchestrator agent needs help, it delegates sub-tasks via Denden:
 
 All agents work in the same directory (worktree or project dir), so they can see each other's changes.
 
+## Web Dashboard
+
+Prefer a browser-based interface? Install the GUI package and launch the dashboard:
+
+```bash
+pip install strawpot-gui
+strawpot gui
+```
+
+The dashboard lets you manage projects, launch sessions, browse resources, and
+set up scheduled tasks — all from [http://localhost:8741](http://localhost:8741).
+See the [Web Dashboard](/gui/index) guide for details.
+
 ## Next Steps
 
+- [Web Dashboard](/gui/index) — Manage projects from the browser
 - [Architecture](/concepts/architecture) — Understand the full system
 - [Memory](/concepts/memory) — How memory providers work
 - [CLI Reference](/cli/commands) — All available commands
