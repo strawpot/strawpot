@@ -587,3 +587,118 @@ def test_setup_failure(monkeypatch):
     monkeypatch.setattr("subprocess.run", fake_run)
     rt = WrapperRuntime(_make_spec())
     assert rt.setup() is False
+
+
+# --- skill bin PATH prepending ---
+
+
+def test_spawn_prepends_skill_dirs_to_path(tmp_path, monkeypatch):
+    """spawn prepends skill subdirectories to PATH so agents find staged binaries."""
+    # Create a skills dir with two skill subdirectories
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "denden").mkdir(parents=True)
+    (skills_dir / "other-tool").mkdir(parents=True)
+    # Regular file (not a dir) should be ignored
+    (skills_dir / "README.md").write_text("ignore me")
+
+    popen_captured = {}
+
+    def fake_run(cmd, **kwargs):
+        return _mock_run(json.dumps({"cmd": ["agent"], "cwd": "/w"}))
+
+    def fake_popen(cmd, **kwargs):
+        popen_captured["env"] = kwargs.get("env")
+        return MagicMock(pid=1)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    rt.spawn(
+        agent_id="a1",
+        working_dir="/w",
+        agent_workspace_dir=str(tmp_path / "workspace"),
+        role_prompt="",
+        memory_prompt="",
+        skills_dirs=[str(skills_dir)],
+        roles_dirs=[],
+        files_dirs=[],
+        task="test",
+        env={"DENDEN_ADDR": "127.0.0.1:9700"},
+    )
+
+    path = popen_captured["env"]["PATH"]
+    path_entries = path.split(os.pathsep)
+    # First two entries should be the skill subdirectories
+    skill_paths = {str(skills_dir / "denden"), str(skills_dir / "other-tool")}
+    assert set(path_entries[:2]) == skill_paths
+
+
+def test_spawn_no_skill_dirs_leaves_path_unchanged(tmp_path, monkeypatch):
+    """spawn with empty skills_dirs does not modify PATH."""
+    popen_captured = {}
+
+    def fake_run(cmd, **kwargs):
+        return _mock_run(json.dumps({"cmd": ["agent"], "cwd": "/w"}))
+
+    def fake_popen(cmd, **kwargs):
+        popen_captured["env"] = kwargs.get("env")
+        return MagicMock(pid=1)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    rt.spawn(
+        agent_id="a1",
+        working_dir="/w",
+        agent_workspace_dir=str(tmp_path / "workspace"),
+        role_prompt="",
+        memory_prompt="",
+        skills_dirs=[],
+        roles_dirs=[],
+        files_dirs=[],
+        task="test",
+        env={"DENDEN_ADDR": "127.0.0.1:9700"},
+    )
+
+    # PATH should not have been set in env (falls through from os.environ)
+    assert "PATH" not in {"DENDEN_ADDR": "127.0.0.1:9700"}
+
+
+def test_spawn_skill_dirs_precede_system_path(tmp_path, monkeypatch):
+    """Skill dirs appear before the parent process PATH."""
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "mytool").mkdir(parents=True)
+
+    popen_captured = {}
+    original_path = "/usr/bin:/usr/local/bin"
+    monkeypatch.setenv("PATH", original_path)
+
+    def fake_run(cmd, **kwargs):
+        return _mock_run(json.dumps({"cmd": ["agent"], "cwd": "/w"}))
+
+    def fake_popen(cmd, **kwargs):
+        popen_captured["env"] = kwargs.get("env")
+        return MagicMock(pid=1)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    rt.spawn(
+        agent_id="a1",
+        working_dir="/w",
+        agent_workspace_dir=str(tmp_path / "workspace"),
+        role_prompt="",
+        memory_prompt="",
+        skills_dirs=[str(skills_dir)],
+        roles_dirs=[],
+        files_dirs=[],
+        task="test",
+        env={},
+    )
+
+    path = popen_captured["env"]["PATH"]
+    assert path.startswith(str(skills_dir / "mytool"))
+    assert original_path in path

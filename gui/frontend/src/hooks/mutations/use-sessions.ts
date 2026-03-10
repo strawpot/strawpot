@@ -6,7 +6,7 @@ interface LaunchSessionBody {
   project_id: number;
   task: string;
   role?: string;
-  overrides?: Record<string, string>;
+  overrides?: Record<string, unknown>;
   context_files?: string[];
   system_prompt?: string;
   interactive?: boolean;

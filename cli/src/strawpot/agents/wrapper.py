@@ -199,6 +199,18 @@ class WrapperRuntime:
         log_path = self._log_file(agent_id)
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
+        # Prepend skill directories to PATH so agents find staged binaries
+        # (e.g. denden) before any stale global installs.
+        skill_bin_paths: list[str] = []
+        for sd in skills_dirs:
+            if os.path.isdir(sd):
+                for entry in os.scandir(sd):
+                    if entry.is_dir(follow_symlinks=True):
+                        skill_bin_paths.append(entry.path)
+        if skill_bin_paths:
+            parent_path = os.environ.get("PATH", "")
+            env["PATH"] = os.pathsep.join(skill_bin_paths) + os.pathsep + parent_path
+
         full_env = {**os.environ, **env} if env else None
         with open(log_path, "w", encoding="utf-8") as log_fh:
             proc = subprocess.Popen(

@@ -53,7 +53,7 @@ export default function LaunchDialog({
   const projectFiles = useProjectFiles(projectId);
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged as
-    | { orchestrator_role?: string; runtime?: string; isolation?: string; merge_strategy?: string }
+    | { orchestrator_role?: string; runtime?: string; isolation?: string; merge_strategy?: string; cache_delegations?: boolean }
     | undefined;
 
   const [task, setTask] = useState("");
@@ -61,6 +61,7 @@ export default function LaunchDialog({
   const [runtime, setRuntime] = useState("");
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
+  const [cacheDelegations, setCacheDelegations] = useState(true);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [interactive, setInteractive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -72,6 +73,7 @@ export default function LaunchDialog({
     setRuntime("");
     setIsolation("");
     setMergeStrategy("");
+    setCacheDelegations(true);
     setSystemPrompt("");
     setInteractive(false);
     setSelectedFiles([]);
@@ -90,7 +92,7 @@ export default function LaunchDialog({
         project_id: number;
         task: string;
         role?: string;
-        overrides?: Record<string, string>;
+        overrides?: Record<string, unknown>;
         context_files?: string[];
         system_prompt?: string;
         interactive?: boolean;
@@ -100,10 +102,11 @@ export default function LaunchDialog({
       };
       if (role.trim()) body.role = role.trim();
 
-      const overrides: Record<string, string> = {};
+      const overrides: Record<string, unknown> = {};
       if (runtime.trim()) overrides.runtime = runtime.trim();
       if (isolation.trim()) overrides.isolation = isolation.trim();
       if (mergeStrategy.trim()) overrides.merge_strategy = mergeStrategy.trim();
+      if (!cacheDelegations) overrides.cache_delegations = false;
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
       if (selectedFiles.length > 0) body.context_files = selectedFiles;
       if (systemPrompt.trim()) body.system_prompt = systemPrompt.trim();
@@ -313,6 +316,20 @@ export default function LaunchDialog({
                   rows={3}
                 />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cacheDelegations}
+                  onChange={(e) => setCacheDelegations(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <span className="text-sm">
+                  Cache delegations
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Reuse results for identical delegation requests within this session
+                </span>
+              </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
