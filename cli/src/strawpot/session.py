@@ -777,8 +777,7 @@ class Session:
         payload = request.delegate
         trace = request.trace
 
-        fmt = payload.task.return_format
-        return_format = "JSON" if fmt == denden_pb2.JSON else "TEXT"
+        return_format = "JSON" if payload.task.return_format == denden_pb2.JSON else "TEXT"
 
         delegate_req = DelegateRequest(
             role_slug=payload.delegate_to,
@@ -822,19 +821,19 @@ class Session:
                     msg,
                 )
             # Build DelegateResult with output
-            delegate_res = denden_pb2.DelegateResult(
-                output_format=fmt,
-            )
+            delegate_res = denden_pb2.DelegateResult()
             if result.output:
                 if return_format == "JSON":
                     try:
                         parsed = json.loads(result.output)
                         if isinstance(parsed, dict):
-                            delegate_res.output.update(parsed)
+                            delegate_res.json.update(parsed)
+                        else:
+                            delegate_res.text = result.output
                     except (json.JSONDecodeError, ValueError):
-                        delegate_res.output.update({"text": result.output})
+                        delegate_res.text = result.output
                 else:
-                    delegate_res.output.update({"text": result.output})
+                    delegate_res.text = result.output
             return ok_response(
                 request.request_id,
                 delegate_result=delegate_res,
