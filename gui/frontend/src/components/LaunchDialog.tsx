@@ -174,7 +174,11 @@ export default function LaunchDialog({
     runtime.trim() && agentNames.length > 0 && !agentNames.includes(runtime.trim())
       ? "Runtime not found in installed agents"
       : "";
-  const hasValidationError = !!roleError || !!runtimeError;
+  const memoryError =
+    memory.trim() && !memoryOptions.includes(memory.trim())
+      ? "Memory not found in installed providers"
+      : "";
+  const hasValidationError = !!roleError || !!runtimeError || !!memoryError;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -341,6 +345,9 @@ export default function LaunchDialog({
                       <option key={n} value={n} />
                     ))}
                   </datalist>
+                  {memoryError && (
+                    <p className="text-xs text-destructive">{memoryError}</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
