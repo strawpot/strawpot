@@ -1,0 +1,84 @@
+name: Release GUI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gui/**"
+      - "!gui/tests/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  publish-pypi:
+    name: Publish strawpot-gui to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    defaults:
+      run:
+        working-directory: gui
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine version
+        id: version
+        run: |
+          LATEST=$(git tag --list 'gui-v*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST" ]; then
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+            echo "tag=gui-v0.1.0" >> "$GITHUB_OUTPUT"
+          else
+            MAJOR=$(echo "$LATEST" | sed 's/gui-v//' | cut -d. -f1)
+            MINOR=$(echo "$LATEST" | sed 's/gui-v//' | cut -d. -f2)
+            PATCH=$(echo "$LATEST" | sed 's/gui-v//' | cut -d. -f3)
+            NEW_PATCH=$((PATCH + 1))
+            echo "version=${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
+            echo "tag=gui-v${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update version
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"${{ steps.version.outputs.version }}\"/" src/strawpot_gui/__init__.py
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Copy frontend to static
+        run: |
+          rm -rf src/strawpot_gui/static
+          cp -r frontend/dist src/strawpot_gui/static
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: gui/dist/
+
+      - name: Tag release
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"

@@ -59,6 +59,21 @@ The `pull_before_session` setting controls whether to pull latest changes before
 | `always` | Force pull (error if no remote) |
 | `never` | Skip, use current HEAD |
 
+## Headless Mode
+
+Sessions can run detached from a terminal using `--headless`:
+
+```bash
+strawpot start --headless --task "Fix the failing tests"
+```
+
+In headless mode, agent output is written to a log file instead of the
+terminal. This is how the [web dashboard](/gui/index) launches sessions —
+clicking "Launch Session" in the GUI runs `strawpot start --headless`
+as a subprocess.
+
+Headless mode requires `--task` (there is no interactive prompt).
+
 ## Crash Recovery
 
 If StrawPot crashes or is interrupted, sessions may be left in a stale state. On the next `strawpot start`, StrawPot automatically:
