@@ -15,9 +15,10 @@ from strawpot.config import get_strawpot_home
 
 from strawpot_gui.db import init_db, sync_sessions
 from strawpot_gui.event_bus import event_bus
+from strawpot_gui.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
-from strawpot_gui.routers import config, files, fs, health, logs, project_resources, projects, registry, sessions, sse
+from strawpot_gui.routers import config, files, fs, health, logs, project_resources, projects, registry, schedules, sessions, sse
 
 
 def _auto_rebuild_frontend(dist_dir: Path) -> None:
@@ -70,7 +71,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_db(db_path)
         sync_sessions(db_path)
+        from strawpot_gui.routers.sessions import launch_session_subprocess
+        scheduler = Scheduler(db_path, launch_fn=launch_session_subprocess)
+        app.state.scheduler = scheduler
+        await scheduler.start()
         yield
+        await scheduler.stop()
 
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
     app.state.db_path = db_path
@@ -97,6 +103,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.include_router(fs.router)
     app.include_router(registry.router)
     app.include_router(project_resources.router)
+    app.include_router(schedules.router)
 
     # Serve built frontend — check installed package path then dev path
     static_dir = Path(__file__).resolve().parent / "static"
