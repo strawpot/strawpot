@@ -1,5 +1,6 @@
 """Session lifecycle — owns denden server, isolation, orchestrator, and delegation."""
 
+import hashlib
 import json
 import logging
 import os
@@ -316,6 +317,7 @@ class Session:
         self._orchestrator_result: AgentResult | None = None
         self._orchestrator_role_prompt: str = ""
         self._files_dirs: list[str] = []
+        self._delegation_cache: dict[str, tuple[str, "denden_pb2.DelegateResult"]] = {}
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
@@ -789,11 +791,51 @@ class Session:
             return_format=return_format,
         )
 
-        try:
-            # Look up the span for the requesting agent (for call tree)
-            requester_span = self._agent_spans.get(
-                trace.agent_instance_id, self._session_span_id
+        # Look up the span for the requesting agent (for call tree)
+        requester_span = self._agent_spans.get(
+            trace.agent_instance_id, self._session_span_id
+        )
+
+        # --- Cache check ---
+        cache_key: str | None = None
+        if self.config.cache_delegations:
+            cache_key = self._delegation_cache_key(
+                delegate_req.role_slug,
+                delegate_req.task_text,
+                return_format,
             )
+            cached = self._delegation_cache.get(cache_key)
+            if cached is not None:
+                cached_output, cached_delegate_res = cached
+                logger.info(
+                    "Delegation cache hit for role=%s, output_len=%d, format=%s",
+                    delegate_req.role_slug,
+                    len(cached_output),
+                    return_format,
+                )
+                if self._tracer is not None:
+                    span = self._tracer.delegate_start(
+                        role=delegate_req.role_slug,
+                        parent_span=requester_span,
+                        context=delegate_req.task_text,
+                        depth=delegate_req.depth,
+                        parent_agent_id=delegate_req.parent_agent_id,
+                        cache_hit=True,
+                    )
+                    self._tracer.delegate_end(
+                        span_id=span,
+                        exit_code=0,
+                        duration_ms=0,
+                        output=cached_output,
+                        role=delegate_req.role_slug,
+                        cache_hit=True,
+                    )
+                return ok_response(
+                    request.request_id,
+                    delegate_result=cached_delegate_res,
+                )
+
+        try:
             result = handle_delegate(
                 request=delegate_req,
                 config=self.config,
@@ -820,20 +862,16 @@ class Session:
                     "ERR_SUBAGENT_NONZERO_EXIT",
                     msg,
                 )
-            # Build DelegateResult with output
-            delegate_res = denden_pb2.DelegateResult()
-            if result.output:
-                if return_format == "JSON":
-                    try:
-                        parsed = json.loads(result.output)
-                        if isinstance(parsed, dict):
-                            delegate_res.json.update(parsed)
-                        else:
-                            delegate_res.text = result.output
-                    except (json.JSONDecodeError, ValueError):
-                        delegate_res.text = result.output
-                else:
-                    delegate_res.text = result.output
+            # Build protobuf delegate result
+            delegate_res = self._build_delegate_result(
+                result.output, return_format
+            )
+            # Cache successful results with non-empty output
+            if cache_key is not None and result.output:
+                self._delegation_cache[cache_key] = (
+                    result.output,
+                    delegate_res,
+                )
             return ok_response(
                 request.request_id,
                 delegate_result=delegate_res,
@@ -1055,3 +1093,29 @@ class Session:
             else:
                 break
         return depth
+
+    @staticmethod
+    def _delegation_cache_key(
+        role_slug: str, task_text: str, return_format: str
+    ) -> str:
+        raw = f"{role_slug}\0{task_text}\0{return_format}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _build_delegate_result(
+        output: str, return_format: str
+    ) -> "denden_pb2.DelegateResult":
+        delegate_res = denden_pb2.DelegateResult()
+        if output:
+            if return_format == "JSON":
+                try:
+                    parsed = json.loads(output)
+                    if isinstance(parsed, dict):
+                        delegate_res.json.update(parsed)
+                    else:
+                        delegate_res.text = output
+                except (json.JSONDecodeError, ValueError):
+                    delegate_res.text = output
+            else:
+                delegate_res.text = output
+        return delegate_res

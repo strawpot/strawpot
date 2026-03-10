@@ -143,6 +143,7 @@ class Tracer:
         depth: int = 0,
         session_id: str = "",
         parent_agent_id: str | None = None,
+        cache_hit: bool = False,
     ) -> str:
         """Emit ``delegate_start``.  Stores context as artifact.  Returns new span_id."""
         span_id = self._new_span_id()
@@ -156,6 +157,7 @@ class Tracer:
             context_ref=context_ref,
             session_id=session_id,
             parent_agent_id=parent_agent_id,
+            cache_hit=cache_hit,
         )
         return span_id
 
@@ -169,6 +171,7 @@ class Tracer:
         role: str = "",
         session_id: str = "",
         agent_id: str = "",
+        cache_hit: bool = False,
     ) -> None:
         """Emit ``delegate_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -181,6 +184,7 @@ class Tracer:
             role=role,
             session_id=session_id,
             agent_id=agent_id,
+            cache_hit=cache_hit,
         )
 
     def delegate_denied(

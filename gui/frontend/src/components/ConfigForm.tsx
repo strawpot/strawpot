@@ -31,6 +31,7 @@ interface FlatState {
   policy_max_depth: string;
   policy_agent_timeout: string;
   policy_max_delegate_retries: string;
+  policy_cache_delegations: string;
   session_merge_strategy: string;
   session_pull_before_session: string;
   session_pr_command: string;
@@ -51,6 +52,7 @@ function toFlat(v: Record<string, unknown>): FlatState {
     policy_max_depth: str(policy.max_depth),
     policy_agent_timeout: str(policy.agent_timeout),
     policy_max_delegate_retries: str(policy.max_delegate_retries),
+    policy_cache_delegations: str(policy.cache_delegations),
     session_merge_strategy: str(session.merge_strategy),
     session_pull_before_session: str(session.pull_before_session),
     session_pr_command: str(session.pr_command),
@@ -83,6 +85,8 @@ function toNested(flat: FlatState): Record<string, unknown> {
     policy.agent_timeout = Number(flat.policy_agent_timeout);
   if (flat.policy_max_delegate_retries)
     policy.max_delegate_retries = Number(flat.policy_max_delegate_retries);
+  if (flat.policy_cache_delegations)
+    policy.cache_delegations = flat.policy_cache_delegations === "true";
   if (Object.keys(policy).length > 0) result.policy = policy;
 
   const session: Record<string, unknown> = {};
@@ -246,6 +250,20 @@ export default function ConfigForm({
               placeholder={ph?.policy_max_delegate_retries || "0"}
               className="h-8 text-xs"
             />
+          </Field>
+          <Field label="Cache Delegations">
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={state.policy_cache_delegations === "true"}
+                onChange={(e) =>
+                  set("policy_cache_delegations")(
+                    e.target.checked ? "true" : ""
+                  )
+                }
+              />
+              Reuse results for identical delegation requests within a session
+            </label>
           </Field>
         </div>
       </section>

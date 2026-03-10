@@ -30,6 +30,7 @@ class StrawPotConfig:
     permission_mode: str = "default"
     agent_timeout: int | None = None
     max_delegate_retries: int = 0
+    cache_delegations: bool = True
     agents: dict[str, dict] = field(default_factory=dict)
     skills: dict[str, dict[str, str]] = field(default_factory=dict)
     roles: dict[str, dict] = field(default_factory=dict)
@@ -73,6 +74,8 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.agent_timeout = policy["agent_timeout"]
     if "max_delegate_retries" in policy:
         config.max_delegate_retries = policy["max_delegate_retries"]
+    if "cache_delegations" in policy:
+        config.cache_delegations = policy["cache_delegations"]
 
     agents = data.get("agents", {})
     for name, agent_data in agents.items():

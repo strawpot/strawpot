@@ -114,6 +114,7 @@ class SessionOverrides(BaseModel):
     runtime: str | None = None
     isolation: str | None = None
     merge_strategy: str | None = None
+    cache_delegations: bool | None = None
 
 
 class SessionLaunch(BaseModel):
@@ -144,6 +145,7 @@ def launch_session_subprocess(
     isolation_override: str | None = None,
     merge_strategy_override: str | None = None,
     context_files: list[str] | None = None,
+    cache_delegations: bool | None = None,
     schedule_id: int | None = None,
     interactive: bool = False,
 ) -> str:
@@ -242,6 +244,8 @@ def launch_session_subprocess(
         cmd.extend(["--merge-strategy", merge_strategy_override])
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
+    if cache_delegations is False:
+        cmd.append("--no-cache-delegations")
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.
@@ -298,6 +302,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             runtime_override=body.overrides.runtime if body.overrides else None,
             isolation_override=body.overrides.isolation if body.overrides else None,
             merge_strategy_override=body.overrides.merge_strategy if body.overrides else None,
+            cache_delegations=body.overrides.cache_delegations if body.overrides else None,
             context_files=body.context_files,
             interactive=body.interactive,
         )
