@@ -18,7 +18,6 @@ export interface Session {
   duration_ms: number | null;
   exit_code: number | null;
   task: string | null;
-  summary: string | null;
 }
 
 export interface SessionList {

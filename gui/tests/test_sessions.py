@@ -35,14 +35,14 @@ class TestListSessions:
                 "trace_id": "run_abc",
                 "span_id": "s1",
                 "parent_span": None,
-                "data": {"exit_code": 0, "summary": "Done", "duration_ms": 300000},
+                "data": {"exit_code": 0, "duration_ms": 300000},
             },
             {
                 "ts": "2026-01-01T12:05:01+00:00",
                 "event": "session_end",
                 "trace_id": "run_abc",
                 "span_id": "s0",
-                "data": {"duration_ms": 300100, "exit_code": 0, "summary": "Done"},
+                "data": {"duration_ms": 300100, "exit_code": 0},
             },
         ])
         sync_sessions(client.app.state.db_path)
@@ -59,7 +59,6 @@ class TestListSessions:
         assert s["project_id"] == pid
         assert s["status"] == "completed"
         assert s["exit_code"] == 0
-        assert s["summary"] == "Done"
         assert s["duration_ms"] == 300100
         # session_dir should not be exposed
         assert "session_dir" not in s
@@ -127,14 +126,14 @@ class TestGetSession:
                 "trace_id": "run_detail",
                 "span_id": "s1",
                 "parent_span": None,
-                "data": {"exit_code": 0, "summary": "All done", "duration_ms": 60000},
+                "data": {"exit_code": 0, "duration_ms": 60000},
             },
             {
                 "ts": "2026-01-01T12:05:01+00:00",
                 "event": "session_end",
                 "trace_id": "run_detail",
                 "span_id": "s0",
-                "data": {"duration_ms": 60100, "exit_code": 0, "summary": "All done"},
+                "data": {"duration_ms": 60100, "exit_code": 0},
             },
         ])
         sync_sessions(client.app.state.db_path)
@@ -151,7 +150,6 @@ class TestGetSession:
         assert s["project_id"] == pid
         assert s["status"] == "completed"
         assert s["exit_code"] == 0
-        assert s["summary"] == "All done"
         assert "session_dir" not in s
 
     def test_get_session_agents(self, client, tmp_path):

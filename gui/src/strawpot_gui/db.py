@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_code   INTEGER,
     session_dir TEXT NOT NULL,
     task        TEXT,
-    summary     TEXT,
     schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL
 );
 
@@ -139,7 +138,7 @@ def get_db_conn(request: Request):
 def _parse_trace(trace_path: str) -> dict:
     """Extract completion fields from a trace.jsonl file.
 
-    Returns dict with keys: ended_at, duration_ms, exit_code, summary.
+    Returns dict with keys: ended_at, duration_ms, exit_code.
     Missing fields are omitted.
     """
     result: dict = {}
@@ -160,7 +159,6 @@ def _parse_trace(trace_path: str) -> dict:
                     if "duration_ms" in data:
                         result["duration_ms"] = data["duration_ms"]
                     result["exit_code"] = data.get("exit_code", 0)
-                    result["summary"] = data.get("summary")
     except OSError:
         pass
     return result
@@ -277,8 +275,8 @@ def _upsert_session(
         """INSERT OR REPLACE INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
             started_at, ended_at, duration_ms, exit_code, session_dir,
-            task, summary)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            task)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             run_id,
             project_id,
@@ -292,6 +290,5 @@ def _upsert_session(
             trace_info.get("exit_code"),
             session_dir,
             data.get("task"),
-            trace_info.get("summary"),
         ),
     )

@@ -53,9 +53,7 @@ export function useGlobalSSE(): void {
             if (e.type === "session_started") {
               toast.info(`Session ${runIdShort} started`);
             } else if (e.type === "session_completed") {
-              toast.success(`Session ${runIdShort} completed`, {
-                description: data.summary?.slice(0, 80),
-              });
+              toast.success(`Session ${runIdShort} completed`);
             } else if (e.type === "session_failed") {
               toast.error(`Session ${runIdShort} failed`);
             } else if (e.type === "session_stopped") {

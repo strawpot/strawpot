@@ -74,14 +74,13 @@ def _refresh_session_status(conn, run_id: str) -> None:
         conn.execute(
             """UPDATE sessions
                SET status = ?, ended_at = ?, duration_ms = ?,
-                   exit_code = ?, summary = ?
+                   exit_code = ?
                WHERE run_id = ?""",
             (
                 status,
                 trace_info.get("ended_at"),
                 trace_info.get("duration_ms"),
                 exit_code,
-                trace_info.get("summary"),
                 run_id,
             ),
         )
@@ -167,8 +166,24 @@ def launch_session_subprocess(
     # Load project config for defaults
     config = load_config(Path(working_dir))
     resolved_role = role or config.orchestrator_role
-    runtime = runtime_override or config.runtime
     isolation = isolation_override or config.isolation
+
+    # Resolve runtime: explicit override > role default_agent > config default
+    runtime = runtime_override
+    if not runtime:
+        role_cfg = config.roles.get(resolved_role, {})
+        runtime = role_cfg.get("default_agent")
+    if not runtime:
+        try:
+            from strawpot.delegation import _get_default_agent
+            from strawhub.resolver import resolve as _resolve
+
+            resolved = _resolve(resolved_role, kind="role")
+            runtime = _get_default_agent(resolved["path"])
+        except Exception:
+            pass
+    if not runtime:
+        runtime = config.runtime
 
     # Pre-generate run_id
     run_id = f"run_{uuid.uuid4().hex[:12]}"
@@ -336,7 +351,7 @@ def list_all_sessions(
     offset = (page - 1) * per_page
     rows = conn.execute(
         f"SELECT run_id, project_id, role, runtime, isolation, status,"
-        f"       started_at, ended_at, duration_ms, exit_code, task, summary"
+        f"       started_at, ended_at, duration_ms, exit_code, task"
         f"  FROM sessions{where} ORDER BY started_at DESC"
         f"  LIMIT ? OFFSET ?",
         [*params, per_page, offset],
@@ -378,7 +393,7 @@ def list_sessions(
     offset = (page - 1) * per_page
     rows = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
-        "       started_at, ended_at, duration_ms, exit_code, task, summary"
+        "       started_at, ended_at, duration_ms, exit_code, task"
         "  FROM sessions WHERE project_id = ? ORDER BY started_at DESC"
         "  LIMIT ? OFFSET ?",
         (project_id, per_page, offset),
@@ -399,7 +414,7 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
 
     row = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
-        "       started_at, ended_at, duration_ms, exit_code, task, summary,"
+        "       started_at, ended_at, duration_ms, exit_code, task,"
         "       session_dir, interactive"
         "  FROM sessions WHERE project_id = ? AND run_id = ?",
         (project_id, run_id),

@@ -559,7 +559,6 @@ class Session:
                 duration_ms=duration_ms,
                 output=result.output if result else "",
                 exit_code=exit_code,
-                summary=result.summary if result else "",
             )
 
         # 1. Kill remaining sub-agents
@@ -824,7 +823,6 @@ class Session:
                 )
             # Build DelegateResult with output
             delegate_res = denden_pb2.DelegateResult(
-                summary=result.summary,
                 output_format=fmt,
             )
             if result.output:

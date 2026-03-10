@@ -1150,7 +1150,6 @@ class TestSpawnAndWait:
         )
 
         assert isinstance(result, DelegateResult)
-        assert result.summary == "All done"
         assert result.output == "detailed output"
         assert result.exit_code == 1
 
@@ -1214,7 +1213,6 @@ class TestSpawnAndWait:
         runtime.wait.assert_called_once_with(spawn_handle, timeout=60)
         runtime.kill.assert_called_once_with(spawn_handle)
         assert result.exit_code == 1
-        assert "timed out" in result.summary
 
     def test_no_timeout_skips_kill(self, tmp_path):
         """When agent_timeout is None, agent is not killed after wait."""
@@ -1426,7 +1424,6 @@ class TestRetryPolicy:
         runtime.spawn.assert_called_once()
         runtime.kill.assert_called_once()
         assert result.exit_code == 1
-        assert "timed out" in result.summary
 
     def test_no_retry_on_nonzero_exit(self, tmp_path):
         """Non-zero exit: returns immediately, no retry."""
@@ -1538,7 +1535,6 @@ class TestIntegration:
         )
 
         # Result
-        assert result.summary == "Feature implemented"
         assert result.output == "LGTM"
 
         # Spawn was called once
@@ -2437,7 +2433,6 @@ class TestHandleDelegateDefaultAgent:
         # Alt runtime was used, not the session default
         mock_alt_runtime.spawn.assert_called_once()
         session_runtime.spawn.assert_not_called()
-        assert result.summary == "Alt done"
 
     def test_falls_back_on_missing_agent(self, tmp_path, monkeypatch):
         """When default_agent is not found, falls back to session runtime."""
@@ -2481,7 +2476,6 @@ class TestHandleDelegateDefaultAgent:
 
         # Session default runtime was used
         session_runtime.spawn.assert_called_once()
-        assert result.summary == "Session done"
 
     def test_skips_when_same_as_current(self, tmp_path, monkeypatch):
         """When default_agent matches current runtime, no re-resolution happens."""
@@ -2525,7 +2519,6 @@ class TestHandleDelegateDefaultAgent:
 
         assert resolve_called == []
         session_runtime.spawn.assert_called_once()
-        assert result.summary == "Same done"
 
 
 # ---------------------------------------------------------------------------
@@ -2641,7 +2634,6 @@ class TestHandleDelegateSkillEnvSaved:
             resolve_role=mock_resolve,
             resolve_role_dirs=lambda s: None,
         )
-        assert result.summary == "Done"
 
 
 class TestHandleDelegateDefaultAgentConfigOverride:
@@ -2708,4 +2700,3 @@ class TestHandleDelegateDefaultAgentConfigOverride:
         assert resolve_calls == ["config_agent"]
         mock_config_runtime.spawn.assert_called_once()
         session_runtime.spawn.assert_not_called()
-        assert result.summary == "Config agent done"

@@ -73,7 +73,7 @@ def main():
     response = stub.Send(request)
 
     if response.status == denden_pb2.OK:
-        print(f"Delegation result: {response.delegate_result.summary}")
+        print("Delegation result: OK")
     elif response.status == denden_pb2.DENIED:
         print(f"Delegation denied: {response.error.code}")
     else:

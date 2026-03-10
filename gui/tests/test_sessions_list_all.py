@@ -26,7 +26,7 @@ def _setup_sessions(client, tmp_path):
             "ts": "2026-01-01T10:05:01+00:00",
             "event": "session_end",
             "trace_id": "run_a", "span_id": "s0",
-            "data": {"duration_ms": 300100, "exit_code": 0, "summary": "Done A"},
+            "data": {"duration_ms": 300100, "exit_code": 0},
         },
     ])
 
@@ -39,7 +39,7 @@ def _setup_sessions(client, tmp_path):
             "ts": "2026-01-02T10:01:00+00:00",
             "event": "session_end",
             "trace_id": "run_b", "span_id": "s0",
-            "data": {"duration_ms": 60000, "exit_code": 1, "summary": "Failed B"},
+            "data": {"duration_ms": 60000, "exit_code": 1},
         },
     ])
 

@@ -250,14 +250,13 @@ class TestDelegateEvents:
     def test_delegate_end_event(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.delegate_end(
-            span_id="s1", exit_code=0, summary="Done", duration_ms=1234,
+            span_id="s1", exit_code=0, duration_ms=1234,
             output="task output here",
             role="reviewer", session_id="run_abc", agent_id="agent_123",
         )
         events = _read_events(session_dir)
         assert events[0]["event"] == "delegate_end"
         assert events[0]["data"]["exit_code"] == 0
-        assert events[0]["data"]["summary"] == "Done"
         assert events[0]["data"]["duration_ms"] == 1234
         assert events[0]["data"]["role"] == "reviewer"
         assert events[0]["data"]["session_id"] == "run_abc"
