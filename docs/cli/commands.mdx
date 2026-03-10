@@ -23,6 +23,9 @@ strawpot start [options]
 | `--runtime RUNTIME` | Agent runtime name | From config or `strawpot-claude-code` |
 | `--isolation MODE` | Isolation strategy: `none`, `worktree`, `docker` | From config or `none` |
 | `--task TEXT` | Task for non-interactive mode (empty = interactive) | — |
+| `--headless` | Run detached with output to log file (requires `--task`) | `false` |
+| `--system-prompt TEXT` | Custom system prompt appended to role instructions | — |
+| `--run-id ID` | Pre-assigned run ID (used by the GUI) | Auto-generated |
 
 **Examples:**
 
@@ -35,7 +38,25 @@ strawpot start --role team-lead --isolation worktree
 
 # Non-interactive task
 strawpot start --task "Refactor the auth module"
+
+# Headless session with custom system prompt
+strawpot start --headless --task "Review PRs" --system-prompt "Focus on security issues"
 ```
+
+### `gui`
+
+Launch the web dashboard.
+
+```bash
+strawpot gui [--port PORT]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--port PORT` | Port for the GUI server | `8741` |
+
+Opens a browser-based dashboard for managing projects, launching sessions,
+and scheduling automated tasks. See the [Web Dashboard](/gui/index) guide.
 
 ### `config`
 
@@ -124,6 +145,43 @@ Resolve a package to its installed path and dependencies.
 strawpot resolve skill <slug>
 strawpot resolve role <slug>
 strawpot resolve memory <slug>
+```
+
+### `uninstall`
+
+Remove an installed skill, role, agent, or memory provider.
+
+```bash
+strawpot uninstall skill <slug>
+strawpot uninstall role <slug>
+strawpot uninstall agent <slug>
+strawpot uninstall memory <slug>
+```
+
+### `update`
+
+Update installed packages to the latest versions.
+
+```bash
+strawpot update [--kind skill|role|agent|memory|all]
+```
+
+### `init`
+
+Create a `strawpot.toml` config file from installed packages.
+
+```bash
+strawpot init
+```
+
+Scans installed roles, skills, and agents and generates a project config file.
+
+### `install-tools`
+
+Install system tools declared by installed packages.
+
+```bash
+strawpot install-tools
 ```
 
 ### `publish`

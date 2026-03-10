@@ -40,6 +40,15 @@
         "pages": ["agents/overview", "agents/claude-code"]
       },
       {
+        "group": "Web Dashboard",
+        "icon": "browser",
+        "pages": [
+          "gui/index",
+          "gui/quickstart",
+          "gui/scheduled-tasks"
+        ]
+      },
+      {
         "group": "StrawHub",
         "icon": "package",
         "pages": [

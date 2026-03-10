@@ -1,0 +1,87 @@
+---
+title: Getting Started
+description: Register a project and launch your first session from the browser
+---
+
+## Prerequisites
+
+- StrawPot CLI installed (`pip install strawpot`)
+- StrawPot GUI installed (`pip install strawpot-gui`)
+- At least one agent runtime set up (e.g. Claude Code)
+
+## Launch the Dashboard
+
+```bash
+strawpot gui
+```
+
+This starts the web server on [http://localhost:8741](http://localhost:8741). Use `--port` to change:
+
+```bash
+strawpot gui --port 9000
+```
+
+## Register a Project
+
+1. Go to **Projects** in the sidebar
+2. Click **Add Project**
+3. Enter the path to a git repository on your machine
+4. The project name is auto-detected from the directory name
+
+The dashboard scans the project's `.strawpot/sessions/` directory to import any existing session history.
+
+## Launch a Session
+
+1. Open a project from the project list
+2. Click **Launch Session**
+3. Fill in the launch dialog:
+   - **Task** — what the agent should do (required)
+   - **Role** — orchestrator role (defaults to project config)
+   - **Runtime** — agent runtime override
+   - **System Prompt** — additional instructions appended to the role prompt
+   - **Context Files** — attach project files for the agent to reference
+4. Click **Launch**
+
+The session runs as a headless subprocess. You can monitor progress from the
+session detail page, which shows the agent delegation tree, trace events, and
+live log output.
+
+## Browse Resources
+
+The **Resources** section in the sidebar lists installed packages by type:
+
+- **Roles** — orchestrator and sub-agent role definitions
+- **Skills** — reusable skill modules
+- **Agents** — agent runtime wrappers
+- **Memory** — memory providers
+
+Click any resource to view its details. Use **Install Resource** on a project
+page to install resources from StrawHub directly.
+
+## Project Resources
+
+Each project page has a **Resources** tab showing which roles, skills, and
+agents are installed locally in that project. From here you can:
+
+- Install new resources from StrawHub
+- Update existing resources to the latest version
+- View resource details and dependencies
+
+## Upload Context Files
+
+On the project's **Files** tab, drag and drop files to upload them as context
+for future sessions. Uploaded files are stored in the project's
+`.strawpot/files/` directory and can be attached when launching a session.
+
+## Configuration
+
+The **Settings** page lets you edit the global `~/.strawpot/strawpot.toml`.
+Each project also has a config editor accessible from the project detail page.
+
+Changes are written directly to the TOML files — the same files the CLI reads.
+
+## Next Steps
+
+- [Scheduled Tasks](/gui/scheduled-tasks) — automate recurring sessions with cron
+- [Sessions](/concepts/sessions) — understand the session lifecycle
+- [CLI Commands](/cli/commands) — all available CLI commands
