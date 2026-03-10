@@ -14,7 +14,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import ResourceDetailSheet from "@/components/ResourceDetailSheet";
 import InstallDialog from "@/components/InstallDialog";
-import { Download } from "lucide-react";
+import { useUninstallResource } from "@/hooks/mutations/use-registry";
+import { Download, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+const PROTECTED: Record<string, string[]> = {
+  skills: ["denden"],
+  roles: ["ai-ceo", "ai-employee"],
+  agents: ["strawpot-claude-code"],
+  memories: ["dial"],
+};
 
 const TYPE_LABELS: Record<string, string> = {
   roles: "Roles",
@@ -69,6 +78,7 @@ export default function ResourceBrowser() {
               <TableHead>Version</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Source</TableHead>
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -93,6 +103,14 @@ export default function ResourceBrowser() {
                     {r.source}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  {!PROTECTED[resourceType]?.includes(r.name) && (
+                    <UninstallButton
+                      resourceType={resourceType}
+                      name={r.name}
+                    />
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -112,5 +130,76 @@ export default function ResourceBrowser() {
         defaultType={resourceType}
       />
     </div>
+  );
+}
+
+function UninstallButton({
+  resourceType,
+  name,
+}: {
+  resourceType: string;
+  name: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const uninstall = useUninstallResource();
+
+  const handleUninstall = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    uninstall.mutate(
+      { type: resourceType, name },
+      {
+        onSuccess: (result) => {
+          if (result.exit_code === 0) {
+            toast.success(`Uninstalled ${name}`);
+          } else {
+            toast.error(`Uninstall failed: ${result.stderr || result.stdout}`);
+          }
+          setConfirming(false);
+        },
+        onError: () => {
+          toast.error("Uninstall request failed");
+          setConfirming(false);
+        },
+      },
+    );
+  };
+
+  if (confirming) {
+    return (
+      <div className="flex gap-1">
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={handleUninstall}
+          disabled={uninstall.isPending}
+        >
+          Confirm
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(false);
+          }}
+        >
+          No
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="text-muted-foreground hover:text-destructive"
+      onClick={(e) => {
+        e.stopPropagation();
+        setConfirming(true);
+      }}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
   );
 }

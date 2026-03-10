@@ -227,7 +227,7 @@ export default function ConfigForm({
               className="h-8 text-xs"
             />
           </Field>
-          <Field label="Agent Timeout">
+          <Field label="Agent Timeout (seconds)">
             <Input
               type="number"
               value={state.policy_agent_timeout}
