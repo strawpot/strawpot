@@ -156,6 +156,20 @@ export default function ConfigForm({
   memoryNames.add("none");
   const memoryOptions = [...memoryNames].sort();
 
+  const runtimeError =
+    state.runtime && agentNames.length > 0 && !agentNames.includes(state.runtime)
+      ? "Runtime not found in installed agents"
+      : "";
+  const roleError =
+    state.orchestrator_role && roleNames.length > 0 && !roleNames.includes(state.orchestrator_role)
+      ? "Role not found in installed roles"
+      : "";
+  const memoryError =
+    state.memory && !memoryOptions.includes(state.memory)
+      ? "Memory not found in installed providers"
+      : "";
+  const hasValidationError = !!runtimeError || !!roleError || !!memoryError;
+
   return (
     <div className="flex flex-col gap-6">
       {/* General */}
@@ -177,6 +191,9 @@ export default function ConfigForm({
                   <option key={n} value={n} />
                 ))}
               </datalist>
+            )}
+            {runtimeError && (
+              <p className="text-xs text-destructive">{runtimeError}</p>
             )}
           </Field>
           <Field label="Isolation">
@@ -201,6 +218,9 @@ export default function ConfigForm({
                 <option key={n} value={n} />
               ))}
             </datalist>
+            {memoryError && (
+              <p className="text-xs text-destructive">{memoryError}</p>
+            )}
           </Field>
         </div>
       </section>
@@ -224,6 +244,9 @@ export default function ConfigForm({
                   <option key={n} value={n} />
                 ))}
               </datalist>
+            )}
+            {roleError && (
+              <p className="text-xs text-destructive">{roleError}</p>
             )}
           </Field>
           <Field label="Permission Mode">
@@ -361,7 +384,7 @@ export default function ConfigForm({
       <Button
         size="sm"
         onClick={handleSave}
-        disabled={saving}
+        disabled={saving || hasValidationError}
         className="self-start"
       >
         <Save className="mr-2 h-3.5 w-3.5" />
