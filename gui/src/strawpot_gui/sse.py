@@ -58,16 +58,18 @@ async def watch_dir(
         return
 
 
-def resolve_session_dir(db_path: str, run_id: str) -> tuple[str | None, str | None]:
-    """Look up session_dir and status from the database."""
+def resolve_session_dir(
+    db_path: str, run_id: str,
+) -> tuple[str | None, str | None, int | None]:
+    """Look up session_dir, status, and project_id from the database."""
     with get_db(db_path) as conn:
         row = conn.execute(
-            "SELECT session_dir, status FROM sessions WHERE run_id = ?",
+            "SELECT session_dir, status, project_id FROM sessions WHERE run_id = ?",
             (run_id,),
         ).fetchone()
     if not row:
-        return None, None
-    return row["session_dir"], row["status"]
+        return None, None, None
+    return row["session_dir"], row["status"], row["project_id"]
 
 
 @dataclass
