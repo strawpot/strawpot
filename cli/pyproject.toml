@@ -24,6 +24,7 @@ dependencies = [
     "tomli_w>=1.0",
     "strawhub",
     "strawpot-memory",
+    "strawpot-gui",
     "denden-server",
 ]
 
