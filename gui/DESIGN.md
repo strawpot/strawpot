@@ -51,8 +51,8 @@ watches the agents work. The GUI is an observation deck, not a steering
 wheel. This is fundamentally different from chat-based AI tools where
 the user drives every turn.
 
-Interactive mode (chat panel via `ask_user` bridge) is planned as a
-future extension but is not the default experience.
+Interactive mode (chat panel via `ask_user` bridge) is available as an
+opt-in extension but is not the default experience.
 
 ### 4. Trace-based debugging
 
@@ -334,10 +334,11 @@ a `session_start` event once `session.json` appears. If the subprocess
 exits before producing `session.json`, the endpoint emits an error
 event with stderr output.
 
-Sessions launched from the GUI run in **autonomous mode**
-(`permission_mode: auto`). The agent works without calling `ask_user`
-and the GUI provides a fire-and-observe experience: watch the agent
-tree, stream logs, and review results on completion.
+Sessions launched from the GUI default to **autonomous mode**
+(`permission_mode: auto`). In autonomous mode, the agent works without
+calling `ask_user` and the GUI provides a fire-and-observe experience.
+Sessions can also be launched in **interactive mode**, which enables a
+chat panel where agents can ask the user questions via `ask_user`.
 
 **Launch session dialog** — a modal dialog (not inline form) with:
 - Auto-focusing task textarea
@@ -352,10 +353,17 @@ tree, stream logs, and review results on completion.
 **Breadcrumb project switcher** — the project name in the breadcrumb
 header is a dropdown that lists all projects for quick switching.
 
-**Interactive mode (deferred)** — add a chat panel to the session detail
-page where `ask_user` prompts appear and the user can respond inline.
-This uses the existing DenDen `ask_user` RPC bridge — no protocol
-changes needed, just a GUI-side handler and chat UI component.
+**Interactive mode** — a chat panel in the session detail page where
+`ask_user` prompts appear and the user can respond inline. Sessions
+launched with `interactive: true` set `STRAWPOT_ASK_USER_BRIDGE=file`,
+enabling a file-based bridge: the CLI writes
+`ask_user_pending_{id}.json`, the GUI detects it via SSE and displays the
+question, the user responds, and the GUI writes
+`ask_user_response_{id}.json`. Per-request file naming supports parallel
+sub-agents asking questions concurrently. Chat history is persisted to
+`chat_messages.jsonl` by the CLI bridge (thread-safe) and sent to the
+frontend via SSE `chat_history` events, surviving tab switches and page
+reloads.
 
 ### 3. Session Monitoring
 
@@ -1430,6 +1438,6 @@ context injected, maintaining the feel of a continuous conversation.
 | 8.0 | Backend + frontend + CLI: custom system prompt in launch dialog | **Done** |
 | 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | **Done** |
 | 10 | Activity charts (run frequency, success rate, duration trends) | **Done** |
-| 11 | Interactive sessions (ask_user bridge + chat panel) | Planned |
+| 11 | Interactive sessions (ask_user bridge + chat panel) | **Done** |
 | 12 | Chat-mode sessions (conversation threading + sequential task submission) | Planned |
 | 13 | IMU — embedded self-operation agent (PTY + WebSocket chat panel). See [`imu/DESIGN.md`](../imu/DESIGN.md). | Planned |
