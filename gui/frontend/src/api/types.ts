@@ -51,6 +51,7 @@ export interface SessionDetail extends Session {
   interactive: boolean;
   agents: Record<string, AgentInfo>;
   events: TraceEvent[];
+  tree: TreeData;
 }
 
 export interface AskUserPending {

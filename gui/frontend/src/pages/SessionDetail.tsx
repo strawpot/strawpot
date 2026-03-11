@@ -64,10 +64,11 @@ export default function SessionDetail() {
   }, [active, session]);
 
   const isInteractive = !!sessionData?.interactive;
-  const { pendingAskUsers, chatMessages, traceEvents, treeData, connected, respond } = useSessionWS(
+  const { pendingAskUsers, chatMessages, traceEvents, treeData: wsTreeData, connected, respond } = useSessionWS(
     runId ?? "",
     active || isInteractive,
   );
+  const treeData = wsTreeData ?? sessionData?.tree ?? null;
   const restEvents = sessionData?.events ?? [];
   const displayEvents = traceEvents.length > 0 ? traceEvents : restEvents;
 

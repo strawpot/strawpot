@@ -478,6 +478,11 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
         pass
     result["events"] = events
 
+    # Build agent tree from session.json + trace.jsonl
+    from strawpot_gui.routers.ws import _build_full_state
+    state, _ = _build_full_state(str(session_dir))
+    result["tree"] = state.to_dict()
+
     return result
 
 
