@@ -2,11 +2,7 @@
 
 One engineer. One laptop. One AI company.
 
-One engineer. A full AI workforce — CEO, product manager, engineer, tester, reviewer — collaborating to ship your product.
-
-**StrawPot**: https://strawpot.com
-
-**StrawHub** (Registry): https://strawhub.dev
+Run a complete AI workforce locally — CEO, engineer, QA, and reviewer — collaborating to ship your product.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -14,37 +10,60 @@ One engineer. A full AI workforce — CEO, product manager, engineer, tester, re
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-```
-             You
-              │
-           ┌──┴──┐
-           │ CEO │
-           └──┬──┘
-     ┌────────┼─────────┐
-  ┌──┴──┐   ┌─┴───┐  ┌──┴──┐
-  │  PM │   │ Eng │  │  QA │
-  └──┬──┘   └──┬──┘  └──┬──┘
-     │         │        │
-  Analyst    Tester  Reviewer
-```
-
-You're an engineer, not a CEO. Building technology is the easy part — strategy, product planning, coordination, documentation, sales, testing, and finance are the rest. StrawPot replaces all of that with AI agents you define in Markdown.
+<!-- TODO: Replace with actual demo GIF/video — this is the #1 factor for GitHub star conversion -->
+<p align="center">
+  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — AI workforce running locally" width="720">
+</p>
 
 ## Quick Start
 
 ```bash
 pip install strawpot
+strawpot start
+```
+
+Or launch the web dashboard:
+
+```bash
 strawpot gui
 ```
 
-## Your CEO Is a Markdown File
+## Example Session
+
+```
+$ strawpot start "Create a landing page for StrawPot"
+
+[CEO] Analyzing task...
+  → Delegating implementation to Engineer
+  → Delegating review to Reviewer
+
+[Engineer] Generating HTML and CSS...
+  ✓ Created index.html
+  ✓ Created styles.css
+
+[QA] Running tests...
+  ✓ All checks passed
+
+[Reviewer] Reviewing code...
+  ✓ Code approved
+
+You: Approve deployment? (y/n)
+```
+
+## What Is StrawPot?
+
+StrawPot models a company as an AI workforce. You define each job as a Markdown file, and StrawPot runs them as a team.
+
+- **Roles** — Jobs (CEO, engineer, reviewer) defined in Markdown
+- **Skills** — Abilities (write code, run tests, review PRs) that roles use
+- **Teams** — Roles collaborating to complete a task
+- **Memory** — Shared knowledge that persists across sessions
 
 ```yaml
 # ai-ceo/ROLE.md
 ---
 name: ai-ceo
-description: "Orchestrator that analyzes tasks, discovers all installed roles,
-  and delegates to the best-fit role."
+description: "Orchestrator that analyzes tasks and delegates to the best-fit role."
 metadata:
   strawpot:
     dependencies:
@@ -53,33 +72,20 @@ metadata:
     default_agent: strawpot-claude-code
 ---
 
-# AI CEO
-
 You are a routing layer with judgment. The user brings you a task —
-you figure out which role on your team should handle it, write a clear
-task description, and delegate. That's the entire job.
+you figure out which role on your team should handle it and delegate.
 ```
 
 No Python. No orchestration code. One Markdown file.
 
-## How It Compares
+## Features
 
-| | CrewAI | OpenClaw | StrawPot |
-|---|---|---|---|
-| **Format** | YAML + Python | JSON5 + Markdown | Markdown only |
-| **Skills / Tools** | Python (tools) | Markdown (skills) | Markdown (skills) |
-| **Roles** | Agent attribute | — | Standalone Markdown |
-| **Memory** | Python config | Markdown/YAML (local) | Markdown (installable) |
-| **Skill dependency resolution** | — | — | Automatic |
-| **Multi-agent delegation** | Python config | Runtime (subagent spawn) | Declarative (role deps) |
-
-## Why StrawPot?
-
-- **Zero boilerplate** — A role is a Markdown file with YAML frontmatter. That's it.
+- **Define roles in Markdown** — A role is a `.md` file with YAML frontmatter. That's it.
+- **Install skills from StrawHub** — `strawpot install skill git-workflow`
+- **Run AI teams locally** — Agents delegate to sub-roles automatically.
+- **Works with Claude, Codex, Gemini** — Same role, any runtime.
+- **Built-in memory** — Context persists across sessions.
 - **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
-- **Declarative delegation** — An ai-ceo role depends on other roles. StrawPot handles the orchestration.
-- **Installable memory** — Memory banks are packages. Install shared context and patterns from StrawHub.
-- **Agent-agnostic** — Same role works with Claude Code, Codex, Gemini, or your own runtime.
 
 ## How It Works
 
@@ -95,7 +101,7 @@ User task → StrawPot → Role (ai-ceo)
 
 When you run `strawpot start`:
 
-1. Creates an isolated environment (worktree, or uses project dir directly)
+1. Creates an isolated environment (worktree or project dir)
 2. Starts the Denden gRPC server for agent communication
 3. Retrieves memory context from past sessions
 4. Launches the orchestrator agent (e.g. ai-ceo)
@@ -103,32 +109,15 @@ When you run `strawpot start`:
 6. Required roles and skills are resolved from StrawHub
 7. On exit, records results to memory and cleans up
 
-## The Workforce Model
-
-Skills are abilities. Roles are jobs. Teams are roles collaborating.
-
-- **Skills** — Atomic capabilities such as writing code, searching documents, or running tests.
-- **Roles** — Job definitions that automatically load the skills needed for the work.
-- **Teams** — Roles collaborating to complete tasks.
-- **Memories** — Persistent knowledge banks shared across sessions.
-
-```
-Role: implementer
- ├─ git-workflow
- ├─ python-dev
- ├─ run-tests
- └─ code-review
-```
-
 ## Ecosystem
 
-| Project | Role |
+| Project | What it does |
 |---------|------|
 | [**StrawPot**](https://strawpot.com) | Runtime — runs role-based AI agents locally |
 | [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, and memories |
 | [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the orchestrator |
 
-## Usage
+## CLI Usage
 
 ```bash
 # Start a session
@@ -143,6 +132,9 @@ strawpot install role implementer
 strawpot search "code review"
 strawpot list
 
+# Web dashboard
+strawpot gui
+
 # Show merged config
 strawpot config
 ```
@@ -154,7 +146,7 @@ Project: `strawpot.toml` (project root)
 
 ```toml
 runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | gemini
-isolation = "none"            # none | worktree | docker
+isolation = "none"                     # none | worktree | docker
 
 [denden]
 addr = "127.0.0.1:9700"
@@ -169,16 +161,6 @@ max_num_delegations = 0       # 0 = unlimited
 [memory]
 provider = "dial"             # default; "" to disable
 ```
-
-## Repository Structure
-
-```
-cli/          StrawPot CLI implementation
-gui/          Web GUI dashboard
-DESIGN.md     System architecture
-```
-
-See [DESIGN.md](DESIGN.md) for architecture details.
 
 ---
 
