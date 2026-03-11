@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -319,6 +320,8 @@ class Session:
         self._orchestrator_role_prompt: str = ""
         self._files_dirs: list[str] = []
         self._delegation_cache: OrderedDict[str, tuple[str, "denden_pb2.DelegateResult", float]] = OrderedDict()
+        self._delegation_lock = threading.RLock()
+        self._delegation_key_locks: dict[str, threading.RLock] = {}
         self._delegation_count: int = 0
         self._shutting_down: bool = False
         self._interrupted: bool = False
@@ -774,10 +777,51 @@ class Session:
     # Denden handlers
     # ------------------------------------------------------------------
 
+    def _get_key_lock(self, cache_key: str) -> threading.RLock:
+        """Return (or create) a per-cache-key RLock."""
+        with self._delegation_lock:
+            lock = self._delegation_key_locks.get(cache_key)
+            if lock is None:
+                lock = threading.RLock()
+                self._delegation_key_locks[cache_key] = lock
+            return lock
+
+    def _cache_lookup(self, cache_key: str) -> tuple[str, "denden_pb2.DelegateResult"] | None:
+        """Check cache under *_delegation_lock*; evict if TTL expired."""
+        with self._delegation_lock:
+            cached = self._delegation_cache.get(cache_key)
+            if cached is None:
+                return None
+            cached_output, cached_delegate_res, cached_at = cached
+            ttl = self.config.cache_ttl_seconds
+            if ttl > 0 and (time.monotonic() - cached_at) > ttl:
+                del self._delegation_cache[cache_key]
+                return None
+            return cached_output, cached_delegate_res
+
+    def _cache_store(self, cache_key: str, output: str, delegate_res: "denden_pb2.DelegateResult") -> None:
+        """Store a result in the cache under *_delegation_lock*."""
+        with self._delegation_lock:
+            max_entries = self.config.cache_max_entries
+            if max_entries > 0 and len(self._delegation_cache) >= max_entries:
+                self._delegation_cache.popitem(last=False)
+            self._delegation_cache[cache_key] = (
+                output,
+                delegate_res,
+                time.monotonic(),
+            )
+
     def _handle_delegate(
         self, request: denden_pb2.DenDenRequest
     ) -> denden_pb2.DenDenResponse:
-        """Handle a delegate request from a sub-agent."""
+        """Handle a delegate request from a sub-agent.
+
+        Thread-safe: a class-level ``_delegation_lock`` guards shared
+        cache / counter state, and a per-cache-key ``RLock`` ensures
+        that parallel identical requests are deduplicated — only the
+        first thread executes the delegation while the others wait and
+        then return the cached result.
+        """
         payload = request.delegate
         trace = request.trace
 
@@ -799,41 +843,37 @@ class Session:
         )
 
         # --- Max delegations check (before cache — cache hits count too) ---
-        max_del = self.config.max_num_delegations
-        if max_del > 0 and self._delegation_count >= max_del:
-            reason = "DENY_DELEGATIONS_LIMIT"
-            if self._tracer is not None:
-                self._tracer.delegate_denied(
-                    role=delegate_req.role_slug,
-                    parent_span=requester_span,
-                    reason=reason,
-                    depth=delegate_req.depth,
+        with self._delegation_lock:
+            max_del = self.config.max_num_delegations
+            if max_del > 0 and self._delegation_count >= max_del:
+                reason = "DENY_DELEGATIONS_LIMIT"
+                if self._tracer is not None:
+                    self._tracer.delegate_denied(
+                        role=delegate_req.role_slug,
+                        parent_span=requester_span,
+                        reason=reason,
+                        depth=delegate_req.depth,
+                    )
+                return denied_response(
+                    request.request_id,
+                    reason,
+                    f"Session delegation limit reached ({max_del})",
                 )
-            return denied_response(
-                request.request_id,
-                reason,
-                f"Session delegation limit reached ({max_del})",
-            )
-        self._delegation_count += 1
+            self._delegation_count += 1
 
-        # --- Cache check ---
+        # --- Cache check (fast path) ---
         cache_key: str | None = None
+        key_lock: threading.RLock | None = None
         if self.config.cache_delegations:
             cache_key = self._delegation_cache_key(
                 delegate_req.role_slug,
                 delegate_req.task_text,
                 return_format,
             )
-            cached = self._delegation_cache.get(cache_key)
-            if cached is not None:
-                cached_output, cached_delegate_res, cached_at = cached
-                # TTL eviction
-                ttl = self.config.cache_ttl_seconds
-                if ttl > 0 and (time.monotonic() - cached_at) > ttl:
-                    del self._delegation_cache[cache_key]
-                    cached = None
-            if cached is not None:
-                cached_output, cached_delegate_res, _ = cached
+            # Quick cache check before acquiring the per-key lock
+            hit = self._cache_lookup(cache_key)
+            if hit is not None:
+                cached_output, cached_delegate_res = hit
                 logger.info(
                     "Delegation cache hit for role=%s, output_len=%d, format=%s",
                     delegate_req.role_slug,
@@ -862,7 +902,48 @@ class Session:
                     delegate_result=cached_delegate_res,
                 )
 
+            # Acquire a per-key lock so parallel identical requests
+            # are serialised: the first thread delegates, the rest wait
+            # and pick up the cached result.
+            key_lock = self._get_key_lock(cache_key)
+
+        # If caching is enabled, hold the per-key lock for the
+        # delegation so duplicate requests block here.
+        if key_lock is not None:
+            key_lock.acquire()
         try:
+            # Re-check cache after acquiring per-key lock (another
+            # thread may have populated it while we were waiting).
+            if cache_key is not None:
+                hit = self._cache_lookup(cache_key)
+                if hit is not None:
+                    cached_output, cached_delegate_res = hit
+                    logger.info(
+                        "Delegation cache hit (after wait) for role=%s",
+                        delegate_req.role_slug,
+                    )
+                    if self._tracer is not None:
+                        span = self._tracer.delegate_start(
+                            role=delegate_req.role_slug,
+                            parent_span=requester_span,
+                            context=delegate_req.task_text,
+                            depth=delegate_req.depth,
+                            parent_agent_id=delegate_req.parent_agent_id,
+                            cache_hit=True,
+                        )
+                        self._tracer.delegate_end(
+                            span_id=span,
+                            exit_code=0,
+                            duration_ms=0,
+                            output=cached_output,
+                            role=delegate_req.role_slug,
+                            cache_hit=True,
+                        )
+                    return ok_response(
+                        request.request_id,
+                        delegate_result=cached_delegate_res,
+                    )
+
             result = handle_delegate(
                 request=delegate_req,
                 config=self.config,
@@ -895,14 +976,7 @@ class Session:
             )
             # Cache successful results with non-empty output
             if cache_key is not None and result.output:
-                max_entries = self.config.cache_max_entries
-                if max_entries > 0 and len(self._delegation_cache) >= max_entries:
-                    self._delegation_cache.popitem(last=False)
-                self._delegation_cache[cache_key] = (
-                    result.output,
-                    delegate_res,
-                    time.monotonic(),
-                )
+                self._cache_store(cache_key, result.output, delegate_res)
             return ok_response(
                 request.request_id,
                 delegate_result=delegate_res,
@@ -925,6 +999,9 @@ class Session:
                 "ERR_SUBAGENT_FAILURE",
                 str(exc),
             )
+        finally:
+            if key_lock is not None:
+                key_lock.release()
 
     def _handle_ask_user(
         self, request: denden_pb2.DenDenRequest
