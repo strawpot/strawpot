@@ -124,8 +124,6 @@ export default function SessionDetail() {
       >
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="agent-tree">Agent Tree</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
           {isInteractive && (
             <TabsTrigger value="chat" className="relative">
               Chat
@@ -134,6 +132,8 @@ export default function SessionDetail() {
               )}
             </TabsTrigger>
           )}
+          <TabsTrigger value="agent-tree">Agent Tree</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="trace">
             Trace{displayEvents.length > 0 && ` (${displayEvents.length})`}
           </TabsTrigger>
@@ -183,6 +183,16 @@ export default function SessionDetail() {
           )}
         </TabsContent>
 
+        {isInteractive && (
+          <TabsContent value="chat">
+            <ChatPanel
+              runId={sessionData.run_id}
+              pendingAskUser={pendingAskUser}
+              initialMessages={chatMessages}
+            />
+          </TabsContent>
+        )}
+
         <TabsContent value="agent-tree">
           <AgentTreeFlow runId={sessionData.run_id} />
         </TabsContent>
@@ -200,16 +210,6 @@ export default function SessionDetail() {
             </p>
           )}
         </TabsContent>
-
-        {isInteractive && (
-          <TabsContent value="chat">
-            <ChatPanel
-              runId={sessionData.run_id}
-              pendingAskUser={pendingAskUser}
-              initialMessages={chatMessages}
-            />
-          </TabsContent>
-        )}
 
         <TabsContent value="trace">
           {displayEvents.length > 0 ? (

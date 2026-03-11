@@ -284,6 +284,21 @@ export default function LaunchDialog({
             )}
           </div>
 
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={interactive}
+              onChange={(e) => setInteractive(e.target.checked)}
+              className="rounded border-input"
+            />
+            <span className="text-sm">
+              Interactive mode
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Allow the agent to ask you questions via a chat panel
+            </span>
+          </label>
+
           <Collapsible>
             <CollapsibleTrigger asChild>
               <Button type="button" variant="ghost" size="sm">
@@ -292,20 +307,6 @@ export default function LaunchDialog({
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 space-y-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={interactive}
-                  onChange={(e) => setInteractive(e.target.checked)}
-                  className="rounded border-input"
-                />
-                <span className="text-sm">
-                  Interactive mode
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Allow the agent to ask you questions via a chat panel
-                </span>
-              </label>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="runtime">Runtime</Label>
