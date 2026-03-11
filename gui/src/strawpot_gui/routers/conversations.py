@@ -117,8 +117,13 @@ def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
 
 
 @router.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: int, conn=Depends(get_db_conn)):
-    """Get a conversation with its ordered sessions."""
+def get_conversation(
+    conversation_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    before_id: str | None = Query(default=None),
+    conn=Depends(get_db_conn),
+):
+    """Get a conversation with its paginated sessions (newest page first)."""
     row = conn.execute(
         "SELECT id, project_id, title, created_at, updated_at FROM conversations WHERE id = ?",
         (conversation_id,),
@@ -134,14 +139,33 @@ def get_conversation(conversation_id: int, conn=Depends(get_db_conn)):
     for s in active:
         _refresh_session_status(conn, s["run_id"])
 
-    sessions = conn.execute(
-        "SELECT run_id, task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
-        "FROM sessions WHERE conversation_id = ? ORDER BY started_at",
-        (conversation_id,),
-    ).fetchall()
+    # Cursor pagination: fetch limit+1 rows descending, detect has_more, reverse to ascending
+    if before_id:
+        cursor_row = conn.execute(
+            "SELECT started_at FROM sessions WHERE run_id = ?", (before_id,)
+        ).fetchone()
+        if not cursor_row:
+            raise HTTPException(400, "Invalid before_id")
+        rows = conn.execute(
+            "SELECT run_id, task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "FROM sessions WHERE conversation_id = ? AND started_at < ? "
+            "ORDER BY started_at DESC LIMIT ?",
+            (conversation_id, cursor_row["started_at"], limit + 1),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT run_id, task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "FROM sessions WHERE conversation_id = ? "
+            "ORDER BY started_at DESC LIMIT ?",
+            (conversation_id, limit + 1),
+        ).fetchall()
+
+    has_more = len(rows) > limit
+    sessions = list(reversed(rows[:limit]))  # ascending for display
 
     result = dict(row)
     result["sessions"] = [dict(s) for s in sessions]
+    result["has_more"] = has_more
     return result
 
 

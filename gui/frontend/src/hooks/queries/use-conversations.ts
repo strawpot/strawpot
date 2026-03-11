@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { Conversation, ConversationList, RecentConversation } from "@/api/types";
@@ -10,6 +10,24 @@ export function useConversation(
   return useQuery({
     queryKey: queryKeys.conversations.detail(id),
     queryFn: () => api.get<Conversation>(`/conversations/${id}`),
+    ...options,
+  });
+}
+
+export function useConversationInfinite(
+  id: number,
+  options?: { refetchInterval?: number | false },
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.conversations.detail(id),
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      api.get<Conversation>(
+        `/conversations/${id}?limit=20${pageParam ? `&before_id=${encodeURIComponent(pageParam)}` : ""}`,
+      ),
+    initialPageParam: null as string | null,
+    getPreviousPageParam: (firstPage) =>
+      firstPage.has_more ? (firstPage.sessions[0]?.run_id ?? null) : null,
+    getNextPageParam: () => null,
     ...options,
   });
 }
