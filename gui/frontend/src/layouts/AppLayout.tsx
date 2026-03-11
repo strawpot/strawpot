@@ -211,7 +211,12 @@ function useBreadcrumbs() {
   const segments = location.pathname.split("/").filter(Boolean);
 
   const projectId = segments[0] === "projects" && segments[1] ? Number(segments[1]) : 0;
+  const conversationId = segments[2] === "conversations" && segments[3] ? Number(segments[3]) : 0;
   const { data: project } = useProject(projectId, { enabled: projectId > 0 });
+
+  // Get conversation title from the sidebar list (already fetched by ConversationSidebar, so this is a cache hit)
+  const { data: conversationsListData } = useProjectConversations(projectId, 1, 50);
+  const conversationTitle = conversationsListData?.items.find((c) => c.id === conversationId)?.title ?? null;
 
   const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [
     { label: "Dashboard", href: "/" },
@@ -228,7 +233,7 @@ function useBreadcrumbs() {
       if (segments[2] === "sessions" && segments[3]) {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
       } else if (segments[2] === "conversations" && segments[3]) {
-        crumbs.push({ label: `Conversation #${segments[3]}` });
+        crumbs.push({ label: conversationTitle ?? `Conversation #${segments[3]}` });
       }
     }
   }

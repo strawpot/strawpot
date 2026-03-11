@@ -18,6 +18,7 @@ export interface Session {
   duration_ms: number | null;
   exit_code: number | null;
   task: string | null;
+  user_task: string | null;
   summary: string | null;
   conversation_id: number | null;
 }
@@ -178,6 +179,7 @@ export interface ProjectStats {
 export interface ConversationSession {
   run_id: string;
   task: string | null;
+  user_task: string | null;
   summary: string | null;
   status: string;
   exit_code: number | null;

@@ -144,8 +144,26 @@ export default function SessionDetail() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          {sessionData.task && (
+          {sessionData.user_task && (
             <Collapsible defaultOpen>
+              <div className="space-y-2">
+                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+                  User Task
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <MarkdownContent content={sessionData.user_task} className="text-sm" />
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          )}
+
+          {sessionData.task && (
+            <Collapsible defaultOpen={!sessionData.user_task}>
               <div className="space-y-2">
                 <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
                   <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
@@ -183,7 +201,7 @@ export default function SessionDetail() {
             </Collapsible>
           )}
 
-          {!sessionData.task && !outputRef && (
+          {!sessionData.user_task && !sessionData.task && !outputRef && (
             <p className="text-sm text-muted-foreground">
               No overview information available yet.
             </p>

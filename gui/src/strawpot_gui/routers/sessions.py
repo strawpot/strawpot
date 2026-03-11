@@ -144,7 +144,7 @@ def launch_session_subprocess(
     project_id: int,
     task: str,
     *,
-    stored_task: str | None = None,
+    user_task: str | None = None,
     memory_task: str | None = None,
     role: str | None = None,
     system_prompt: str | None = None,
@@ -205,10 +205,10 @@ def launch_session_subprocess(
     conn.execute(
         """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
-            started_at, session_dir, task, schedule_id, interactive, conversation_id)
-           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?, ?)""",
+            started_at, session_dir, task, user_task, schedule_id, interactive, conversation_id)
+           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?, ?, ?)""",
         (run_id, project_id, resolved_role, runtime, isolation, now,
-         session_dir, stored_task if stored_task is not None else task,
+         session_dir, task, user_task,
          schedule_id, 1 if interactive else 0, conversation_id),
     )
 
@@ -376,7 +376,7 @@ def list_all_sessions(
     offset = (page - 1) * per_page
     rows = conn.execute(
         f"SELECT run_id, project_id, role, runtime, isolation, status,"
-        f"       started_at, ended_at, duration_ms, exit_code, task"
+        f"       started_at, ended_at, duration_ms, exit_code, task, user_task"
         f"  FROM sessions{where} ORDER BY started_at DESC"
         f"  LIMIT ? OFFSET ?",
         [*params, per_page, offset],
@@ -418,7 +418,7 @@ def list_sessions(
     offset = (page - 1) * per_page
     rows = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
-        "       started_at, ended_at, duration_ms, exit_code, task"
+        "       started_at, ended_at, duration_ms, exit_code, task, user_task"
         "  FROM sessions WHERE project_id = ? ORDER BY started_at DESC"
         "  LIMIT ? OFFSET ?",
         (project_id, per_page, offset),
@@ -439,7 +439,7 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
 
     row = conn.execute(
         "SELECT run_id, project_id, role, runtime, isolation, status,"
-        "       started_at, ended_at, duration_ms, exit_code, task,"
+        "       started_at, ended_at, duration_ms, exit_code, task, user_task,"
         "       session_dir, interactive"
         "  FROM sessions WHERE project_id = ? AND run_id = ?",
         (project_id, run_id),

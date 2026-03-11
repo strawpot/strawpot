@@ -176,14 +176,14 @@ def get_conversation(
         if not cursor_row:
             raise HTTPException(400, "Invalid before_id")
         rows = conn.execute(
-            "SELECT run_id, task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
             "FROM sessions WHERE conversation_id = ? AND started_at < ? "
             "ORDER BY started_at DESC LIMIT ?",
             (conversation_id, cursor_row["started_at"], limit + 1),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT run_id, task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
             "FROM sessions WHERE conversation_id = ? "
             "ORDER BY started_at DESC LIMIT ?",
             (conversation_id, limit + 1),
@@ -251,7 +251,7 @@ def submit_task(
     the conversation history prepended to the task.
     """
     conv = conn.execute(
-        "SELECT id, project_id FROM conversations WHERE id = ?",
+        "SELECT id, project_id, title FROM conversations WHERE id = ?",
         (conversation_id,),
     ).fetchone()
     if not conv:
@@ -268,7 +268,7 @@ def submit_task(
             conn,
             project_id,
             full_task,
-            stored_task=body.task,
+            user_task=body.task,
             memory_task=body.task if context else None,
             role=body.role,
             system_prompt=body.system_prompt or None,
@@ -290,12 +290,19 @@ def submit_task(
         status = _ERROR_STATUS.get(str(e), 500)
         raise HTTPException(status, str(e))
 
-    # Touch updated_at on the conversation
+    # Auto-set title from first message if conversation has no title yet
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        "UPDATE conversations SET updated_at = ? WHERE id = ?",
-        (now, conversation_id),
-    )
+    if not context and not conv["title"]:
+        auto_title = body.task.strip().splitlines()[0][:80].rstrip()
+        conn.execute(
+            "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+            (auto_title, now, conversation_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?",
+            (now, conversation_id),
+        )
 
     return {"run_id": run_id, "conversation_id": conversation_id}
 
