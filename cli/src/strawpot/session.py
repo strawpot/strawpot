@@ -1108,6 +1108,24 @@ class Session:
                 keywords=list(remember.keywords) or None,
                 scope=remember.scope or "project",
             )
+            if self._tracer is not None:
+                span_id = self._agent_spans.get(
+                    trace.agent_instance_id, self._session_span_id
+                )
+                if span_id:
+                    self._tracer.memory_remember(
+                        span_id=span_id,
+                        provider=self._memory_provider.name,
+                        session_id=self._run_id or trace.run_id,
+                        agent_id=trace.agent_instance_id,
+                        role=self._agent_role(trace.agent_instance_id),
+                        content=remember.content,
+                        keywords=list(remember.keywords) or None,
+                        scope=remember.scope or "project",
+                        status=result.status,
+                        entry_id=result.entry_id,
+                        parent_agent_id=None,
+                    )
             return ok_response(
                 request.request_id,
                 remember_result=denden_pb2.RememberResult(
