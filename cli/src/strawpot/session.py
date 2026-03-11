@@ -1008,6 +1008,13 @@ class Session:
     ) -> denden_pb2.DenDenResponse:
         """Handle an ask_user request via the pluggable handler callback."""
         ask = request.ask_user
+        trace = request.trace
+        agent_id = trace.agent_instance_id
+        role = self._agent_role(agent_id)
+        requester_span = self._agent_spans.get(
+            agent_id, self._session_span_id
+        )
+
         req = AskUserRequest(
             question=ask.question,
             choices=list(ask.choices),
@@ -1015,15 +1022,60 @@ class Session:
             why=ask.why,
             response_format=ask.response_format,
         )
+
+        # Trace: ask_user_start
+        ask_span = None
+        if self._tracer is not None:
+            parts = [ask.question]
+            if ask.choices:
+                parts.append(f"\nChoices: {', '.join(ask.choices)}")
+            if ask.default_value:
+                parts.append(f"\nDefault: {ask.default_value}")
+            if ask.why:
+                parts.append(f"\nWhy: {ask.why}")
+            ask_span = self._tracer.ask_user_start(
+                parent_span=requester_span,
+                request_id=request.request_id,
+                question="\n".join(parts),
+                agent_id=agent_id,
+                role=role,
+                session_id=self._run_id,
+            )
+        t0 = time.monotonic()
+
         try:
             resp = self._ask_user_handler(req)
         except Exception as exc:
+            if self._tracer is not None and ask_span is not None:
+                duration_ms = int((time.monotonic() - t0) * 1000)
+                self._tracer.ask_user_end(
+                    span_id=ask_span,
+                    request_id=request.request_id,
+                    answer=f"ERROR: {exc}",
+                    duration_ms=duration_ms,
+                    agent_id=agent_id,
+                    role=role,
+                    session_id=self._run_id,
+                )
             logger.exception("ask_user handler failed")
             return error_response(
                 request.request_id,
                 "ERR_ASK_USER",
                 str(exc),
             )
+
+        if self._tracer is not None and ask_span is not None:
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            self._tracer.ask_user_end(
+                span_id=ask_span,
+                request_id=request.request_id,
+                answer=resp.text,
+                duration_ms=duration_ms,
+                agent_id=agent_id,
+                role=role,
+                session_id=self._run_id,
+            )
+
         result = denden_pb2.AskUserResult(text=resp.text)
         if resp.json:
             import json as _json

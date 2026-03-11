@@ -421,6 +421,75 @@ class TestAgentEvents:
 
 
 # ---------------------------------------------------------------------------
+# Ask_user events
+# ---------------------------------------------------------------------------
+
+
+class TestAskUserEvents:
+    def test_ask_user_start_returns_span_id(self, tmp_path):
+        tracer, _ = _make_tracer(tmp_path)
+        span_id = tracer.ask_user_start(
+            parent_span="root",
+            request_id="req_abc123",
+            question="Should I proceed?",
+        )
+        assert isinstance(span_id, str)
+        assert len(span_id) == 12
+
+    def test_ask_user_start_stores_question_artifact(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        question = "Choose an option\n\nChoices: yes, no\n\nDefault: yes"
+        tracer.ask_user_start(
+            parent_span="root",
+            request_id="req_abc123",
+            question=question,
+            agent_id="agent_123",
+            role="implementer",
+            session_id="run_abc",
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        assert events[0]["event"] == "ask_user_start"
+        assert events[0]["parent_span"] == "root"
+        data = events[0]["data"]
+        assert data["request_id"] == "req_abc123"
+        assert data["question_ref"] is not None
+        assert data["agent_id"] == "agent_123"
+        assert data["role"] == "implementer"
+        assert data["session_id"] == "run_abc"
+        # Verify artifact content
+        artifact_path = os.path.join(session_dir, "artifacts", data["question_ref"])
+        with open(artifact_path, encoding="utf-8") as f:
+            assert f.read() == question
+
+    def test_ask_user_end_stores_answer_artifact(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.ask_user_end(
+            span_id="s1",
+            request_id="req_abc123",
+            answer="yes",
+            duration_ms=5000,
+            agent_id="agent_123",
+            role="implementer",
+            session_id="run_abc",
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        assert events[0]["event"] == "ask_user_end"
+        assert events[0]["span_id"] == "s1"
+        data = events[0]["data"]
+        assert data["request_id"] == "req_abc123"
+        assert data["answer_ref"] is not None
+        assert data["duration_ms"] == 5000
+        assert data["agent_id"] == "agent_123"
+        assert data["role"] == "implementer"
+        assert data["session_id"] == "run_abc"
+        artifact_path = os.path.join(session_dir, "artifacts", data["answer_ref"])
+        with open(artifact_path, encoding="utf-8") as f:
+            assert f.read() == "yes"
+
+
+# ---------------------------------------------------------------------------
 # I/O error resilience
 # ---------------------------------------------------------------------------
 

@@ -326,3 +326,52 @@ class Tracer:
             role=role,
             session_id=session_id,
         )
+
+    def ask_user_start(
+        self,
+        *,
+        parent_span: str,
+        request_id: str,
+        question: str = "",
+        agent_id: str = "",
+        role: str = "",
+        session_id: str = "",
+    ) -> str:
+        """Emit ``ask_user_start``.  Stores question as artifact.  Returns new span_id."""
+        span_id = self._new_span_id()
+        question_ref = self.store_artifact(question)
+        self.emit(
+            "ask_user_start",
+            span_id,
+            parent_span=parent_span,
+            request_id=request_id,
+            question_ref=question_ref,
+            agent_id=agent_id,
+            role=role,
+            session_id=session_id,
+        )
+        return span_id
+
+    def ask_user_end(
+        self,
+        *,
+        span_id: str,
+        request_id: str,
+        answer: str = "",
+        duration_ms: int = 0,
+        agent_id: str = "",
+        role: str = "",
+        session_id: str = "",
+    ) -> None:
+        """Emit ``ask_user_end``.  Stores answer as artifact."""
+        answer_ref = self.store_artifact(answer)
+        self.emit(
+            "ask_user_end",
+            span_id,
+            request_id=request_id,
+            answer_ref=answer_ref,
+            duration_ms=duration_ms,
+            agent_id=agent_id,
+            role=role,
+            session_id=session_id,
+        )
