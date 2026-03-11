@@ -6,6 +6,7 @@ import re
 import signal
 import shutil
 import subprocess
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -631,6 +632,17 @@ def respond_to_ask_user(
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(resp_data, f, indent=2)
     os.replace(tmp_path, str(response_path))
+
+    # Persist the user message to chat history
+    chat_path = session_dir / "chat_messages.jsonl"
+    entry = json.dumps({
+        "id": f"user-{body.request_id}",
+        "role": "user",
+        "text": body.text,
+        "timestamp": time.time(),
+    })
+    with open(chat_path, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
 
     return {"ok": True}
 

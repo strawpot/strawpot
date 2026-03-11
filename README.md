@@ -141,11 +141,8 @@ Global: `$STRAWPOT_HOME/strawpot.toml` (default `~/.strawpot/strawpot.toml`)
 Project: `strawpot.toml` (project root)
 
 ```toml
-runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | gemini
+runtime = "strawpot-claude-code"       # strawpot-claude-code | strawpot-codex | strawpot-gemini
 isolation = "none"                     # none | worktree | docker
-
-[denden]
-addr = "127.0.0.1:9700"
 
 [orchestrator]
 role = "ai-ceo"

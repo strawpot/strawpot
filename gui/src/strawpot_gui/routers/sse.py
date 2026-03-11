@@ -50,6 +50,37 @@ def _read_trace_lines(trace_path: str, offset: int) -> tuple[list[dict], int]:
     return events, new_offset
 
 
+def _append_chat_message(
+    session_dir: str, role: str, text: str, msg_id: str, timestamp: float
+) -> None:
+    """Append a chat message to the session's chat_messages.jsonl."""
+    path = os.path.join(session_dir, "chat_messages.jsonl")
+    entry = json.dumps(
+        {"id": msg_id, "role": role, "text": text, "timestamp": timestamp}
+    )
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
+
+def _read_chat_messages(session_dir: str) -> list[dict]:
+    """Read all chat messages from chat_messages.jsonl."""
+    path = os.path.join(session_dir, "chat_messages.jsonl")
+    messages: list[dict] = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    messages.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+    return messages
+
+
 def _build_full_state(session_dir: str) -> tuple[TreeState, int]:
     """Build complete TreeState from disk."""
     state = TreeState()
@@ -107,12 +138,28 @@ async def session_tree_sse(run_id: str, request: Request):
         event_id += 1
         yield format_sse(event_id, state.to_dict())
 
+        # Send chat history on initial connect
+        chat_messages = _read_chat_messages(session_dir)
+        if chat_messages:
+            event_id += 1
+            yield format_sse_typed(event_id, "chat_history", {"messages": chat_messages})
+
+        # Track which ask_user IDs have already been persisted
+        persisted_ask_ids: set[str] = {m["id"] for m in chat_messages if m.get("role") == "agent"}
+
         # Check for pending ask_user on initial connect
         ask_user_path = os.path.join(session_dir, "ask_user_pending.json")
         if os.path.isfile(ask_user_path):
             try:
                 with open(ask_user_path, encoding="utf-8") as f:
                     ask_data = json.load(f)
+                req_id = ask_data.get("request_id", "")
+                if req_id and req_id not in persisted_ask_ids:
+                    _append_chat_message(
+                        session_dir, "agent", ask_data.get("question", ""),
+                        req_id, ask_data.get("timestamp", 0),
+                    )
+                    persisted_ask_ids.add(req_id)
                 event_id += 1
                 yield format_sse_typed(event_id, "ask_user", ask_data)
             except (OSError, json.JSONDecodeError):
@@ -181,6 +228,14 @@ async def session_tree_sse(run_id: str, request: Request):
                         try:
                             with open(pending, encoding="utf-8") as f:
                                 ask_data = json.load(f)
+                            req_id = ask_data.get("request_id", "")
+                            if req_id and req_id not in persisted_ask_ids:
+                                _append_chat_message(
+                                    session_dir, "agent",
+                                    ask_data.get("question", ""),
+                                    req_id, ask_data.get("timestamp", 0),
+                                )
+                                persisted_ask_ids.add(req_id)
                             event_id += 1
                             yield format_sse_typed(event_id, "ask_user", ask_data)
                         except (OSError, json.JSONDecodeError):

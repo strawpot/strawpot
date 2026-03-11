@@ -70,7 +70,7 @@ export default function SessionDetail() {
 
   // SSE for interactive ask_user events
   const isInteractive = !!sessionData?.interactive;
-  const { pendingAskUser } = useAskUserSSE(
+  const { pendingAskUser, chatMessages } = useAskUserSSE(
     runId ?? "",
     active && isInteractive,
   );
@@ -206,6 +206,7 @@ export default function SessionDetail() {
             <ChatPanel
               runId={sessionData.run_id}
               pendingAskUser={pendingAskUser}
+              initialMessages={chatMessages}
             />
           </TabsContent>
         )}
