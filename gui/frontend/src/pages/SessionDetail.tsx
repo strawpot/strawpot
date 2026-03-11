@@ -6,8 +6,7 @@ import AgentTreeFlow from "@/components/AgentTreeFlow";
 import AgentLogViewer from "@/components/AgentLogViewer";
 import ChatPanel from "@/components/ChatPanel";
 import { formatTime, formatDuration } from "@/components/SessionTable";
-import { useTraceSSE } from "@/hooks/useTraceSSE";
-import { useAskUserSSE } from "@/hooks/useAskUserSSE";
+import { useSessionWS } from "@/hooks/useSessionWS";
 import SessionDetailSkeleton from "@/components/skeletons/SessionDetailSkeleton";
 import MarkdownContent from "@/components/MarkdownContent";
 import { Badge } from "@/components/ui/badge";
@@ -64,17 +63,13 @@ export default function SessionDetail() {
     return () => clearInterval(id);
   }, [active, session]);
 
-  // SSE for live trace events on active sessions
-  const { events: sseEvents } = useTraceSSE(runId ?? "", active);
-  const restEvents = sessionData?.events ?? [];
-  const displayEvents = sseEvents.length > 0 ? sseEvents : restEvents;
-
-  // SSE for interactive ask_user events
   const isInteractive = !!sessionData?.interactive;
-  const { pendingAskUsers, chatMessages } = useAskUserSSE(
+  const { pendingAskUsers, chatMessages, traceEvents, treeData, connected, respond } = useSessionWS(
     runId ?? "",
-    isInteractive,
+    active || isInteractive,
   );
+  const restEvents = sessionData?.events ?? [];
+  const displayEvents = traceEvents.length > 0 ? traceEvents : restEvents;
 
   // Auto-switch to Chat tab when a question arrives
   const [activeTab, setActiveTab] = useState<string | undefined>(undefined);
@@ -211,15 +206,15 @@ export default function SessionDetail() {
         {isInteractive && (
           <TabsContent value="chat">
             <ChatPanel
-              runId={sessionData.run_id}
               pendingAskUsers={pendingAskUsers}
               initialMessages={chatMessages}
+              respond={respond}
             />
           </TabsContent>
         )}
 
         <TabsContent value="agent-tree">
-          <AgentTreeFlow runId={sessionData.run_id} />
+          <AgentTreeFlow treeData={treeData} connected={connected} />
         </TabsContent>
 
         <TabsContent value="logs">

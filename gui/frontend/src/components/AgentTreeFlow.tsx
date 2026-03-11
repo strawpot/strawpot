@@ -12,9 +12,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useTreeSSE } from "@/hooks/useTreeSSE";
 import { statusColor, formatDuration } from "@/components/SessionTable";
-import type { TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
+import type { TreeData, TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 70;
@@ -134,16 +133,27 @@ function assignPositions(
 
 // ---- Main component ----
 
-export default function AgentTreeFlow({ runId }: { runId: string }) {
+export default function AgentTreeFlow({
+  treeData,
+  connected,
+}: {
+  treeData: TreeData | null;
+  connected: boolean;
+}) {
   return (
     <ReactFlowProvider>
-      <AgentTreeFlowInner runId={runId} />
+      <AgentTreeFlowInner treeData={treeData} connected={connected} />
     </ReactFlowProvider>
   );
 }
 
-function AgentTreeFlowInner({ runId }: { runId: string }) {
-  const { tree, connected } = useTreeSSE(runId);
+function AgentTreeFlowInner({
+  treeData: tree,
+  connected,
+}: {
+  treeData: TreeData | null;
+  connected: boolean;
+}) {
   const { fitView } = useReactFlow();
 
   const handleReset = useCallback(() => {
