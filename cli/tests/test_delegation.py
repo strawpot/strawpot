@@ -1775,10 +1775,10 @@ class TestMemoryIntegration:
 
 
 class TestCheckInheritGlobalSkills:
-    def test_default_true(self, tmp_path):
-        """Default is True when field is not present."""
+    def test_default_false(self, tmp_path):
+        """Default is False when field is not present."""
         d = _write_role(str(tmp_path), "basic")
-        assert _check_inherit_global_skills(d) is True
+        assert _check_inherit_global_skills(d) is False
 
     def test_explicit_true(self, tmp_path):
         """Explicit True is respected."""
@@ -1791,10 +1791,10 @@ class TestCheckInheritGlobalSkills:
         assert _check_inherit_global_skills(d) is False
 
     def test_missing_role_md(self, tmp_path):
-        """Missing ROLE.md defaults to True."""
+        """Missing ROLE.md defaults to False."""
         d = str(tmp_path / "roles" / "missing")
         os.makedirs(d, exist_ok=True)
-        assert _check_inherit_global_skills(d) is True
+        assert _check_inherit_global_skills(d) is False
 
 
 # ---------------------------------------------------------------------------
@@ -1815,13 +1815,28 @@ def _write_global_skill(global_dir, slug, version, description="test"):
 
 
 class TestDiscoverGlobalSkills:
+    def test_default_no_global_skills(self, tmp_path, monkeypatch):
+        """Roles without inherit_global_skills do not get global skills."""
+        global_dir = str(tmp_path / "global")
+        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
+        _write_global_skill(global_dir, "linter", "1.0.0")
+
+        role_path = _write_role(str(tmp_path), "worker")
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        assert discover_global_skills(resolved) == []
+
     def test_discovers_global_skills(self, tmp_path, monkeypatch):
         """Finds skills in ~/.strawpot/skills/."""
         global_dir = str(tmp_path / "global")
         monkeypatch.setenv("STRAWPOT_HOME", global_dir)
         _write_global_skill(global_dir, "linter", "1.0.0", "Checks code quality")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],
@@ -1839,7 +1854,8 @@ class TestDiscoverGlobalSkills:
         _write_global_skill(global_dir, "linter", "1.0.0")
         _write_global_skill(global_dir, "formatter", "1.0.0", "Formats code")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local",
@@ -1862,7 +1878,8 @@ class TestDiscoverGlobalSkills:
         with open(os.path.join(d, "SKILL.md"), "w") as f:
             f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],
@@ -1876,7 +1893,8 @@ class TestDiscoverGlobalSkills:
     def test_empty_when_no_dir(self, tmp_path, monkeypatch):
         """Returns empty when ~/.strawpot/skills/ doesn't exist."""
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],
@@ -1914,7 +1932,8 @@ class TestDiscoverGlobalSkills:
         # Valid name
         _write_global_skill(global_dir, "linter", "1.0.0", "Checks code")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],
@@ -1931,7 +1950,8 @@ class TestDiscoverGlobalSkills:
         _write_global_skill(global_dir, "z-tool", "1.0.0", "Z tool")
         _write_global_skill(global_dir, "a-tool", "1.0.0", "A tool")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],
@@ -1953,7 +1973,8 @@ class TestDiscoverGlobalSkills:
         with open(os.path.join(d, "SKILL.md"), "w") as f:
             f.write("---\nname: wrong-name\ndescription: test\n---\nBody.\n")
 
-        role_path = _write_role(str(tmp_path), "worker")
+        role_path = _write_role(str(tmp_path), "worker",
+                               inherit_global_skills=True)
         resolved = {
             "slug": "worker", "kind": "role", "version": "1.0.0",
             "path": role_path, "source": "local", "dependencies": [],

@@ -1663,8 +1663,8 @@ alive.
     `~/.strawpot/skills/`, stage alongside dependency-resolved skills,
     add "Available Skills" summary section to prompt (slug + description;
     agents read `skills/<name>/SKILL.md` for full body). Respect
-    `metadata.strawpot.inherit_global_skills` in ROLE.md (default `true`)
-    to allow roles to opt out of global skills.
+    `metadata.strawpot.inherit_global_skills` in ROLE.md (default `false`)
+    to allow roles to opt in to global skills.
 
 ### Phase 5 — Web GUI (complete)
 
@@ -1933,13 +1933,14 @@ global skill's slug and one-line description. This appears after the role
 body and before the Delegation section. Agents can read
 `skills/<name>/SKILL.md` for the full body when they need details.
 
-### Opt-Out via `inherit_global_skills`
+### Opt-In via `inherit_global_skills`
 
-Roles can opt out of receiving global skills by setting
-`metadata.strawpot.inherit_global_skills: false` in their ROLE.md
-frontmatter. When omitted, the default is `true` (global skills are
-inherited). This allows specialized roles to keep a minimal, controlled
-skill set.
+Roles can opt in to receiving global skills by setting
+`metadata.strawpot.inherit_global_skills: true` in their ROLE.md
+frontmatter. When omitted, the default is `false` (global skills are
+not inherited). This keeps roles minimal by default while allowing
+roles that need broader capabilities to inherit all globally installed
+skills.
 
 ### Denden Communication
 
