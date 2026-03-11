@@ -25,8 +25,8 @@ def _make_active_session(client, tmp_path, run_id="run_interactive"):
 
 
 def _write_pending(session_dir, request_id="abc123"):
-    """Write an ask_user_pending.json file."""
-    path = os.path.join(session_dir, "ask_user_pending.json")
+    """Write an ask_user_pending_<request_id>.json file."""
+    path = os.path.join(session_dir, f"ask_user_pending_{request_id}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"request_id": request_id, "question": "Pick a color?"}, f)
     return path
@@ -63,7 +63,7 @@ class TestRespondToAskUser:
         assert resp.status_code == 404
 
     def test_request_id_mismatch(self, client, tmp_path):
-        """409 when request_id doesn't match pending."""
+        """404 when request_id doesn't match any pending file."""
         _, session_dir = _make_active_session(client, tmp_path, "run_mismatch")
         _write_pending(session_dir, request_id="correct_id")
 
@@ -71,7 +71,7 @@ class TestRespondToAskUser:
             "/api/sessions/run_mismatch/respond",
             json={"request_id": "wrong_id", "text": "hi"},
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 404
 
     def test_successful_respond(self, client, tmp_path):
         """Successful response writes ask_user_response.json."""
@@ -86,7 +86,7 @@ class TestRespondToAskUser:
         assert resp.json() == {"ok": True}
 
         # Verify response file was written
-        response_path = os.path.join(session_dir, "ask_user_response.json")
+        response_path = os.path.join(session_dir, "ask_user_response_req123.json")
         assert os.path.isfile(response_path)
         with open(response_path, encoding="utf-8") as f:
             data = json.load(f)

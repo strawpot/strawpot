@@ -271,12 +271,15 @@ def _upsert_session(
         else:
             status = "stale"
 
+    # Detect interactive sessions by presence of chat_messages.jsonl
+    interactive = os.path.isfile(os.path.join(session_dir, "chat_messages.jsonl"))
+
     conn.execute(
         """INSERT OR REPLACE INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
             started_at, ended_at, duration_ms, exit_code, session_dir,
-            task)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            task, interactive)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             run_id,
             project_id,
@@ -290,5 +293,6 @@ def _upsert_session(
             trace_info.get("exit_code"),
             session_dir,
             data.get("task"),
+            1 if interactive else 0,
         ),
     )

@@ -6,7 +6,7 @@ import re
 import signal
 import shutil
 import subprocess
-import time
+
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -609,20 +609,12 @@ def respond_to_ask_user(
         raise HTTPException(409, f"Session is not active (status: {row['status']})")
 
     session_dir = Path(row["session_dir"])
-    pending_path = session_dir / "ask_user_pending.json"
+    pending_path = session_dir / f"ask_user_pending_{body.request_id}.json"
 
     if not pending_path.is_file():
-        raise HTTPException(404, "No pending ask_user request")
+        raise HTTPException(404, "No pending ask_user request for this request_id")
 
-    try:
-        pending = json.loads(pending_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        raise HTTPException(500, "Failed to read pending request")
-
-    if pending.get("request_id") != body.request_id:
-        raise HTTPException(409, "request_id does not match pending request")
-
-    response_path = session_dir / "ask_user_response.json"
+    response_path = session_dir / f"ask_user_response_{body.request_id}.json"
     resp_data = {
         "request_id": body.request_id,
         "text": body.text,
@@ -632,17 +624,6 @@ def respond_to_ask_user(
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(resp_data, f, indent=2)
     os.replace(tmp_path, str(response_path))
-
-    # Persist the user message to chat history
-    chat_path = session_dir / "chat_messages.jsonl"
-    entry = json.dumps({
-        "id": f"user-{body.request_id}",
-        "role": "user",
-        "text": body.text,
-        "timestamp": time.time(),
-    })
-    with open(chat_path, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
 
     return {"ok": True}
 
