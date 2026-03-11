@@ -58,9 +58,7 @@ export default function LaunchDialog({
     | {
         orchestrator_role?: string;
         runtime?: string;
-        isolation?: string;
         memory?: string;
-        merge_strategy?: string;
         cache_delegations?: boolean;
         cache_max_entries?: number;
         cache_ttl_seconds?: number;
@@ -74,9 +72,7 @@ export default function LaunchDialog({
   const [task, setTask] = useState("");
   const [role, setRole] = useState("");
   const [runtime, setRuntime] = useState("");
-  const [isolation, setIsolation] = useState("");
   const [memory, setMemory] = useState("");
-  const [mergeStrategy, setMergeStrategy] = useState("");
   const [cacheDelegations, setCacheDelegations] = useState("");
   const [cacheMaxEntries, setCacheMaxEntries] = useState("");
   const [cacheTtlSeconds, setCacheTtlSeconds] = useState("");
@@ -90,9 +86,7 @@ export default function LaunchDialog({
     setTask("");
     setRole("");
     setRuntime("");
-    setIsolation("");
     setMemory("");
-    setMergeStrategy("");
     setCacheDelegations("");
     setCacheMaxEntries("");
     setCacheTtlSeconds("");
@@ -127,9 +121,7 @@ export default function LaunchDialog({
 
       const overrides: Record<string, unknown> = {};
       if (runtime.trim()) overrides.runtime = runtime.trim();
-      if (isolation) overrides.isolation = isolation;
       if (memory.trim()) overrides.memory = memory.trim();
-      if (mergeStrategy) overrides.merge_strategy = mergeStrategy;
       if (cacheDelegations) overrides.cache_delegations = cacheDelegations === "true";
       if (cacheMaxEntries.trim()) overrides.cache_max_entries = Number(cacheMaxEntries.trim());
       if (cacheTtlSeconds.trim()) overrides.cache_ttl_seconds = Number(cacheTtlSeconds.trim());
@@ -352,49 +344,6 @@ export default function LaunchDialog({
                   {memoryError && (
                     <p className="text-xs text-destructive">{memoryError}</p>
                   )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="isolation">Isolation</Label>
-                  <Select
-                    value={isolation || EMPTY}
-                    onValueChange={(v) => setIsolation(v === EMPTY ? "" : v)}
-                  >
-                    <SelectTrigger id="isolation">
-                      <SelectValue
-                        placeholder={defaults?.isolation ?? "none"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={EMPTY} className="text-muted-foreground">
-                        Default ({defaults?.isolation ?? "none"})
-                      </SelectItem>
-                      <SelectItem value="none">none</SelectItem>
-                      <SelectItem value="worktree">worktree</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="merge-strategy">Merge Strategy</Label>
-                  <Select
-                    value={mergeStrategy || EMPTY}
-                    onValueChange={(v) => setMergeStrategy(v === EMPTY ? "" : v)}
-                  >
-                    <SelectTrigger id="merge-strategy">
-                      <SelectValue
-                        placeholder={defaults?.merge_strategy ?? "auto"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={EMPTY} className="text-muted-foreground">
-                        Default ({defaults?.merge_strategy ?? "auto"})
-                      </SelectItem>
-                      <SelectItem value="auto">auto</SelectItem>
-                      <SelectItem value="local">local</SelectItem>
-                      <SelectItem value="pr">pr</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
