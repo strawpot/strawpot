@@ -439,7 +439,7 @@ class Session:
                         agent_id=agent_id,
                         role=self.config.orchestrator_role,
                         behavior_ref=role_prompt,
-                        task=self.task,
+                        task=self.memory_task,
                         cards=get_result.context_cards or [],
                         card_count=len(get_result.context_cards) if get_result.context_cards else 0,
                     )
