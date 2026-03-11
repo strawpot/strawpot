@@ -287,7 +287,8 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--cache-ttl-seconds", "cache_ttl_seconds", type=int, default=None, help="Max age in seconds for cached results (0 = unlimited).")
 @click.option("--memory", "memory_override", default=None, help="Memory provider to use (overrides config).")
 @click.option("--max-num-delegations", "max_num_delegations", type=int, default=None, help="Max delegation calls per session (0 = unlimited).")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations):
+@click.option("--memory-task", "memory_task", default=None, help="Original task string for memory scoring (defaults to --task if not set).")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -474,6 +475,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         run_id=run_id,
         headless=headless,
         system_prompt=system_prompt or "",
+        memory_task=memory_task or "",
     )
     session.start(working_dir)
 

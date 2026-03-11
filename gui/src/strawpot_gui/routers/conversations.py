@@ -41,7 +41,7 @@ class ConversationTask(BaseModel):
 
 
 def _build_conversation_context(conn, conversation_id: int) -> str:
-    """Build a prior-turns summary to inject into the next session's system prompt."""
+    """Build a prior-turns summary to prepend to the next session's task."""
     rows = conn.execute(
         "SELECT task, summary, exit_code, status FROM sessions "
         "WHERE conversation_id = ? ORDER BY started_at",
@@ -49,21 +49,50 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
     ).fetchall()
     if not rows:
         return ""
+
+    def _condense(text: str | None, max_chars: int = 200) -> str:
+        """Trim text to ~1-2 lines, breaking at a sentence boundary if possible."""
+        if not text:
+            return "(none)"
+        text = text.strip()
+        if len(text) <= max_chars:
+            return text
+        truncated = text[:max_chars]
+        last_period = truncated.rfind(". ")
+        if last_period > 50:
+            return truncated[: last_period + 1]
+        return truncated.rstrip() + "…"
+
     parts = [
-        "## Prior Conversation\n",
-        "This is a continuation of a multi-turn conversation. "
-        "Here are the previous turns for context:\n",
+        "## Prior Conversation",
+        "",
+        "**Before Responding:** This is a continuation of a multi-turn conversation. "
+        "Read the history below before answering. "
+        'If the user\'s message is a short follow-up (e.g. "yes", "go ahead", "do it"), '
+        "refer to **Pending Follow-up** to understand what was previously offered.",
+        "",
+        "**History:**",
     ]
+
     for i, row in enumerate(rows, 1):
-        parts.append(f"### Turn {i}")
-        parts.append(f"**User task:** {row['task']}")
+        task_line = _condense(row["task"], 150)
         if row["summary"]:
-            parts.append(f"**Result:** {row['summary']}")
+            result_line = _condense(row["summary"])
         elif row["status"] in ("completed", "failed"):
-            parts.append(f"**Result:** (exit code {row['exit_code']})")
+            result_line = f"(exit code {row['exit_code']})"
         else:
-            parts.append(f"**Result:** (status: {row['status']})")
-        parts.append("")
+            result_line = f"(status: {row['status']})"
+        parts.append(f"- Turn {i}: asked: {task_line} → did: {result_line}")
+
+    # Pending Follow-up: last session's full summary for short follow-up turns
+    last = rows[-1]
+    parts.append("")
+    parts.append("**Pending Follow-up:**")
+    if last["summary"]:
+        parts.append(last["summary"].strip())
+    else:
+        parts.append("(none)")
+
     return "\n".join(parts)
 
 
@@ -219,7 +248,7 @@ def submit_task(
     """Submit a new task in a conversation.
 
     Builds context from prior sessions and launches a new session with
-    the conversation history injected as the system prompt.
+    the conversation history prepended to the task.
     """
     conv = conn.execute(
         "SELECT id, project_id FROM conversations WHERE id = ?",
@@ -230,20 +259,19 @@ def submit_task(
 
     project_id = conv["project_id"]
 
-    # Build prior conversation context for the agent
+    # Build prior conversation context and prepend to task for the agent
     context = _build_conversation_context(conn, conversation_id)
-
-    # Merge conversation context with any user-supplied extra system prompt
-    system_prompt_parts = [p for p in [context, body.system_prompt] if p]
-    combined_system_prompt = "\n\n".join(system_prompt_parts) or None
+    full_task = f"{context}\n\n---\n\n{body.task}" if context else body.task
 
     try:
         run_id = launch_session_subprocess(
             conn,
             project_id,
-            body.task,
+            full_task,
+            stored_task=body.task,
+            memory_task=body.task if context else None,
             role=body.role,
-            system_prompt=combined_system_prompt,
+            system_prompt=body.system_prompt or None,
             context_files=body.context_files,
             interactive=body.interactive,
             conversation_id=conversation_id,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
@@ -109,13 +109,15 @@ function AgentMessage({
           </span>
         )}
       </div>
-      <Link
-        to={`/projects/${projectId}/sessions/${session.run_id}`}
+      <a
+        href={`/projects/${projectId}/sessions/${session.run_id}`}
+        target="_blank"
+        rel="noopener noreferrer"
         className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ExternalLink className="h-3 w-3" />
         View session
-      </Link>
+      </a>
     </div>
   );
 }

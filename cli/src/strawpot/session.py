@@ -288,6 +288,7 @@ class Session:
         ask_user_handler: Callable[[AskUserRequest], AskUserResponse] | None = None,
         headless: bool = False,
         system_prompt: str = "",
+        memory_task: str = "",
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -295,6 +296,7 @@ class Session:
         self.isolator = isolator
         self.task = task
         self.system_prompt = system_prompt
+        self.memory_task = memory_task or task
         self._resolve_role = resolve_role
         self._resolve_role_dirs = resolve_role_dirs
         self._ask_user_handler = ask_user_handler or _default_ask_user_handler
@@ -425,7 +427,7 @@ class Session:
                     agent_id=agent_id,
                     role=self.config.orchestrator_role,
                     behavior_ref=role_prompt,
-                    task=self.task,
+                    task=self.memory_task,
                 )
                 if get_result.context_cards:
                     memory_prompt = _format_memory_prompt(get_result)
