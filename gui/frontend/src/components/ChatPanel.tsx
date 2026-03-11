@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { AskUserPending, ChatMessage } from "@/api/types";
-import { useRespondToAskUser } from "@/hooks/mutations/use-ask-user";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,17 +9,16 @@ import { cn } from "@/lib/utils";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatPanel({
-  runId,
   pendingAskUsers,
   initialMessages,
+  respond,
 }: {
-  runId: string;
   pendingAskUsers: AskUserPending[];
   initialMessages?: ChatMessage[];
+  respond: (requestId: string, text: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const respond = useRespondToAskUser(runId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
@@ -28,7 +26,6 @@ export default function ChatPanel({
   useEffect(() => {
     if (!initialMessages || initialMessages.length === 0) return;
     setMessages((prev) => {
-      // Merge persisted history with any messages already in state
       const existingIds = new Set(prev.map((m) => m.id));
       const fromHistory = initialMessages.filter((m) => !existingIds.has(m.id));
       if (fromHistory.length === 0) return prev;
@@ -65,11 +62,10 @@ export default function ChatPanel({
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = async (text: string, target: AskUserPending) => {
+  const handleSend = (text: string, target: AskUserPending) => {
     if (!text.trim()) return;
 
     const msgId = `user-${target.request_id}`;
-    // Skip if already in history
     if (!seenIdsRef.current.has(msgId)) {
       seenIdsRef.current.add(msgId);
       setMessages((prev) => [
@@ -83,18 +79,9 @@ export default function ChatPanel({
       ]);
     }
     setInput("");
-
-    try {
-      await respond.mutateAsync({
-        request_id: target.request_id,
-        text: text.trim(),
-      });
-    } catch {
-      // Error state handled by mutation
-    }
+    respond(target.request_id, text.trim());
   };
 
-  // The oldest pending question receives free-text input
   const activePending = pendingAskUsers.length > 0 ? pendingAskUsers[0] : null;
 
   return (
@@ -144,7 +131,6 @@ export default function ChatPanel({
                           variant="outline"
                           size="sm"
                           onClick={() => handleSend(choice, pending)}
-                          disabled={respond.isPending}
                         >
                           {choice}
                         </Button>
@@ -189,12 +175,12 @@ export default function ChatPanel({
                 ? "Type your response..."
                 : "Waiting for agent question..."
             }
-            disabled={!activePending || respond.isPending}
+            disabled={!activePending}
           />
           <Button
             type="submit"
             size="icon"
-            disabled={!activePending || !input.trim() || respond.isPending}
+            disabled={!activePending || !input.trim()}
           >
             <Send className="h-4 w-4" />
           </Button>

@@ -94,7 +94,7 @@ one-shot task runner.
 | Icons | lucide-react |
 | Toasts | sonner (via shadcn) |
 | Command palette | cmdk (via shadcn) |
-| Real-time | SSE (file polling) |
+| Real-time | WebSocket (per-session) + SSE (global lifecycle) |
 | Tree visualization | React Flow (@xyflow/react) |
 | GUI state | SQLite (`~/.strawpot/gui.db`) |
 
@@ -576,76 +576,85 @@ the full design.
 
 ---
 
-## Real-Time Agent Tree
+## Real-Time Architecture
 
-### Data flow
+### Design principles
 
-```
-session.json (file watch)  ─┐
-                             ├──▶  SSE: /api/sessions/:id/tree
-trace.jsonl  (tail-follow)  ─┘
-```
+1. **Single WebSocket per session** — one connection carries tree state,
+   trace events, ask_user, and chat. No more 6-connection-per-origin
+   browser limit exhaustion.
+2. **Separate bulk history from live tail** — trace event history is
+   fetched via REST pagination; the WebSocket streams only deltas.
+   On reconnect the client sends its last known `trace_offset` (byte
+   position in `trace.jsonl`) so the server resumes without replay.
+3. **Bidirectional ask_user** — `ask_user_response` messages go back
+   through the same WebSocket connection, eliminating the separate
+   REST call.
+4. **Global lifecycle stays SSE** — `GET /api/events` is one connection
+   globally; it has no connection-limit problem and remains SSE for
+   simplicity.
 
-The backend watches `session.json` for agent additions and tail-follows
-`trace.jsonl` for lifecycle events. On any change it pushes an SSE event
-with the full tree state.
+### WebSocket protocol: `GET /ws/sessions/{run_id}`
 
-### SSE reconnection
+#### Connection handshake
 
-All SSE endpoints follow the same reconnection protocol:
-
-1. Each SSE event includes an `id` field (monotonic counter per stream).
-2. On reconnect, the browser's `EventSource` sends `Last-Event-ID`.
-3. The server replays events after that ID. For `trace.jsonl` this is
-   a line offset; for agent tree it resends the full current state;
-   for logs it resends from the byte offset.
-4. If `Last-Event-ID` is missing (first connect), the server sends the
-   full current state followed by live updates.
-
-### SSE payload
+After the WebSocket upgrade the client sends an optional init frame:
 
 ```json
+{ "type": "init", "trace_offset": 0 }
+```
+
+`trace_offset` is the byte offset into `trace.jsonl` for this session.
+`0` means "send full snapshot". On reconnect the client sends the
+`next_offset` from the last `trace_snapshot` or `trace_delta` received,
+so only new events are replayed.
+
+#### Server → client messages
+
+| `type` | When sent | Payload |
+|--------|-----------|---------|
+| `tree_snapshot` | On connect | Full agent tree (`nodes`, `pending_delegations`, `denied_delegations`) |
+| `tree_delta` | On every file change that affects tree state | Same shape as `tree_snapshot` |
+| `trace_snapshot` | On connect (from `trace_offset`) | `{ events: TraceEvent[], next_offset: number }` |
+| `trace_delta` | When `trace.jsonl` grows | `{ events: TraceEvent[], next_offset: number }` |
+| `chat_history` | On connect + when `chat_messages.jsonl` changes | `{ messages: ChatMessage[] }` |
+| `ask_user` | When a pending question file appears | Full `AskUserPending` object |
+| `ask_user_resolved` | When a pending question file is removed | `{ request_id: string }` |
+| `stream_complete` | When session reaches terminal state | `{}` |
+| `error` | If session not found | `{ message: string }` |
+
+#### Client → server messages
+
+| `type` | Payload | Action |
+|--------|---------|--------|
+| `init` | `{ trace_offset: number }` | Set resume offset (sent once after connect) |
+| `ask_user_response` | `{ request_id: string, text: string }` | Write `ask_user_response_{id}.json` |
+
+#### Reconnection
+
+The client tracks `traceOffsetRef` (updated on every `trace_snapshot`
+/ `trace_delta`). On reconnect it sends `{ type: "init", trace_offset: N }`
+so only events from `N` onwards are included in the new snapshot.
+Reconnection uses exponential backoff (1 s → 2 s → … → 15 s).
+
+### Frontend: `useSessionWS(runId, active)`
+
+Replaces `useAskUserSSE`. Returns:
+
+```typescript
 {
-  "nodes": [
-    {
-      "agent_id": "agent_abc123",
-      "role": "orchestrator",
-      "runtime": "strawpot-claude-code",
-      "status": "running",
-      "exit_code": null,
-      "started_at": "2026-01-01T12:00:01+00:00",
-      "duration_ms": null,
-      "parent": null
-    },
-    {
-      "agent_id": "agent_def456",
-      "role": "implementer",
-      "runtime": "strawpot-claude-code",
-      "status": "completed",
-      "exit_code": 0,
-      "started_at": "2026-01-01T12:00:10+00:00",
-      "duration_ms": 30000,
-      "parent": "agent_abc123"
-    }
-  ],
-  "pending_delegations": [
-    {
-      "role": "reviewer",
-      "requested_by": "agent_abc123",
-      "span_id": "span_xyz"
-    }
-  ],
-  "denied_delegations": [
-    {
-      "role": "admin",
-      "reason": "DENY_ROLE_NOT_ALLOWED",
-      "span_id": "span_uvw"
-    }
-  ]
+  pendingAskUsers: AskUserPending[];
+  chatMessages: ChatMessage[];
+  traceEvents: TraceEvent[];
+  connected: boolean;
+  respond: (requestId: string, text: string) => void;
 }
 ```
 
-### Frontend rendering
+`respond` sends `{ type: "ask_user_response", ... }` through the open
+WebSocket, replacing the former REST `POST /sessions/:id/respond`.
+
+### Agent tree rendering
 
 React Flow tree where each node shows role name, status badge
 (green/yellow/red), and elapsed time. Nodes appear with animation
@@ -660,130 +669,28 @@ orchestrator (running, 45s)
     └── [pending: fixer]
 ```
 
----
-
-## Real-Time Engine
-
-The current SSE implementation polls files at 1.5-second intervals using
-`asyncio.sleep` + `os.stat().st_mtime`. This creates noticeable lag and
-wastes CPU on idle sessions. The new real-time engine replaces polling
-with OS-native file watchers and adds a global event bus for efficient
-cache invalidation.
-
-### File watching with watchfiles
-
-Replace `asyncio.sleep(_POLL_INTERVAL)` loops in the SSE router with
-`watchfiles.awatch()`, which uses FSEvents (macOS), inotify (Linux), or
-ReadDirectoryChangesW (Windows) for near-instant change detection.
-
-```python
-from watchfiles import awatch
-
-async def watch_session_files(session_dir: str, stop_event: asyncio.Event):
-    """Yield changes as they occur (~100ms latency)."""
-    async for changes in awatch(
-        session_dir,
-        stop_event=stop_event,
-        step=100,  # 100ms debounce
-    ):
-        yield changes
-```
-
-Impact: Average latency drops from ~750ms (half the 1.5s polling
-interval) to ~100ms. No frontend changes needed.
-
 ### Global SSE event bus
 
-A new endpoint `GET /api/events` provides a single SSE connection that
-broadcasts lightweight notification events across all active sessions.
-The frontend uses these notifications to invalidate TanStack Query
-caches, triggering targeted refetches instead of blind polling.
-
-**Why a global connection?** StrawPot is local-only, single-user. A
-single SSE stream is simpler than per-page connections and avoids the
-browser's 6-connection-per-origin limit for EventSource.
+`GET /api/events` remains Server-Sent Events — it is one connection
+globally and has no connection-limit problem. Broadcasts session
+lifecycle events so the frontend can invalidate TanStack Query caches
+without per-page polling.
 
 **Event types:**
 
 ```json
-{"type": "session_created", "run_id": "...", "project_id": 3}
-{"type": "session_updated", "run_id": "...", "project_id": 3}
-{"type": "session_ended",   "run_id": "...", "project_id": 3, "exit_code": 0, "summary": "..."}
-{"type": "agent_spawned",   "run_id": "...", "agent_id": "...", "role": "implementer"}
-{"type": "agent_ended",     "run_id": "...", "agent_id": "...", "exit_code": 0}
-{"type": "tree_changed",    "run_id": "..."}
-{"type": "trace_appended",  "run_id": "...", "count": 5}
-{"type": "log_appended",    "run_id": "...", "agent_id": "..."}
+{"kind": "session_started",   "run_id": "...", "project_id": 3}
+{"kind": "session_completed", "run_id": "...", "project_id": 3}
+{"kind": "session_failed",    "run_id": "...", "project_id": 3}
+{"kind": "session_stopped",   "run_id": "...", "project_id": 3}
 ```
 
-**Backend architecture:** A central event multiplexer maintains one
-`asyncio.Queue` per connected SSE client. Per-session file watchers
-push lightweight events into the multiplexer, which fans them out to
-all connected clients. The multiplexer is created on first client
-connection and shut down when the last client disconnects.
+### File watching
 
-```python
-class EventBus:
-    """Multiplexes session watcher events to SSE clients."""
-
-    def __init__(self):
-        self._clients: list[asyncio.Queue] = []
-        self._watchers: dict[str, asyncio.Task] = {}
-
-    async def subscribe(self) -> AsyncIterator[dict]:
-        queue: asyncio.Queue[dict] = asyncio.Queue()
-        self._clients.append(queue)
-        try:
-            while True:
-                event = await queue.get()
-                yield event
-        finally:
-            self._clients.remove(queue)
-
-    def publish(self, event: dict):
-        for queue in self._clients:
-            queue.put_nowait(event)
-```
-
-**Frontend integration:** A single `useGlobalSSE()` hook connects to
-`/api/events` at the layout level (always active). On each event, it
-calls `queryClient.invalidateQueries()` with the relevant query keys:
-
-```typescript
-case "session_ended":
-  queryClient.invalidateQueries({ queryKey: ["sessions"] });
-  queryClient.invalidateQueries({ queryKey: ["sessions", event.project_id, event.run_id] });
-  notifySessionComplete(event.run_id, event.summary);  // toast
-  break;
-case "session_created":
-  queryClient.invalidateQueries({ queryKey: ["projects", event.project_id, "sessions"] });
-  queryClient.invalidateQueries({ queryKey: ["sessions"] });
-  break;
-```
-
-### Incremental trace SSE
-
-The current trace events SSE endpoint sends the entire `all_events`
-array on every update. For long sessions with hundreds of events, this
-becomes increasingly wasteful.
-
-**New protocol:**
-
-- **First message (snapshot):** `{"type": "snapshot", "events": [...]}`
-  — full event list on initial connection
-- **Subsequent messages (append):** `{"type": "append", "events": [...]}`
-  — only new events since the last message
-
-The frontend's `useTraceSSE` hook handles both:
-- On `snapshot`: replace state with `data.events`
-- On `append`: append `data.events` to existing state
-
-### Per-session SSE connections
-
-The global event bus handles cache invalidation for REST-fetched data.
-Per-session SSE connections (`/sessions/:id/tree`, `/sessions/:id/events`)
-remain for the SessionDetail page where continuous streaming is needed.
-These also switch from polling to `watchfiles`.
+All file watching uses `watchfiles.awatch()` (FSEvents on macOS,
+inotify on Linux, ReadDirectoryChangesW on Windows) for ~100 ms
+change detection. A 5-second timeout triggers periodic DB status
+checks for sessions whose files have stopped changing.
 
 ---
 
@@ -1135,10 +1042,9 @@ the scheduling system.
 | GET | `/api/projects/:id/sessions` | List sessions for a project. Paginated: `?page=1&per_page=20`. Returns `{ items, total, page, per_page }`. |
 | POST | `/api/sessions` | Launch new session (project_id, task, role, overrides, context_files, system_prompt) |
 | GET | `/api/projects/:id/sessions/:run_id` | Session detail (metadata + agents + trace events) |
-| GET | `/api/sessions/:id/tree` | SSE: real-time agent tree |
+| GET | `/ws/sessions/:id` | WebSocket: real-time tree, trace, ask_user, chat (bidirectional) |
 | GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream (snapshot + live tail) |
 | GET | `/api/sessions/:id/logs/:agent_id/full` | Full log file download (text/plain) |
-| GET | `/api/sessions/:id/events` | SSE: trace event stream (snapshot + incremental) |
 | GET | `/api/sessions/:id/artifacts/:hash` | Read artifact content |
 | POST | `/api/sessions/:id/stop` | Stop session (SIGTERM to orchestrator PID) |
 
@@ -1409,7 +1315,6 @@ context injected, maintaining the feel of a continuous conversation.
 |---------|--------|
 | Multi-user / auth | StrawPot is local-first, single-user |
 | PostgreSQL migration | SQLite is sufficient for local use |
-| WebSocket (replacing SSE) | SSE is simpler and sufficient for our one-directional monitoring. Bidirectional communication (for interactive sessions) will use the existing DenDen gRPC bridge, not WebSocket. |
 | Agent adapter config forms | Per-resource env/param editing now available in resource detail sheet |
 | Kanban / task management | Not our domain; users have existing tools |
 

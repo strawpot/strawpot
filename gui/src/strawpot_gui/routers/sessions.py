@@ -595,48 +595,6 @@ def delete_session(run_id: str, conn=Depends(get_db_conn)):
     return {"ok": True}
 
 
-class AskUserResponseBody(BaseModel):
-    request_id: str
-    text: str = ""
-
-
-@router.post("/sessions/{run_id}/respond")
-def respond_to_ask_user(
-    run_id: str,
-    body: AskUserResponseBody,
-    conn=Depends(get_db_conn),
-):
-    """Write a response to a pending ask_user request."""
-    row = conn.execute(
-        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
-        (run_id,),
-    ).fetchone()
-    if not row:
-        raise HTTPException(404, "Session not found")
-
-    if row["status"] not in ("starting", "running"):
-        raise HTTPException(409, f"Session is not active (status: {row['status']})")
-
-    session_dir = Path(row["session_dir"])
-    pending_path = session_dir / f"ask_user_pending_{body.request_id}.json"
-
-    if not pending_path.is_file():
-        raise HTTPException(404, "No pending ask_user request for this request_id")
-
-    response_path = session_dir / f"ask_user_response_{body.request_id}.json"
-    resp_data = {
-        "request_id": body.request_id,
-        "text": body.text,
-    }
-
-    tmp_path = str(response_path) + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(resp_data, f, indent=2)
-    os.replace(tmp_path, str(response_path))
-
-    return {"ok": True}
-
-
 _ARTIFACT_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
 
 

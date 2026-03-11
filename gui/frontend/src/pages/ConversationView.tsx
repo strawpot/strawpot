@@ -4,8 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
-import { useAskUserSSE } from "@/hooks/useAskUserSSE";
-import { useRespondToAskUser } from "@/hooks/mutations/use-ask-user";
+import { useSessionWS } from "@/hooks/useSessionWS";
 import { useRoles } from "@/hooks/queries/use-roles";
 import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
@@ -195,8 +194,7 @@ export default function ConversationView() {
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const rename = useRenameConversation(pid);
-  const respond = useRespondToAskUser(lastSession?.run_id ?? "");
-  const { pendingAskUsers } = useAskUserSSE(
+  const { pendingAskUsers, respond } = useSessionWS(
     lastSession?.run_id ?? "",
     (lastSession?.status === "running" || lastSession?.status === "starting") && interactive,
   );
@@ -310,8 +308,8 @@ export default function ConversationView() {
   }
 
   function handleAskUserResponse(pending: AskUserPending, text: string) {
-    if (!text.trim() || respond.isPending) return;
-    respond.mutate({ request_id: pending.request_id, text: text.trim() });
+    if (!text.trim()) return;
+    respond(pending.request_id, text.trim());
     setAskUserResponse("");
   }
 
@@ -424,7 +422,6 @@ export default function ConversationView() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={respond.isPending}
                         onClick={() => handleAskUserResponse(pending, choice)}
                       >
                         {choice}
@@ -443,21 +440,16 @@ export default function ConversationView() {
                         }
                       }}
                       placeholder="Your answer…"
-                      disabled={respond.isPending}
                       autoFocus
                       className="text-sm"
                     />
                     <Button
                       type="button"
                       size="icon"
-                      disabled={!askUserResponse.trim() || respond.isPending}
+                      disabled={!askUserResponse.trim()}
                       onClick={() => handleAskUserResponse(pending, askUserResponse)}
                     >
-                      {respond.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CornerDownLeft className="h-4 w-4" />
-                      )}
+                      <CornerDownLeft className="h-4 w-4" />
                     </Button>
                   </div>
                 )}
