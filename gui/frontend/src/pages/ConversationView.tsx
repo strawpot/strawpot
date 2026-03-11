@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
+import { useAskUserSSE } from "@/hooks/useAskUserSSE";
+import { useRespondToAskUser } from "@/hooks/mutations/use-ask-user";
 import { useRoles } from "@/hooks/queries/use-roles";
 import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +35,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useResources } from "@/hooks/queries/use-registry";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
-import type { ConversationSession, ProjectFile } from "@/api/types";
+import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
+import type { AskUserPending, ConversationSession, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
 function formatDuration(ms: number | null): string {
@@ -155,6 +157,8 @@ export default function ConversationView() {
   const [advCacheDelegations, setAdvCacheDelegations] = useState("");
   const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
   const [advCacheTtl, setAdvCacheTtl] = useState("");
+  const [interactive, setInteractive] = useState(true);
+  const [askUserResponse, setAskUserResponse] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef(0);
@@ -191,6 +195,11 @@ export default function ConversationView() {
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const rename = useRenameConversation(pid);
+  const respond = useRespondToAskUser(lastSession?.run_id ?? "");
+  const { pendingAskUsers } = useAskUserSSE(
+    lastSession?.run_id ?? "",
+    (lastSession?.status === "running" || lastSession?.status === "starting") && interactive,
+  );
 
   const roleError =
     role.trim() && !(roles.data ?? []).includes(role.trim())
@@ -286,6 +295,7 @@ export default function ConversationView() {
       task: trimmed,
       role: role.trim() || undefined,
       context_files: selectedFiles.length > 0 ? selectedFiles : undefined,
+      interactive,
       system_prompt: advSystemPrompt.trim() || undefined,
       runtime: advRuntime.trim() || undefined,
       memory: advMemory.trim() || undefined,
@@ -297,6 +307,12 @@ export default function ConversationView() {
     submit.mutate(body, {
       onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); },
     });
+  }
+
+  function handleAskUserResponse(pending: AskUserPending, text: string) {
+    if (!text.trim() || respond.isPending) return;
+    respond.mutate({ request_id: pending.request_id, text: text.trim() });
+    setAskUserResponse("");
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -383,12 +399,73 @@ export default function ConversationView() {
           )}
           {allSessions.map((session) => (
             <div key={session.run_id} className="space-y-4">
-              {session.task && <UserMessage task={session.task} />}
+              {(session.user_task ?? session.task) && <UserMessage task={(session.user_task ?? session.task)!} />}
               <AgentMessage session={session} projectId={pid} />
             </div>
           ))}
         </div>
       </div>
+
+      {/* Pending ask_user questions */}
+      {pendingAskUsers.length > 0 && (
+        <div className="flex-shrink-0 border-t border-border bg-background px-4 pt-3 pb-1">
+          <div className="mx-auto max-w-2xl space-y-2">
+            {pendingAskUsers.map((pending) => (
+              <div key={pending.request_id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-sm font-medium">{pending.question}</p>
+                {pending.why && (
+                  <p className="text-xs text-muted-foreground">{pending.why}</p>
+                )}
+                {pending.choices ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {pending.choices.map((choice) => (
+                      <Button
+                        key={choice}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={respond.isPending}
+                        onClick={() => handleAskUserResponse(pending, choice)}
+                      >
+                        {choice}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      value={askUserResponse}
+                      onChange={(e) => setAskUserResponse(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAskUserResponse(pending, askUserResponse);
+                        }
+                      }}
+                      placeholder="Your answer…"
+                      disabled={respond.isPending}
+                      autoFocus
+                      className="text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      disabled={!askUserResponse.trim() || respond.isPending}
+                      onClick={() => handleAskUserResponse(pending, askUserResponse)}
+                    >
+                      {respond.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CornerDownLeft className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Task input */}
       <div className="flex-shrink-0 border-t border-border bg-background pt-4">
@@ -523,6 +600,17 @@ export default function ConversationView() {
                 ))}
               </datalist>
               <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant={interactive ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setInteractive((v) => !v)}
+                  title={interactive ? "Interactive: agent can ask questions" : "Auto: agent cannot ask questions"}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  {interactive ? "Interactive" : "Auto"}
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"

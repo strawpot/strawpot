@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_code   INTEGER,
     session_dir TEXT NOT NULL,
     task        TEXT,
+    user_task   TEXT,
     summary     TEXT,
     schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL,
     conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
@@ -130,6 +131,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE sessions "
             "ADD COLUMN conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"
         )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add user_task column to sessions (added 2026-03-11)
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_task TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
