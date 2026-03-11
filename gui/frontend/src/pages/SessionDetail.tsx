@@ -101,7 +101,7 @@ export default function SessionDetail() {
   const artifacts = extractArtifacts(displayEvents);
   const outputRef = extractOutputRef(displayEvents);
   const defaultTab =
-    searchParams.get("tab") ?? (!active ? "overview" : isInteractive ? "chat" : "agent-tree");
+    searchParams.get("tab") ?? (!active ? "overview" : "agent-tree");
 
   return (
     <div className="space-y-6">

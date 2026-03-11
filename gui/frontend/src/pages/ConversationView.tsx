@@ -35,7 +35,7 @@ import { useResources } from "@/hooks/queries/use-registry";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
-import type { AskUserPending, ConversationSession, ProjectFile } from "@/api/types";
+import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
 function formatDuration(ms: number | null): string {
@@ -161,8 +161,8 @@ export default function ConversationView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef(0);
-  const isInitialLoad = useRef(true);
-  const prevSessionCount = useRef(0);
+  const prevLastSessionIdRef = useRef<string | undefined>(undefined);
+  const prevChatLengthRef = useRef(0);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
@@ -194,9 +194,9 @@ export default function ConversationView() {
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const rename = useRenameConversation(pid);
-  const { pendingAskUsers, respond } = useSessionWS(
+  const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
-    (lastSession?.status === "running" || lastSession?.status === "starting") && interactive,
+    !!lastSession && interactive,
   );
 
   const roleError =
@@ -208,7 +208,7 @@ export default function ConversationView() {
 
   // Scroll anchor: restore position when older pages are prepended
   useEffect(() => {
-    if (!scrollRef.current || isInitialLoad.current) return;
+    if (!scrollRef.current) return;
     const delta = scrollRef.current.scrollHeight - prevScrollHeightRef.current;
     if (delta > 0) {
       scrollRef.current.scrollTop += delta;
@@ -216,17 +216,23 @@ export default function ConversationView() {
     }
   }, [data?.pages.length]);
 
-  // Auto-scroll to bottom only on initial load and when a new session is added
+  // Auto-scroll to bottom only when the newest session changes
   useEffect(() => {
-    if (!scrollRef.current || !data) return;
-    const count = allSessions.length;
-    if (isInitialLoad.current || count > prevSessionCount.current) {
+    if (!scrollRef.current) return;
+    if (lastSession?.run_id !== prevLastSessionIdRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      isInitialLoad.current = false;
     }
-    prevSessionCount.current = count;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allSessions.length, data]);
+    prevLastSessionIdRef.current = lastSession?.run_id;
+  }, [lastSession?.run_id]);
+
+  // Auto-scroll when new chat messages arrive
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    if (chatMessages.length > prevChatLengthRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    prevChatLengthRef.current = chatMessages.length;
+  }, [chatMessages.length]);
 
   // IntersectionObserver: auto-load older sessions when sentinel reaches top
   useEffect(() => {
@@ -395,12 +401,31 @@ export default function ConversationView() {
               Start the conversation by submitting a task below.
             </p>
           )}
-          {allSessions.map((session) => (
-            <div key={session.run_id} className="space-y-4">
-              {(session.user_task ?? session.task) && <UserMessage task={(session.user_task ?? session.task)!} />}
-              <AgentMessage session={session} projectId={pid} />
-            </div>
-          ))}
+          {allSessions.map((session, index) => {
+            const isLast = index === allSessions.length - 1;
+            return (
+              <div key={session.run_id} className="space-y-4">
+                {(session.user_task ?? session.task) && <UserMessage task={(session.user_task ?? session.task)!} />}
+                {isLast && chatMessages.map((msg: ChatMessage) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-foreground"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                    </div>
+                  </div>
+                ))}
+                <AgentMessage session={session} projectId={pid} />
+              </div>
+            );
+          })}
         </div>
       </div>
 

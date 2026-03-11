@@ -40,15 +40,20 @@ export function useSessionWS(
     );
   }, []);
 
+  // Reset all session state when switching to a different session
+  useEffect(() => {
+    setPendingAskUsers([]);
+    setChatMessages([]);
+    setTraceEvents([]);
+    setTreeData(null);
+    streamDoneRef.current = false;
+    traceOffsetRef.current = 0;
+  }, [runId]);
+
   useEffect(() => {
     if (!active) {
       setPendingAskUsers([]);
-      setChatMessages([]);
-      setTraceEvents([]);
-      setTreeData(null);
       setConnected(false);
-      streamDoneRef.current = false;
-      traceOffsetRef.current = 0;
       return;
     }
 
