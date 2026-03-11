@@ -30,14 +30,21 @@ class EventBus:
             except asyncio.QueueFull:
                 pass  # drop if subscriber is too slow
 
-    async def subscribe(self) -> AsyncIterator[SessionEvent]:
-        """Yield events as they arrive. Clean up on generator close."""
+    async def subscribe(self, poll_interval: float = 5.0) -> AsyncIterator[SessionEvent | None]:
+        """Yield events as they arrive. Clean up on generator close.
+
+        Yields ``None`` every *poll_interval* seconds when no event arrives,
+        giving callers a chance to check for client disconnection.
+        """
         q: asyncio.Queue[SessionEvent] = asyncio.Queue(maxsize=100)
         self._subscribers.append(q)
         try:
             while True:
-                event = await q.get()
-                yield event
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=poll_interval)
+                    yield event
+                except asyncio.TimeoutError:
+                    yield None
         finally:
             self._subscribers.remove(q)
 
