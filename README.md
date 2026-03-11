@@ -2,7 +2,7 @@
 
 One engineer. One laptop. One AI company.
 
-Run a complete AI workforce locally — CEO, engineer, QA, and reviewer — collaborating to ship your product.
+Run an AI company locally — CEO, engineer, QA, and reviewer — collaborating to ship your product.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -15,23 +15,21 @@ Run a complete AI workforce locally — CEO, engineer, QA, and reviewer — coll
   <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — AI workforce running locally" width="720">
 </p>
 
+Run an AI company on your laptop.
+
+StrawPot launches a CEO agent that delegates tasks to engineers, reviewers, and testers automatically.
+
 ## Quick Start
 
 ```bash
 pip install strawpot
-strawpot start
-```
-
-Or launch the web dashboard:
-
-```bash
 strawpot gui
 ```
 
 ## Example Session
 
 ```
-$ strawpot start "Create a landing page for StrawPot"
+$ strawpot start "Build a landing page"
 
 [CEO] Analyzing task...
   → Delegating implementation to Engineer
@@ -52,12 +50,11 @@ You: Approve deployment? (y/n)
 
 ## What Is StrawPot?
 
-StrawPot models a company as an AI workforce. You define each job as a Markdown file, and StrawPot runs them as a team.
+StrawPot runs an AI company on your laptop.
 
-- **Roles** — Jobs (CEO, engineer, reviewer) defined in Markdown
-- **Skills** — Abilities (write code, run tests, review PRs) that roles use
-- **Teams** — Roles collaborating to complete a task
-- **Memory** — Shared knowledge that persists across sessions
+- **Roles** — Jobs
+- **Skills** — Abilities
+- **Memory** — Shared knowledge
 
 ```yaml
 # ai-ceo/ROLE.md
@@ -80,12 +77,11 @@ No Python. No orchestration code. One Markdown file.
 
 ## Features
 
-- **Define roles in Markdown** — A role is a `.md` file with YAML frontmatter. That's it.
-- **Install skills from StrawHub** — `strawpot install skill git-workflow`
-- **Run AI teams locally** — Agents delegate to sub-roles automatically.
-- **Works with Claude, Codex, Gemini** — Same role, any runtime.
-- **Built-in memory** — Context persists across sessions.
-- **Automatic dependency resolution** — Install a role and every skill it needs comes with it.
+- **Define an AI CEO in one Markdown file**
+- **Install new roles from StrawHub**
+- **Run an entire AI workforce locally**
+- **Works with Claude, Codex, Gemini**
+- **Persistent memory across sessions**
 
 ## How It Works
 
