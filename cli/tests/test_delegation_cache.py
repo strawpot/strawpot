@@ -1,6 +1,7 @@
 """Tests for per-session delegation cache."""
 
 import hashlib
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -399,3 +400,142 @@ class TestDelegationCacheEviction:
         monkeypatch.setattr(time, "monotonic", lambda: fake_time)
         session._handle_delegate(req)
         assert mock_hd.call_count == 1  # cache hit
+
+
+# ---------------------------------------------------------------------------
+# Thread-safety
+# ---------------------------------------------------------------------------
+
+
+class TestDelegationCacheThreadSafety:
+    """Verify locking around cache and delegation count."""
+
+    def _setup_session(self, tmp_path, **config_overrides):
+        config_overrides.setdefault("cache_delegations", True)
+        config = _make_config(**config_overrides)
+        session = _make_session(tmp_path, config=config)
+        session._tracer = MagicMock()
+        session._tracer.delegate_start.return_value = "span_001"
+        session._session_span_id = "session_span"
+        session._agent_info = {
+            "agent_abc": {"role": "parent_role", "parent": None}
+        }
+        session._agent_spans = {"agent_abc": "span_parent"}
+        session._env = MagicMock()
+        session._env.path = str(tmp_path)
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_123"
+        session._denden_addr = "127.0.0.1:9700"
+        session._memory_provider = None
+        session._files_dirs = []
+        import os
+        session_dir = os.path.join(str(tmp_path), ".strawpot", "sessions", "run_123")
+        os.makedirs(session_dir, exist_ok=True)
+        return session
+
+    @patch("strawpot.session.handle_delegate")
+    def test_parallel_same_request_deduplicates(self, mock_hd, tmp_path):
+        """Parallel identical requests should only trigger one delegation."""
+        gate = threading.Event()
+
+        def slow_delegate(**kwargs):
+            gate.wait(timeout=5)
+            return DelegateResult(output="result", exit_code=0)
+
+        mock_hd.side_effect = slow_delegate
+        session = self._setup_session(tmp_path)
+
+        req = _make_delegate_request()
+        results: list[denden_pb2.DenDenResponse] = [None, None]
+        errors: list[Exception | None] = [None, None]
+
+        def call(idx):
+            try:
+                results[idx] = session._handle_delegate(req)
+            except Exception as exc:
+                errors[idx] = exc
+
+        t1 = threading.Thread(target=call, args=(0,))
+        t2 = threading.Thread(target=call, args=(1,))
+        t1.start()
+        t2.start()
+
+        # Let the delegation complete
+        gate.set()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert errors == [None, None]
+        # Only one actual delegation should have happened
+        assert mock_hd.call_count == 1
+        # Both threads get OK responses
+        assert results[0].status == denden_pb2.OK
+        assert results[1].status == denden_pb2.OK
+
+    @patch("strawpot.session.handle_delegate")
+    def test_parallel_different_requests_both_execute(self, mock_hd, tmp_path):
+        """Parallel requests with different cache keys should both execute."""
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+        session = self._setup_session(tmp_path)
+        # Pre-create running symlink to avoid TOCTOU race in _session_dir
+        import os
+        running_dir = os.path.join(str(tmp_path), ".strawpot", "running")
+        os.makedirs(running_dir, exist_ok=True)
+        running_link = os.path.join(running_dir, "run_123")
+        session_target = os.path.join("..", "sessions", "run_123")
+        if not os.path.islink(running_link):
+            os.symlink(session_target, running_link)
+
+        req_a = _make_delegate_request(task="task_a")
+        req_b = _make_delegate_request(task="task_b")
+        results = [None, None]
+
+        def call(idx, req):
+            results[idx] = session._handle_delegate(req)
+
+        t1 = threading.Thread(target=call, args=(0, req_a))
+        t2 = threading.Thread(target=call, args=(1, req_b))
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert mock_hd.call_count == 2
+        assert results[0].status == denden_pb2.OK
+        assert results[1].status == denden_pb2.OK
+
+    @patch("strawpot.session.handle_delegate")
+    def test_delegation_count_thread_safe(self, mock_hd, tmp_path):
+        """Delegation count increments correctly under contention."""
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+        session = self._setup_session(tmp_path, cache_delegations=False)
+
+        n_threads = 20
+        barrier = threading.Barrier(n_threads)
+
+        def call(i):
+            barrier.wait(timeout=5)
+            req = _make_delegate_request(task=f"task_{i}")
+            session._handle_delegate(req)
+
+        threads = [threading.Thread(target=call, args=(i,)) for i in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert session._delegation_count == n_threads
+
+    @patch("strawpot.session.handle_delegate")
+    def test_per_key_lock_created_per_cache_key(self, mock_hd, tmp_path):
+        """Each unique cache key gets its own RLock."""
+        mock_hd.return_value = DelegateResult(output="ok", exit_code=0)
+        session = self._setup_session(tmp_path)
+
+        req_a = _make_delegate_request(task="task_a")
+        req_b = _make_delegate_request(task="task_b")
+
+        session._handle_delegate(req_a)
+        session._handle_delegate(req_b)
+
+        assert len(session._delegation_key_locks) == 2
