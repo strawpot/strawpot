@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConversation } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useRoles } from "@/hooks/queries/use-roles";
+import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,9 +31,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useResources } from "@/hooks/queries/use-registry";
-import { useProjectConfig } from "@/hooks/queries/use-projects";
-import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Settings, Square, XCircle } from "lucide-react";
-import type { ConversationSession } from "@/api/types";
+import { api } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
+import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
+import type { ConversationSession, ProjectFile } from "@/api/types";
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "";
@@ -127,6 +136,11 @@ export default function ConversationView() {
   const cid = Number(conversationId);
   const [task, setTask] = useState("");
   const [role, setRole] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [showAllFiles, setShowAllFiles] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [fileFilter, setFileFilter] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -140,11 +154,13 @@ export default function ConversationView() {
   const [advCacheTtl, setAdvCacheTtl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
 
   const roles = useRoles();
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
   const config = useProjectConfig(pid);
+  const projectFiles = useProjectFiles(pid);
   const defaults = config.data?.merged as {
     runtime?: string; memory?: string;
     cache_delegations?: boolean; cache_max_entries?: number;
@@ -191,6 +207,34 @@ export default function ConversationView() {
   const advCount = [advRuntime, advMemory, advSystemPrompt, advMaxDelegations, advCacheDelegations, advCacheMaxEntries, advCacheTtl]
     .filter(v => v.trim()).length;
 
+  const toggleFile = (path: string) =>
+    setSelectedFiles((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path],
+    );
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    setIsUploading(true);
+    try {
+      const uploaded = await api.upload<ProjectFile[]>(`/projects/${pid}/files`, files);
+      qc.invalidateQueries({ queryKey: queryKeys.projects.files(pid) });
+      setSelectedFiles((prev) => {
+        const newPaths = uploaded.map((f) => f.path).filter((p) => !prev.includes(p));
+        return [...prev, ...newPaths];
+      });
+    } catch {
+      // upload error — silently ignore, files will still appear in picker on next load
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
@@ -198,6 +242,7 @@ export default function ConversationView() {
     const body: Parameters<typeof submit.mutate>[0] = {
       task: trimmed,
       role: role.trim() || undefined,
+      context_files: selectedFiles.length > 0 ? selectedFiles : undefined,
       system_prompt: advSystemPrompt.trim() || undefined,
       runtime: advRuntime.trim() || undefined,
       memory: advMemory.trim() || undefined,
@@ -206,10 +251,9 @@ export default function ConversationView() {
       cache_max_entries: advCacheMaxEntries.trim() ? Number(advCacheMaxEntries) : undefined,
       cache_ttl_seconds: advCacheTtl.trim() ? Number(advCacheTtl) : undefined,
     };
-    submit.mutate(
-      body,
-      { onSuccess: () => setTask("") },
-    );
+    submit.mutate(body, {
+      onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); },
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -300,19 +344,116 @@ export default function ConversationView() {
       {/* Task input */}
       <div className="flex-shrink-0 border-t border-border bg-background pt-4">
         <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-2">
-          <Textarea
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isActive
-                ? "Agent is working…"
-                : "Describe the next task… (Enter to submit, Shift+Enter for new line)"
-            }
-            disabled={isActive || submit.isPending}
-            className="h-[80px] resize-none overflow-y-auto"
-            autoFocus
-          />
+          {/* Textarea with drag-and-drop overlay */}
+          <div
+            className="relative"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <Textarea
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                isActive
+                  ? "Agent is working…"
+                  : "Describe the next task… (Enter to submit, Shift+Enter for new line, drag & drop files to attach)"
+              }
+              disabled={isActive || submit.isPending}
+              className="h-[80px] resize-none overflow-y-auto"
+              autoFocus
+            />
+            {(isDragging || isUploading) && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/80 pointer-events-none">
+                {isUploading ? (
+                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2 text-sm text-primary">
+                    <Upload className="h-4 w-4" /> Drop to upload &amp; attach
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* File attachment picker + badges */}
+          {(projectFiles.data ?? []).length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs">
+                      <Paperclip className="mr-1 h-3 w-3" />
+                      Annotate files
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    <div className="px-2 py-1.5">
+                      <Input
+                        placeholder="Filter files…"
+                        value={fileFilter}
+                        onChange={(e) => setFileFilter(e.target.value)}
+                        className="h-7 text-xs"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {(projectFiles.data ?? [])
+                        .filter((f) => f.path.toLowerCase().includes(fileFilter.toLowerCase()))
+                        .map((f) => (
+                          <DropdownMenuCheckboxItem
+                            key={f.path}
+                            checked={selectedFiles.includes(f.path)}
+                            onCheckedChange={() => toggleFile(f.path)}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <span className="font-mono text-xs">{f.path}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {selectedFiles.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{selectedFiles.length} attached</span>
+                )}
+              </div>
+              {selectedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {(showAllFiles ? selectedFiles : selectedFiles.slice(0, 3)).map((path) => (
+                    <Badge key={path} variant="secondary" className="gap-1 font-mono text-xs">
+                      <button type="button" onClick={() => toggleFile(path)} className="mr-0.5 rounded-sm hover:bg-muted">
+                        <X className="h-3 w-3" />
+                      </button>
+                      @{path}
+                    </Badge>
+                  ))}
+                  {!showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(true)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      +{selectedFiles.length - 3} more
+                    </button>
+                  )}
+                  {showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(false)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col gap-1">

@@ -206,6 +206,10 @@ export interface ConversationListItem {
   last_activity: string | null;
 }
 
+export interface RecentConversation extends ConversationListItem {
+  project_name: string;
+}
+
 export interface ConversationList {
   items: ConversationListItem[];
   total: number;
