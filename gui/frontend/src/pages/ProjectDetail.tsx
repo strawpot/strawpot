@@ -1,8 +1,10 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useProject } from "@/hooks/queries/use-projects";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
+import { useProjectConversations } from "@/hooks/queries/use-conversations";
+import { useCreateConversation, useDeleteConversation, useRenameConversation } from "@/hooks/mutations/use-conversations";
 import Pagination from "@/components/Pagination";
 import SessionTable from "@/components/SessionTable";
 import LaunchDialog from "@/components/LaunchDialog";
@@ -12,15 +14,141 @@ import { ProjectActivityTab } from "@/components/ProjectActivityTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { AlertCircle, ArrowLeft, Download, Play } from "lucide-react";
+import { AlertCircle, ArrowLeft, Download, MessageSquare, Pencil, Play, Trash2 } from "lucide-react";
 import InstallDialog from "@/components/InstallDialog";
 import ProjectDetailSkeleton from "@/components/skeletons/ProjectDetailSkeleton";
+
+function EditableTitleCell({
+  projectId,
+  conversationId,
+  title,
+  fallback,
+}: {
+  projectId: number;
+  conversationId: number;
+  title: string | null;
+  fallback: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rename = useRenameConversation(projectId);
+
+  function start(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(title ?? "");
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
+
+  function commit(e: React.SyntheticEvent) {
+    e.stopPropagation();
+    const trimmed = draft.trim();
+    rename.mutate({ conversationId, title: trimmed || null });
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") { e.preventDefault(); commit(e); }
+    if (e.key === "Escape") { e.stopPropagation(); setEditing(false); }
+  }
+
+  if (editing) {
+    return (
+      <Input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        onClick={(e) => e.stopPropagation()}
+        className="h-7 text-sm font-medium w-full"
+        placeholder={fallback}
+      />
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 group">
+      <span className="font-medium">{title ?? fallback}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5 text-muted-foreground hover:text-foreground"
+        onClick={start}
+        aria-label="Rename"
+      >
+        <Pencil className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+function DeleteConversationButton({
+  projectId,
+  conversationId,
+  label,
+}: {
+  projectId: number;
+  conversationId: number;
+  label: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const deleteConversation = useDeleteConversation(projectId);
+
+  if (confirming) {
+    return (
+      <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={deleteConversation.isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteConversation.mutate(conversationId, {
+              onSuccess: () => setConfirming(false),
+              onError: () => setConfirming(false),
+            });
+          }}
+        >
+          Confirm
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(false);
+          }}
+        >
+          No
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+      onClick={(e) => {
+        e.stopPropagation();
+        setConfirming(true);
+      }}
+      aria-label={`Delete ${label}`}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
 
 const TYPE_LABELS: Record<string, string> = {
   roles: "Role",
@@ -32,13 +160,17 @@ const TYPE_LABELS: Record<string, string> = {
 export default function ProjectDetail() {
   const { projectId } = useParams();
   const pid = Number(projectId);
+  const navigate = useNavigate();
   const project = useProject(pid);
   const [sessionPage, setSessionPage] = useState(1);
+  const [conversationPage] = useState(1);
   const sessions = useProjectSessions(pid, sessionPage);
   const resources = useProjectResources(pid);
+  const conversations = useProjectConversations(pid, conversationPage);
+  const createConversation = useCreateConversation();
   const [launchOpen, setLaunchOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("sessions");
+  const [activeTab, setActiveTab] = useState("conversations");
 
   const loading = project.isLoading || sessions.isLoading;
   const error = project.error || sessions.error;
@@ -80,7 +212,22 @@ export default function ProjectDetail() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{p.display_name}</h1>
         <div className="flex gap-2">
-          <Button onClick={() => setLaunchOpen(true)} disabled={!p.dir_exists}>
+          <Button
+            disabled={!p.dir_exists || createConversation.isPending}
+            onClick={() => {
+              createConversation.mutate(
+                { project_id: pid },
+                {
+                  onSuccess: (conv) =>
+                    navigate(`/projects/${pid}/conversations/${conv.id}`),
+                },
+              );
+            }}
+          >
+            <MessageSquare className="mr-2 h-4 w-4" />
+            New Conversation
+          </Button>
+          <Button variant="outline" onClick={() => setLaunchOpen(true)} disabled={!p.dir_exists}>
             <Play className="mr-2 h-4 w-4" />
             Launch Session
           </Button>
@@ -161,6 +308,9 @@ export default function ProjectDetail() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="conversations">
+            Conversations ({conversations.data?.total ?? 0})
+          </TabsTrigger>
           <TabsTrigger value="sessions">
             Sessions ({sessionTotal})
           </TabsTrigger>
@@ -189,6 +339,64 @@ export default function ProjectDetail() {
                 onPageChange={setSessionPage}
               />
             </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="conversations" className="mt-4 space-y-3">
+          {(conversations.data?.items ?? []).length === 0 ? (
+            <p className="text-sm italic text-muted-foreground">
+              No conversations yet. Click "New Conversation" to start one.
+            </p>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-2 font-medium">Title</th>
+                      <th className="px-4 py-2 font-medium">Sessions</th>
+                      <th className="px-4 py-2 font-medium">Last activity</th>
+                      <th className="px-4 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(conversations.data?.items ?? []).map((conv) => (
+                      <tr
+                        key={conv.id}
+                        className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/50"
+                        onClick={() =>
+                          navigate(`/projects/${pid}/conversations/${conv.id}`)
+                        }
+                      >
+                        <td className="px-4 py-2">
+                          <EditableTitleCell
+                            projectId={pid}
+                            conversationId={conv.id}
+                            title={conv.title}
+                            fallback={`Conversation #${conv.id}`}
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">
+                          {conv.session_count}
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">
+                          {conv.last_activity
+                            ? new Date(conv.last_activity).toLocaleString()
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <DeleteConversationButton
+                            projectId={pid}
+                            conversationId={conv.id}
+                            label={conv.title ?? `Conversation #${conv.id}`}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 

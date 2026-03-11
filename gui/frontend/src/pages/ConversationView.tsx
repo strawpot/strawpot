@@ -1,0 +1,502 @@
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { useConversation } from "@/hooks/queries/use-conversations";
+import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
+import { useStopSession } from "@/hooks/mutations/use-sessions";
+import { useRoles } from "@/hooks/queries/use-roles";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useResources } from "@/hooks/queries/use-registry";
+import { useProjectConfig } from "@/hooks/queries/use-projects";
+import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Settings, Square, XCircle } from "lucide-react";
+import type { ConversationSession } from "@/api/types";
+
+function formatDuration(ms: number | null): string {
+  if (ms === null) return "";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "running" || status === "starting") {
+    return (
+      <Badge variant="outline" className="gap-1 border-blue-200 text-blue-700 dark:border-blue-800 dark:text-blue-400">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {status === "starting" ? "Starting" : "Running"}
+      </Badge>
+    );
+  }
+  if (status === "completed") {
+    return (
+      <Badge variant="outline" className="gap-1 border-green-200 text-green-700 dark:border-green-800 dark:text-green-400">
+        <CheckCircle2 className="h-3 w-3" />
+        Completed
+      </Badge>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <Badge variant="outline" className="gap-1 border-red-200 text-red-700 dark:border-red-800 dark:text-red-400">
+        <XCircle className="h-3 w-3" />
+        Failed
+      </Badge>
+    );
+  }
+  return <Badge variant="outline">{status}</Badge>;
+}
+
+function AgentMessage({
+  session,
+  projectId,
+}: {
+  session: ConversationSession;
+  projectId: number;
+}) {
+  const isActive = session.status === "running" || session.status === "starting";
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Agent</span>
+        <StatusBadge status={session.status} />
+        {session.duration_ms !== null && (
+          <span className="text-xs text-muted-foreground">
+            {formatDuration(session.duration_ms)}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">{session.role}</span>
+      </div>
+      <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+        {isActive ? (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Working…
+          </span>
+        ) : session.summary ? (
+          <p className="whitespace-pre-wrap text-foreground">{session.summary}</p>
+        ) : (
+          <span className="text-muted-foreground italic">
+            {session.status === "failed" ? "Session failed without output." : session.status === "stopped" ? "Interrupted." : "No summary available."}
+          </span>
+        )}
+      </div>
+      <Link
+        to={`/projects/${projectId}/sessions/${session.run_id}`}
+        className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <ExternalLink className="h-3 w-3" />
+        View session
+      </Link>
+    </div>
+  );
+}
+
+function UserMessage({ task }: { task: string }) {
+  return (
+    <div className="flex flex-col gap-1.5 items-end">
+      <span className="text-xs font-medium text-muted-foreground">You</span>
+      <div className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
+        <p className="whitespace-pre-wrap">{task}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function ConversationView() {
+  const { projectId, conversationId } = useParams();
+  const pid = Number(projectId);
+  const cid = Number(conversationId);
+  const [task, setTask] = useState("");
+  const [role, setRole] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Advanced settings (persist across submissions)
+  const [advRuntime, setAdvRuntime] = useState("");
+  const [advMemory, setAdvMemory] = useState("");
+  const [advSystemPrompt, setAdvSystemPrompt] = useState("");
+  const [advMaxDelegations, setAdvMaxDelegations] = useState("");
+  const [advCacheDelegations, setAdvCacheDelegations] = useState("");
+  const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
+  const [advCacheTtl, setAdvCacheTtl] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const roles = useRoles();
+  const { data: agents } = useResources("agents");
+  const { data: memories } = useResources("memories");
+  const config = useProjectConfig(pid);
+  const defaults = config.data?.merged as {
+    runtime?: string; memory?: string;
+    cache_delegations?: boolean; cache_max_entries?: number;
+    cache_ttl_seconds?: number; max_num_delegations?: number;
+  } | undefined;
+
+  // Initial load — no polling yet
+  const { data: conversation, error } = useConversation(cid);
+
+  // Poll while any session is active
+  const hasActiveSession = conversation?.sessions.some(
+    (s) => s.status === "running" || s.status === "starting",
+  ) ?? false;
+  useConversation(cid, { refetchInterval: hasActiveSession ? 2000 : false });
+
+  const submit = useSubmitConversationTask(cid);
+  const stop = useStopSession();
+  const rename = useRenameConversation(pid);
+
+  const roleError =
+    role.trim() && !(roles.data ?? []).includes(role.trim())
+      ? "Role not found in installed roles"
+      : "";
+
+  const lastSession = conversation?.sessions[conversation.sessions.length - 1];
+  const isActive =
+    lastSession?.status === "running" || lastSession?.status === "starting";
+
+  // Auto-scroll when a new session is added or the last session's content changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversation?.sessions.length, lastSession?.summary, lastSession?.status]);
+
+  const agentNames = (agents ?? []).map((a: { name: string }) => a.name);
+  const memoryNames = [...new Set((memories ?? []).map((m: { name: string }) => m.name)), "none"].sort();
+
+  const advRuntimeError = advRuntime.trim() && agentNames.length > 0 && !agentNames.includes(advRuntime.trim())
+    ? "Runtime not found in installed agents" : "";
+  const advMemoryError = advMemory.trim() && memoryNames.length > 0 && !memoryNames.includes(advMemory.trim())
+    ? "Memory not found in installed providers" : "";
+  const hasAdvError = !!advRuntimeError || !!advMemoryError;
+
+  // Count active advanced settings for badge indicator
+  const advCount = [advRuntime, advMemory, advSystemPrompt, advMaxDelegations, advCacheDelegations, advCacheMaxEntries, advCacheTtl]
+    .filter(v => v.trim()).length;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = task.trim();
+    if (!trimmed || isActive || !!roleError || hasAdvError) return;
+    const body: Parameters<typeof submit.mutate>[0] = {
+      task: trimmed,
+      role: role.trim() || undefined,
+      system_prompt: advSystemPrompt.trim() || undefined,
+      runtime: advRuntime.trim() || undefined,
+      memory: advMemory.trim() || undefined,
+      max_num_delegations: advMaxDelegations.trim() ? Number(advMaxDelegations) : undefined,
+      cache_delegations: advCacheDelegations ? advCacheDelegations === "true" : undefined,
+      cache_max_entries: advCacheMaxEntries.trim() ? Number(advCacheMaxEntries) : undefined,
+      cache_ttl_seconds: advCacheTtl.trim() ? Number(advCacheTtl) : undefined,
+    };
+    submit.mutate(
+      body,
+      { onSuccess: () => setTask("") },
+    );
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as unknown as React.FormEvent);
+    }
+  }
+
+  function startEditTitle() {
+    setTitleDraft(conversation?.title ?? "");
+    setEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.select(), 0);
+  }
+
+  function commitTitle() {
+    const trimmed = titleDraft.trim();
+    rename.mutate({ conversationId: cid, title: trimmed || null });
+    setEditingTitle(false);
+  }
+
+  function handleTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
+    if (e.key === "Escape") { setEditingTitle(false); }
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>Error: {(error as Error).message}</span>
+      </div>
+    );
+  }
+
+  const title = conversation?.title ?? `Conversation #${cid}`;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border pb-3 mb-4">
+        <div className="flex items-center gap-3">
+          {editingTitle ? (
+            <Input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={handleTitleKeyDown}
+              className="h-7 text-sm font-semibold w-64"
+              placeholder={`Conversation #${cid}`}
+            />
+          ) : (
+            <h1
+              className="text-sm font-semibold cursor-pointer hover:text-muted-foreground"
+              onClick={startEditTitle}
+              title="Click to rename"
+            >
+              {title}
+            </h1>
+          )}
+        </div>
+        {conversation && (
+          <span className="text-xs text-muted-foreground">
+            {conversation.sessions.length} session{conversation.sessions.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Message list — scrolls within this container */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-2xl space-y-6 py-4">
+          {conversation?.sessions.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-12">
+              Start the conversation by submitting a task below.
+            </p>
+          )}
+          {conversation?.sessions.map((session) => (
+            <div key={session.run_id} className="space-y-4">
+              {session.task && <UserMessage task={session.task} />}
+              <AgentMessage session={session} projectId={pid} />
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Task input */}
+      <div className="flex-shrink-0 border-t border-border bg-background pt-4">
+        <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-2">
+          <Textarea
+            value={task}
+            onChange={(e) => setTask(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              isActive
+                ? "Agent is working…"
+                : "Describe the next task… (Enter to submit, Shift+Enter for new line)"
+            }
+            disabled={isActive || submit.isPending}
+            className="h-[80px] resize-none overflow-y-auto"
+            autoFocus
+          />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-1">
+                <Input
+                  list="datalist-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  placeholder="Default role"
+                  className="w-48 text-sm"
+                />
+                {roleError && (
+                  <p className="text-xs text-destructive">{roleError}</p>
+                )}
+              </div>
+              <datalist id="datalist-role">
+                {(roles.data ?? []).map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSettingsOpen(true)}
+                  title="Advanced options"
+                >
+                  <Settings className="h-4 w-4" />
+                  {advCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] text-primary-foreground">
+                      {advCount}
+                    </span>
+                  )}
+                </Button>
+                {isActive ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => lastSession && stop.mutate(lastSession.run_id)}
+                    disabled={stop.isPending}
+                  >
+                    {stop.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Square className="mr-2 h-4 w-4 fill-current" />
+                    )}
+                    Stop
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={!task.trim() || submit.isPending || !!roleError || hasAdvError}
+                  >
+                    {submit.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CornerDownLeft className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Advanced settings dialog */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Advanced Options</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Runtime</Label>
+                <Input
+                  list="adv-datalist-runtime"
+                  value={advRuntime}
+                  onChange={(e) => setAdvRuntime(e.target.value)}
+                  placeholder={defaults?.runtime ?? "default"}
+                  className="text-sm"
+                />
+                <datalist id="adv-datalist-runtime">
+                  {agentNames.map((n) => <option key={n} value={n} />)}
+                </datalist>
+                {advRuntimeError && <p className="text-xs text-destructive">{advRuntimeError}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label>Memory</Label>
+                <Input
+                  list="adv-datalist-memory"
+                  value={advMemory}
+                  onChange={(e) => setAdvMemory(e.target.value)}
+                  placeholder={defaults?.memory ?? "dial"}
+                  className="text-sm"
+                />
+                <datalist id="adv-datalist-memory">
+                  {memoryNames.map((n) => <option key={n} value={n} />)}
+                </datalist>
+                {advMemoryError && <p className="text-xs text-destructive">{advMemoryError}</p>}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>System Prompt</Label>
+              <Textarea
+                value={advSystemPrompt}
+                onChange={(e) => setAdvSystemPrompt(e.target.value)}
+                placeholder="Additional instructions appended to conversation context…"
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Max Delegations</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={advMaxDelegations}
+                  onChange={(e) => setAdvMaxDelegations(e.target.value)}
+                  placeholder={defaults?.max_num_delegations ? String(defaults.max_num_delegations) : "0 (unlimited)"}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cache Delegations</Label>
+                <Select
+                  value={advCacheDelegations || "__empty__"}
+                  onValueChange={(v) => setAdvCacheDelegations(v === "__empty__" ? "" : v)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder={`Default (${defaults?.cache_delegations !== false ? "true" : "false"})`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__" className="text-muted-foreground">
+                      Default ({defaults?.cache_delegations !== false ? "true" : "false"})
+                    </SelectItem>
+                    <SelectItem value="true">true</SelectItem>
+                    <SelectItem value="false">false</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Cache Max Entries</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={advCacheMaxEntries}
+                  onChange={(e) => setAdvCacheMaxEntries(e.target.value)}
+                  placeholder={defaults?.cache_max_entries ? String(defaults.cache_max_entries) : "0 (unlimited)"}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cache TTL (seconds)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={advCacheTtl}
+                  onChange={(e) => setAdvCacheTtl(e.target.value)}
+                  placeholder={defaults?.cache_ttl_seconds ? String(defaults.cache_ttl_seconds) : "0 (unlimited)"}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setAdvRuntime(""); setAdvMemory(""); setAdvSystemPrompt("");
+                setAdvMaxDelegations(""); setAdvCacheDelegations("");
+                setAdvCacheMaxEntries(""); setAdvCacheTtl("");
+              }}
+            >
+              Reset
+            </Button>
+            <Button size="sm" onClick={() => setSettingsOpen(false)}>Done</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

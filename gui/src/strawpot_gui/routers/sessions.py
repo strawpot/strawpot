@@ -66,7 +66,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
 
     # Check trace for completion
     trace_path = os.path.join(session_dir, "trace.jsonl")
-    trace_info = _parse_trace(trace_path)
+    trace_info = _parse_trace(trace_path, session_dir)
 
     if trace_info.get("exit_code") is not None or "ended_at" in trace_info:
         # Session has ended
@@ -75,13 +75,14 @@ def _refresh_session_status(conn, run_id: str) -> None:
         conn.execute(
             """UPDATE sessions
                SET status = ?, ended_at = ?, duration_ms = ?,
-                   exit_code = ?
+                   exit_code = ?, summary = COALESCE(summary, ?)
                WHERE run_id = ?""",
             (
                 status,
                 trace_info.get("ended_at"),
                 trace_info.get("duration_ms"),
                 exit_code,
+                trace_info.get("summary"),
                 run_id,
             ),
         )
@@ -128,6 +129,7 @@ class SessionLaunch(BaseModel):
     context_files: list[str] | None = None
     system_prompt: str | None = None
     interactive: bool = False
+    conversation_id: int | None = None
 
     @field_validator("task")
     @classmethod
@@ -153,6 +155,7 @@ def launch_session_subprocess(
     max_num_delegations: int | None = None,
     schedule_id: int | None = None,
     interactive: bool = False,
+    conversation_id: int | None = None,
 ) -> str:
     """Launch a headless session subprocess. Returns run_id.
 
@@ -200,10 +203,10 @@ def launch_session_subprocess(
     conn.execute(
         """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
-            started_at, session_dir, task, schedule_id, interactive)
-           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?)""",
+            started_at, session_dir, task, schedule_id, interactive, conversation_id)
+           VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?, ?)""",
         (run_id, project_id, resolved_role, runtime, isolation, now,
-         session_dir, task, schedule_id, 1 if interactive else 0),
+         session_dir, task, schedule_id, 1 if interactive else 0, conversation_id),
     )
 
     # Resolve context files and append to task
@@ -316,6 +319,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             max_num_delegations=body.overrides.max_num_delegations if body.overrides else None,
             context_files=body.context_files,
             interactive=body.interactive,
+            conversation_id=body.conversation_id,
         )
     except RuntimeError as e:
         status = _ERROR_STATUS.get(str(e), 500)
@@ -497,7 +501,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     except (OSError, json.JSONDecodeError):
         # session.json not created yet — session never fully started
         conn.execute(
-            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
             (run_id,),
         )
         event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
@@ -507,7 +511,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     if pid is None:
         # No PID recorded — mark as stopped
         conn.execute(
-            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
             (run_id,),
         )
         event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
@@ -519,7 +523,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     except (ProcessLookupError, OSError):
         # Process already gone
         conn.execute(
-            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
             (run_id,),
         )
         event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
@@ -530,7 +534,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     except (ProcessLookupError, OSError):
         # Race: died between check and kill
         conn.execute(
-            "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
+            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
             (run_id,),
         )
         event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))

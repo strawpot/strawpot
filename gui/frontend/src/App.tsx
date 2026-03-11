@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
+import ConversationView from "./pages/ConversationView";
 import ResourceBrowser from "./pages/ResourceBrowser";
 import ScheduledTasks from "./pages/ScheduledTasks";
 import Settings from "./pages/Settings";
@@ -22,6 +23,10 @@ export default function App() {
         <Route
           path="projects/:projectId/sessions/:runId"
           element={<SessionDetail />}
+        />
+        <Route
+          path="projects/:projectId/conversations/:conversationId"
+          element={<ConversationView />}
         />
         <Route path="schedules" element={<ScheduledTasks />} />
         <Route

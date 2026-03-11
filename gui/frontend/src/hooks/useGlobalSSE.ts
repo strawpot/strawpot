@@ -63,12 +63,17 @@ export function useGlobalSSE(): void {
 
           // Invalidate all session list queries
           qc.invalidateQueries({ queryKey: ["sessions"] });
-          // Invalidate specific project sessions if project_id present
+          // Invalidate specific project sessions and conversations if project_id present
           if (data.project_id) {
             qc.invalidateQueries({
               queryKey: queryKeys.projects.sessions(data.project_id),
             });
+            qc.invalidateQueries({
+              queryKey: queryKeys.conversations.all(data.project_id),
+            });
           }
+          // Invalidate active conversation detail views
+          qc.invalidateQueries({ queryKey: ["conversations", "detail"] });
         } catch {
           /* ignore */
         }

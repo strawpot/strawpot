@@ -18,6 +18,8 @@ export interface Session {
   duration_ms: number | null;
   exit_code: number | null;
   task: string | null;
+  summary: string | null;
+  conversation_id: number | null;
 }
 
 export interface SessionList {
@@ -171,6 +173,44 @@ export interface ProjectStats {
   success_rate: number;
   avg_duration_ms: number | null;
   daily: DailyStats[];
+}
+
+export interface ConversationSession {
+  run_id: string;
+  task: string | null;
+  summary: string | null;
+  status: string;
+  exit_code: number | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  role: string;
+}
+
+export interface Conversation {
+  id: number;
+  project_id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string | null;
+  sessions: ConversationSession[];
+}
+
+export interface ConversationListItem {
+  id: number;
+  project_id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string | null;
+  session_count: number;
+  last_activity: string | null;
+}
+
+export interface ConversationList {
+  items: ConversationListItem[];
+  total: number;
+  page: number;
+  per_page: number;
 }
 
 export interface Schedule {
