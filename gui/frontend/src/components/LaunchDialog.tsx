@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useProjectConfig, useProjectFiles } from "@/hooks/queries/use-projects";
 import { useRoles } from "@/hooks/queries/use-roles";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useResourceConfig } from "@/hooks/queries/use-resource-config";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
+import { api } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
+import type { ProjectFile } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +38,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown, Paperclip, X } from "lucide-react";
+import { ChevronDown, Loader2, Paperclip, Upload, X } from "lucide-react";
 
 interface LaunchDialogProps {
   projectId: number;
@@ -80,7 +84,11 @@ export default function LaunchDialog({
   const [systemPrompt, setSystemPrompt] = useState("");
   const [interactive, setInteractive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [showAllFiles, setShowAllFiles] = useState(false);
   const [fileFilter, setFileFilter] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const qc = useQueryClient();
 
   const resetForm = () => {
     setTask("");
@@ -94,6 +102,30 @@ export default function LaunchDialog({
     setSystemPrompt("");
     setInteractive(false);
     setSelectedFiles([]);
+    setShowAllFiles(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    setIsUploading(true);
+    try {
+      const uploaded = await api.upload<ProjectFile[]>(`/projects/${projectId}/files`, files);
+      qc.invalidateQueries({ queryKey: queryKeys.projects.files(projectId) });
+      setSelectedFiles((prev) => {
+        const newPaths = uploaded.map((f) => f.path).filter((p) => !prev.includes(p));
+        return [...prev, ...newPaths];
+      });
+    } catch {
+      // upload error — files will appear in picker on next load
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const toggleFile = (path: string) => {
@@ -102,7 +134,7 @@ export default function LaunchDialog({
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       const body: {
@@ -187,15 +219,36 @@ export default function LaunchDialog({
             <Label htmlFor="task">
               Task <span className="text-destructive">*</span>
             </Label>
-            <Textarea
-              id="task"
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              placeholder="Describe what the agent should do..."
-              required
-              autoFocus
-              rows={3}
-            />
+            <div
+              className="relative"
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <Textarea
+                id="task"
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="Describe what the agent should do… (drag & drop files to attach)"
+                required
+                autoFocus
+                rows={3}
+              />
+              {(isDragging || isUploading) && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/80 pointer-events-none">
+                  {isUploading ? (
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2 text-sm text-primary">
+                      <Upload className="h-4 w-4" /> Drop to upload &amp; attach
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           {(projectFiles.data ?? []).length > 0 && (
             <div className="space-y-2">
@@ -204,7 +257,7 @@ export default function LaunchDialog({
                   <DropdownMenuTrigger asChild>
                     <Button type="button" variant="outline" size="sm">
                       <Paperclip className="mr-1 h-3.5 w-3.5" />
-                      @ Attach Files
+                      Annotate Files
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-64" onCloseAutoFocus={(e) => e.preventDefault()}>
@@ -243,22 +296,40 @@ export default function LaunchDialog({
               </div>
               {selectedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {selectedFiles.map((path) => (
+                  {(showAllFiles ? selectedFiles : selectedFiles.slice(0, 3)).map((path) => (
                     <Badge
                       key={path}
                       variant="secondary"
-                      className="gap-1 font-mono text-xs"
+                      className="max-w-[200px] gap-1 font-mono text-xs"
                     >
-                      @{path}
                       <button
                         type="button"
                         onClick={() => toggleFile(path)}
-                        className="ml-0.5 rounded-sm hover:bg-muted"
+                        className="mr-0.5 shrink-0 rounded-sm hover:bg-muted"
                       >
                         <X className="h-3 w-3" />
                       </button>
+                      <span className="truncate">@{path}</span>
                     </Badge>
                   ))}
+                  {!showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(true)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      +{selectedFiles.length - 3} more
+                    </button>
+                  )}
+                  {showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(false)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Show less
+                    </button>
+                  )}
                 </div>
               )}
             </div>

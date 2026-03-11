@@ -72,6 +72,28 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+@router.get("/conversations/recent")
+def list_recent_conversations(
+    limit: int = Query(10, ge=1, le=50),
+    conn=Depends(get_db_conn),
+):
+    """List recent conversations across all projects, ordered by last activity."""
+    rows = conn.execute(
+        """SELECT c.id, c.project_id, c.title, c.created_at, c.updated_at,
+                  p.display_name AS project_name,
+                  COUNT(s.run_id) AS session_count,
+                  MAX(s.started_at) AS last_activity
+           FROM conversations c
+           JOIN projects p ON p.id = c.project_id
+           LEFT JOIN sessions s ON s.conversation_id = c.id
+           GROUP BY c.id
+           ORDER BY COALESCE(MAX(s.started_at), c.created_at) DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.post("/conversations", status_code=201)
 def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
     """Create a new conversation for a project."""

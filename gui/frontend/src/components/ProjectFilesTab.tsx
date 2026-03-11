@@ -33,6 +33,7 @@ export default function ProjectFilesTab({
   const deleteFile = useDeleteProjectFile();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
 
   const handleFiles = useCallback(
     (fileList: FileList | File[]) => {
@@ -87,8 +88,8 @@ export default function ProjectFilesTab({
       deleteFile.mutate(
         { projectId, filePath },
         {
-          onSuccess: () => toast.success("File deleted"),
-          onError: () => toast.error("Failed to delete file"),
+          onSuccess: () => { toast.success("File deleted"); setConfirmingPath(null); },
+          onError: () => { toast.error("Failed to delete file"); setConfirmingPath(null); },
         },
       );
     },
@@ -145,7 +146,7 @@ export default function ProjectFilesTab({
                   <TableHead>Name</TableHead>
                   <TableHead className="w-24">Size</TableHead>
                   <TableHead className="w-44">Modified</TableHead>
-                  <TableHead className="w-12" />
+                  <TableHead className="w-28" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -161,15 +162,37 @@ export default function ProjectFilesTab({
                       {new Date(f.modified_at).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleDelete(f.path)}
-                        disabled={deleteFile.isPending}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                      </Button>
+                      {confirmingPath === f.path ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(f.path)}
+                            disabled={deleteFile.isPending}
+                            className="text-xs text-destructive hover:text-destructive/80 font-medium"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingPath(null)}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => setConfirmingPath(f.path)}
+                            disabled={deleteFile.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
