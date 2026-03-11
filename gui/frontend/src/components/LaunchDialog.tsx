@@ -64,6 +64,7 @@ export default function LaunchDialog({
         cache_delegations?: boolean;
         cache_max_entries?: number;
         cache_ttl_seconds?: number;
+        max_num_delegations?: number;
       }
     | undefined;
 
@@ -79,6 +80,7 @@ export default function LaunchDialog({
   const [cacheDelegations, setCacheDelegations] = useState("");
   const [cacheMaxEntries, setCacheMaxEntries] = useState("");
   const [cacheTtlSeconds, setCacheTtlSeconds] = useState("");
+  const [maxNumDelegations, setMaxNumDelegations] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [interactive, setInteractive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -94,6 +96,7 @@ export default function LaunchDialog({
     setCacheDelegations("");
     setCacheMaxEntries("");
     setCacheTtlSeconds("");
+    setMaxNumDelegations("");
     setSystemPrompt("");
     setInteractive(false);
     setSelectedFiles([]);
@@ -130,6 +133,7 @@ export default function LaunchDialog({
       if (cacheDelegations) overrides.cache_delegations = cacheDelegations === "true";
       if (cacheMaxEntries.trim()) overrides.cache_max_entries = Number(cacheMaxEntries.trim());
       if (cacheTtlSeconds.trim()) overrides.cache_ttl_seconds = Number(cacheTtlSeconds.trim());
+      if (maxNumDelegations.trim()) overrides.max_num_delegations = Number(maxNumDelegations.trim());
       if (Object.keys(overrides).length > 0) body.overrides = overrides;
       if (selectedFiles.length > 0) body.context_files = selectedFiles;
       if (systemPrompt.trim()) body.system_prompt = systemPrompt.trim();
@@ -403,7 +407,18 @@ export default function LaunchDialog({
                   rows={3}
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Max Delegations</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={maxNumDelegations}
+                    onChange={(e) => setMaxNumDelegations(e.target.value)}
+                    placeholder={defaults?.max_num_delegations ? String(defaults.max_num_delegations) : "0 (unlimited)"}
+                    className="h-8 text-xs"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>Cache Delegations</Label>
                   <Select

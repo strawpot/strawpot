@@ -286,7 +286,8 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--cache-max-entries", "cache_max_entries", type=int, default=None, help="Max cached delegation results (0 = unlimited).")
 @click.option("--cache-ttl-seconds", "cache_ttl_seconds", type=int, default=None, help="Max age in seconds for cached results (0 = unlimited).")
 @click.option("--memory", "memory_override", default=None, help="Memory provider to use (overrides config).")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override):
+@click.option("--max-num-delegations", "max_num_delegations", type=int, default=None, help="Max delegation calls per session (0 = unlimited).")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -312,6 +313,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         config.cache_ttl_seconds = cache_ttl_seconds
     if memory_override is not None:
         config.memory = memory_override
+    if max_num_delegations is not None:
+        config.max_num_delegations = max_num_delegations
     if host or port:
         current_host, current_port = config.denden_addr.rsplit(":", 1)
         config.denden_addr = f"{host or current_host}:{port or current_port}"

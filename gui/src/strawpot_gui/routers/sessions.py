@@ -118,6 +118,7 @@ class SessionOverrides(BaseModel):
     cache_delegations: bool | None = None
     cache_max_entries: int | None = None
     cache_ttl_seconds: int | None = None
+    max_num_delegations: int | None = None
 
 
 class SessionLaunch(BaseModel):
@@ -152,6 +153,7 @@ def launch_session_subprocess(
     cache_delegations: bool | None = None,
     cache_max_entries: int | None = None,
     cache_ttl_seconds: int | None = None,
+    max_num_delegations: int | None = None,
     schedule_id: int | None = None,
     interactive: bool = False,
 ) -> str:
@@ -258,6 +260,8 @@ def launch_session_subprocess(
         cmd.extend(["--cache-max-entries", str(cache_max_entries)])
     if cache_ttl_seconds is not None:
         cmd.extend(["--cache-ttl-seconds", str(cache_ttl_seconds)])
+    if max_num_delegations is not None:
+        cmd.extend(["--max-num-delegations", str(max_num_delegations)])
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.
@@ -318,6 +322,7 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             cache_delegations=body.overrides.cache_delegations if body.overrides else None,
             cache_max_entries=body.overrides.cache_max_entries if body.overrides else None,
             cache_ttl_seconds=body.overrides.cache_ttl_seconds if body.overrides else None,
+            max_num_delegations=body.overrides.max_num_delegations if body.overrides else None,
             context_files=body.context_files,
             interactive=body.interactive,
         )

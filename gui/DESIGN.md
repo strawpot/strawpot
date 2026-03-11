@@ -261,15 +261,19 @@ Project: `<project>/strawpot.toml` (overrides global)
 | `runtime` | str | `"strawpot-claude-code"` |
 | `isolation` | str | `"none"` |
 | `denden_addr` | str | `"127.0.0.1:9700"` |
-| `orchestrator_role` | str | `"orchestrator"` |
+| `orchestrator_role` | str | `"ai-ceo"` |
 | `max_depth` | int | `3` |
 | `permission_mode` | str | `"default"` |
 | `agent_timeout` | int \| None | `None` |
 | `max_delegate_retries` | int | `0` |
+| `cache_delegations` | bool | `true` |
+| `cache_max_entries` | int | `0` |
+| `cache_ttl_seconds` | int | `0` |
+| `max_num_delegations` | int | `0` |
 | `agents` | dict | `{}` |
 | `skills` | dict | `{}` |
 | `roles` | dict | `{}` |
-| `memory` | str \| None | `None` |
+| `memory` | str | `"dial"` |
 | `memory_config` | dict | `{}` |
 | `merge_strategy` | str | `"auto"` |
 | `pull_before_session` | str | `"prompt"` |

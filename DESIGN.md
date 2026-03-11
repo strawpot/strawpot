@@ -410,6 +410,10 @@ class StrawPotConfig:
     permission_mode: str = "default"   # orchestrator permission mode
     agent_timeout: int | None = None   # sub-agent timeout in seconds (None = no limit)
     max_delegate_retries: int = 0      # retry on invalid output format
+    cache_delegations: bool = True     # cache delegation results within a session
+    cache_max_entries: int = 0         # max cached entries (0 = unlimited)
+    cache_ttl_seconds: int = 0         # max cache age in seconds (0 = unlimited)
+    max_num_delegations: int = 0       # max delegation calls per session (0 = unlimited)
     agents: dict[str, dict] = field(default_factory=dict)  # per-agent extras
     skills: dict[str, dict[str, str]] = field(default_factory=dict)  # persisted skill env
     roles: dict[str, dict] = field(default_factory=dict)   # role overrides (default_agent, etc.)
@@ -545,6 +549,10 @@ permission_mode = "default"  # orchestrator permission mode (sub-agents always "
 max_depth = 3
 agent_timeout = 300          # sub-agent timeout in seconds (omit for no limit)
 max_delegate_retries = 0     # retry on invalid output format
+cache_delegations = true     # cache delegation results within a session (default: true)
+cache_max_entries = 0        # max cached entries (0 = unlimited)
+cache_ttl_seconds = 0        # max cache age in seconds (0 = unlimited)
+max_num_delegations = 0      # max delegation calls per session (0 = unlimited)
 
 [session]
 merge_strategy = "auto"          # auto | local | pr
@@ -659,22 +667,29 @@ Denden server dispatches to `Session._handle_delegate`:
 
 ```
 1. Extract: role_slug, task_text, parent_agent_id, run_id from request
-2. Policy check:
+2. Policy checks:
    - depth > max_depth?           → DENY_DEPTH_LIMIT (+ trace: delegate_denied)
-3. Resolve:
+   - delegation_count >= max_num_delegations (if > 0)?
+                                  → DENY_DELEGATIONS_LIMIT (+ trace: delegate_denied)
+   Increment delegation_count (counts cache hits too — prevents infinite loops)
+3. Cache check:
+   - If cache_delegations enabled, check cache by (role, task, format) key
+   - Cache hit (within TTL): return cached result immediately (no agent spawn)
+   - Cache miss or expired: continue to resolve + spawn
+4. Resolve:
    resolved = strawhub.resolver.resolve(role_slug, kind="role")
    → {slug, version, path, dependencies: [{slug, kind, path}, ...]}
    Build delegatable roles list from the role's own declared role dependencies:
    → excludes the current role (can't self-delegate)
    → excludes the requester role (can't delegate back to parent)
    → only includes roles with resolvable directories
-4. Build prompt:
+5. Build prompt:
    system_prompt = context.build_prompt(resolved,
      delegatable_roles=..., requester_role=parent_role)
    → reads SKILL.md bodies (deps first) + ROLE.md body
    → appends Delegation section (delegatable roles, if any)
    → appends Requester section (parent role that delegated the task)
-5. Stage role + create workspace:
+6. Stage role + create workspace:
    skills_dir, roles_dir = stage_role(session_dir, resolved)
    → session-level (idempotent): copies ROLE.md into session_dir/roles/<slug>/,
      symlinks transitive skill deps into skills/, direct role deps into roles/
@@ -687,7 +702,7 @@ Denden server dispatches to `Session._handle_delegate`:
      and append that dir to roles_dirs (per-agent, avoids leak into shared staged dir)
    workspace = create_agent_workspace(session_dir, agent_id)
    → per-agent scratch directory at session_dir/agents/<agent_id>/ (clean — no pre-placed files)
-6. Spawn in session worktree (shared — no new worktree):
+7. Spawn in session worktree (shared — no new worktree):
    → trace: delegate_start (stores context as artifact)
    handle = runtime.spawn(
      agent_id=agent_id, working_dir=self.env.path,
@@ -702,14 +717,16 @@ Denden server dispatches to `Session._handle_delegate`:
    )
    → WrapperRuntime calls wrapper CLI with standard protocol args
    → trace: agent_spawn
-7. Wait:
+8. Wait:
    result = runtime.wait(handle, timeout=config.agent_timeout)
    (blocks — sequential DAG, one sub-agent at a time)
    → trace: agent_end (stores output as artifact)
    → on timeout: runtime.kill(handle), return error response
      "Agent timed out after {timeout}s" to parent
    → trace: memory_dump (if memory provider configured)
-8. Return:
+   → on success + cache enabled: store result in delegation cache
+     (FIFO eviction if cache_max_entries > 0)
+9. Return:
    → trace: delegate_end (exit_code, summary, duration_ms)
    ok_response(request_id, delegate_result=DelegateResult(summary=result.summary))
 ```
