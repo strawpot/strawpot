@@ -60,6 +60,13 @@ export interface AskUserPending {
   timestamp: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  role: "agent" | "user";
+  text: string;
+  timestamp: number;
+}
+
 export interface TreeNode {
   agent_id: string;
   role: string;

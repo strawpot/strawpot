@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AskUserPending } from "@/api/types";
+import type { AskUserPending, ChatMessage } from "@/api/types";
 import { useRespondToAskUser } from "@/hooks/mutations/use-ask-user";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,31 +9,46 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { MessageSquare, Send } from "lucide-react";
 
-interface ChatMessage {
-  id: string;
-  role: "agent" | "user";
-  text: string;
-  timestamp: number;
-}
-
 export default function ChatPanel({
   runId,
   pendingAskUser,
+  initialMessages,
 }: {
   runId: string;
   pendingAskUser: AskUserPending | null;
+  initialMessages?: ChatMessage[];
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const respond = useRespondToAskUser(runId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastPendingIdRef = useRef<string | null>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+
+  // Seed from persisted history when it arrives
+  useEffect(() => {
+    if (!initialMessages || initialMessages.length === 0) return;
+    setMessages((prev) => {
+      // Merge persisted history with any messages already in state
+      const existingIds = new Set(prev.map((m) => m.id));
+      const fromHistory = initialMessages.filter((m) => !existingIds.has(m.id));
+      if (fromHistory.length === 0) return prev;
+      const merged = [...fromHistory, ...prev];
+      merged.sort((a, b) => a.timestamp - b.timestamp);
+      for (const m of merged) seenIdsRef.current.add(m.id);
+      return merged;
+    });
+  }, [initialMessages]);
 
   // When a new pending question arrives, add it to the chat
   useEffect(() => {
     if (!pendingAskUser) return;
     if (lastPendingIdRef.current === pendingAskUser.request_id) return;
     lastPendingIdRef.current = pendingAskUser.request_id;
+
+    // Skip if already loaded from history
+    if (seenIdsRef.current.has(pendingAskUser.request_id)) return;
+    seenIdsRef.current.add(pendingAskUser.request_id);
 
     setMessages((prev) => [
       ...prev,
@@ -54,15 +69,20 @@ export default function ChatPanel({
   const handleSend = async (text: string) => {
     if (!text.trim() || !pendingAskUser) return;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        role: "user",
-        text: text.trim(),
-        timestamp: Date.now() / 1000,
-      },
-    ]);
+    const msgId = `user-${pendingAskUser.request_id}`;
+    // Skip if already in history
+    if (!seenIdsRef.current.has(msgId)) {
+      seenIdsRef.current.add(msgId);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: msgId,
+          role: "user",
+          text: text.trim(),
+          timestamp: Date.now() / 1000,
+        },
+      ]);
+    }
     setInput("");
 
     try {

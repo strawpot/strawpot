@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import type { AskUserPending } from "@/api/types";
+import type { AskUserPending, ChatMessage } from "@/api/types";
 
 /**
- * Listens to the session tree SSE for `ask_user` and `ask_user_resolved` events.
- * Returns the current pending question (if any).
+ * Listens to the session tree SSE for `ask_user`, `ask_user_resolved`,
+ * and `chat_history` events. Returns the current pending question and
+ * any persisted chat messages from previous connections.
  */
 export function useAskUserSSE(
   runId: string,
   active: boolean,
-): { pendingAskUser: AskUserPending | null } {
+): { pendingAskUser: AskUserPending | null; chatMessages: ChatMessage[] } {
   const [pendingAskUser, setPendingAskUser] = useState<AskUserPending | null>(
     null,
   );
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -21,6 +23,7 @@ export function useAskUserSSE(
   useEffect(() => {
     if (!active) {
       setPendingAskUser(null);
+      setChatMessages([]);
       return;
     }
 
@@ -31,6 +34,17 @@ export function useAskUserSSE(
       es.onopen = () => {
         backoffMs.current = 1000;
       };
+
+      es.addEventListener("chat_history", (msg) => {
+        try {
+          const data = JSON.parse(msg.data) as { messages: ChatMessage[] };
+          if (data.messages) {
+            setChatMessages(data.messages);
+          }
+        } catch {
+          /* ignore */
+        }
+      });
 
       es.addEventListener("ask_user", (msg) => {
         try {
@@ -64,5 +78,5 @@ export function useAskUserSSE(
     };
   }, [runId, active]);
 
-  return { pendingAskUser };
+  return { pendingAskUser, chatMessages };
 }
