@@ -536,7 +536,7 @@ class Session:
                         agent_id=orch_agent_id,
                         role=self.config.orchestrator_role,
                         behavior_ref=self._orchestrator_role_prompt,
-                        task=self.task,
+                        task=self.memory_task,
                         status=status,
                         output=output,
                     )
@@ -550,7 +550,7 @@ class Session:
                         agent_id=orch_agent_id,
                         role=self.config.orchestrator_role,
                         behavior_ref=self._orchestrator_role_prompt,
-                        task=self.task or "",
+                        task=self.memory_task or "",
                         status=status,
                         output=output,
                     )

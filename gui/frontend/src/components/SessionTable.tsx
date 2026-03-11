@@ -68,7 +68,7 @@ export default function SessionTable({
               {formatDuration(s.duration_ms)}
             </TableCell>
             <TableCell className="max-w-[300px] truncate text-sm">
-              {s.task ?? "—"}
+              {s.user_task ?? s.task ?? "—"}
             </TableCell>
             <TableCell>
               <DeleteSessionButton
