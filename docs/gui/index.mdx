@@ -22,6 +22,9 @@ Opens [http://localhost:8741](http://localhost:8741) in your browser.
   <Card title="Project Management" icon="folder-kanban">
     Register projects, upload context files, install resources, and launch sessions from a single page.
   </Card>
+  <Card title="Conversations" icon="messages">
+    Chat-style interface for multi-turn interactions. Each message spawns a session; prior turn summaries are automatically prepended as context so agents understand the full thread.
+  </Card>
   <Card title="Session Detail" icon="list-tree">
     View agent delegation trees, trace events, and live log output for any session. Interactive sessions include a chat panel for agent questions.
   </Card>
@@ -61,7 +64,8 @@ All data stays local. No external services or accounts are required.
 |------|------|-------------|
 | Dashboard | `/` | Running sessions, recent sessions, quick launch |
 | Projects | `/projects` | List and register projects |
-| Project Detail | `/projects/:id` | Sessions, resources, files, and config for a project |
+| Project Detail | `/projects/:id` | Sessions, conversations, resources, files, and config for a project |
+| Conversation | `/projects/:id/conversations/:conversationId` | Multi-turn chat thread with full session history |
 | Session Detail | `/projects/:id/sessions/:runId` | Agent tree, trace events, logs |
 | Schedules | `/schedules` | Manage cron-based scheduled tasks |
 | Resources | `/resources/:kind` | Browse installed roles, skills, agents, memories |

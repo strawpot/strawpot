@@ -131,6 +131,12 @@ def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
         lines.append(f"- **{slug}**: {description}")
     lines.append("")
     lines.append(
+        "Use the exact slug shown above (e.g. `code-reviewer`) in `delegateTo` — "
+        "spelling, hyphens, and case must match exactly. "
+        "Using an unrecognized slug will fail with `DENY_ROLE_NOT_ALLOWED`."
+    )
+    lines.append("")
+    lines.append(
         "Each role is described in `roles/<role-name>/ROLE.md`. Read the ROLE.md"
     )
     lines.append("file to learn more about the role before delegating.")

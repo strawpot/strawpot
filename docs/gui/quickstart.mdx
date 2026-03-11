@@ -54,6 +54,18 @@ The session runs as a headless subprocess. You can monitor progress from the
 session detail page, which shows the agent delegation tree, trace events, and
 live log output.
 
+## Start a Conversation
+
+Conversations let you have multi-turn interactions with agents. Each message you send creates a new session; StrawPot automatically prepends a summary of prior turns so the agent has full context.
+
+1. Open a project and go to the **Conversations** tab
+2. Click **New Conversation**
+3. Type your first message and press **Send** (or Cmd/Ctrl+Enter)
+4. The agent runs as a session — you can click **View session** to inspect the delegation tree and trace
+5. Once complete, type a follow-up and the agent will pick up where it left off
+
+Conversations are useful for iterative tasks: reviewing code in stages, asking follow-up questions, or breaking a large task into sequential steps.
+
 ## Browse Resources
 
 The **Resources** section in the sidebar lists installed packages by type:

@@ -91,6 +91,10 @@ When a delegation request arrives:
 2. **Stage dependencies** — Skills and roles are symlinked into the agent's workspace directory. If the role declares `"*"` in its role dependencies, all globally installed roles are staged.
 3. **Build prompt** — The role's `ROLE.md` body becomes the system prompt, with skill instructions appended
 
+### Slug enforcement
+
+`delegateTo` must exactly match a role slug listed in the agent's **Delegation** section — spelling, hyphens, and case all matter. A mismatch is denied immediately with `DENY_ROLE_NOT_ALLOWED`. The Delegation section in the generated prompt lists valid slugs; agents should read it before delegating.
+
 The resolved directory structure looks like:
 
 ```
