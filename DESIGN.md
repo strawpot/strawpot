@@ -61,10 +61,11 @@ src/strawpot/
     worktree.py            # WorktreeIsolator
   memory/
     registry.py            # Memory provider discovery and resolution
+  ask_user_bridge.py       # File-based ask_user bridge for GUI interactive sessions
   trace.py                 # Session tracing — JSONL events + content-addressed artifacts
 ```
 
-16 source files. No agent-specific code in the core — agents are installed
+17 source files. No agent-specific code in the core — agents are installed
 via StrawHub (e.g. `strawhub install agent strawpot_claude_code --global`).
 
 ---
@@ -791,12 +792,17 @@ provider is configured, returns an error response.
 
 | Mode | Handler | Wired in |
 |------|---------|----------|
-| All CLI modes | `_default_ask_user_handler` — returns `default_value` or auto-responds | `session.py` (default) |
+| Autonomous (default) | `_default_ask_user_handler` — returns `default_value` or auto-responds | `session.py` (default) |
+| Interactive (`STRAWPOT_ASK_USER_BRIDGE=file`) | `make_file_bridge_handler` — writes pending file, polls for response file | `ask_user_bridge.py` |
 
-All CLI modes (headless, task, interactive) use the default auto-respond
-handler. The orchestrator is an AI agent that can make decisions on
-behalf of the user. Interactive session support (GUI chat panel,
-ask_user bridge) is planned — see `gui/DESIGN.md`.
+Autonomous mode (headless, task, interactive terminal) uses the default
+auto-respond handler. When `STRAWPOT_ASK_USER_BRIDGE=file` is set (by
+the GUI for interactive sessions), `Session.start()` swaps in the file
+bridge handler which writes `ask_user_pending_{request_id}.json` to the
+session directory and polls for `ask_user_response_{request_id}.json`.
+Per-request file naming supports parallel sub-agents. Chat history is
+persisted to `chat_messages.jsonl` by the bridge (thread-safe). See
+`gui/DESIGN.md` for the GUI-side protocol.
 
 ### Headless Mode
 
