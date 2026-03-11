@@ -177,16 +177,16 @@ def _check_inherit_global_skills(role_path: str) -> bool:
     """Check if a role inherits global skills.
 
     Reads ``metadata.strawpot.inherit_global_skills`` from ROLE.md frontmatter.
-    Defaults to ``True`` if the field is not present.
+    Defaults to ``False`` if the field is not present.
     """
     role_md = Path(role_path) / "ROLE.md"
     if not role_md.exists():
-        return True
+        return False
     text = role_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
     return fm.get("metadata", {}).get("strawpot", {}).get(
-        "inherit_global_skills", True
+        "inherit_global_skills", False
     )
 
 
