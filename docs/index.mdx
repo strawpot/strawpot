@@ -14,11 +14,11 @@ strawpot start --role team-lead
 
 ## How It Works
 
-1. Creates a git worktree for the session
+1. Creates an isolated environment (worktree or project dir)
 2. Starts a Denden gRPC server
 3. Retrieves memory context from the configured provider
 4. Spawns an orchestrator agent (Claude Code, Codex, or OpenHands)
-5. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills from StrawHub, retrieves memory, and spawns sub-agents in the same worktree
+5. Agents delegate sub-tasks via Denden — StrawPot resolves the role + skills from StrawHub, retrieves memory, and spawns sub-agents in the same directory
 6. On exit, records results to memory and cleans up everything automatically
 
 ## Key Features
@@ -31,7 +31,7 @@ strawpot start --role team-lead
     Works with Claude Code, Codex, OpenHands, or any agent that implements the wrapper protocol. No agent-specific code in the core.
   </Card>
   <Card title="Session Isolation" icon="shield">
-    Each session gets its own git worktree. All agents share the same working directory. Changes are merged back via local patch or PR.
+    Sessions can run in a git worktree or directly in the project directory. All agents share the same working directory. Worktree changes are merged back via local patch or PR.
   </Card>
   <Card title="Skill & Role Registry" icon="book">
     Agents load reusable skills and roles from StrawHub with automatic dependency resolution and version management.

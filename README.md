@@ -95,7 +95,7 @@ User task → StrawPot → Role (ai-ceo)
 
 When you run `strawpot start`:
 
-1. Creates an isolated git worktree
+1. Creates an isolated environment (worktree, or uses project dir directly)
 2. Starts the Denden gRPC server for agent communication
 3. Retrieves memory context from past sessions
 4. Launches the orchestrator agent (e.g. ai-ceo)
@@ -154,7 +154,7 @@ Project: `strawpot.toml` (project root)
 
 ```toml
 runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | gemini
-isolation = "worktree"        # worktree | docker
+isolation = "none"            # none | worktree | docker
 
 [denden]
 addr = "127.0.0.1:9700"
@@ -164,6 +164,7 @@ role = "ai-ceo"
 
 [policy]
 max_depth = 3
+max_num_delegations = 0       # 0 = unlimited
 
 [memory]
 provider = "dial"             # default; "" to disable
