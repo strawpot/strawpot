@@ -144,6 +144,8 @@ def launch_session_subprocess(
     project_id: int,
     task: str,
     *,
+    stored_task: str | None = None,
+    memory_task: str | None = None,
     role: str | None = None,
     system_prompt: str | None = None,
     runtime_override: str | None = None,
@@ -206,7 +208,8 @@ def launch_session_subprocess(
             started_at, session_dir, task, schedule_id, interactive, conversation_id)
            VALUES (?, ?, ?, ?, ?, 'starting', ?, ?, ?, ?, ?, ?)""",
         (run_id, project_id, resolved_role, runtime, isolation, now,
-         session_dir, task, schedule_id, 1 if interactive else 0, conversation_id),
+         session_dir, stored_task if stored_task is not None else task,
+         schedule_id, 1 if interactive else 0, conversation_id),
     )
 
     # Resolve context files and append to task
@@ -250,6 +253,8 @@ def launch_session_subprocess(
         cmd.extend(["--memory", memory_override])
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
+    if memory_task:
+        cmd.extend(["--memory-task", memory_task])
     if cache_delegations is False:
         cmd.append("--no-cache-delegations")
     if cache_max_entries is not None:

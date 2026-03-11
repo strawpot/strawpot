@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useConversation } from "@/hooks/queries/use-conversations";
+import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useRoles } from "@/hooks/queries/use-roles";
@@ -35,6 +35,7 @@ import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { ConversationSession, ProjectFile } from "@/api/types";
+import MarkdownContent from "@/components/MarkdownContent";
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "";
@@ -101,20 +102,22 @@ function AgentMessage({
             Working…
           </span>
         ) : session.summary ? (
-          <p className="whitespace-pre-wrap text-foreground">{session.summary}</p>
+          <MarkdownContent content={session.summary} className="text-sm text-foreground" />
         ) : (
           <span className="text-muted-foreground italic">
             {session.status === "failed" ? "Session failed without output." : session.status === "stopped" ? "Interrupted." : "No summary available."}
           </span>
         )}
       </div>
-      <Link
-        to={`/projects/${projectId}/sessions/${session.run_id}`}
+      <a
+        href={`/projects/${projectId}/sessions/${session.run_id}`}
+        target="_blank"
+        rel="noopener noreferrer"
         className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ExternalLink className="h-3 w-3" />
         View session
-      </Link>
+      </a>
     </div>
   );
 }
@@ -152,7 +155,11 @@ export default function ConversationView() {
   const [advCacheDelegations, setAdvCacheDelegations] = useState("");
   const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
   const [advCacheTtl, setAdvCacheTtl] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef(0);
+  const isInitialLoad = useRef(true);
+  const prevSessionCount = useRef(0);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
@@ -168,13 +175,18 @@ export default function ConversationView() {
   } | undefined;
 
   // Initial load — no polling yet
-  const { data: conversation, error } = useConversation(cid);
+  const { data, isLoading, error, fetchPreviousPage, hasPreviousPage, isFetchingPreviousPage } =
+    useConversationInfinite(cid);
 
-  // Poll while any session is active
-  const hasActiveSession = conversation?.sessions.some(
-    (s) => s.status === "running" || s.status === "starting",
-  ) ?? false;
-  useConversation(cid, { refetchInterval: hasActiveSession ? 2000 : false });
+  // Flatten pages: pages[0]=oldest loaded, pages[last]=newest
+  const allSessions = data?.pages.flatMap((p) => p.sessions) ?? [];
+  const conversation = data?.pages[data.pages.length - 1];
+  const lastSession = allSessions[allSessions.length - 1];
+  const hasActiveSession =
+    lastSession?.status === "running" || lastSession?.status === "starting";
+
+  // Poll while any session is active (same query key — TanStack merges refetchInterval)
+  useConversationInfinite(cid, { refetchInterval: hasActiveSession ? 2000 : false });
 
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
@@ -185,14 +197,45 @@ export default function ConversationView() {
       ? "Role not found in installed roles"
       : "";
 
-  const lastSession = conversation?.sessions[conversation.sessions.length - 1];
-  const isActive =
-    lastSession?.status === "running" || lastSession?.status === "starting";
+  const isActive = hasActiveSession;
 
-  // Auto-scroll when a new session is added or the last session's content changes
+  // Scroll anchor: restore position when older pages are prepended
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.sessions.length, lastSession?.summary, lastSession?.status]);
+    if (!scrollRef.current || isInitialLoad.current) return;
+    const delta = scrollRef.current.scrollHeight - prevScrollHeightRef.current;
+    if (delta > 0) {
+      scrollRef.current.scrollTop += delta;
+      prevScrollHeightRef.current = 0;
+    }
+  }, [data?.pages.length]);
+
+  // Auto-scroll to bottom only on initial load and when a new session is added
+  useEffect(() => {
+    if (!scrollRef.current || !data) return;
+    const count = allSessions.length;
+    if (isInitialLoad.current || count > prevSessionCount.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      isInitialLoad.current = false;
+    }
+    prevSessionCount.current = count;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSessions.length, data]);
+
+  // IntersectionObserver: auto-load older sessions when sentinel reaches top
+  useEffect(() => {
+    if (!sentinelRef.current || !scrollRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasPreviousPage && !isFetchingPreviousPage) {
+          prevScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
+          fetchPreviousPage();
+        }
+      },
+      { root: scrollRef.current, threshold: 0.1 },
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 
   const agentNames = (agents ?? []).map((a: { name: string }) => a.name);
   const memoryNames = [...new Set((memories ?? []).map((m: { name: string }) => m.name)), "none"].sort();
@@ -316,28 +359,34 @@ export default function ConversationView() {
             </h1>
           )}
         </div>
-        {conversation && (
+        {allSessions.length > 0 && (
           <span className="text-xs text-muted-foreground">
-            {conversation.sessions.length} session{conversation.sessions.length !== 1 ? "s" : ""}
+            {allSessions.length} session{allSessions.length !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
       {/* Message list — scrolls within this container */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl space-y-6 py-4">
-          {conversation?.sessions.length === 0 && (
+          {/* Sentinel at top triggers loading older sessions */}
+          <div ref={sentinelRef} className="h-1" />
+          {isFetchingPreviousPage && (
+            <div className="flex justify-center py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {!isLoading && allSessions.length === 0 && (
             <p className="text-center text-sm text-muted-foreground py-12">
               Start the conversation by submitting a task below.
             </p>
           )}
-          {conversation?.sessions.map((session) => (
+          {allSessions.map((session) => (
             <div key={session.run_id} className="space-y-4">
               {session.task && <UserMessage task={session.task} />}
               <AgentMessage session={session} projectId={pid} />
             </div>
           ))}
-          <div ref={messagesEndRef} />
         </div>
       </div>
 

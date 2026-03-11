@@ -194,6 +194,7 @@ export interface Conversation {
   created_at: string;
   updated_at: string | null;
   sessions: ConversationSession[];
+  has_more: boolean;
 }
 
 export interface ConversationListItem {

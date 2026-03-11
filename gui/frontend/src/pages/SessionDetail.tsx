@@ -9,6 +9,7 @@ import { formatTime, formatDuration } from "@/components/SessionTable";
 import { useTraceSSE } from "@/hooks/useTraceSSE";
 import { useAskUserSSE } from "@/hooks/useAskUserSSE";
 import SessionDetailSkeleton from "@/components/skeletons/SessionDetailSkeleton";
+import MarkdownContent from "@/components/MarkdownContent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -144,36 +145,42 @@ export default function SessionDetail() {
 
         <TabsContent value="overview" className="space-y-4">
           {sessionData.task && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Task
-              </h2>
-              <Card>
-                <CardContent className="pt-4">
-                  <pre className="whitespace-pre-wrap break-words text-sm">
-                    {sessionData.task}
-                  </pre>
-                </CardContent>
-              </Card>
-            </section>
+            <Collapsible defaultOpen>
+              <div className="space-y-2">
+                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+                  Task
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <MarkdownContent content={sessionData.task} className="text-sm" />
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
 
           {outputRef && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Output
-              </h2>
-              <Card>
-                <CardContent className="pt-4">
-                  <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                    <ArtifactText
-                      runId={sessionData.run_id}
-                      hash={outputRef}
-                    />
-                  </pre>
-                </CardContent>
-              </Card>
-            </section>
+            <Collapsible defaultOpen>
+              <div className="space-y-2">
+                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+                  Output
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <ArtifactText
+                        runId={sessionData.run_id}
+                        hash={outputRef}
+                      />
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
 
           {!sessionData.task && !outputRef && (
@@ -415,7 +422,7 @@ function ArtifactText({ runId, hash }: { runId: string; hash: string }) {
   if (error) return <span className="text-destructive">Error: {error}</span>;
   if (content === null)
     return <span className="text-muted-foreground">Loading...</span>;
-  return <>{content}</>;
+  return <MarkdownContent content={content} className="text-sm" />;
 }
 
 function extractOutputRef(events: TraceEvent[]): string | null {
