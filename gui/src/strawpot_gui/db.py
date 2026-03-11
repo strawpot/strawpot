@@ -90,6 +90,23 @@ def init_db(db_path: str) -> None:
         conn.close()
 
 
+def mark_orphaned_sessions_stopped(db_path: str) -> int:
+    """Mark sessions stuck in 'running' or 'starting' as 'stopped' on server startup.
+
+    Sessions in these states when the server starts are orphaned — their agent
+    processes died with the previous server process.  Leaving them as 'running'
+    causes WS file-watchers to hang indefinitely for every open browser tab.
+
+    Returns the number of rows updated.
+    """
+    with get_db(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE sessions SET status = 'stopped'"
+            " WHERE status IN ('running', 'starting')"
+        )
+        return cur.rowcount
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Apply incremental schema migrations for existing databases."""
     # Add schedule_id column to sessions (added 2026-03-09)
