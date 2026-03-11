@@ -4,6 +4,7 @@ import { useProjects } from "@/hooks/queries/use-projects";
 import { useGlobalConfig } from "@/hooks/queries/use-config";
 import { useCreateProject, useDeleteProject } from "@/hooks/mutations/use-projects";
 import { useSaveProjectConfig } from "@/hooks/mutations/use-config";
+import { api } from "@/api/client";
 import DirBrowser from "@/components/DirBrowser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -145,6 +146,7 @@ function RegisterForm({
   const [isolation, setIsolation] = useState("");
   const [mergeStrategy, setMergeStrategy] = useState("");
   const [showBrowser, setShowBrowser] = useState(false);
+  const [gitInitPrompt, setGitInitPrompt] = useState(false);
   const createProject = useCreateProject();
   const saveConfig = useSaveProjectConfig();
   const globalConfig = useGlobalConfig();
@@ -155,24 +157,47 @@ function RegisterForm({
   const defaultIsolation = globalDefaults?.isolation ?? "none";
   const defaultMergeStrategy = globalDefaults?.session?.merge_strategy ?? "auto";
 
+  const effectiveIsolation = isolation || defaultIsolation;
+
+  const doCreate = async () => {
+    const project = await createProject.mutateAsync({
+      display_name: displayName.trim(),
+      working_dir: workingDir.trim(),
+    });
+    const configData: Record<string, unknown> = {};
+    const selectedMergeStrategy = mergeStrategy || defaultMergeStrategy;
+    configData.isolation = effectiveIsolation;
+    configData.session = { merge_strategy: selectedMergeStrategy };
+    await saveConfig.mutateAsync({
+      projectId: (project as { id: number }).id,
+      data: configData,
+    });
+    onDone();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const project = await createProject.mutateAsync({
-        display_name: displayName.trim(),
-        working_dir: workingDir.trim(),
-      });
-      // Write initial project config with isolation and merge strategy
-      const configData: Record<string, unknown> = {};
-      const selectedIsolation = isolation || defaultIsolation;
-      const selectedMergeStrategy = mergeStrategy || defaultMergeStrategy;
-      configData.isolation = selectedIsolation;
-      configData.session = { merge_strategy: selectedMergeStrategy };
-      await saveConfig.mutateAsync({
-        projectId: (project as { id: number }).id,
-        data: configData,
-      });
-      onDone();
+      if (effectiveIsolation === "worktree" && workingDir.trim()) {
+        const res = await api.get<{ is_git: boolean }>(
+          `/fs/git-check?path=${encodeURIComponent(workingDir.trim())}`,
+        );
+        if (!res.is_git) {
+          setGitInitPrompt(true);
+          return;
+        }
+      }
+      await doCreate();
+    } catch {
+      // error state handled by mutation
+    }
+  };
+
+  const handleGitInitConfirm = async () => {
+    try {
+      await api.post("/fs/git-init", { path: workingDir.trim() });
+      setGitInitPrompt(false);
+      await doCreate();
     } catch {
       // error state handled by mutation
     }
@@ -257,6 +282,27 @@ function RegisterForm({
               </Select>
             </div>
           </div>
+          {gitInitPrompt && (
+            <div className="rounded-md border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950">
+              <p className="text-sm">
+                The selected directory is not a git repository. Worktree isolation requires git.
+                Initialize a git repository with <code className="text-xs bg-muted px-1 py-0.5 rounded">git init</code>?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button type="button" size="sm" onClick={handleGitInitConfirm}>
+                  Yes, initialize
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setGitInitPrompt(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
           {(createProject.error || saveConfig.error) && (
             <p className="text-sm text-destructive">
               {(createProject.error || saveConfig.error)?.message}
