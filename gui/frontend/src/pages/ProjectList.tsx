@@ -1,13 +1,22 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useProjects } from "@/hooks/queries/use-projects";
+import { useGlobalConfig } from "@/hooks/queries/use-config";
 import { useCreateProject, useDeleteProject } from "@/hooks/mutations/use-projects";
+import { useSaveProjectConfig } from "@/hooks/mutations/use-config";
 import DirBrowser from "@/components/DirBrowser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -133,15 +142,35 @@ function RegisterForm({
 }) {
   const [displayName, setDisplayName] = useState("");
   const [workingDir, setWorkingDir] = useState("");
+  const [isolation, setIsolation] = useState("");
+  const [mergeStrategy, setMergeStrategy] = useState("");
   const [showBrowser, setShowBrowser] = useState(false);
   const createProject = useCreateProject();
+  const saveConfig = useSaveProjectConfig();
+  const globalConfig = useGlobalConfig();
+
+  const globalDefaults = globalConfig.data?.defaults as
+    | { isolation?: string; session?: { merge_strategy?: string } }
+    | undefined;
+  const defaultIsolation = globalDefaults?.isolation ?? "none";
+  const defaultMergeStrategy = globalDefaults?.session?.merge_strategy ?? "auto";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createProject.mutateAsync({
+      const project = await createProject.mutateAsync({
         display_name: displayName.trim(),
         working_dir: workingDir.trim(),
+      });
+      // Write initial project config with isolation and merge strategy
+      const configData: Record<string, unknown> = {};
+      const selectedIsolation = isolation || defaultIsolation;
+      const selectedMergeStrategy = mergeStrategy || defaultMergeStrategy;
+      configData.isolation = selectedIsolation;
+      configData.session = { merge_strategy: selectedMergeStrategy };
+      await saveConfig.mutateAsync({
+        projectId: (project as { id: number }).id,
+        data: configData,
       });
       onDone();
     } catch {
@@ -195,14 +224,47 @@ function RegisterForm({
               onCancel={() => setShowBrowser(false)}
             />
           )}
-          {createProject.error && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="isolation">Isolation</Label>
+              <Select
+                value={isolation || defaultIsolation}
+                onValueChange={setIsolation}
+              >
+                <SelectTrigger id="isolation">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">none</SelectItem>
+                  <SelectItem value="worktree">worktree</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="merge-strategy">Merge Strategy</Label>
+              <Select
+                value={mergeStrategy || defaultMergeStrategy}
+                onValueChange={setMergeStrategy}
+              >
+                <SelectTrigger id="merge-strategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">auto</SelectItem>
+                  <SelectItem value="local">local</SelectItem>
+                  <SelectItem value="pr">pr</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {(createProject.error || saveConfig.error) && (
             <p className="text-sm text-destructive">
-              {createProject.error.message}
+              {(createProject.error || saveConfig.error)?.message}
             </p>
           )}
           <div className="flex gap-2">
-            <Button type="submit" disabled={createProject.isPending}>
-              {createProject.isPending ? "Adding..." : "Add"}
+            <Button type="submit" disabled={createProject.isPending || saveConfig.isPending}>
+              {createProject.isPending || saveConfig.isPending ? "Adding..." : "Add"}
             </Button>
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel

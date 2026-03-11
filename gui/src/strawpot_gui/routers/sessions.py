@@ -112,8 +112,6 @@ def _refresh_session_status(conn, run_id: str) -> None:
 
 class SessionOverrides(BaseModel):
     runtime: str | None = None
-    isolation: str | None = None
-    merge_strategy: str | None = None
     memory: str | None = None
     cache_delegations: bool | None = None
     cache_max_entries: int | None = None
@@ -146,8 +144,6 @@ def launch_session_subprocess(
     role: str | None = None,
     system_prompt: str | None = None,
     runtime_override: str | None = None,
-    isolation_override: str | None = None,
-    merge_strategy_override: str | None = None,
     context_files: list[str] | None = None,
     memory_override: str | None = None,
     cache_delegations: bool | None = None,
@@ -176,7 +172,7 @@ def launch_session_subprocess(
     # Load project config for defaults
     config = load_config(Path(working_dir))
     resolved_role = role or config.orchestrator_role
-    isolation = isolation_override or config.isolation
+    isolation = config.isolation
 
     # Resolve runtime: explicit override > role default_agent > config default
     runtime = runtime_override
@@ -246,10 +242,6 @@ def launch_session_subprocess(
         cmd.extend(["--role", role])
     if runtime_override:
         cmd.extend(["--runtime", runtime_override])
-    if isolation_override:
-        cmd.extend(["--isolation", isolation_override])
-    if merge_strategy_override:
-        cmd.extend(["--merge-strategy", merge_strategy_override])
     if memory_override:
         cmd.extend(["--memory", memory_override])
     if system_prompt:
@@ -316,8 +308,6 @@ def launch_session(body: SessionLaunch, conn=Depends(get_db_conn)):
             role=body.role,
             system_prompt=body.system_prompt,
             runtime_override=body.overrides.runtime if body.overrides else None,
-            isolation_override=body.overrides.isolation if body.overrides else None,
-            merge_strategy_override=body.overrides.merge_strategy if body.overrides else None,
             memory_override=body.overrides.memory if body.overrides else None,
             cache_delegations=body.overrides.cache_delegations if body.overrides else None,
             cache_max_entries=body.overrides.cache_max_entries if body.overrides else None,

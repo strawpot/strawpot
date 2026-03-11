@@ -58,7 +58,7 @@ class TestLaunchSession:
         resp, mock_popen = self._launch(
             client, pid,
             role="deployer",
-            overrides={"runtime": "gemini", "isolation": "worktree"},
+            overrides={"runtime": "gemini"},
         )
 
         assert resp.status_code == 201
@@ -67,8 +67,6 @@ class TestLaunchSession:
         assert "deployer" in cmd
         assert "--runtime" in cmd
         assert "gemini" in cmd
-        assert "--isolation" in cmd
-        assert "worktree" in cmd
 
     def test_launch_inserts_db_row(self, client, tmp_path):
         """A DB row with status 'starting' is inserted."""
