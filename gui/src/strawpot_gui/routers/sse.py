@@ -1,6 +1,7 @@
 """SSE streaming endpoints for real-time session monitoring."""
 
 import asyncio
+import glob
 import json
 import os
 
@@ -50,16 +51,20 @@ def _read_trace_lines(trace_path: str, offset: int) -> tuple[list[dict], int]:
     return events, new_offset
 
 
-def _append_chat_message(
-    session_dir: str, role: str, text: str, msg_id: str, timestamp: float
-) -> None:
-    """Append a chat message to the session's chat_messages.jsonl."""
-    path = os.path.join(session_dir, "chat_messages.jsonl")
-    entry = json.dumps(
-        {"id": msg_id, "role": role, "text": text, "timestamp": timestamp}
-    )
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+def _scan_pending_ask_users(session_dir: str) -> dict[str, dict]:
+    """Scan for all ask_user_pending_*.json files, return {request_id: data}."""
+    result: dict[str, dict] = {}
+    pattern = os.path.join(session_dir, "ask_user_pending_*.json")
+    for path in glob.glob(pattern):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            req_id = data.get("request_id", "")
+            if req_id:
+                result[req_id] = data
+        except (OSError, json.JSONDecodeError):
+            pass
+    return result
 
 
 def _read_chat_messages(session_dir: str) -> list[dict]:
@@ -144,33 +149,26 @@ async def session_tree_sse(run_id: str, request: Request):
             event_id += 1
             yield format_sse_typed(event_id, "chat_history", {"messages": chat_messages})
 
-        # Track which ask_user IDs have already been persisted
-        persisted_ask_ids: set[str] = {m["id"] for m in chat_messages if m.get("role") == "agent"}
+        # Track pending ask_user request IDs for change detection
+        known_pending_ids: set[str] = set()
 
-        # Check for pending ask_user on initial connect
-        ask_user_path = os.path.join(session_dir, "ask_user_pending.json")
-        if os.path.isfile(ask_user_path):
-            try:
-                with open(ask_user_path, encoding="utf-8") as f:
-                    ask_data = json.load(f)
-                req_id = ask_data.get("request_id", "")
-                if req_id and req_id not in persisted_ask_ids:
-                    _append_chat_message(
-                        session_dir, "agent", ask_data.get("question", ""),
-                        req_id, ask_data.get("timestamp", 0),
-                    )
-                    persisted_ask_ids.add(req_id)
-                event_id += 1
-                yield format_sse_typed(event_id, "ask_user", ask_data)
-            except (OSError, json.JSONDecodeError):
-                pass
+        # Check for pending ask_user files on initial connect
+        pending_map = _scan_pending_ask_users(session_dir)
+        for req_id, ask_data in pending_map.items():
+            known_pending_ids.add(req_id)
+            event_id += 1
+            yield format_sse_typed(event_id, "ask_user", ask_data)
 
         # Terminal sessions: send final state and close
         if status in ("completed", "failed", "stopped"):
+            event_id += 1
+            yield format_sse_typed(event_id, "stream_complete", {})
             return
 
         # Trace already has session_end even though DB says running
         if state.is_terminal:
+            event_id += 1
+            yield format_sse_typed(event_id, "stream_complete", {})
             return
 
         # Active sessions: watch for file changes
@@ -219,32 +217,37 @@ async def session_tree_sse(run_id: str, request: Request):
 
                 # Detect ask_user bridge files
                 if any(
-                    f.endswith("ask_user_pending.json")
-                    or f.endswith("ask_user_response.json")
+                    "ask_user_pending_" in f or "ask_user_response_" in f
                     for f in changed_files
                 ):
-                    pending = os.path.join(session_dir, "ask_user_pending.json")
-                    if os.path.isfile(pending):
-                        try:
-                            with open(pending, encoding="utf-8") as f:
-                                ask_data = json.load(f)
-                            req_id = ask_data.get("request_id", "")
-                            if req_id and req_id not in persisted_ask_ids:
-                                _append_chat_message(
-                                    session_dir, "agent",
-                                    ask_data.get("question", ""),
-                                    req_id, ask_data.get("timestamp", 0),
-                                )
-                                persisted_ask_ids.add(req_id)
-                            event_id += 1
-                            yield format_sse_typed(event_id, "ask_user", ask_data)
-                        except (OSError, json.JSONDecodeError):
-                            pass
-                    else:
-                        # Pending file removed → question resolved
+                    current_pending = _scan_pending_ask_users(session_dir)
+                    current_ids = set(current_pending.keys())
+
+                    # New pending questions
+                    for req_id in current_ids - known_pending_ids:
                         event_id += 1
                         yield format_sse_typed(
-                            event_id, "ask_user_resolved", {}
+                            event_id, "ask_user", current_pending[req_id]
+                        )
+
+                    # Resolved questions
+                    for req_id in known_pending_ids - current_ids:
+                        event_id += 1
+                        yield format_sse_typed(
+                            event_id, "ask_user_resolved",
+                            {"request_id": req_id},
+                        )
+
+                    known_pending_ids = current_ids
+
+                # Re-send chat history when chat_messages.jsonl changes
+                if any(f.endswith("chat_messages.jsonl") for f in changed_files):
+                    updated_chat = _read_chat_messages(session_dir)
+                    if updated_chat:
+                        event_id += 1
+                        yield format_sse_typed(
+                            event_id, "chat_history",
+                            {"messages": updated_chat},
                         )
 
                 if changed:

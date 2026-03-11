@@ -70,17 +70,17 @@ export default function SessionDetail() {
 
   // SSE for interactive ask_user events
   const isInteractive = !!sessionData?.interactive;
-  const { pendingAskUser, chatMessages } = useAskUserSSE(
+  const { pendingAskUsers, chatMessages } = useAskUserSSE(
     runId ?? "",
-    active && isInteractive,
+    isInteractive,
   );
 
   // Auto-switch to Chat tab when a question arrives
   const [activeTab, setActiveTab] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (pendingAskUser) setActiveTab("chat");
-  }, [pendingAskUser]);
+    if (pendingAskUsers.length > 0) setActiveTab("chat");
+  }, [pendingAskUsers]);
 
   if (session.isLoading) {
     return <SessionDetailSkeleton />;
@@ -105,7 +105,7 @@ export default function SessionDetail() {
   const artifacts = extractArtifacts(displayEvents);
   const outputRef = extractOutputRef(displayEvents);
   const defaultTab =
-    searchParams.get("tab") ?? (active ? "agent-tree" : "overview");
+    searchParams.get("tab") ?? (!active ? "overview" : isInteractive ? "chat" : "agent-tree");
 
   return (
     <div className="space-y-6">
@@ -127,7 +127,7 @@ export default function SessionDetail() {
           {isInteractive && (
             <TabsTrigger value="chat" className="relative">
               Chat
-              {pendingAskUser && (
+              {pendingAskUsers.length > 0 && (
                 <span className="ml-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
               )}
             </TabsTrigger>
@@ -187,7 +187,7 @@ export default function SessionDetail() {
           <TabsContent value="chat">
             <ChatPanel
               runId={sessionData.run_id}
-              pendingAskUser={pendingAskUser}
+              pendingAskUsers={pendingAskUsers}
               initialMessages={chatMessages}
             />
           </TabsContent>

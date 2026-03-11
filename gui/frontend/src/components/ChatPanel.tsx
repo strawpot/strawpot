@@ -11,18 +11,17 @@ import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatPanel({
   runId,
-  pendingAskUser,
+  pendingAskUsers,
   initialMessages,
 }: {
   runId: string;
-  pendingAskUser: AskUserPending | null;
+  pendingAskUsers: AskUserPending[];
   initialMessages?: ChatMessage[];
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const respond = useRespondToAskUser(runId);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const lastPendingIdRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   // Seed from persisted history when it arrives
@@ -40,36 +39,36 @@ export default function ChatPanel({
     });
   }, [initialMessages]);
 
-  // When a new pending question arrives, add it to the chat
+  // When new pending questions arrive, add them to the chat
   useEffect(() => {
-    if (!pendingAskUser) return;
-    if (lastPendingIdRef.current === pendingAskUser.request_id) return;
-    lastPendingIdRef.current = pendingAskUser.request_id;
+    if (pendingAskUsers.length === 0) return;
 
-    // Skip if already loaded from history
-    if (seenIdsRef.current.has(pendingAskUser.request_id)) return;
-    seenIdsRef.current.add(pendingAskUser.request_id);
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: pendingAskUser.request_id,
+    const newMessages: ChatMessage[] = [];
+    for (const pending of pendingAskUsers) {
+      if (seenIdsRef.current.has(pending.request_id)) continue;
+      seenIdsRef.current.add(pending.request_id);
+      newMessages.push({
+        id: pending.request_id,
         role: "agent",
-        text: pendingAskUser.question,
-        timestamp: pendingAskUser.timestamp,
-      },
-    ]);
-  }, [pendingAskUser]);
+        text: pending.question,
+        timestamp: pending.timestamp,
+      });
+    }
+
+    if (newMessages.length > 0) {
+      setMessages((prev) => [...prev, ...newMessages]);
+    }
+  }, [pendingAskUsers]);
 
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = async (text: string) => {
-    if (!text.trim() || !pendingAskUser) return;
+  const handleSend = async (text: string, target: AskUserPending) => {
+    if (!text.trim()) return;
 
-    const msgId = `user-${pendingAskUser.request_id}`;
+    const msgId = `user-${target.request_id}`;
     // Skip if already in history
     if (!seenIdsRef.current.has(msgId)) {
       seenIdsRef.current.add(msgId);
@@ -87,7 +86,7 @@ export default function ChatPanel({
 
     try {
       await respond.mutateAsync({
-        request_id: pendingAskUser.request_id,
+        request_id: target.request_id,
         text: text.trim(),
       });
     } catch {
@@ -95,9 +94,8 @@ export default function ChatPanel({
     }
   };
 
-  const handleChoiceClick = (choice: string) => {
-    handleSend(choice);
-  };
+  // The oldest pending question receives free-text input
+  const activePending = pendingAskUsers.length > 0 ? pendingAskUsers[0] : null;
 
   return (
     <Card className="flex h-[500px] flex-col">
@@ -113,58 +111,65 @@ export default function ChatPanel({
                 </p>
               </div>
             )}
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={cn(
-                  "flex",
-                  msg.role === "user" ? "justify-end" : "justify-start",
-                )}
-              >
-                <div
-                  className={cn(
-                    "max-w-[80%] rounded-lg px-3 py-2 text-sm",
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted",
+            {messages.map((msg) => {
+              const pending =
+                msg.role === "agent"
+                  ? pendingAskUsers.find((p) => p.request_id === msg.id)
+                  : undefined;
+              return (
+                <div key={msg.id}>
+                  <div
+                    className={cn(
+                      "flex",
+                      msg.role === "user" ? "justify-end" : "justify-start",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "max-w-[80%] rounded-lg px-3 py-2 text-sm",
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted",
+                      )}
+                    >
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                    </div>
+                  </div>
+                  {/* Inline choice buttons for pending questions */}
+                  {pending?.choices && pending.choices.length > 0 && (
+                    <div className="ml-3 mt-1 flex flex-wrap gap-1.5">
+                      {pending.choices.map((choice) => (
+                        <Button
+                          key={choice}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSend(choice, pending)}
+                          disabled={respond.isPending}
+                        >
+                          {choice}
+                        </Button>
+                      ))}
+                    </div>
                   )}
-                >
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={scrollRef} />
           </div>
         </ScrollArea>
 
-        {/* Pending indicator + choice buttons */}
-        {pendingAskUser && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
-              >
-                <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Waiting for response
-              </Badge>
-            </div>
-            {pendingAskUser.choices &&
-              pendingAskUser.choices.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {pendingAskUser.choices.map((choice) => (
-                    <Button
-                      key={choice}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleChoiceClick(choice)}
-                      disabled={respond.isPending}
-                    >
-                      {choice}
-                    </Button>
-                  ))}
-                </div>
-              )}
+        {/* Pending indicator */}
+        {pendingAskUsers.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
+            >
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              {pendingAskUsers.length === 1
+                ? "Waiting for response"
+                : `${pendingAskUsers.length} questions waiting`}
+            </Badge>
           </div>
         )}
 
@@ -173,23 +178,23 @@ export default function ChatPanel({
           className="flex gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            handleSend(input);
+            if (activePending) handleSend(input, activePending);
           }}
         >
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={
-              pendingAskUser
+              activePending
                 ? "Type your response..."
                 : "Waiting for agent question..."
             }
-            disabled={!pendingAskUser || respond.isPending}
+            disabled={!activePending || respond.isPending}
           />
           <Button
             type="submit"
             size="icon"
-            disabled={!pendingAskUser || !input.trim() || respond.isPending}
+            disabled={!activePending || !input.trim() || respond.isPending}
           >
             <Send className="h-4 w-4" />
           </Button>
