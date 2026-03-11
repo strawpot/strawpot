@@ -210,7 +210,15 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{p.display_name}</h1>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/projects">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Link>
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight">{p.display_name}</h1>
+        </div>
         <div className="flex gap-2">
           <Button
             disabled={!p.dir_exists || createConversation.isPending}
@@ -237,12 +245,6 @@ export default function ProjectDetail() {
           >
             <Download className="mr-2 h-4 w-4" />
             Install Resource
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/projects">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Link>
           </Button>
         </div>
       </div>
