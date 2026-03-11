@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS conversations (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sessions (
     run_id      TEXT PRIMARY KEY,
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -32,7 +42,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_code   INTEGER,
     session_dir TEXT NOT NULL,
     task        TEXT,
-    schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL
+    summary     TEXT,
+    schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL,
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, started_at DESC);
@@ -106,6 +118,27 @@ def _migrate(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add summary column to sessions (added 2026-03-11)
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN summary TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add conversation_id column to sessions (added 2026-03-11)
+    try:
+        conn.execute(
+            "ALTER TABLE sessions "
+            "ADD COLUMN conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Index on conversation sessions (added 2026-03-11, after column migration)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_conversation "
+        "ON sessions(conversation_id, started_at)"
+    )
+
 
 @contextmanager
 def get_db(db_path: str):
@@ -135,10 +168,10 @@ def get_db_conn(request: Request):
 # ---------------------------------------------------------------------------
 
 
-def _parse_trace(trace_path: str) -> dict:
+def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
     """Extract completion fields from a trace.jsonl file.
 
-    Returns dict with keys: ended_at, duration_ms, exit_code.
+    Returns dict with keys: ended_at, duration_ms, exit_code, summary.
     Missing fields are omitted.
     """
     result: dict = {}
@@ -159,6 +192,29 @@ def _parse_trace(trace_path: str) -> dict:
                     if "duration_ms" in data:
                         result["duration_ms"] = data["duration_ms"]
                     result["exit_code"] = data.get("exit_code", 0)
+                    # session_end carries the final output ref
+                    output_ref = data.get("output_ref")
+                    if output_ref and session_dir and "summary" not in result:
+                        artifact_path = os.path.join(session_dir, "artifacts", output_ref)
+                        try:
+                            with open(artifact_path, encoding="utf-8") as af:
+                                content = af.read().strip()
+                            if content:
+                                result["summary"] = content
+                        except OSError:
+                            pass
+                elif etype == "delegate_end" and not event.get("parent_span"):
+                    # Fallback: root delegation also carries an output ref
+                    output_ref = data.get("output_ref")
+                    if output_ref and session_dir and "summary" not in result:
+                        artifact_path = os.path.join(session_dir, "artifacts", output_ref)
+                        try:
+                            with open(artifact_path, encoding="utf-8") as af:
+                                content = af.read().strip()
+                            if content:
+                                result["summary"] = content
+                        except OSError:
+                            pass
     except OSError:
         pass
     return result
@@ -252,7 +308,7 @@ def _upsert_session(
 
     # Determine status and parse trace
     trace_path = os.path.join(session_dir, "trace.jsonl")
-    trace_info = _parse_trace(trace_path)
+    trace_info = _parse_trace(trace_path, session_dir)
 
     if is_archived:
         exit_code = trace_info.get("exit_code")
@@ -275,11 +331,26 @@ def _upsert_session(
     interactive = os.path.isfile(os.path.join(session_dir, "chat_messages.jsonl"))
 
     conn.execute(
-        """INSERT OR REPLACE INTO sessions
+        """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
             started_at, ended_at, duration_ms, exit_code, session_dir,
-            task, interactive)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            task, summary, interactive)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(run_id) DO UPDATE SET
+             project_id  = excluded.project_id,
+             role        = excluded.role,
+             runtime     = excluded.runtime,
+             isolation   = excluded.isolation,
+             status      = CASE WHEN sessions.status IN ('stopped', 'completed', 'failed') THEN sessions.status ELSE excluded.status END,
+             started_at  = excluded.started_at,
+             ended_at    = excluded.ended_at,
+             duration_ms = excluded.duration_ms,
+             exit_code   = excluded.exit_code,
+             session_dir = excluded.session_dir,
+             task        = excluded.task,
+             summary     = COALESCE(excluded.summary, sessions.summary),
+             interactive = excluded.interactive
+             -- conversation_id intentionally omitted: preserve existing FK""",
         (
             run_id,
             project_id,
@@ -293,6 +364,7 @@ def _upsert_session(
             trace_info.get("exit_code"),
             session_dir,
             data.get("task"),
+            trace_info.get("summary"),
             1 if interactive else 0,
         ),
     )
