@@ -145,32 +145,42 @@ export default function SessionDetail() {
 
         <TabsContent value="overview" className="space-y-4">
           {sessionData.task && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Task
-              </h2>
-              <Card>
-                <CardContent className="pt-4">
-                  <MarkdownContent content={sessionData.task} className="text-sm" />
-                </CardContent>
-              </Card>
-            </section>
+            <Collapsible defaultOpen>
+              <div className="space-y-2">
+                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+                  Task
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <MarkdownContent content={sessionData.task} className="text-sm" />
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
 
           {outputRef && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Output
-              </h2>
-              <Card>
-                <CardContent className="pt-4">
-                  <ArtifactText
-                    runId={sessionData.run_id}
-                    hash={outputRef}
-                  />
-                </CardContent>
-              </Card>
-            </section>
+            <Collapsible defaultOpen>
+              <div className="space-y-2">
+                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+                  Output
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <ArtifactText
+                        runId={sessionData.run_id}
+                        hash={outputRef}
+                      />
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
 
           {!sessionData.task && !outputRef && (
