@@ -9,6 +9,7 @@ import { formatTime, formatDuration } from "@/components/SessionTable";
 import { useTraceSSE } from "@/hooks/useTraceSSE";
 import { useAskUserSSE } from "@/hooks/useAskUserSSE";
 import SessionDetailSkeleton from "@/components/skeletons/SessionDetailSkeleton";
+import MarkdownContent from "@/components/MarkdownContent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -150,9 +151,7 @@ export default function SessionDetail() {
               </h2>
               <Card>
                 <CardContent className="pt-4">
-                  <pre className="whitespace-pre-wrap break-words text-sm">
-                    {sessionData.task}
-                  </pre>
+                  <MarkdownContent content={sessionData.task} className="text-sm" />
                 </CardContent>
               </Card>
             </section>
@@ -165,12 +164,10 @@ export default function SessionDetail() {
               </h2>
               <Card>
                 <CardContent className="pt-4">
-                  <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                    <ArtifactText
-                      runId={sessionData.run_id}
-                      hash={outputRef}
-                    />
-                  </pre>
+                  <ArtifactText
+                    runId={sessionData.run_id}
+                    hash={outputRef}
+                  />
                 </CardContent>
               </Card>
             </section>
@@ -415,7 +412,7 @@ function ArtifactText({ runId, hash }: { runId: string; hash: string }) {
   if (error) return <span className="text-destructive">Error: {error}</span>;
   if (content === null)
     return <span className="text-muted-foreground">Loading...</span>;
-  return <>{content}</>;
+  return <MarkdownContent content={content} className="text-sm" />;
 }
 
 function extractOutputRef(events: TraceEvent[]): string | null {

@@ -35,6 +35,7 @@ import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { ConversationSession, ProjectFile } from "@/api/types";
+import MarkdownContent from "@/components/MarkdownContent";
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "";
@@ -101,7 +102,7 @@ function AgentMessage({
             Working…
           </span>
         ) : session.summary ? (
-          <p className="whitespace-pre-wrap text-foreground">{session.summary}</p>
+          <MarkdownContent content={session.summary} className="text-sm text-foreground" />
         ) : (
           <span className="text-muted-foreground italic">
             {session.status === "failed" ? "Session failed without output." : session.status === "stopped" ? "Interrupted." : "No summary available."}
