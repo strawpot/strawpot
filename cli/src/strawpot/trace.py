@@ -234,6 +234,38 @@ class Tracer:
             parent_agent_id=parent_agent_id,
         )
 
+    def memory_remember(
+        self,
+        *,
+        span_id: str,
+        provider: str,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        content: str = "",
+        keywords: list[str] | None = None,
+        scope: str = "",
+        status: str = "",
+        entry_id: str = "",
+        parent_agent_id: str | None = None,
+    ) -> None:
+        """Emit ``memory_remember``.  Stores content as artifact."""
+        content_ref = self.store_artifact(content)
+        self.emit(
+            "memory_remember",
+            span_id,
+            provider=provider,
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            content_ref=content_ref,
+            keywords=keywords or [],
+            scope=scope,
+            status=status,
+            entry_id=entry_id,
+            parent_agent_id=parent_agent_id,
+        )
+
     def memory_dump(
         self,
         *,
