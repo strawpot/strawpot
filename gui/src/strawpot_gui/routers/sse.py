@@ -334,6 +334,8 @@ async def global_events_sse(request: Request):
         async for session_event in bus.subscribe():
             if await request.is_disconnected():
                 return
+            if session_event is None:
+                continue
             event_id += 1
             yield format_sse_typed(event_id, session_event.kind, {
                 "run_id": session_event.run_id,

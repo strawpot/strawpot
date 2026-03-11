@@ -57,4 +57,4 @@ def main(port: int = DEFAULT_PORT, host: str = DEFAULT_HOST) -> None:
     from strawpot_gui.app import create_app
 
     app = create_app()
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
