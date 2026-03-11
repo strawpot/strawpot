@@ -80,9 +80,11 @@ Sessions launched from the [web dashboard](/gui/index) can optionally enable
 **interactive mode**, which allows agents to ask the user questions via a chat
 panel. When enabled, `STRAWPOT_ASK_USER_BRIDGE=file` is set and the CLI writes
 `ask_user_pending_{id}.json` files to the session directory. The GUI detects
-these via SSE, displays the question in a chat panel, and writes back
-`ask_user_response_{id}.json`. Per-request file naming supports parallel
-sub-agents asking questions concurrently.
+these via a bidirectional WebSocket (`/ws/sessions/{run_id}`), displays the
+question in a chat panel, and the user's response travels back through the same
+WebSocket connection which writes `ask_user_response_{id}.json` for the CLI to
+pick up. Per-request file naming supports parallel sub-agents asking questions
+concurrently.
 
 Chat history is persisted to `chat_messages.jsonl` by the CLI bridge
 (thread-safe), surviving tab switches, page reloads, and GUI restarts.
@@ -141,6 +143,7 @@ This separation keeps the event stream small and scannable while preserving full
 | `delegate_end` | Delegation completes | exit_code, summary, duration_ms, output_ref, role, session_id, agent_id |
 | `delegate_denied` | Policy blocks delegation | role, reason, depth |
 | `memory_get` | Memory context retrieved | provider, session_id, agent_id, role, behavior_ref, task_ref, cards_ref, card_count, parent_agent_id |
+| `memory_remember` | Agent stores a memory entry | provider, session_id, agent_id, role, content_ref, keywords, scope, status, entry_id, parent_agent_id |
 | `memory_dump` | Memory recorded after agent | provider, session_id, agent_id, role, behavior_ref, task_ref, status, output_ref, parent_agent_id |
 | `agent_spawn` | Agent process launched | agent_id, role, runtime, pid, working_dir, agent_workspace_dir, skills_dirs, roles_dirs, files_dirs, task_ref, context_ref, depth |
 | `agent_end` | Agent process exits | exit_code, output_ref, duration_ms, agent_id, role, session_id |
