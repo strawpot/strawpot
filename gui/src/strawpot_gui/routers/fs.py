@@ -1,5 +1,6 @@
 """Filesystem browsing endpoints for directory selection."""
 
+import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -56,3 +57,42 @@ def mkdir(body: MkdirBody):
         raise HTTPException(403, "Permission denied")
 
     return {"path": str(target)}
+
+
+@router.get("/fs/git-check")
+def git_check(path: str = Query(...)):
+    """Check if a directory is inside a git repository."""
+    target = Path(path).resolve()
+    if not target.is_dir():
+        raise HTTPException(400, f"Not a valid directory: {target}")
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=str(target),
+        capture_output=True,
+        text=True,
+    )
+    return {"is_git": result.returncode == 0}
+
+
+class GitInitBody(BaseModel):
+    path: str
+
+
+@router.post("/fs/git-init")
+def git_init(body: GitInitBody):
+    """Initialize a git repository in the given directory."""
+    target = Path(body.path).resolve()
+    if not target.is_dir():
+        raise HTTPException(400, f"Not a valid directory: {target}")
+
+    result = subprocess.run(
+        ["git", "init"],
+        cwd=str(target),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise HTTPException(500, f"git init failed: {result.stderr.strip()}")
+
+    return {"ok": True}
