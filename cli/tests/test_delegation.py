@@ -2042,9 +2042,37 @@ class TestStageRoleGlobalSkills:
         # Should point to dep path, not global
         assert os.readlink(staged) == dep_skill
 
-    def test_no_global_skills_when_none(self, tmp_path):
-        """Passing None for global_skills doesn't change behavior."""
+    def test_no_global_skills_when_none(self, tmp_path, monkeypatch):
+        """Passing None for global_skills stages only denden."""
         registry = str(tmp_path / "registry")
+        role_path = _write_role(registry, "worker")
+        # Ensure no denden in STRAWPOT_HOME so nothing is staged
+        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty_home"))
+
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        session = str(tmp_path / "session")
+        skills_dir, _ = stage_role(session, resolved, global_skills=None)
+
+        # skills dir exists but is empty (no denden installed globally)
+        assert os.path.isdir(skills_dir)
+        assert os.listdir(skills_dir) == []
+
+    def test_denden_always_staged(self, tmp_path, monkeypatch):
+        """Denden is staged even without inherit_global_skills or explicit dep."""
+        global_dir = str(tmp_path / "global")
+        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
+        # Install denden globally (plain slug dir, no version)
+        denden_path = os.path.join(global_dir, "skills", "denden")
+        os.makedirs(denden_path, exist_ok=True)
+        with open(os.path.join(denden_path, "SKILL.md"), "w") as f:
+            f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
+
+        registry = str(tmp_path / "registry")
+        # Role does NOT set inherit_global_skills
         role_path = _write_role(registry, "worker")
 
         resolved = {
@@ -2055,9 +2083,39 @@ class TestStageRoleGlobalSkills:
         session = str(tmp_path / "session")
         skills_dir, _ = stage_role(session, resolved, global_skills=None)
 
-        # skills dir exists but is empty
-        assert os.path.isdir(skills_dir)
-        assert os.listdir(skills_dir) == []
+        staged = os.path.join(skills_dir, "denden")
+        assert os.path.islink(staged)
+        assert os.readlink(staged) == denden_path
+
+    def test_denden_not_duplicated_when_already_dep(self, tmp_path, monkeypatch):
+        """Denden is not re-staged if already present from explicit deps."""
+        global_dir = str(tmp_path / "global")
+        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
+        denden_global = os.path.join(global_dir, "skills", "denden")
+        os.makedirs(denden_global, exist_ok=True)
+        with open(os.path.join(denden_global, "SKILL.md"), "w") as f:
+            f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
+
+        registry = str(tmp_path / "registry")
+        denden_dep = _write_skill(registry, "denden")
+        role_path = _write_role(registry, "worker", skill_deps=["denden"])
+
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local",
+            "dependencies": [
+                {"slug": "denden", "kind": "skill", "version": "1.0.0",
+                 "path": denden_dep, "source": "local"},
+            ],
+        }
+
+        session = str(tmp_path / "session")
+        skills_dir, _ = stage_role(session, resolved, global_skills=None)
+
+        staged = os.path.join(skills_dir, "denden")
+        assert os.path.islink(staged)
+        # Should point to dep path, not global
+        assert os.readlink(staged) == denden_dep
 
 
 # ---------------------------------------------------------------------------

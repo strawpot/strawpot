@@ -535,6 +535,9 @@ def stage_role(
             if not os.path.exists(dest):
                 _symlink(gpath, dest)
 
+    # Always stage denden — required for agent communication
+    _ensure_denden_staged(skills_dir)
+
     # Stage role deps
     roles_dir = os.path.join(role_stage_dir, "roles")
     os.makedirs(roles_dir, exist_ok=True)
@@ -558,6 +561,16 @@ def stage_role(
             _symlink(dep["path"], dest)
 
     return skills_dir, roles_dir
+
+
+def _ensure_denden_staged(skills_dir: str) -> None:
+    """Always stage the denden skill — it is required for agent communication."""
+    dest = os.path.join(skills_dir, "denden")
+    if os.path.exists(dest):
+        return
+    denden_path = get_strawpot_home() / "skills" / "denden"
+    if denden_path.is_dir() and (denden_path / "SKILL.md").is_file():
+        _symlink(str(denden_path), dest)
 
 
 def create_agent_workspace(session_dir: str, agent_id: str) -> str:
