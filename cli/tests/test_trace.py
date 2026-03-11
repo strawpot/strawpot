@@ -446,7 +446,6 @@ class TestAskUserEvents:
             agent_id="agent_123",
             role="implementer",
             session_id="run_abc",
-            parent_agent_id="agent_000",
         )
         events = _read_events(session_dir)
         assert len(events) == 1
@@ -458,7 +457,6 @@ class TestAskUserEvents:
         assert data["agent_id"] == "agent_123"
         assert data["role"] == "implementer"
         assert data["session_id"] == "run_abc"
-        assert data["parent_agent_id"] == "agent_000"
         # Verify artifact content
         artifact_path = os.path.join(session_dir, "artifacts", data["question_ref"])
         with open(artifact_path, encoding="utf-8") as f:
@@ -474,7 +472,6 @@ class TestAskUserEvents:
             agent_id="agent_123",
             role="implementer",
             session_id="run_abc",
-            parent_agent_id="agent_000",
         )
         events = _read_events(session_dir)
         assert len(events) == 1
@@ -487,7 +484,6 @@ class TestAskUserEvents:
         assert data["agent_id"] == "agent_123"
         assert data["role"] == "implementer"
         assert data["session_id"] == "run_abc"
-        assert data["parent_agent_id"] == "agent_000"
         artifact_path = os.path.join(session_dir, "artifacts", data["answer_ref"])
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "yes"

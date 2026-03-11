@@ -336,7 +336,6 @@ class Tracer:
         agent_id: str = "",
         role: str = "",
         session_id: str = "",
-        parent_agent_id: str | None = None,
     ) -> str:
         """Emit ``ask_user_start``.  Stores question as artifact.  Returns new span_id."""
         span_id = self._new_span_id()
@@ -350,7 +349,6 @@ class Tracer:
             agent_id=agent_id,
             role=role,
             session_id=session_id,
-            parent_agent_id=parent_agent_id,
         )
         return span_id
 
@@ -364,7 +362,6 @@ class Tracer:
         agent_id: str = "",
         role: str = "",
         session_id: str = "",
-        parent_agent_id: str | None = None,
     ) -> None:
         """Emit ``ask_user_end``.  Stores answer as artifact."""
         answer_ref = self.store_artifact(answer)
@@ -377,5 +374,4 @@ class Tracer:
             agent_id=agent_id,
             role=role,
             session_id=session_id,
-            parent_agent_id=parent_agent_id,
         )

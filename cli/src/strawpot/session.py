@@ -1040,7 +1040,6 @@ class Session:
                 agent_id=agent_id,
                 role=role,
                 session_id=self._run_id,
-                parent_agent_id=agent_id,
             )
         t0 = time.monotonic()
 
@@ -1057,7 +1056,6 @@ class Session:
                     agent_id=agent_id,
                     role=role,
                     session_id=self._run_id,
-                    parent_agent_id=agent_id,
                 )
             logger.exception("ask_user handler failed")
             return error_response(
@@ -1076,7 +1074,6 @@ class Session:
                 agent_id=agent_id,
                 role=role,
                 session_id=self._run_id,
-                parent_agent_id=agent_id,
             )
 
         result = denden_pb2.AskUserResult(text=resp.text)
