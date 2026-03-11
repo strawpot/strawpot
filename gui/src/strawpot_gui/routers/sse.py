@@ -66,11 +66,11 @@ def _build_full_state(session_dir: str) -> tuple[TreeState, int]:
     return state, offset
 
 
-def _publish_terminal(run_id: str, status: str) -> None:
+def _publish_terminal(run_id: str, status: str, project_id: int | None = None) -> None:
     """Publish a lifecycle event when a session reaches terminal state."""
     kind = f"session_{status}" if status in ("completed", "failed", "stopped") else None
     if kind:
-        event_bus.publish(SessionEvent(kind=kind, run_id=run_id))
+        event_bus.publish(SessionEvent(kind=kind, run_id=run_id, project_id=project_id))
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def _publish_terminal(run_id: str, status: str) -> None:
 async def session_tree_sse(run_id: str, request: Request):
     """SSE endpoint for real-time agent tree updates."""
     db_path = request.app.state.db_path
-    session_dir, status = resolve_session_dir(db_path, run_id)
+    session_dir, status, project_id = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         async def not_found():
@@ -139,7 +139,7 @@ async def session_tree_sse(run_id: str, request: Request):
 
                 if not changed_files:
                     # Timeout — no file changes; check DB status only
-                    _, current_status = resolve_session_dir(db_path, run_id)
+                    _, current_status, _ = resolve_session_dir(db_path, run_id)
                     if current_status in ("completed", "failed", "stopped"):
                         # Final read before closing
                         new_events, trace_offset = _read_trace_lines(
@@ -150,7 +150,7 @@ async def session_tree_sse(run_id: str, request: Request):
                         if new_events:
                             event_id += 1
                             yield format_sse(event_id, state.to_dict())
-                        _publish_terminal(run_id, current_status)
+                        _publish_terminal(run_id, current_status, project_id)
                         return
                     continue
 
@@ -197,7 +197,7 @@ async def session_tree_sse(run_id: str, request: Request):
                     yield format_sse(event_id, state.to_dict())
 
                 if state.is_terminal:
-                    _publish_terminal(run_id, "completed")
+                    _publish_terminal(run_id, "completed", project_id)
                     return
         finally:
             stop.set()
@@ -227,7 +227,7 @@ async def session_events_sse(run_id: str, request: Request):
     - Subsequent updates: sends ``event: delta`` with only new events
     """
     db_path = request.app.state.db_path
-    session_dir, status = resolve_session_dir(db_path, run_id)
+    session_dir, status, _ = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         async def not_found():
@@ -272,7 +272,7 @@ async def session_events_sse(run_id: str, request: Request):
 
                 if not changed_files:
                     # Timeout — check DB status
-                    _, current_status = resolve_session_dir(db_path, run_id)
+                    _, current_status, _ = resolve_session_dir(db_path, run_id)
                     if current_status in ("completed", "failed", "stopped"):
                         new_events, trace_offset = _read_trace_lines(
                             trace_path, trace_offset

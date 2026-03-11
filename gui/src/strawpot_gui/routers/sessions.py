@@ -475,7 +475,7 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
 def stop_session(run_id: str, conn=Depends(get_db_conn)):
     """Stop a running session by sending SIGTERM to the orchestrator PID."""
     row = conn.execute(
-        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
+        "SELECT run_id, status, session_dir, project_id FROM sessions WHERE run_id = ?",
         (run_id,),
     ).fetchone()
     if not row:
@@ -485,6 +485,8 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
         raise HTTPException(
             409, f"Session is not running (status: {row['status']})"
         )
+
+    project_id = row["project_id"]
 
     # Read PID from session.json
     session_dir = Path(row["session_dir"])
@@ -497,7 +499,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
         return {"run_id": run_id, "status": "stopped"}
 
     pid = data.get("pid")
@@ -507,7 +509,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
         return {"run_id": run_id, "status": "stopped"}
 
     # Check liveness and send SIGTERM
@@ -519,7 +521,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
         return {"run_id": run_id, "status": "stopped"}
 
     try:
@@ -530,14 +532,14 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
             "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
             (run_id,),
         )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
         return {"run_id": run_id, "status": "stopped"}
 
     conn.execute(
         "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
         (run_id,),
     )
-    event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id))
+    event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
     return {"run_id": run_id, "status": "stopped"}
 
 

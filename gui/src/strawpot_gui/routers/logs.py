@@ -82,7 +82,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
     - ``event: done``     — session reached terminal state, stream closes
     """
     db_path = request.app.state.db_path
-    session_dir, status = resolve_session_dir(db_path, run_id)
+    session_dir, status, _ = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         async def not_found():
@@ -136,7 +136,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
 
                 if not changed_files:
                     # Timeout — check DB status
-                    _, current_status = resolve_session_dir(db_path, run_id)
+                    _, current_status, _ = resolve_session_dir(db_path, run_id)
                     if current_status in _TERMINAL_STATUSES:
                         # Final read
                         new_lines, offset = _read_log_delta(log_path, offset)
@@ -182,7 +182,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
 async def agent_log_full(run_id: str, agent_id: str, request: Request):
     """Return the complete log file as plain text."""
     db_path = request.app.state.db_path
-    session_dir, _ = resolve_session_dir(db_path, run_id)
+    session_dir, _, _ = resolve_session_dir(db_path, run_id)
 
     if session_dir is None:
         return PlainTextResponse("Session not found", status_code=404)
