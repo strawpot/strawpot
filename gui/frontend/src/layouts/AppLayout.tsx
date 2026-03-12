@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, BotMessageSquare, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject, useProjects } from "@/hooks/queries/use-projects";
 import { useProjectConversations } from "@/hooks/queries/use-conversations";
@@ -28,6 +28,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
+  { to: "/imu", label: "Bot Imu", icon: BotMessageSquare },
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/schedules", label: "Schedules", icon: Clock },

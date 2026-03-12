@@ -5,6 +5,7 @@ import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import SessionDetail from "./pages/SessionDetail";
 import ConversationView from "./pages/ConversationView";
+import ImuPage from "./pages/ImuPage";
 import ResourceBrowser from "./pages/ResourceBrowser";
 import ScheduledTasks from "./pages/ScheduledTasks";
 import Settings from "./pages/Settings";
@@ -28,6 +29,8 @@ export default function App() {
           path="projects/:projectId/conversations/:conversationId"
           element={<ConversationView />}
         />
+        <Route path="imu" element={<ImuPage />} />
+        <Route path="imu/:conversationId" element={<ImuPage />} />
         <Route path="schedules" element={<ScheduledTasks />} />
         <Route
           path="resources/:resourceType"
