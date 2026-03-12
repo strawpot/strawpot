@@ -83,8 +83,6 @@ name: imu
 description: Bot Imu — StrawPot self-operation agent. Manages projects, sessions, resources, schedules, and configuration globally.
 metadata:
   strawpot:
-    isolation: none
-    interactive: true
     dependencies:
       skills:
         - strawpot-cli
@@ -1081,8 +1079,8 @@ tried to create a PR. You can fix this by setting it in config:
 
 | # | Item | Phase | Status |
 |---|------|-------|---------|
-| 1 | Create `imu` role (`ROLE.md`) | 1 — Role & Skills | Planned |
-| 2 | Create six skills (`strawpot-cli`, `strawpot-gui-api`, `strawpot-config`, `strawpot-schedules`, `strawhub-cli`, `strawpot-sessions`) | 1 — Role & Skills | Planned |
+| 1 | Create `imu` role (`ROLE.md`) | 1 — Role & Skills | Done |
+| 2 | Create six skills (`strawpot-cli`, `strawpot-gui-api`, `strawpot-config`, `strawpot-schedules`, `strawhub-cli`, `strawpot-sessions`) | 1 — Role & Skills | Done |
 | 3 | Virtual Bot Imu project (id=0) in `db.py` startup | 2 — Backend | Planned |
 | 4 | `GET /api/imu/conversations` and `POST /api/imu/conversations` | 2 — Backend | Planned |
 | 5 | Bot Imu session storage path (`~/.strawpot`) | 2 — Backend | Planned |
