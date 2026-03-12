@@ -101,6 +101,21 @@ def _symlink(src: str, dst: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _strawpot_meta(fm: dict) -> dict:
+    """Safely extract metadata.strawpot from parsed frontmatter.
+
+    Guards against YAML null values (``strawpot: `` with no content parses
+    to ``None``), returning an empty dict instead of crashing.
+    """
+    metadata = fm.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    strawpot = metadata.get("strawpot")
+    if not isinstance(strawpot, dict):
+        return {}
+    return strawpot
+
+
 def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
     """Parse ROLE.md frontmatter to extract direct skill and role dep slugs.
 
@@ -116,7 +131,7 @@ def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
     deps = (
-        fm.get("metadata", {}).get("strawpot", {}).get("dependencies", {})
+        _strawpot_meta(fm).get("dependencies", {})
     )
     if not isinstance(deps, dict):
         return [], [], False
@@ -141,7 +156,7 @@ def _parse_skill_deps(skill_path: str) -> list[str]:
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
     deps = (
-        fm.get("metadata", {}).get("strawpot", {}).get("dependencies", [])
+        _strawpot_meta(fm).get("dependencies", [])
     )
     if not isinstance(deps, list):
         return []
@@ -162,7 +177,7 @@ def _parse_skill_env(skill_path: str) -> dict[str, dict]:
     text = skill_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
-    env = fm.get("metadata", {}).get("strawpot", {}).get("env", {})
+    env = _strawpot_meta(fm).get("env", {})
     if not isinstance(env, dict):
         return {}
     return env
@@ -185,9 +200,7 @@ def _check_inherit_global_skills(role_path: str) -> bool:
     text = role_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
-    return fm.get("metadata", {}).get("strawpot", {}).get(
-        "inherit_global_skills", False
-    )
+    return _strawpot_meta(fm).get("inherit_global_skills", False)
 
 
 def _get_default_agent(role_path: str) -> str | None:
@@ -202,7 +215,7 @@ def _get_default_agent(role_path: str) -> str | None:
     text = role_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
-    return fm.get("metadata", {}).get("strawpot", {}).get("default_agent")
+    return _strawpot_meta(fm).get("default_agent")
 
 
 def discover_global_skills(

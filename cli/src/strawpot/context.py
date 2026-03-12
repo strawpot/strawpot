@@ -75,22 +75,25 @@ def build_prompt(
             section is inserted after the role body.
 
     Returns:
-        System prompt string: skills first (resolver order), role last,
-        frontmatter stripped, sections separated by ``---``.
-        If global_skills is provided, an Available Skills section follows.
-        If delegatable_roles is provided, a Delegation section follows.
-        If requester_role is provided, a Requester section follows.
+        System prompt string: role first, then optional custom instructions,
+        then skills (resolver order, empty bodies skipped), then available
+        skills, delegation, and requester sections. Frontmatter stripped,
+        sections separated by ``---``.
     """
     sections: list[str] = []
-
-    for dep in resolved.get("dependencies", []):
-        body = _read_body(dep["path"], dep["kind"])
-        sections.append(f"## {dep['kind'].capitalize()}: {dep['slug']}\n\n{body}")
 
     root_body = _read_body(resolved["path"], resolved["kind"])
     sections.append(
         f"## {resolved['kind'].capitalize()}: {resolved['slug']}\n\n{root_body}"
     )
+
+    if custom_prompt:
+        sections.append(f"## Custom Instructions\n\n{custom_prompt}")
+
+    for dep in resolved.get("dependencies", []):
+        body = _read_body(dep["path"], dep["kind"])
+        if body:
+            sections.append(f"## {dep['kind'].capitalize()}: {dep['slug']}\n\n{body}")
 
     if global_skills:
         sections.append(_build_available_skills_section(global_skills))
@@ -100,9 +103,6 @@ def build_prompt(
 
     if requester_role:
         sections.append(_build_requester_section(requester_role))
-
-    if custom_prompt:
-        sections.append(f"## Custom Instructions\n\n{custom_prompt}")
 
     return "\n---\n\n".join(sections)
 
@@ -143,8 +143,8 @@ def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
     lines.append("")
     lines.append(
         "To delegate, read `skills/denden/SKILL.md` and use the `delegate` "
-        "command documented there. This is the ONLY way to delegate work. "
-        "Never attempt tasks yourself — always delegate via the denden skill."
+        "command documented there. For tasks well-suited to a delegatable role, "
+        "prefer delegating rather than handling them directly."
     )
     return "\n".join(lines)
 

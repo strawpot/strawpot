@@ -52,9 +52,10 @@ async def watch_dir(
             poll_delay_ms=50,
         ):
             yield {p for _, p in changes}
-    except (RuntimeError, FileNotFoundError):
-        # awatch raises FileNotFoundError if the directory doesn't exist,
-        # and RuntimeError if it is removed mid-watch.
+    except (RuntimeError, OSError):
+        # awatch raises FileNotFoundError (subclass of OSError) if the directory
+        # doesn't exist, RuntimeError if it is removed mid-watch, and other
+        # OSError subclasses on platform-specific watcher failures (kqueue, etc.).
         return
 
 

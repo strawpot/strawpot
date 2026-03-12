@@ -286,7 +286,7 @@ function SessionHeader({
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Button variant="outline" size="sm" asChild>
-          <Link to={`/projects/${projectId}`}>
+          <Link to={projectId === 0 ? "/imu" : `/projects/${projectId}`}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Link>

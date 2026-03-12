@@ -75,11 +75,11 @@ def test_role_with_skill_dependencies(tmp_path):
 
     result = build_prompt(resolved)
     assert result == (
+        "## Role: implementer\n\nYou implement things."
+        "\n---\n\n"
         "## Skill: git-workflow\n\nUse git flow."
         "\n---\n\n"
         "## Skill: code-review\n\nReview carefully."
-        "\n---\n\n"
-        "## Role: implementer\n\nYou implement things."
     )
 
 
@@ -107,9 +107,9 @@ def test_role_dependency_includes_role(tmp_path):
 
     result = build_prompt(resolved)
     assert result == (
-        "## Role: base-reviewer\n\nReview basics."
-        "\n---\n\n"
         "## Role: senior-reviewer\n\nSenior review."
+        "\n---\n\n"
+        "## Role: base-reviewer\n\nReview basics."
     )
 
 
@@ -175,7 +175,70 @@ def test_body_whitespace_stripped(tmp_path):
     }
 
     result = build_prompt(resolved)
-    assert result.startswith("## Skill: ws\n\nBody")
+    assert result.startswith("## Role: r\n\nRole.")
+
+
+def test_custom_prompt_before_skills(tmp_path):
+    """Custom instructions appear after role but before skill dependencies."""
+    skill_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
+    role_path = _write_role(tmp_path, "coder", "You code.")
+
+    resolved = {
+        "slug": "coder",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "git-workflow",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": skill_path,
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(resolved, custom_prompt="Always write tests first.")
+
+    role_pos = result.index("## Role: coder")
+    custom_pos = result.index("## Custom Instructions")
+    skill_pos = result.index("## Skill: git-workflow")
+    assert role_pos < custom_pos < skill_pos
+    assert "Always write tests first." in result
+
+
+def test_empty_body_dep_skipped(tmp_path):
+    """Dependency with empty body is omitted from the prompt."""
+    empty_skill_path = tmp_path / "skills" / "empty-skill"
+    empty_skill_path.mkdir(parents=True)
+    (empty_skill_path / "SKILL.md").write_text(
+        "---\nname: empty-skill\ndescription: test\n---\n"
+    )
+
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    resolved = {
+        "slug": "worker",
+        "kind": "role",
+        "version": "1.0.0",
+        "path": role_path,
+        "source": "local",
+        "dependencies": [
+            {
+                "slug": "empty-skill",
+                "kind": "skill",
+                "version": "1.0.0",
+                "path": str(empty_skill_path),
+                "source": "local",
+            },
+        ],
+    }
+
+    result = build_prompt(resolved)
+    assert "## Skill: empty-skill" not in result
+    assert result == "## Role: worker\n\nYou work."
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +272,7 @@ def test_delegation_section_appended(tmp_path):
     assert "- **backend-engineer**: Handles backend API implementation" in result
     assert "- **test-writer**: Writes and maintains test suites" in result
     assert "skills/denden/SKILL.md" in result
-    assert "ONLY way to delegate" in result
+    assert "prefer delegating" in result
 
 
 def test_delegation_with_dependencies(tmp_path):
@@ -239,10 +302,10 @@ def test_delegation_with_dependencies(tmp_path):
         delegatable_roles=[("implementer", "Writes code")],
     )
 
-    skill_pos = result.index("## Skill: git-workflow")
     role_pos = result.index("## Role: team-lead")
+    skill_pos = result.index("## Skill: git-workflow")
     delegation_pos = result.index("## Delegation")
-    assert skill_pos < role_pos < delegation_pos
+    assert role_pos < skill_pos < delegation_pos
 
 
 def test_no_delegation_when_none(tmp_path):
@@ -337,8 +400,8 @@ def test_delegation_section_exact_format(tmp_path):
         "file to learn more about the role before delegating.\n"
         "\n"
         "To delegate, read `skills/denden/SKILL.md` and use the `delegate` "
-        "command documented there. This is the ONLY way to delegate work. "
-        "Never attempt tasks yourself — always delegate via the denden skill."
+        "command documented there. For tasks well-suited to a delegatable role, "
+        "prefer delegating rather than handling them directly."
     )
 
     assert result.endswith(expected_delegation)
