@@ -896,11 +896,16 @@ function ImuHome() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <BotMessageSquare className="h-6 w-6" />
-          Bot Imu
-        </h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <BotMessageSquare className="h-6 w-6" />
+            Bot Imu
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your personal StrawPot overlord. Ask it to manage projects, run agents, configure schedules, or anything else in your StrawPot workspace.
+          </p>
+        </div>
         <Button
           onClick={() =>
             createConversation.mutate(undefined, {
