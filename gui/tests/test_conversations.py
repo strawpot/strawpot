@@ -487,11 +487,11 @@ class TestBuildConversationContext:
         with get_db(app.state.db_path) as conn:
             ctx = _build_conversation_context(conn, cid)
 
-        lines = [l for l in ctx.split("\n") if l.startswith("- Turn ")]
+        result_lines = [l for l in ctx.split("\n") if l.startswith("- Result: ")]
         # Turn 1-3 are old (4+ from end): summary should be truncated (has …)
-        assert "…" in lines[0]
+        assert "…" in result_lines[0]
         # Turn 5 is recent (1 from end): summary should be full (no …)
-        assert "…" not in lines[4]
+        assert "…" not in result_lines[4]
 
     def test_pending_followup_capped(self, client, tmp_path, app):
         """Pending Follow-up is capped at 800 chars."""
@@ -541,9 +541,9 @@ class TestBuildConversationContext:
         assert "src/file_3.py" in ctx
         assert "src/file_4.py" in ctx
         # Old turns (turns 1, 2) should NOT show files even if they had them
-        lines = [l for l in ctx.split("\n") if l.startswith("- Turn ")]
-        assert "files:" not in lines[0]  # Turn 1: no files_changed
-        assert "files:" not in lines[1]  # Turn 2: no files_changed (old turn)
+        turn_headers = [l for l in ctx.split("\n") if l.startswith("**Turn ")]
+        assert "files:" not in turn_headers[0]  # Turn 1: no files_changed
+        assert "files:" not in turn_headers[1]  # Turn 2: no files_changed (old turn)
 
     def test_files_changed_caps_at_10(self, client, tmp_path, app):
         """File list is capped at 10 with a +N more indicator."""

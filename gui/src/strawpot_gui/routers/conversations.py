@@ -59,7 +59,8 @@ _MAX_TURNS = 10
 def _build_conversation_context(conn, conversation_id: int) -> str:
     """Build a prior-turns summary to prepend to the next session's task."""
     rows = conn.execute(
-        "SELECT task, user_task, summary, exit_code, status, files_changed "
+        "SELECT task, user_task, summary, exit_code, status, "
+        "files_changed, duration_ms "
         "FROM sessions "
         "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
         "ORDER BY started_at",
@@ -109,6 +110,27 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
         else:
             task_limit, summary_limit = 200, 200
 
+        # Turn header: status, duration, files
+        meta = [row["status"]]
+        duration_ms = row["duration_ms"]
+        if duration_ms is not None:
+            if duration_ms < 60_000:
+                meta.append(f"{duration_ms // 1000}s")
+            else:
+                meta.append(f"{duration_ms // 60_000}m{(duration_ms % 60_000) // 1000}s")
+        header = f"**Turn {i}** [{', '.join(meta)}]"
+        # File paths for recent turns (last 3)
+        if remaining < 3 and row["files_changed"]:
+            try:
+                files = json.loads(row["files_changed"])
+                if files:
+                    file_list = ", ".join(files[:10])
+                    if len(files) > 10:
+                        file_list += f" (+{len(files) - 10} more)"
+                    header += f" | files: {file_list}"
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         task_text = row["user_task"] or _strip_prior_context(row["task"])
         task_line = _condense(task_text, task_limit)
         if row["summary"]:
@@ -117,18 +139,10 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
             result_line = f"(failed, exit code {row['exit_code']})"
         else:
             result_line = f"(exit code {row['exit_code']})"
-        turn_line = f"- Turn {i}: asked: {task_line} → did: {result_line}"
-        # Show file paths for recent turns (last 3) only
-        if remaining < 3 and row["files_changed"]:
-            try:
-                files = json.loads(row["files_changed"])
-                if files:
-                    turn_line += f" | files: {', '.join(files[:10])}"
-                    if len(files) > 10:
-                        turn_line += f" (+{len(files) - 10} more)"
-            except (json.JSONDecodeError, TypeError):
-                pass
-        parts.append(turn_line)
+
+        parts.append(header)
+        parts.append(f"- Asked: {task_line}")
+        parts.append(f"- Result: {result_line}")
 
     # Pending Follow-up: last session's summary for short follow-up turns
     last = rows[-1]

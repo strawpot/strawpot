@@ -78,6 +78,15 @@
   unpinned in strawpot's pyproject.toml, so `pip install --upgrade strawpot`
   may or may not pull a newer denden-server depending on resolver state.
 
+## Resources
+
+- [ ] **Support custom resource import**
+  Allow users to import custom resources (files, configs, templates) into
+  projects that agents can reference during sessions. Currently resources
+  are limited to roles, skills, and project files. Custom imports would
+  let users provide reference docs, API specs, or other context that agents
+  need but that don't fit existing resource types.
+
 ## Housekeeping
 
 - [ ] **Archive retention policy**
