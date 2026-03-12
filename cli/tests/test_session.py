@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from denden.gen import denden_pb2
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.config import StrawPotConfig
 from strawpot.delegation import PolicyDenied
@@ -18,6 +19,7 @@ from strawpot.session import (
     recover_stale_sessions,
     resolve_isolator,
 )
+from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberResult
 
 
 # ---------------------------------------------------------------------------
@@ -1095,6 +1097,216 @@ class TestRecoverStaleSessions:
 
         # Only the session with a running/ symlink is recovered
         assert result == ["run_real"]
+
+
+# ---------------------------------------------------------------------------
+# Remember handler
+# ---------------------------------------------------------------------------
+
+
+class TestHandleRemember:
+    def _make_denden_request(
+        self,
+        content="important fact",
+        keywords=None,
+        scope="project",
+        agent_id="agent_orch",
+        run_id="run_test",
+    ):
+        """Create a mock denden protobuf request with remember payload."""
+        request = MagicMock()
+        request.request_id = "req_rem_1"
+        request.remember.content = content
+        request.remember.keywords = keywords or ["kw1"]
+        request.remember.scope = scope
+        request.trace.agent_instance_id = agent_id
+        request.trace.run_id = run_id
+        request.WhichOneof.return_value = "remember"
+        return request
+
+    @patch("strawpot.session.error_response")
+    def test_no_memory_provider(self, mock_error, tmp_path):
+        """Session with no memory provider returns error_response."""
+        mock_error.return_value = "err"
+
+        session = _make_session(tmp_path)
+        session._memory_provider = None
+
+        result = session._handle_remember(self._make_denden_request())
+
+        mock_error.assert_called_once_with(
+            "req_rem_1", "ERR_NO_MEMORY", "no memory provider configured"
+        )
+        assert result == "err"
+
+    @patch("strawpot.session.ok_response")
+    def test_successful_remember(self, mock_ok, tmp_path):
+        """Successful remember returns ok_response with remember_result."""
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        memory = MagicMock()
+        memory.remember.return_value = RememberResult(
+            status="accepted", entry_id="k_1"
+        )
+        session._memory_provider = memory
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_remember(self._make_denden_request())
+
+        memory.remember.assert_called_once()
+        mock_ok.assert_called_once()
+        call_kwargs = mock_ok.call_args
+        remember_result = call_kwargs[1]["remember_result"]
+        assert remember_result.status == "accepted"
+        assert remember_result.entry_id == "k_1"
+        assert result == "ok"
+
+    @patch("strawpot.session.error_response")
+    def test_remember_exception(self, mock_error, tmp_path):
+        """RuntimeError from provider returns error_response."""
+        mock_error.return_value = "err"
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        memory = MagicMock()
+        memory.remember.side_effect = RuntimeError("disk full")
+        session._memory_provider = memory
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_remember(self._make_denden_request())
+
+        mock_error.assert_called_once_with(
+            "req_rem_1", "ERR_REMEMBER", "disk full"
+        )
+        assert result == "err"
+
+
+# ---------------------------------------------------------------------------
+# Recall handler
+# ---------------------------------------------------------------------------
+
+
+class TestHandleRecall:
+    def _make_denden_request(
+        self,
+        query="find something",
+        keywords=None,
+        scope="project",
+        max_results=5,
+        agent_id="agent_orch",
+        run_id="run_test",
+    ):
+        """Create a mock denden protobuf request with recall payload."""
+        request = MagicMock()
+        request.request_id = "req_rec_1"
+        request.recall.query = query
+        request.recall.keywords = keywords or ["kw1"]
+        request.recall.scope = scope
+        request.recall.max_results = max_results
+        request.trace.agent_instance_id = agent_id
+        request.trace.run_id = run_id
+        request.WhichOneof.return_value = "recall"
+        return request
+
+    @patch("strawpot.session.error_response")
+    def test_no_memory_provider(self, mock_error, tmp_path):
+        """Session with no memory provider returns error_response."""
+        mock_error.return_value = "err"
+
+        session = _make_session(tmp_path)
+        session._memory_provider = None
+
+        result = session._handle_recall(self._make_denden_request())
+
+        mock_error.assert_called_once_with(
+            "req_rec_1", "ERR_NO_MEMORY", "no memory provider configured"
+        )
+        assert result == "err"
+
+    @patch("strawpot.session.ok_response")
+    def test_successful_recall(self, mock_ok, tmp_path):
+        """Successful recall returns ok_response with recall_result."""
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        memory = MagicMock()
+        memory.recall.return_value = RecallResult(
+            entries=[
+                RecallEntry(
+                    entry_id="e_1",
+                    content="remembered fact",
+                    keywords=["kw1"],
+                    scope="project",
+                    score=0.95,
+                ),
+            ]
+        )
+        session._memory_provider = memory
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_recall(self._make_denden_request())
+
+        memory.recall.assert_called_once()
+        mock_ok.assert_called_once()
+        call_kwargs = mock_ok.call_args
+        recall_result = call_kwargs[1]["recall_result"]
+        assert len(recall_result.entries) == 1
+        assert recall_result.entries[0].entry_id == "e_1"
+        assert recall_result.entries[0].content == "remembered fact"
+        assert result == "ok"
+
+    @patch("strawpot.session.error_response")
+    def test_recall_exception(self, mock_error, tmp_path):
+        """RuntimeError from provider returns error_response."""
+        mock_error.return_value = "err"
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        memory = MagicMock()
+        memory.recall.side_effect = RuntimeError("db unreachable")
+        session._memory_provider = memory
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_recall(self._make_denden_request())
+
+        mock_error.assert_called_once_with(
+            "req_rec_1", "ERR_RECALL", "db unreachable"
+        )
+        assert result == "err"
+
+    @patch("strawpot.session.ok_response")
+    def test_recall_empty_results(self, mock_ok, tmp_path):
+        """Empty recall results still returns ok_response."""
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        memory = MagicMock()
+        memory.recall.return_value = RecallResult(entries=[])
+        session._memory_provider = memory
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        result = session._handle_recall(self._make_denden_request())
+
+        memory.recall.assert_called_once()
+        mock_ok.assert_called_once()
+        call_kwargs = mock_ok.call_args
+        recall_result = call_kwargs[1]["recall_result"]
+        assert len(recall_result.entries) == 0
+        assert result == "ok"
 
 
 # ---------------------------------------------------------------------------

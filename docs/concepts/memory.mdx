@@ -7,7 +7,7 @@ Memory providers are optional plugins that supply agents with contextual informa
 
 ## How It Works
 
-Memory integrates at three points in the delegation flow:
+Memory integrates at four points in the delegation flow:
 
 ```
 Before agent spawn:
@@ -15,6 +15,7 @@ Before agent spawn:
 
 During agent execution:
   Agent calls memory.remember() via Denden → persisted by provider
+  Agent calls memory.recall() via Denden → queries stored knowledge on-demand
 
 After agent completion:
   memory.dump() → records outcome for future retrieval
@@ -83,6 +84,8 @@ from strawpot_memory.memory_protocol import (
     GetResult,
     MemoryKind,
     MemoryProvider,
+    RecallEntry,
+    RecallResult,
     RememberResult,
 )
 
@@ -140,6 +143,20 @@ class MyMemoryProvider:
     ) -> RememberResult:
         # Persist knowledge from an agent mid-execution
         return RememberResult(status="accepted")
+
+    def recall(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        query: str,
+        keywords: list[str] | None = None,
+        scope: str = "",
+        max_results: int = 10,
+    ) -> RecallResult:
+        # Query stored knowledge on-demand
+        return RecallResult(entries=[])
 ```
 
 ### 3. Create a `MEMORY.md` manifest
@@ -233,6 +250,9 @@ class MemoryProvider(Protocol):
              parent_agent_id=None, artifacts=None) -> DumpReceipt: ...
     def remember(self, *, session_id, agent_id, role,
                  content, keywords=None, scope="project") -> RememberResult: ...
+    def recall(self, *, session_id, agent_id, role,
+               query, keywords=None, scope="",
+               max_results=10) -> RecallResult: ...
 ```
 
 ### Return Types
@@ -242,5 +262,7 @@ class MemoryProvider(Protocol):
 | `GetResult` | `context_cards`, `control_signals`, `context_hash`, `sources_used` |
 | `DumpReceipt` | `em_event_ids` |
 | `RememberResult` | `status` ("accepted" / "duplicate"), `entry_id` |
+| `RecallResult` | `entries` (list of `RecallEntry`) |
+| `RecallEntry` | `entry_id`, `content`, `keywords`, `scope`, `score` |
 | `ContextCard` | `kind` (MemoryKind), `content`, `source` |
 | `ControlSignal` | `risk_level`, `suggested_next`, `policy_flags` |

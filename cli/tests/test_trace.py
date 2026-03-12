@@ -351,6 +351,39 @@ class TestMemoryEvents:
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "agent output text"
 
+    def test_memory_recall_stores_all_arguments(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.memory_recall(
+            span_id="s1", provider="dial",
+            session_id="run_abc", agent_id="agent_123",
+            role="implementer", query="testing framework",
+            scope="project", result_count=3,
+            parent_agent_id="agent_000",
+        )
+        events = _read_events(session_dir)
+        assert events[0]["event"] == "memory_recall"
+        data = events[0]["data"]
+        assert data["provider"] == "dial"
+        assert data["session_id"] == "run_abc"
+        assert data["agent_id"] == "agent_123"
+        assert data["role"] == "implementer"
+        assert data["query"] == "testing framework"
+        assert data["scope"] == "project"
+        assert data["result_count"] == 3
+        assert data["parent_agent_id"] == "agent_000"
+
+    def test_memory_recall_defaults(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.memory_recall(
+            span_id="s1", provider="dial",
+            session_id="run_x", agent_id="agent_x", role="worker",
+        )
+        events = _read_events(session_dir)
+        data = events[0]["data"]
+        assert data["query"] == ""
+        assert data["scope"] == ""
+        assert data["result_count"] == 0
+
 
 # ---------------------------------------------------------------------------
 # Agent events

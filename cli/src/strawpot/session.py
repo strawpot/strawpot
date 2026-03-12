@@ -750,6 +750,7 @@ class Session:
         self._server.on_delegate(self._handle_delegate)
         self._server.on_ask_user(self._handle_ask_user)
         self._server.on_remember(self._handle_remember)
+        self._server.on_recall(self._handle_recall)
 
         try:
             self._server.start()
@@ -763,6 +764,7 @@ class Session:
             self._server.on_delegate(self._handle_delegate)
             self._server.on_ask_user(self._handle_ask_user)
             self._server.on_remember(self._handle_remember)
+            self._server.on_recall(self._handle_recall)
             self._server.start()
 
         self._denden_addr = self._server.bound_addr
@@ -1138,6 +1140,68 @@ class Session:
             return error_response(
                 request.request_id,
                 "ERR_REMEMBER",
+                str(exc),
+            )
+
+    def _handle_recall(
+        self, request: denden_pb2.DenDenRequest
+    ) -> denden_pb2.DenDenResponse:
+        """Handle a recall request by querying the memory provider."""
+        if self._memory_provider is None:
+            return error_response(
+                request.request_id,
+                "ERR_NO_MEMORY",
+                "no memory provider configured",
+            )
+
+        recall = request.recall
+        trace = request.trace
+
+        try:
+            result = self._memory_provider.recall(
+                session_id=trace.run_id,
+                agent_id=trace.agent_instance_id,
+                role=self._agent_role(trace.agent_instance_id),
+                query=recall.query,
+                keywords=list(recall.keywords) or None,
+                scope=recall.scope or "",
+                max_results=recall.max_results or 10,
+            )
+            recall_entries = [
+                denden_pb2.RecallEntry(
+                    entry_id=e.entry_id,
+                    content=e.content,
+                    keywords=e.keywords,
+                    scope=e.scope,
+                    score=e.score,
+                )
+                for e in result.entries
+            ]
+            if self._tracer is not None:
+                span_id = self._agent_spans.get(
+                    trace.agent_instance_id, self._session_span_id
+                )
+                if span_id:
+                    self._tracer.memory_recall(
+                        span_id=span_id,
+                        provider=self._memory_provider.name,
+                        session_id=self._run_id or trace.run_id,
+                        agent_id=trace.agent_instance_id,
+                        role=self._agent_role(trace.agent_instance_id),
+                        query=recall.query,
+                        scope=recall.scope or "",
+                        result_count=len(result.entries),
+                        parent_agent_id=None,
+                    )
+            return ok_response(
+                request.request_id,
+                recall_result=denden_pb2.RecallResult(entries=recall_entries),
+            )
+        except Exception as exc:
+            logger.exception("recall handler failed")
+            return error_response(
+                request.request_id,
+                "ERR_RECALL",
                 str(exc),
             )
 
