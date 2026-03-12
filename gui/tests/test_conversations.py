@@ -1,10 +1,12 @@
 """Tests for conversation endpoints."""
 
+import uuid
 from unittest.mock import patch
 
 from test_sessions_sync import _register_project
 
 from strawpot_gui.db import get_db
+from strawpot_gui.routers.conversations import _build_conversation_context
 
 
 def _create_conversation(client, project_id, title=None):
@@ -256,7 +258,14 @@ class TestSubmitTask:
         d.mkdir()
         pid = _register_project(client, d)
         conv = _create_conversation(client, pid)
-        _submit_task(client, conv["id"], task="First task")
+        resp1 = _submit_task(client, conv["id"], task="First task")
+        run_id1 = resp1.json()["run_id"]
+        # Mark first session as completed so it appears in context
+        with get_db(app.state.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'completed', summary = 'did first task' "
+                "WHERE run_id = ?", (run_id1,),
+            )
         resp2 = _submit_task(client, conv["id"], task="Second task")
         run_id2 = resp2.json()["run_id"]
         with get_db(app.state.db_path) as conn:
@@ -315,3 +324,190 @@ class TestDeleteConversation:
                 "SELECT conversation_id FROM sessions WHERE run_id = ?", (run_id,)
             ).fetchone()
         assert row["conversation_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# _build_conversation_context unit tests
+# ---------------------------------------------------------------------------
+
+
+def _insert_completed_session(
+    conn, project_id, conversation_id, *,
+    task="do something", user_task=None, summary="done", exit_code=0,
+    status="completed", started_at=None,
+):
+    """Insert a session row directly for testing context building."""
+    run_id = uuid.uuid4().hex[:12]
+    if started_at is None:
+        started_at = "2026-01-01T00:00:00"
+    conn.execute(
+        "INSERT INTO sessions "
+        "(run_id, project_id, role, runtime, isolation, status, task, user_task, "
+        "summary, exit_code, conversation_id, started_at, session_dir) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, project_id, "default", "claude-code", "none", status, task,
+         user_task, summary, exit_code, conversation_id, started_at,
+         f"/tmp/{run_id}"),
+    )
+    return run_id
+
+
+class TestBuildConversationContext:
+    def test_excludes_non_terminal_sessions(self, client, tmp_path, app):
+        """Only completed/failed sessions appear in context."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid, task="finished work", summary="all done",
+                status="completed", started_at="2026-01-01T00:01:00",
+            )
+            _insert_completed_session(
+                conn, pid, cid, task="running work", summary=None,
+                status="running", started_at="2026-01-01T00:02:00",
+            )
+            _insert_completed_session(
+                conn, pid, cid, task="stopped work", summary=None,
+                status="stopped", started_at="2026-01-01T00:03:00",
+            )
+            _insert_completed_session(
+                conn, pid, cid, task="stale work", summary=None,
+                status="stale", started_at="2026-01-01T00:04:00",
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "finished work" in ctx
+        assert "running work" not in ctx
+        assert "stopped work" not in ctx
+        assert "stale work" not in ctx
+
+    def test_uses_user_task_over_task(self, client, tmp_path, app):
+        """Context uses user_task (raw input) instead of task (with nested context)."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="## Prior Conversation\n\nold stuff\n\n---\n\nactual request",
+                user_task="actual request",
+                summary="handled it",
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "actual request" in ctx
+        # The nested "## Prior Conversation" from task should NOT appear in the asked line
+        assert "old stuff" not in ctx
+
+    def test_strips_prior_context_when_user_task_is_null(self, client, tmp_path, app):
+        """When user_task is NULL, strips context prefix from task."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="## Prior Conversation\n\nold\n\n---\n\nthe real task",
+                user_task=None,
+                summary="done",
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "the real task" in ctx
+        assert "old" not in ctx or "earlier turns omitted" in ctx
+
+    def test_caps_at_max_turns(self, client, tmp_path, app):
+        """Only the most recent 10 turns appear, with omission note."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            for i in range(15):
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i:02d}", user_task=f"task-{i:02d}",
+                    summary=f"result-{i:02d}",
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        # Should have exactly 10 turns
+        assert ctx.count("Turn ") == 10
+        # Oldest 5 should be omitted
+        assert "5 earlier turns omitted" in ctx
+        assert "task-00" not in ctx
+        assert "task-04" not in ctx
+        # Most recent should be present
+        assert "task-14" in ctx
+        assert "task-05" in ctx
+
+    def test_tiered_condensation(self, client, tmp_path, app):
+        """Recent turns get more detail than old turns."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        long_summary = "A" * 250  # longer than old-turn limit (120), shorter than recent (300)
+
+        with get_db(app.state.db_path) as conn:
+            for i in range(6):
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i}", user_task=f"task-{i}",
+                    summary=long_summary,
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        lines = [l for l in ctx.split("\n") if l.startswith("- Turn ")]
+        # Turn 1-3 are old (4+ from end): summary should be truncated (has …)
+        assert "…" in lines[0]
+        # Turn 5 is recent (1 from end): summary should be full (no …)
+        assert "…" not in lines[4]
+
+    def test_pending_followup_capped(self, client, tmp_path, app):
+        """Pending Follow-up is capped at 800 chars."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="big output task", user_task="big output task",
+                summary="X" * 2000,
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        # Extract text after "**Pending Follow-up:**"
+        followup = ctx.split("**Pending Follow-up:**\n")[1]
+        assert len(followup) <= 810  # 800 + "…"

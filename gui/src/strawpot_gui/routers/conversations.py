@@ -40,11 +40,27 @@ class ConversationTask(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _strip_prior_context(task: str) -> str:
+    """Strip a '## Prior Conversation' prefix from a task string.
+
+    Used when falling back to the ``task`` column (which may contain nested
+    context from earlier turns) because ``user_task`` is NULL.
+    """
+    sep = "\n\n---\n\n"
+    if "## Prior Conversation" in task and sep in task:
+        return task.split(sep, 1)[1]
+    return task
+
+
+_MAX_TURNS = 10
+
+
 def _build_conversation_context(conn, conversation_id: int) -> str:
     """Build a prior-turns summary to prepend to the next session's task."""
     rows = conn.execute(
-        "SELECT task, summary, exit_code, status FROM sessions "
-        "WHERE conversation_id = ? ORDER BY started_at",
+        "SELECT task, user_task, summary, exit_code, status FROM sessions "
+        "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
+        "ORDER BY started_at",
         (conversation_id,),
     ).fetchall()
     if not rows:
@@ -63,6 +79,10 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
             return truncated[: last_period + 1]
         return truncated.rstrip() + "…"
 
+    # Cap at most recent turns
+    dropped = max(0, len(rows) - _MAX_TURNS)
+    rows = rows[-_MAX_TURNS:]
+
     parts = [
         "## Prior Conversation",
         "",
@@ -74,22 +94,35 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
         "**History:**",
     ]
 
+    if dropped:
+        parts.append(f"(… {dropped} earlier turns omitted)")
+
+    total = len(rows)
     for i, row in enumerate(rows, 1):
-        task_line = _condense(row["task"], 150)
-        if row["summary"]:
-            result_line = _condense(row["summary"])
-        elif row["status"] in ("completed", "failed"):
-            result_line = f"(exit code {row['exit_code']})"
+        remaining = total - i  # 0 = last turn
+        if remaining >= 3:
+            task_limit, summary_limit = 100, 120
+        elif remaining >= 1:
+            task_limit, summary_limit = 200, 300
         else:
-            result_line = f"(status: {row['status']})"
+            task_limit, summary_limit = 200, 200
+
+        task_text = row["user_task"] or _strip_prior_context(row["task"])
+        task_line = _condense(task_text, task_limit)
+        if row["summary"]:
+            result_line = _condense(row["summary"], summary_limit)
+        elif row["status"] == "failed":
+            result_line = f"(failed, exit code {row['exit_code']})"
+        else:
+            result_line = f"(exit code {row['exit_code']})"
         parts.append(f"- Turn {i}: asked: {task_line} → did: {result_line}")
 
-    # Pending Follow-up: last session's full summary for short follow-up turns
+    # Pending Follow-up: last session's summary for short follow-up turns
     last = rows[-1]
     parts.append("")
     parts.append("**Pending Follow-up:**")
     if last["summary"]:
-        parts.append(last["summary"].strip())
+        parts.append(_condense(last["summary"], 800))
     else:
         parts.append("(none)")
 
