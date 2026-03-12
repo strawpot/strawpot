@@ -116,6 +116,27 @@ class TestGetConversation:
         assert len(data["sessions"]) == 1
         assert data["has_more"] is False
 
+    def test_summary_strips_recap(self, app, client, tmp_path):
+        """Session recap block is stripped from summary in API response."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        summary = "Built the login page.\n\n## Session Recap\n### Accomplished\n- Login page done"
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="build login", user_task="build login",
+                summary=summary,
+            )
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        returned_summary = data["sessions"][0]["summary"]
+        assert "## Session Recap" not in returned_summary
+        assert "Built the login page." in returned_summary
+
 
 class TestListProjectConversations:
     def test_empty_list(self, client, tmp_path):
