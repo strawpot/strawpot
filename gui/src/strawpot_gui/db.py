@@ -158,6 +158,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add files_changed column to sessions (added 2026-03-12)
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN files_changed TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add duration_ms column to sessions (added 2026-03-12)
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN duration_ms INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Index on conversation sessions (added 2026-03-11, after column migration)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_conversation "
