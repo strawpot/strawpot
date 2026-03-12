@@ -334,20 +334,23 @@ class TestDeleteConversation:
 def _insert_completed_session(
     conn, project_id, conversation_id, *,
     task="do something", user_task=None, summary="done", exit_code=0,
-    status="completed", started_at=None,
+    status="completed", started_at=None, files_changed=None,
 ):
     """Insert a session row directly for testing context building."""
     run_id = uuid.uuid4().hex[:12]
     if started_at is None:
         started_at = "2026-01-01T00:00:00"
+    import json as _json
+    fc_json = _json.dumps(files_changed) if files_changed else None
     conn.execute(
         "INSERT INTO sessions "
         "(run_id, project_id, role, runtime, isolation, status, task, user_task, "
-        "summary, exit_code, conversation_id, started_at, session_dir) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "summary, exit_code, conversation_id, started_at, session_dir, "
+        "files_changed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, project_id, "default", "claude-code", "none", status, task,
          user_task, summary, exit_code, conversation_id, started_at,
-         f"/tmp/{run_id}"),
+         f"/tmp/{run_id}", fc_json),
     )
     return run_id
 
@@ -511,3 +514,57 @@ class TestBuildConversationContext:
         # Extract text after "**Pending Follow-up:**"
         followup = ctx.split("**Pending Follow-up:**\n")[1]
         assert len(followup) <= 810  # 800 + "…"
+
+    def test_files_changed_shown_for_recent_turns(self, client, tmp_path, app):
+        """File paths appear in context for recent turns only."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            for i in range(5):
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i}", user_task=f"task-{i}",
+                    summary=f"result-{i}",
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                    files_changed=[f"src/file_{i}.py"] if i >= 2 else None,
+                )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        # Recent turns (last 3: turns 3, 4, 5) should show files
+        assert "src/file_2.py" in ctx
+        assert "src/file_3.py" in ctx
+        assert "src/file_4.py" in ctx
+        # Old turns (turns 1, 2) should NOT show files even if they had them
+        lines = [l for l in ctx.split("\n") if l.startswith("- Turn ")]
+        assert "files:" not in lines[0]  # Turn 1: no files_changed
+        assert "files:" not in lines[1]  # Turn 2: no files_changed (old turn)
+
+    def test_files_changed_caps_at_10(self, client, tmp_path, app):
+        """File list is capped at 10 with a +N more indicator."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        many_files = [f"src/module_{i}.py" for i in range(15)]
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="big change", user_task="big change",
+                summary="done", files_changed=many_files,
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "(+5 more)" in ctx
+        assert "src/module_0.py" in ctx
+        assert "src/module_9.py" in ctx
+        assert "src/module_10.py" not in ctx

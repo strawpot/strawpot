@@ -1,5 +1,6 @@
 """Conversation endpoints — chat-mode sessions with sequential task submission."""
 
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -58,7 +59,8 @@ _MAX_TURNS = 10
 def _build_conversation_context(conn, conversation_id: int) -> str:
     """Build a prior-turns summary to prepend to the next session's task."""
     rows = conn.execute(
-        "SELECT task, user_task, summary, exit_code, status FROM sessions "
+        "SELECT task, user_task, summary, exit_code, status, files_changed "
+        "FROM sessions "
         "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
         "ORDER BY started_at",
         (conversation_id,),
@@ -115,7 +117,18 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
             result_line = f"(failed, exit code {row['exit_code']})"
         else:
             result_line = f"(exit code {row['exit_code']})"
-        parts.append(f"- Turn {i}: asked: {task_line} → did: {result_line}")
+        turn_line = f"- Turn {i}: asked: {task_line} → did: {result_line}"
+        # Show file paths for recent turns (last 3) only
+        if remaining < 3 and row["files_changed"]:
+            try:
+                files = json.loads(row["files_changed"])
+                if files:
+                    turn_line += f" | files: {', '.join(files[:10])}"
+                    if len(files) > 10:
+                        turn_line += f" (+{len(files) - 10} more)"
+            except (json.JSONDecodeError, TypeError):
+                pass
+        parts.append(turn_line)
 
     # Pending Follow-up: last session's summary for short follow-up turns
     last = rows[-1]

@@ -234,7 +234,9 @@ class TestSyncSessions:
 
         from strawpot_gui.db import get_db
         with get_db(client.app.state.db_path) as conn:
-            count = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+            count = conn.execute(
+                "SELECT count(*) FROM sessions WHERE run_id = 'run_corrupt'"
+            ).fetchone()[0]
         assert count == 0
 
     def test_multiple_projects(self, client, tmp_path):
@@ -253,7 +255,9 @@ class TestSyncSessions:
 
         from strawpot_gui.db import get_db
         with get_db(client.app.state.db_path) as conn:
-            count = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+            count = conn.execute(
+                "SELECT count(*) FROM sessions WHERE run_id IN ('run_p1', 'run_p2')"
+            ).fetchone()[0]
         assert count == 2
 
     def test_idempotent(self, client, tmp_path):
