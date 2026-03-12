@@ -2,6 +2,16 @@
 
 ## Architecture
 
+- [ ] **Structured decision events in wrapper protocol**
+  Extend the wrapper protocol with a callback or sidecar mechanism for agents
+  to emit structured events during a session — decisions, corrections, blockers.
+  Currently the wrapper protocol is stateless (called once, no callbacks), so
+  StrawPot only sees the final output blob. Structured events would let the
+  context builder and memory provider use first-class decision records instead
+  of reconstructing them from raw output. Requires each wrapper (Claude Code,
+  Gemini, Codex) to implement the callback. Related to cost/token tracking
+  which also needs a wrapper protocol extension.
+
 - [ ] **Parallel sub-agent delegation**
   Currently delegation is sequential — an agent calls `stub.Send()` which
   blocks until the sub-agent finishes. The architecture already supports
