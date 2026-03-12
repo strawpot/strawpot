@@ -39,7 +39,9 @@ def _get_agent_install_cmd(agent_dir: Path) -> str | None:
     try:
         from strawpot.agents.registry import _current_os
         frontmatter, _ = parse_agent_md(agent_dir / "AGENT.md")
-        install_map = frontmatter.get("metadata", {}).get("strawpot", {}).get("install", {})
+        meta = frontmatter.get("metadata") or {}
+        sp = meta.get("strawpot") if isinstance(meta, dict) else {}
+        install_map = (sp or {}).get("install", {})
         return install_map.get(_current_os())
     except (ValueError, OSError):
         return None
