@@ -323,8 +323,8 @@ Events are stored in the trace and queryable by the conversation history service
 | 11 | Enhanced recap instruction (Phase 1a) | Done |
 | 12 | Dual Pending Follow-up with raw output tail (Phase 1b) | Done |
 | 13 | Conversation history file (Phase 2) | Done |
-| 14 | Conversation history service (Phase 3) | Planned |
-| 15 | Structured decision events (Phase 4) | Planned |
+| 14 | Conversation history service (Phase 3) | Deferred (see TODO.md) |
+| 15 | Structured decision events (Phase 4) | Deferred (see TODO.md) |
 
 ## Key files
 
