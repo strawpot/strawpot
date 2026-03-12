@@ -115,14 +115,36 @@ Replace the current flat text format with a more structured output that separate
 
 Currently the session summary is the raw agent output — it captures *what* was done but loses the mid-session discussion: user corrections, design decisions, rejected alternatives, and open items. This means the next session in a conversation has no awareness of the "why" behind prior turns.
 
-The idea is to have the agent produce a structured recap at session end that captures:
+**Approach: Recap instruction**
+
+When `_build_conversation_context()` builds the text prefix for a conversation with prior turns, append a short instruction asking the agent to end its response with a structured recap:
+
+```
+When you finish, end your response with a "## Session Recap" section containing:
 - What was accomplished
-- Key decisions made ("user chose X over Y")
-- Open items / next steps
+- Key decisions (e.g., "user chose X over Y")
+- Open items or next steps
+```
 
-This fits into the existing flow — the `summary` field already propagates through `session_end` → `_parse_trace()` → DB → context builder. The question is how to produce the richer summary: prompt the agent wrapper to emit one at session end, or post-process the conversation transcript.
+This instruction only appears when there is conversation context (not on the first turn).
 
-**Status:** Needs further discussion on approach before design is finalized.
+**Extraction:** In `_parse_trace()`, when reading the output artifact for `summary`, check if the output contains a `## Session Recap` block. If found, store that block as the summary instead of the full output. If not found, fall back to the current behavior (full output).
+
+**Why this works for both context and memory:**
+
+- **Conversation context:** The context builder condenses the summary via tiered truncation. A structured recap condenses much better than raw log output — 120 chars of recap carries more signal than 120 chars of log.
+- **Memory:** `memory_provider.dump(task, output, status)` receives the same output. A structured recap at the end gives the memory provider cleaner input to decide what's worth persisting long-term.
+
+**Changes required:**
+
+| File | Change |
+|------|--------|
+| `gui/src/strawpot_gui/routers/conversations.py` | Append recap instruction in `_build_conversation_context()` |
+| `gui/src/strawpot_gui/db.py` | In `_parse_trace()`, prefer `## Session Recap` block over full output for `summary` |
+
+**Fallback:** If the agent doesn't produce the recap (crashed, non-compliant wrapper, first turn), the full output is used as before.
+
+**Long-term:** The recap instruction is a pragmatic near-term solution. The long-term approach is structured decision events in the wrapper protocol — agents emit decision, correction, and blocker events during the session, which the context builder and memory provider consume directly. This requires a wrapper protocol extension (see TODO.md).
 
 ## Implementation status
 
@@ -137,7 +159,7 @@ This fits into the existing flow — the `summary` field already propagates thro
 | 7 | Cap turns + tiered condensation | Done |
 | 8 | File change tracking in trace events | Done |
 | 9 | Structured context format | Done |
-| 10 | Richer session summaries | Discussion |
+| 10 | Richer session summaries | Done |
 
 ## Key files
 

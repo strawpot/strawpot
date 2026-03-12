@@ -23,6 +23,10 @@ After agent completion:
 
 The default memory provider is `dial`. To disable memory, set `provider = ""` in your config.
 
+<Note>
+Memory is distinct from [conversation context](/concepts/sessions#conversations). Conversation context provides a sequential summary of prior turns within the same conversation (injected into the task). Memory provides cross-conversation knowledge (injected into the system prompt). Both work together — conversation context carries the narrative, memory carries long-lived decisions and patterns.
+</Note>
+
 ## Configuring a Provider
 
 The default provider is `dial`. Override or customize it in `strawpot.toml`:

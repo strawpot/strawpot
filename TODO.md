@@ -2,6 +2,16 @@
 
 ## Architecture
 
+- [ ] **Structured decision events in wrapper protocol**
+  Extend the wrapper protocol with a callback or sidecar mechanism for agents
+  to emit structured events during a session — decisions, corrections, blockers.
+  Currently the wrapper protocol is stateless (called once, no callbacks), so
+  StrawPot only sees the final output blob. Structured events would let the
+  context builder and memory provider use first-class decision records instead
+  of reconstructing them from raw output. Requires each wrapper (Claude Code,
+  Gemini, Codex) to implement the callback. Related to cost/token tracking
+  which also needs a wrapper protocol extension.
+
 - [ ] **Parallel sub-agent delegation**
   Currently delegation is sequential — an agent calls `stub.Send()` which
   blocks until the sub-agent finishes. The architecture already supports
@@ -79,6 +89,17 @@
   may or may not pull a newer denden-server depending on resolver state.
 
 ## Resources
+
+- [ ] **Pluggable context builder**
+  Make the conversation context builder a resource type (like memory providers).
+  Currently `_build_conversation_context()` is hardcoded in the GUI router with
+  fixed tiered condensation, turn caps, and recap instructions. A pluggable
+  context builder would let users customize how prior turns are summarized —
+  e.g., domain-specific condensation, LLM-based summarization, or different
+  formats for different agent runtimes. The interface would mirror memory
+  providers: a Python class with a `build(sessions) -> str` method, resolved
+  by name from project-local or global directories, with a manifest file
+  (e.g., `CONTEXT.md`). Default builder ships built-in with the current logic.
 
 - [ ] **Support custom resource import**
   Allow users to import custom resources (files, configs, templates) into
