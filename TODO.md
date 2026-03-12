@@ -2,6 +2,28 @@
 
 ## Architecture
 
+- [ ] **Conversation history service**
+  A dedicated service layer that provides queryable access to conversation
+  history. Agents interact with it through tools registered in Denden's tool
+  catalog. Separate from Denden (which is the communication layer) — Denden
+  routes tool calls to the service, like it does for `memory.*` and `delegate`.
+
+  **Tools:**
+  - `conversation.list_turns()` — turn metadata (task, status, files, duration)
+  - `conversation.read_turn(N)` — full output for turn N
+  - `conversation.search(query)` — search across turn outputs
+  - `conversation.decisions()` — structured decisions from all turns
+
+  **Why:** Phase 2 (conversation history file) covers most use cases — full
+  output for last 5 turns, recap for older turns, readable on demand. The
+  service adds value mainly for worktree isolation (DB access, no file
+  coordination) and queryable search across long conversations. Not urgent —
+  the history file works well for typical conversation lengths.
+
+  **Depends on:** Wrapper protocol supporting tool registration (wrappers must
+  expose conversation tools to the agent). See `designs/context/DESIGN.md`
+  Phase 3 for full details.
+
 - [ ] **Structured decision events in wrapper protocol**
   Extend the wrapper protocol with a callback or sidecar mechanism for agents
   to emit structured events during a session — decisions, corrections, blockers.
@@ -11,6 +33,13 @@
   of reconstructing them from raw output. Requires each wrapper (Claude Code,
   Gemini, Codex) to implement the callback. Related to cost/token tracking
   which also needs a wrapper protocol extension.
+
+  **Why not now:** The recap instruction already captures decisions, blockers,
+  and open items in prose. `_extract_recap()` pulls them out reliably. The
+  practical benefit of structured events is small until we need to
+  programmatically query decisions across many conversations. Depends on
+  wrapper protocol extension and optionally on the conversation history
+  service. See `designs/context/DESIGN.md` Phase 4 for full details.
 
 - [ ] **Parallel sub-agent delegation**
   Currently delegation is sequential — an agent calls `stub.Send()` which
