@@ -121,7 +121,7 @@ export default function ResourceDetailSheet({
   // and ResourceBrowser.tsx — all three must be updated together.
   const PROTECTED: Record<string, string[]> = {
     skills: ["denden", "strawpot-session-recap"],
-    roles: ["ai-ceo", "ai-employee"],
+    roles: ["imu", "ai-ceo", "ai-employee"],
     agents: ["strawpot-claude-code"],
     memories: ["dial"],
   };
