@@ -1,7 +1,7 @@
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Conversation, ConversationList, RecentConversation } from "@/api/types";
+import type { Conversation, ConversationList, ImuConversation, RecentConversation } from "@/api/types";
 
 export function useConversation(
   id: number,
@@ -36,6 +36,13 @@ export function useRecentConversations(limit = 10) {
   return useQuery({
     queryKey: ["conversations", "recent", limit],
     queryFn: () => api.get<RecentConversation[]>(`/conversations/recent?limit=${limit}`),
+  });
+}
+
+export function useImuConversations() {
+  return useQuery({
+    queryKey: ["imu", "conversations"],
+    queryFn: () => api.get<ImuConversation[]>("/imu/conversations"),
   });
 }
 
