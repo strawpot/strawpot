@@ -99,6 +99,8 @@ def update_project(project_id: int, body: ProjectUpdate, conn=Depends(get_db_con
 
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: int, conn=Depends(get_db_conn)):
+    if project_id == 0:
+        raise HTTPException(403, "Bot Imu project cannot be deleted")
     row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Project not found")
