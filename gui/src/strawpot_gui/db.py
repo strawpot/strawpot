@@ -219,6 +219,18 @@ def _extract_recap(content: str) -> str:
     return recap if recap else content
 
 
+def _strip_recap(content: str) -> str:
+    """Return agent output with the '## Session Recap' block removed.
+
+    If no recap is found, returns the full content unchanged.
+    """
+    marker = "## Session Recap"
+    idx = content.rfind(marker)
+    if idx == -1:
+        return content
+    return content[:idx].rstrip()
+
+
 def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
     """Extract completion fields from a trace.jsonl file.
 

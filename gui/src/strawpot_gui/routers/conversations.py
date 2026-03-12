@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from strawpot_gui.db import _extract_recap, get_db_conn
+from strawpot_gui.db import _extract_recap, _strip_recap, get_db_conn
 from strawpot_gui.routers.sessions import _refresh_session_status, launch_session_subprocess
 
 router = APIRouter(prefix="/api", tags=["conversations"])
@@ -145,15 +145,43 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
         parts.append(f"- Asked: {task_line}")
         parts.append(f"- Result: {result_line}")
 
-    # Pending Follow-up: last session's summary for short follow-up turns
+    # Pending Follow-up: last session's recap + raw output tail
     last = rows[-1]
     parts.append("")
     parts.append("**Pending Follow-up:**")
-    last_summary = _extract_recap(last["summary"]) if last["summary"] else None
-    if last_summary:
-        parts.append(_condense(last_summary, 800))
+    if last["summary"]:
+        last_recap = _extract_recap(last["summary"])
+        # Only show separate recap/output sections if a recap was actually found
+        if last_recap != last["summary"]:
+            parts.append("")
+            parts.append("**Recap:**")
+            parts.append(_condense(last_recap, 1500))
+            raw_output = _strip_recap(last["summary"])
+            if raw_output.strip():
+                parts.append("")
+                parts.append("**Recent output:**")
+                tail = raw_output.strip()[-1500:]
+                parts.append(tail)
+        else:
+            # No recap section — show tail of full output
+            parts.append(_condense(last["summary"], 2000))
     else:
         parts.append("(none)")
+
+    # Recap instruction: ask the agent to produce a structured recap
+    parts.append("")
+    parts.append(
+        '**Recap Instruction:** When you finish, end your response with a '
+        '"## Session Recap" section containing:\n'
+        "### Accomplished\n"
+        "- What was done, with specifics (file paths, function names, error fixes)\n"
+        "### Changes Made\n"
+        "- Files modified and what changed in each\n"
+        "### Decisions\n"
+        '- Key choices and why (e.g., "used X over Y because...")\n'
+        "### Open Items\n"
+        "- What's left to do, blockers, or questions for the user"
+    )
 
     return "\n".join(parts)
 

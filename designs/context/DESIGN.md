@@ -146,7 +146,165 @@ This instruction only appears when there is conversation context (not on the fir
 
 **Fallback:** If the agent doesn't produce the recap (crashed, non-compliant wrapper, first turn), the full output is used as before.
 
-**Long-term:** The recap instruction is a pragmatic near-term solution. The long-term approach is structured decision events in the wrapper protocol — agents emit decision, correction, and blocker events during the session, which the context builder and memory provider consume directly. This requires a wrapper protocol extension (see TODO.md).
+**Long-term:** The recap instruction is a pragmatic near-term solution. See the roadmap below for the full evolution.
+
+## Roadmap
+
+### Phase 1: Richer context (implement now)
+
+Improve what's already in the context prefix — no architecture changes.
+
+#### 1a. Enhanced recap instruction
+
+Ask for a more detailed structured recap instead of 3 brief bullets:
+
+```
+When you finish, end your response with a "## Session Recap" section containing:
+
+### Accomplished
+- What was done, with specifics (file paths, function names, error fixes)
+
+### Changes Made
+- Files modified and what changed in each
+
+### Decisions
+- Key choices and why (e.g., "used X over Y because...")
+
+### Open Items
+- What's left to do, blockers, or questions for the user
+```
+
+#### 1b. Dual Pending Follow-up
+
+For the last turn, include both the structured recap AND a tail of raw output:
+
+```
+**Pending Follow-up:**
+
+**Recap:**
+[extracted recap, up to 1500 chars]
+
+**Recent output:**
+[last 1500 chars of full output, excluding recap section]
+```
+
+The recap tells the next agent *what to know*; the raw output shows *what actually happened*. They complement each other. Total Pending Follow-up ceiling: ~3K chars.
+
+#### 1c. Tiered history lines (unchanged)
+
+Older turns in the History section continue to use recap only, condensed to 120-300 chars. At that distance, the condensed recap is sufficient — if something from turn N-2 mattered, the agent at turn N-1 would have carried it forward in its own recap.
+
+**Context budget:**
+
+| Section | Max chars |
+|---------|-----------|
+| History (10 turns) | ~3-4K |
+| Pending Follow-up (recap + raw tail) | ~3K |
+| Recap instruction | ~500 |
+| **Total** | **~7K** |
+
+**Changes required:**
+
+| File | Change |
+|------|--------|
+| `gui/src/strawpot_gui/routers/conversations.py` | Enhanced recap instruction text, dual Pending Follow-up with raw output tail |
+
+### Phase 2: Conversation history file
+
+Write a `.strawpot/conversation_history.md` file to the project working directory before spawning the agent. The context prefix includes a hint telling the agent where to find it.
+
+```
+> Full session outputs available at `.strawpot/conversation_history.md` —
+> read it if you need more detail than the summaries above.
+```
+
+**File format:**
+
+```markdown
+# Conversation History
+
+## Turn 1 — 2026-03-12T10:00:00 [completed, 45s]
+**Task:** Implement the login page
+**Files changed:** src/auth/login.tsx, src/auth/login.test.tsx
+
+### Output
+(full agent output, untruncated)
+
+---
+
+## Turn 2 — ...
+```
+
+**Bounds:** Last 5 turns get full output; turns 6-10 get recap only; older turns omitted.
+
+**Why a file:**
+
+- Runtime-agnostic — every agent (Claude Code, Codex, etc.) can read files natively
+- On-demand — not loaded into context by default, agent reads it only when needed
+- Zero context window cost
+- Already gitignored (`.strawpot/` is in `.gitignore`)
+
+**Limitation:** Awkward with worktree isolation — the file must be written in the worktree directory, which is created by the CLI, not the GUI. Requires coordination between the GUI (which builds context) and the CLI (which creates the worktree). This is solvable but adds coupling.
+
+**Changes required:**
+
+| File | Change |
+|------|--------|
+| `gui/src/strawpot_gui/routers/conversations.py` | New `_write_conversation_history()` helper, call before `launch_session_subprocess()`, add hint to context prefix |
+
+### Phase 3: Conversation history service
+
+A dedicated service layer (separate from Denden, which is the communication layer) that provides queryable access to conversation history. Agents interact with it through tools registered in Denden's tool catalog.
+
+**Tools:**
+
+```
+conversation.list_turns()     → turn metadata (task, status, files, duration)
+conversation.read_turn(N)     → full output for turn N
+conversation.search(query)    → search across turn outputs
+conversation.decisions()      → structured decisions from all turns
+```
+
+**Why a service, not Denden directly:**
+
+Denden is the communication/routing layer (gRPC transport, tool dispatch). The conversation history service owns the data and query logic. Denden routes tool calls to it, just as it routes `memory.*` calls to the memory provider and `delegate` calls to the delegation engine.
+
+**Why not the history file:**
+
+- Works with worktree isolation — the service has DB access, no file coordination needed
+- Queryable — agent can ask for specific turns or search, not read a wall of text
+- Extensible — `conversation.search()` could use embeddings; `conversation.decisions()` could filter by topic
+
+**Depends on:** Wrapper protocol supporting tool registration (wrappers must expose conversation tools to the agent).
+
+### Phase 4: Structured decision events
+
+Replace the recap instruction with structured events emitted during the session. Agents emit decision, correction, and blocker events via Denden during execution — not as a post-hoc summary.
+
+```python
+# Agent emits during session:
+denden.emit_event("decision", {
+    "choice": "JWT over sessions",
+    "reason": "compliance requirement for stateless auth",
+    "alternatives_rejected": ["session cookies"],
+})
+
+denden.emit_event("blocker", {
+    "description": "CI pipeline failing on arm64",
+    "workaround": "skipped arm64 tests for now",
+})
+```
+
+Events are stored in the trace and queryable by the conversation history service. The context builder uses structured events instead of parsing prose recaps.
+
+**Why this is the end state:**
+
+- Machine-readable — no lossy extraction from prose
+- Real-time — captured during session, not reconstructed after
+- Lossless — agent explicitly marks what matters, nothing is dropped by condensation
+- Works for both context builder and memory provider
+
+**Depends on:** Wrapper protocol extension (see TODO.md), conversation history service (Phase 3).
 
 ## Implementation status
 
@@ -161,14 +319,19 @@ This instruction only appears when there is conversation context (not on the fir
 | 7 | Cap turns + tiered condensation | Done |
 | 8 | File change tracking in trace events | Done |
 | 9 | Structured context format | Done |
-| 10 | Richer session summaries | Done |
+| 10 | Richer session summaries (basic recap instruction) | Done |
+| 11 | Enhanced recap instruction (Phase 1a) | Planned |
+| 12 | Dual Pending Follow-up with raw output tail (Phase 1b) | Planned |
+| 13 | Conversation history file (Phase 2) | Planned |
+| 14 | Conversation history service (Phase 3) | Planned |
+| 15 | Structured decision events (Phase 4) | Planned |
 
 ## Key files
 
 | File | Role |
 |------|------|
 | `gui/src/strawpot_gui/routers/conversations.py` | Conversation context builder + task submission endpoint |
-| `gui/src/strawpot_gui/db.py` | Sessions table schema, `_parse_trace()` |
+| `gui/src/strawpot_gui/db.py` | Sessions table schema, `_parse_trace()`, `_extract_recap()` |
 | `cli/src/strawpot/session.py` | Memory get/dump at session level |
 | `cli/src/strawpot/delegation.py` | Memory get/dump at delegation level, `_format_memory_prompt()` |
 | `cli/src/strawpot/trace.py` | Trace event definitions and artifact storage |
