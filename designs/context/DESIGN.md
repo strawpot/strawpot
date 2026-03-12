@@ -135,8 +135,8 @@ This fits into the existing flow — the `summary` field already propagates thro
 | 5 | Filter out non-terminal sessions | Done |
 | 6 | Use `user_task` instead of `task` for asked lines | Done |
 | 7 | Cap turns + tiered condensation | Done |
-| 8 | File change tracking in trace events | Planned |
-| 9 | Structured context format | Planned |
+| 8 | File change tracking in trace events | Done |
+| 9 | Structured context format | Done |
 | 10 | Richer session summaries | Discussion |
 
 ## Key files
