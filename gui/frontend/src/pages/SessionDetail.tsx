@@ -284,9 +284,17 @@ function SessionHeader({
 
   return (
     <div className="flex items-center justify-between">
-      <h1 className="text-2xl font-bold tracking-tight">
-        Session {session.run_id.slice(0, 16)}
-      </h1>
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="sm" asChild>
+          <Link to={`/projects/${projectId}`}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Link>
+        </Button>
+        <h1 className="text-2xl font-bold tracking-tight">
+          Session {session.run_id.slice(0, 16)}
+        </h1>
+      </div>
       <div className="flex gap-2">
         {active &&
           (confirming ? (
@@ -317,12 +325,6 @@ function SessionHeader({
               Stop Session
             </Button>
           ))}
-        <Button variant="outline" asChild>
-          <Link to={`/projects/${projectId}`}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Link>
-        </Button>
       </div>
     </div>
   );
