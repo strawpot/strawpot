@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from strawpot_gui.db import get_db_conn
+from strawpot_gui.db import _extract_recap, get_db_conn
 from strawpot_gui.routers.sessions import _refresh_session_status, launch_session_subprocess
 
 router = APIRouter(prefix="/api", tags=["conversations"])
@@ -133,8 +133,9 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
 
         task_text = row["user_task"] or _strip_prior_context(row["task"])
         task_line = _condense(task_text, task_limit)
-        if row["summary"]:
-            result_line = _condense(row["summary"], summary_limit)
+        summary = _extract_recap(row["summary"]) if row["summary"] else None
+        if summary:
+            result_line = _condense(summary, summary_limit)
         elif row["status"] == "failed":
             result_line = f"(failed, exit code {row['exit_code']})"
         else:
@@ -148,8 +149,9 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
     last = rows[-1]
     parts.append("")
     parts.append("**Pending Follow-up:**")
-    if last["summary"]:
-        parts.append(_condense(last["summary"], 800))
+    last_summary = _extract_recap(last["summary"]) if last["summary"] else None
+    if last_summary:
+        parts.append(_condense(last_summary, 800))
     else:
         parts.append("(none)")
 
