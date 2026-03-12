@@ -155,16 +155,6 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
     else:
         parts.append("(none)")
 
-    # Recap instruction: ask the agent to produce a structured recap
-    parts.append("")
-    parts.append(
-        '**Recap Instruction:** When you finish, end your response with a '
-        '"## Session Recap" section containing:\n'
-        "- What was accomplished\n"
-        '- Key decisions (e.g., "user chose X over Y")\n'
-        "- Open items or next steps"
-    )
-
     return "\n".join(parts)
 
 

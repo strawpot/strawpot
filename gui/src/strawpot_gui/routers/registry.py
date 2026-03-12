@@ -311,7 +311,13 @@ def install_resource(data: dict = Body(...)):
     return run_strawhub("install", singular, "-y", name, "--global")
 
 
-_PROTECTED_ROLES = {"imu"}
+# Built-in resources that cannot be uninstalled.
+# IMPORTANT: Keep in sync with PROTECTED in frontend/src/pages/ResourceBrowser.tsx
+# and frontend/src/components/ResourceDetailSheet.tsx — both must be updated together.
+_PROTECTED_ROLES = {"imu", "ai-ceo", "ai-employee"}
+_PROTECTED_SKILLS = {"denden", "strawpot-session-recap"}
+_PROTECTED_AGENTS = {"strawpot-claude-code"}
+_PROTECTED_MEMORIES = {"dial"}
 
 
 @router.delete("/{resource_type}/{name}")
@@ -320,6 +326,12 @@ def uninstall_resource(resource_type: str, name: str):
     validate_type(resource_type)
     if resource_type == "roles" and name in _PROTECTED_ROLES:
         raise HTTPException(403, f"'{name}' is a built-in role and cannot be uninstalled.")
+    if resource_type == "skills" and name in _PROTECTED_SKILLS:
+        raise HTTPException(403, f"'{name}' is a built-in skill and cannot be uninstalled.")
+    if resource_type == "agents" and name in _PROTECTED_AGENTS:
+        raise HTTPException(403, f"'{name}' is a built-in agent and cannot be uninstalled.")
+    if resource_type == "memories" and name in _PROTECTED_MEMORIES:
+        raise HTTPException(403, f"'{name}' is a built-in memory provider and cannot be uninstalled.")
     singular = resource_type.rstrip("s") if resource_type != "memories" else "memory"
     return run_strawhub("uninstall", singular, name, "--global")
 
