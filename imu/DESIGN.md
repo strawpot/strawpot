@@ -1090,8 +1090,7 @@ tried to create a PR. You can fix this by setting it in config:
 | 9 | Connection management + "Launching Bot Imu…" spinner | 3 — Frontend | Done |
 | 10 | Active session badge on Bot Imu nav link | 4 — History | Done |
 | 11 | Conversation history via `useConversationInfinite` + AgentMessage access | 4 — History | Done |
-| 12 | `strawpot schedule` CLI commands (optional) | 4 — History | Planned |
-| 13 | Memory provider for cross-session context | 5 — Memory | Done (dial is the system default; imu uses `~/.strawpot/memory/dial-data`) |
+| 12 | Memory provider for cross-session context | 5 — Memory | Done (dial is the system default; imu uses `~/.strawpot/memory/dial-data`) |
 
 ---
 
