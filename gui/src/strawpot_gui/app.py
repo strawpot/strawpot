@@ -13,12 +13,12 @@ from fastapi.staticfiles import StaticFiles
 
 from strawpot.config import ensure_global_config, get_strawpot_home
 
-from strawpot_gui.db import init_db, sync_sessions
+from strawpot_gui.db import ensure_imu_project, init_db, sync_sessions
 from strawpot_gui.event_bus import event_bus
 from strawpot_gui.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
-from strawpot_gui.routers import config, conversations, files, fs, health, logs, project_resources, projects, registry, schedules, sessions, sse, stats, ws
+from strawpot_gui.routers import config, conversations, files, fs, health, imu, logs, project_resources, projects, registry, schedules, sessions, sse, stats, ws
 
 
 def _auto_rebuild_frontend(dist_dir: Path) -> None:
@@ -71,6 +71,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ensure_global_config()
         init_db(db_path)
+        ensure_imu_project(db_path)
         from strawpot_gui.db import mark_orphaned_sessions_stopped
         mark_orphaned_sessions_stopped(db_path)
         sync_sessions(db_path)
@@ -97,6 +98,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(imu.router)
     app.include_router(projects.router)
     app.include_router(conversations.router)
     app.include_router(config.router)

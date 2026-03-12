@@ -253,6 +253,21 @@ def _is_pid_alive(pid: int) -> bool:
         return False
 
 
+def ensure_imu_project(db_path: str) -> None:
+    """Insert the virtual Bot Imu project (id=0) if not present.
+
+    Uses the user's home directory as working_dir so that sessions are stored
+    at ~/.strawpot/sessions/ rather than inside a project directory.
+    """
+    imu_working_dir = str(Path.home())
+    with get_db(db_path) as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO projects (id, display_name, working_dir, created_at)
+               VALUES (0, 'Bot Imu', ?, datetime('now'))""",
+            (imu_working_dir,),
+        )
+
+
 def sync_sessions(db_path: str) -> None:
     """Scan all registered projects and upsert session rows into gui.db."""
     with get_db(db_path) as conn:
