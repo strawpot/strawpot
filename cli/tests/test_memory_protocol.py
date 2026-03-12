@@ -7,6 +7,8 @@ from strawpot_memory.memory_protocol import (
     GetResult,
     MemoryKind,
     MemoryProvider,
+    RecallEntry,
+    RecallResult,
     RememberResult,
 )
 
@@ -106,6 +108,48 @@ def test_dump_receipt_with_values():
     assert receipt.em_event_ids == ["ev1", "ev2"]
 
 
+# -- RecallEntry / RecallResult ------------------------------------------------
+
+
+def test_recall_entry_defaults():
+    entry = RecallEntry()
+    assert entry.entry_id == ""
+    assert entry.content == ""
+    assert entry.keywords == []
+    assert entry.scope == ""
+    assert entry.score == 0.0
+
+
+def test_recall_entry_with_values():
+    entry = RecallEntry(
+        entry_id="k_abc123",
+        content="This project uses pytest",
+        keywords=["testing", "pytest"],
+        scope="project",
+        score=0.85,
+    )
+    assert entry.entry_id == "k_abc123"
+    assert entry.content == "This project uses pytest"
+    assert entry.keywords == ["testing", "pytest"]
+    assert entry.scope == "project"
+    assert entry.score == 0.85
+
+
+def test_recall_result_defaults():
+    result = RecallResult()
+    assert result.entries == []
+
+
+def test_recall_result_with_entries():
+    entries = [
+        RecallEntry(entry_id="k1", content="fact1", score=0.9),
+        RecallEntry(entry_id="k2", content="fact2", score=0.5),
+    ]
+    result = RecallResult(entries=entries)
+    assert len(result.entries) == 2
+    assert result.entries[0].score == 0.9
+
+
 # -- Mutable default isolation -------------------------------------------------
 
 
@@ -162,6 +206,19 @@ class _MinimalProvider:
         scope: str = "project",
     ) -> RememberResult:
         return RememberResult(status="accepted")
+
+    def recall(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        query: str,
+        keywords: list[str] | None = None,
+        scope: str = "",
+        max_results: int = 10,
+    ) -> RecallResult:
+        return RecallResult()
 
 
 def test_provider_protocol_satisfied():

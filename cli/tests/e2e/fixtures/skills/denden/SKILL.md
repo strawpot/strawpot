@@ -1,6 +1,6 @@
 ---
 name: denden
-description: DenDen communication skill — delegate, ask, and remember
+description: DenDen communication skill — delegate, ask, remember, and recall
 ---
 Use the `denden` CLI to communicate with the orchestrator.
 
@@ -40,3 +40,15 @@ Guidelines:
 - Omit `keywords` (or leave empty) for knowledge that should always be included.
 - `scope` is one of `"global"`, `"project"`, or `"role"` (default: `"project"`).
 - Do NOT remember transient or session-specific information.
+
+### Recall stored knowledge
+
+```bash
+denden send '{"denden_version":"1","request_id":"<uuid>","trace":{...},"recall":{"query":"<search query>","keywords":["kw1","kw2"],"scope":"project","maxResults":5}}'
+```
+
+Use `recall` to query stored knowledge on-demand during execution:
+- Search by natural language query text — results are scored by keyword relevance.
+- Optionally filter by `keywords` to narrow results to entries matching specific topics.
+- `scope` is one of `"global"`, `"project"`, `"role"`, or `""` (all scopes, default).
+- `maxResults` limits the number of entries returned (default: 10).

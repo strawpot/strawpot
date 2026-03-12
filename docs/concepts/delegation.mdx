@@ -122,6 +122,8 @@ After the sub-agent completes, `memory.dump()` records the result for future ref
 
 Agents can also store knowledge explicitly via `memory.remember()`, which persists facts and domain knowledge at global, project, or role scope for retrieval in future sessions.
 
+Agents can query stored knowledge on-demand via `memory.recall()`, which searches the knowledge store by query text and optional keywords, returning scored results.
+
 ## Tracing
 
 When tracing is enabled (the default), every delegation emits structured events to the session's `trace.jsonl`:
@@ -129,7 +131,7 @@ When tracing is enabled (the default), every delegation emits structured events 
 - `delegate_start` — records the role, depth, session_id, parent_agent_id, and stores the full context prompt as an artifact
 - `agent_spawn` — records agent_id, role, runtime, pid, working_dir, skills_dirs, roles_dirs, files_dirs, depth, and stores task + context as artifacts
 - `agent_end` — captures exit_code, duration_ms, agent_id, role, session_id, and stores output as an artifact
-- `memory_get` / `memory_dump` — records memory interactions with full context (session_id, agent_id, role, behavior_ref, task, parent_agent_id) and artifact references
+- `memory_get` / `memory_dump` / `memory_recall` — records memory interactions with full context (session_id, agent_id, role, behavior_ref, task, parent_agent_id) and artifact references
 - `delegate_end` — captures exit_code, summary, duration_ms, role, session_id, agent_id, and stores output as an artifact
 - `delegate_denied` — logged when policy blocks a delegation request, with role, reason, and depth
 

@@ -509,6 +509,7 @@ Convenience methods (each calls `emit` + `store_artifact` as needed):
 | `delegate_denied(role, parent_span, reason, depth=0)` | — | — |
 | `memory_get(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", cards, card_count, parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, cards JSON → `cards_ref` |
 | `memory_dump(span_id, provider, session_id, agent_id, role, behavior_ref="", task="", status="", output="", parent_agent_id=None)` | — | behavior_ref → `behavior_ref`, task → `task_ref`, output → `output_ref` |
+| `memory_recall(span_id, provider, session_id, agent_id, role, query="", scope="", result_count=0)` | — | — |
 | `agent_spawn(span_id, agent_id, role, runtime, pid, working_dir="", agent_workspace_dir="", skills_dirs=None, roles_dirs=None, files_dirs=None, task="", context="", depth=0)` | — | task → `task_ref`, context → `context_ref` |
 | `agent_end(span_id, exit_code, output, duration_ms, agent_id="", role="", session_id="")` | — | output → `output_ref` |
 
@@ -526,7 +527,7 @@ Session output layout:
 The span tree enables call-tree reconstruction:
 - `session_start` is the root span (no parent)
 - `delegate_start` sets `parent_span` to the requesting agent's span
-- `agent_spawn`, `memory_get`, `memory_dump`, `agent_end` inherit the
+- `agent_spawn`, `memory_get`, `memory_dump`, `memory_recall`, `agent_end` inherit the
   delegation span_id
 - Nested delegations form a tree: session → delegate A→B → delegate B→C
 
@@ -787,6 +788,22 @@ Dispatched to `Session._handle_remember`, which routes to
 `_handle_remember` extracts `session_id`, `agent_id`, and `role` from
 the request trace, then calls `memory_provider.remember()`. If no memory
 provider is configured, returns an error response.
+
+### recall Request
+
+Agent calls `denden send '{"recall": {"query": "testing framework", "scope": "project", "maxResults": 5}}'`.
+Dispatched to `Session._handle_recall`, which routes to
+`memory_provider.recall()`.
+
+**DenDen protobuf types:**
+
+- `RecallPayload`: `query`, `keywords[]`, `scope`, `max_results`
+- `RecallResult`: `entries[]` (each: `entry_id`, `content`, `keywords[]`, `scope`, `score`)
+
+`_handle_recall` extracts `session_id`, `agent_id`, and `role` from
+the request trace, then calls `memory_provider.recall()`. If no memory
+provider is configured, returns an error response. Results are scored
+by keyword relevance and returned sorted best-first.
 
 **Handlers by mode:**
 
@@ -1656,7 +1673,7 @@ alive.
 ### Phase 3 — Memory (complete)
 
 17. `strawpot_memory.memory_protocol` (external `strawpot-memory` package) —
-    `MemoryProvider` protocol, `ContextCard`, `ControlSignal`, `DumpReceipt` types
+    `MemoryProvider` protocol, `ContextCard`, `ControlSignal`, `DumpReceipt`, `RecallResult`, `RecallEntry` types
 18. `memory/registry.py` — discover `MEMORY.md`, resolve provider,
     validate deps (same pattern as agent registry)
 19. `delegation.py` — integrate `memory.get` before spawn and `memory.dump`
@@ -1688,8 +1705,9 @@ alive.
 ## Memory
 
 Installable memory providers that strawpot queries before spawning an agent
-(`memory.get`), writes to after the agent completes (`memory.dump`), and
-accepts knowledge from during agent execution (`memory.remember`).
+(`memory.get`), writes to after the agent completes (`memory.dump`),
+accepts knowledge from during agent execution (`memory.remember`), and
+answers on-demand knowledge queries (`memory.recall`).
 Memory follows the same installable-package pattern as agents — a folder with
 a manifest, managed by strawhub.
 
@@ -1709,8 +1727,8 @@ for detailed rationale.
 
 ### Hooks in Delegation Flow
 
-Memory has three integration points — two at delegation boundaries and
-one during agent execution:
+Memory has four integration points — two at delegation boundaries and
+two during agent execution:
 
 ```
 Delegate flow (updated):
@@ -1721,8 +1739,10 @@ Delegate flow (updated):
   4. Build prompt (role + skills + context_cards)
   5. Spawn agent
   6. [agent runs]
-     └─ denden remember ──→ memory.remember(...)    ← during execution
-        → dedup + write knowledge
+     ├─ denden remember ──→ memory.remember(...)    ← persist knowledge
+     │  → dedup + write knowledge
+     └─ denden recall ───→ memory.recall(...)       ← query knowledge
+        → scored results from knowledge store
   7. Wait for result
   8. memory.dump(...)         ← after completion
      → appends to EM
@@ -1795,6 +1815,31 @@ Outputs:
   entry_id                    (the written entry ID)
 ```
 
+### `memory.recall` — During Agent Execution
+
+Agents query stored knowledge on-demand through denden's `recall` action.
+StrawPot routes the denden callback to `memory_provider.recall()` via
+`Session._handle_recall`.
+
+```
+Inputs:
+  session_id
+  agent_id
+  role
+  query                       (search text)
+  keywords                    (optional — narrow to entries matching these)
+  scope                       ("global" | "project" | "role" | "" for all)
+  max_results                 (default: 10)
+
+Outputs:
+  entries[]                   (scored results, best-first)
+    entry_id
+    content
+    keywords
+    scope
+    score                     (0.0–1.0 relevance)
+```
+
 ### Memory Provider Protocol
 
 Memory providers are Python modules loaded directly into the strawpot
@@ -1812,6 +1857,9 @@ class MemoryProvider(Protocol):
              parent_agent_id=None, artifacts=None) -> DumpReceipt: ...
     def remember(self, *, session_id, agent_id, role,
                  content, keywords=None, scope="project") -> RememberResult: ...
+    def recall(self, *, session_id, agent_id, role,
+               query, keywords=None, scope="",
+               max_results=10) -> RecallResult: ...
 ```
 
 ### Memory Manifest (`MEMORY.md`)
@@ -1893,7 +1941,7 @@ em_tail_count = 20
 ```
 
 Memory is optional. When no provider is configured, strawpot skips the
-`memory.get`/`memory.dump`/`memory.remember` calls and the delegation
+`memory.get`/`memory.dump`/`memory.remember`/`memory.recall` calls and the delegation
 flow works as before.
 
 ### Installation

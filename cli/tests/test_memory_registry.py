@@ -286,7 +286,7 @@ def test_memory_spec_pip():
 
 def test_load_provider(tmp_path):
     provider_code = dedent("""\
-        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RecallResult, RememberResult
 
         class MyProvider:
             name = "test"
@@ -303,6 +303,10 @@ def test_load_provider(tmp_path):
             def remember(self, *, session_id, agent_id, role, content,
                          keywords=None, scope="project"):
                 return RememberResult(status="accepted")
+
+            def recall(self, *, session_id, agent_id, role, query,
+                       keywords=None, scope="", max_results=10):
+                return RecallResult()
     """)
     script = tmp_path / "provider.py"
     script.write_text(provider_code)
@@ -321,7 +325,7 @@ def test_load_provider(tmp_path):
 def test_load_provider_passes_config(tmp_path):
     """load_provider passes spec.config to the provider constructor."""
     provider_code = dedent("""\
-        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RecallResult, RememberResult
 
         class ConfigProvider:
             name = "test-config"
@@ -341,6 +345,10 @@ def test_load_provider_passes_config(tmp_path):
             def remember(self, *, session_id, agent_id, role, content,
                          keywords=None, scope="project"):
                 return RememberResult(status="accepted")
+
+            def recall(self, *, session_id, agent_id, role, query,
+                       keywords=None, scope="", max_results=10):
+                return RecallResult()
     """)
     script = tmp_path / "provider.py"
     script.write_text(provider_code)
@@ -402,7 +410,7 @@ def test_load_provider_pip(tmp_path, monkeypatch):
     fake_pkg.mkdir()
     (fake_pkg / "__init__.py").write_text("")
     (fake_pkg / "provider.py").write_text(dedent("""\
-        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RememberResult
+        from strawpot_memory.memory_protocol import DumpReceipt, GetResult, RecallResult, RememberResult
 
         class DialMemoryProvider:
             name = "dial"
@@ -419,6 +427,10 @@ def test_load_provider_pip(tmp_path, monkeypatch):
             def remember(self, *, session_id, agent_id, role, content,
                          keywords=None, scope="project"):
                 return RememberResult(status="accepted")
+
+            def recall(self, *, session_id, agent_id, role, query,
+                       keywords=None, scope="", max_results=10):
+                return RecallResult()
     """))
 
     # Add temp dir to sys.path so importlib can find it

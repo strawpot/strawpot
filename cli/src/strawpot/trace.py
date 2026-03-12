@@ -266,6 +266,33 @@ class Tracer:
             parent_agent_id=parent_agent_id,
         )
 
+    def memory_recall(
+        self,
+        *,
+        span_id: str,
+        provider: str,
+        session_id: str,
+        agent_id: str,
+        role: str,
+        query: str = "",
+        scope: str = "",
+        result_count: int = 0,
+        parent_agent_id: str | None = None,
+    ) -> None:
+        """Emit ``memory_recall``."""
+        self.emit(
+            "memory_recall",
+            span_id,
+            provider=provider,
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            query=query,
+            scope=scope,
+            result_count=result_count,
+            parent_agent_id=parent_agent_id,
+        )
+
     def memory_dump(
         self,
         *,
