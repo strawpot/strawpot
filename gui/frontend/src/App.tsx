@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import ProjectList from "./pages/ProjectList";
@@ -18,7 +18,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/imu" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="projects" element={<ProjectList />} />
         <Route path="projects/:projectId" element={<ProjectDetail />} />
         <Route

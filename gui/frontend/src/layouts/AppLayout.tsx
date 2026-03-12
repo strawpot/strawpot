@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { to: "/imu", label: "Bot Imu", icon: BotMessageSquare },
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/schedules", label: "Schedules", icon: Clock },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -383,17 +383,25 @@ function useBreadcrumbs() {
   const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [];
 
   if (segments[0] === "projects") {
-    crumbs.push({ label: "Projects", href: "/projects" });
-
-    if (segments[1]) {
-      const projectHref = `/projects/${segments[1]}`;
-      const projectLabel = project?.display_name ?? `Project #${segments[1]}`;
-      crumbs.push({ label: projectLabel, href: projectHref, projectSwitcher: true });
-
+    // Bot Imu (project_id=0) has its own section in the nav — show as "Bot Imu" not "Projects > Bot Imu"
+    if (projectId === 0) {
+      crumbs.push({ label: "Bot Imu", href: "/imu" });
       if (segments[2] === "sessions" && segments[3]) {
         crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
-      } else if (segments[2] === "conversations" && segments[3]) {
-        crumbs.push({ label: conversationTitle ?? `Conversation #${segments[3]}` });
+      }
+    } else {
+      crumbs.push({ label: "Projects", href: "/projects" });
+
+      if (segments[1]) {
+        const projectHref = `/projects/${segments[1]}`;
+        const projectLabel = project?.display_name ?? `Project #${segments[1]}`;
+        crumbs.push({ label: projectLabel, href: projectHref, projectSwitcher: true });
+
+        if (segments[2] === "sessions" && segments[3]) {
+          crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
+        } else if (segments[2] === "conversations" && segments[3]) {
+          crumbs.push({ label: conversationTitle ?? `Conversation #${segments[3]}` });
+        }
       }
     }
   }
@@ -442,6 +450,7 @@ export default function AppLayout() {
   const convId = convMatch ? Number(convMatch.params.conversationId) : 0;
   const imuMatch = useMatch("/imu/:conversationId");
   const imuConvId = imuMatch ? Number(imuMatch.params.conversationId) : 0;
+  const imuSessionMatch = useMatch("/projects/0/sessions/:runId");
 
   useKeyboardShortcuts({
     onCommandPalette: () => setCmdOpen(true),
@@ -466,14 +475,17 @@ export default function AppLayout() {
                 key={to}
                 to={to}
                 end={end}
-                className={({ isActive }) =>
-                  cn(
+                className={({ isActive }) => {
+                  const active =
+                    (isActive || (to === "/imu" && !!imuSessionMatch)) &&
+                    !(to === "/projects" && !!imuSessionMatch);
+                  return cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    isActive
+                    active
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
-                  )
-                }
+                  );
+                }}
               >
                 <Icon className="h-4 w-4" />
                 {label}

@@ -40,7 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
+import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
@@ -112,6 +112,15 @@ function ImuAgentMessage({ session }: { session: ConversationSession }) {
           </span>
         )}
       </div>
+      <a
+        href={`/projects/0/sessions/${session.run_id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <ExternalLink className="h-3 w-3" />
+        View session
+      </a>
     </div>
   );
 }

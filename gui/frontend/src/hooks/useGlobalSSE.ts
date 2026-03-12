@@ -18,6 +18,7 @@ export function useGlobalSSE(): void {
   const backoffMs = useRef(1000);
   const connectedAt = useRef(0);
   const toastLog = useRef<Record<string, number[]>>({});
+  const isFirstConnect = useRef(true);
 
   useEffect(() => {
     function shouldToast(eventType: string): boolean {
@@ -41,6 +42,13 @@ export function useGlobalSSE(): void {
       es.onopen = () => {
         backoffMs.current = 1000;
         connectedAt.current = Date.now();
+        if (!isFirstConnect.current) {
+          // Server likely restarted — flush stale session/conversation caches
+          // so every open tab reflects the new server state immediately.
+          qc.invalidateQueries({ queryKey: ["sessions"] });
+          qc.invalidateQueries({ queryKey: ["conversations"] });
+        }
+        isFirstConnect.current = false;
       };
 
       const handleLifecycle = (e: MessageEvent) => {
