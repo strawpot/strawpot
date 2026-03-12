@@ -90,6 +90,17 @@
 
 ## Resources
 
+- [ ] **Pluggable context builder**
+  Make the conversation context builder a resource type (like memory providers).
+  Currently `_build_conversation_context()` is hardcoded in the GUI router with
+  fixed tiered condensation, turn caps, and recap instructions. A pluggable
+  context builder would let users customize how prior turns are summarized —
+  e.g., domain-specific condensation, LLM-based summarization, or different
+  formats for different agent runtimes. The interface would mirror memory
+  providers: a Python class with a `build(sessions) -> str` method, resolved
+  by name from project-local or global directories, with a manifest file
+  (e.g., `CONTEXT.md`). Default builder ships built-in with the current logic.
+
 - [ ] **Support custom resource import**
   Allow users to import custom resources (files, configs, templates) into
   projects that agents can reference during sessions. Currently resources
