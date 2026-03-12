@@ -21,6 +21,22 @@ logger = logging.getLogger(__name__)
 from strawpot_gui.routers import config, conversations, files, fs, health, imu, logs, project_resources, projects, registry, schedules, sessions, sse, stats, ws
 
 
+def _ensure_imu_role() -> None:
+    """Install the imu role globally at startup if not already present."""
+    imu_role_path = get_strawpot_home() / "roles" / "imu" / "ROLE.md"
+    if not imu_role_path.exists():
+        logger.info("imu role not found, installing...")
+        result = subprocess.run(
+            ["strawhub", "install", "role", "imu", "--global", "-y"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            logger.info("imu role installed successfully")
+        else:
+            logger.warning("Failed to install imu role: %s", result.stderr[:200])
+
+
 def _auto_rebuild_frontend(dist_dir: Path) -> None:
     """Rebuild the frontend if source files are newer than dist."""
     frontend_dir = dist_dir.parent  # frontend/
@@ -72,6 +88,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         ensure_global_config()
         init_db(db_path)
         ensure_imu_project(db_path)
+        _ensure_imu_role()
         from strawpot_gui.db import mark_orphaned_sessions_stopped
         mark_orphaned_sessions_stopped(db_path)
         sync_sessions(db_path)

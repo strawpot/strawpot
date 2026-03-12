@@ -61,7 +61,7 @@ the Bot Imu dedicated page using ConversationView.
 Bot Imu sessions use the standard session storage path. When launched
 from the CLI, sessions go under the current directory's
 `.strawpot/sessions/`. When launched from the GUI, sessions go to
-`~/.strawpot/.strawpot/sessions/` (working directory: `~/.strawpot`).
+`~/.strawpot/sessions/` (working directory: `~`).
 
 ### No Isolation
 
@@ -631,8 +631,8 @@ metadata:
 ## Session Storage
 
 Sessions are stored at `<project>/.strawpot/sessions/<run_id>/`.
-Bot Imu sessions are stored at `~/.strawpot/.strawpot/sessions/<run_id>/`
-(Bot Imu uses `~/.strawpot` as its working directory).
+Bot Imu sessions are stored at `~/.strawpot/sessions/<run_id>/`
+(Bot Imu uses `~` as its working directory).
 
 ## Find Sessions
 
@@ -759,11 +759,11 @@ A virtual project row is ensured at startup in `db.py`:
 
 ```sql
 INSERT OR IGNORE INTO projects (id, name, directory, created_at)
-VALUES (0, 'Bot Imu', '~/.strawpot', datetime('now'));
+VALUES (0, 'Bot Imu', '~', datetime('now'));
 ```
 
-Bot Imu's sessions are stored at `~/.strawpot/.strawpot/sessions/`
-(the virtual project uses `~/.strawpot` as its working directory).
+Bot Imu's sessions are stored at `~/.strawpot/sessions/`
+(the virtual project uses `~` as its working directory).
 
 **New endpoint (single addition):**
 
@@ -862,7 +862,7 @@ conversation.
   used on SessionDetail).
 ### Bot Imu Session Discovery
 
-The GUI session sync scans `~/.strawpot/.strawpot/sessions/` for Bot
+The GUI session sync scans `~/.strawpot/sessions/` for Bot
 Imu session history. These appear under the "Bot Imu" virtual project
 (project_id = 0, auto-created at startup alongside
 `mark_orphaned_sessions_stopped`).
@@ -908,8 +908,8 @@ infrastructure handles most of the work.
    row exists at `db.py` startup alongside `mark_orphaned_sessions_stopped`.
 4. **`GET /api/imu/conversations`** and **`POST /api/imu/conversations`** —
    list and create Bot Imu conversations (project_id=0).
-5. **Bot Imu session storage path** — IMU sessions use `~/.strawpot` as
-   the working directory, stored in `~/.strawpot/.strawpot/sessions/`.
+5. **Bot Imu session storage path** — IMU sessions use `~` as
+   the working directory, stored in `~/.strawpot/sessions/`.
 
 No `IMUManager`, no PTY, no `/api/imu/ws` — all handled by existing
 `/ws/sessions/{run_id}` and `/api/conversations/{id}/tasks`.
@@ -1081,17 +1081,17 @@ tried to create a PR. You can fix this by setting it in config:
 |---|------|-------|---------|
 | 1 | Create `imu` role (`ROLE.md`) | 1 — Role & Skills | Done |
 | 2 | Create six skills (`strawpot-cli`, `strawpot-gui-api`, `strawpot-config`, `strawpot-schedules`, `strawhub-cli`, `strawpot-sessions`) | 1 — Role & Skills | Done |
-| 3 | Virtual Bot Imu project (id=0) in `db.py` startup | 2 — Backend | Planned |
-| 4 | `GET /api/imu/conversations` and `POST /api/imu/conversations` | 2 — Backend | Planned |
-| 5 | Bot Imu session storage path (`~/.strawpot`) | 2 — Backend | Planned |
-| 6 | "Bot Imu" nav link in left sidebar | 3 — Frontend | Planned |
-| 7 | Dedicated page (`/imu`, `/imu/:conversationId`) with conversation list sidebar | 3 — Frontend | Planned |
-| 8 | Submit input (new session or ask_user reply) | 3 — Frontend | Planned |
-| 9 | Connection management + "Launching Bot Imu…" spinner | 3 — Frontend | Planned |
-| 10 | Active session badge on Bot Imu nav link | 4 — History | Planned |
-| 11 | Conversation history via `useConversationInfinite` + AgentMessage access | 4 — History | Planned |
+| 3 | Virtual Bot Imu project (id=0) in `db.py` startup | 2 — Backend | Done |
+| 4 | `GET /api/imu/conversations` and `POST /api/imu/conversations` | 2 — Backend | Done |
+| 5 | Bot Imu session storage path (`~` as working dir → `~/.strawpot/sessions/`) | 2 — Backend | Done |
+| 6 | "Bot Imu" nav link in left sidebar | 3 — Frontend | Done |
+| 7 | Dedicated page (`/imu`, `/imu/:conversationId`) with conversation list sidebar | 3 — Frontend | Done |
+| 8 | Submit input (new session or ask_user reply) | 3 — Frontend | Done |
+| 9 | Connection management + "Launching Bot Imu…" spinner | 3 — Frontend | Done |
+| 10 | Active session badge on Bot Imu nav link | 4 — History | Done |
+| 11 | Conversation history via `useConversationInfinite` + AgentMessage access | 4 — History | Done |
 | 12 | `strawpot schedule` CLI commands (optional) | 4 — History | Planned |
-| 13 | Memory provider for cross-session context | 5 — Memory | Planned |
+| 13 | Memory provider for cross-session context | 5 — Memory | Done (dial is the system default; imu uses `~/.strawpot/memory/dial-data`) |
 
 ---
 

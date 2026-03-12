@@ -227,6 +227,7 @@ export interface ImuConversation {
   created_at: string;
   updated_at: string | null;
   session_count: number;
+  active_session_count: number;
 }
 
 export interface Schedule {

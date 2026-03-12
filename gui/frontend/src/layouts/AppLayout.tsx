@@ -442,6 +442,8 @@ export default function AppLayout() {
   const crumbs = useBreadcrumbs();
   const navigate = useNavigate();
   const allProjects = useProjects();
+  const { data: imuConversations } = useImuConversations();
+  const hasActiveImuSession = (imuConversations ?? []).some((c) => c.active_session_count > 0);
   const { setTheme } = useTheme();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -489,6 +491,9 @@ export default function AppLayout() {
               >
                 <Icon className="h-4 w-4" />
                 {label}
+                {to === "/imu" && hasActiveImuSession && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                )}
               </NavLink>
             ))}
 
