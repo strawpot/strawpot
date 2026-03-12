@@ -1,25 +1,33 @@
-# IMU — StrawPot Self-Operation Agent
+# Bot Imu — StrawPot Self-Operation Agent
 
-IMU is a cross-project chat session that operates StrawPot itself. Where
-normal sessions run agents that work on a project's code, IMU runs an
-agent that manages StrawPot: launching sessions, configuring projects,
-installing packages, managing cron schedules, and reviewing traces — all
-through natural language.
+**Bot Imu** is the conversational self-operation agent for StrawPot.
+"Imu" is the agent's name; "Bot Imu" is its display name in the GUI,
+clearly marking it as an agent rather than a human user or a project.
+
+Where normal sessions run agents that work on a project's code, Bot Imu
+runs an agent that manages StrawPot itself: launching sessions,
+configuring projects, installing packages, managing cron schedules, and
+reviewing traces — all through natural language from a global-level chat
+page accessible from the left navigation bar.
 
 ## Goals
 
-1. **Cross-project control plane.** Operate on any registered project
-   and on global StrawPot state from a single persistent chat session.
-2. **Cron management.** Create, edit, enable/disable, and monitor
-   scheduled tasks through conversation.
-3. **Self-operation skills.** Teach the agent StrawPot's own CLI,
-   config format, and package management via reusable SKILL.md files.
-4. **Zero new protocols.** Build on existing session infrastructure —
-   interactive mode, roles, skills, DenDen. No new IPC or server.
+1. **Global control plane.** Bot Imu operates on any registered project
+   and on global StrawPot state from a single persistent chat panel —
+   not scoped to one project, accessible from anywhere in the GUI.
+2. **Full StrawPot management.** Launch and stop sessions, manage
+   resources (roles, skills, agents, memory), edit configs, create and
+   delete cron schedules, review traces and logs — all through
+   natural language.
+3. **Self-operation skills.** Teach Imu StrawPot's own CLI, GUI REST
+   API, config format, and package management via reusable SKILL.md files.
+4. **Zero new protocols.** Build on existing conversation infrastructure —
+   interactive mode, ask_user bridge, ConversationView, session WS.
+   No new IPC, no custom WebSocket endpoint, no PTY.
 
 ## Non-Goals
 
-- Running arbitrary code on projects. IMU manages StrawPot; it does
+- Running arbitrary code on projects. Bot Imu manages StrawPot; it does
   not directly edit project source code (though it can launch sessions
   that do).
 
@@ -27,7 +35,7 @@ through natural language.
 
 ## Architecture
 
-IMU is not a special subsystem — it's just a role with skills, launched
+Bot Imu is not a special subsystem — it's just a role with skills, launched
 like any other session. No custom CLI subcommand, no special protocol.
 
 ### Entry Points
@@ -38,26 +46,26 @@ like any other session. No custom CLI subcommand, no special protocol.
 strawpot start --role imu
 ```
 
-Launches an interactive IMU session in the current terminal. The
+Launches an interactive Imu session in the current terminal. The
 working directory doesn't matter — the agent operates on global
 StrawPot state via shell commands regardless of where it runs.
 
-**GUI (embedded chat panel):**
+**GUI (dedicated page):**
 
-The GUI spawns the same session via its existing `launch_session`
-infrastructure, bridged to a chat panel through a PTY + WebSocket.
+The GUI spawns the same session via its existing conversation
+infrastructure (`POST /api/conversations/{id}/tasks`), displayed in
+the Bot Imu dedicated page using ConversationView.
 
 ### Session Storage
 
-IMU sessions use the standard session storage path. When launched
+Bot Imu sessions use the standard session storage path. When launched
 from the CLI, sessions go under the current directory's
-`.strawpot/sessions/`. When launched from the GUI, the IMU manager
-uses `~/.strawpot` as the working directory, so sessions go to
-`~/.strawpot/.strawpot/sessions/`.
+`.strawpot/sessions/`. When launched from the GUI, sessions go to
+`~/.strawpot/.strawpot/sessions/` (working directory: `~/.strawpot`).
 
 ### No Isolation
 
-IMU always runs with `isolation: none`. It needs to read and write real
+Bot Imu always runs with `isolation: none`. It needs to read and write real
 config files, invoke real CLI commands, and manage real cron schedules.
 Worktree isolation would defeat the purpose.
 
@@ -72,54 +80,76 @@ Worktree isolation would defeat the purpose.
 ```yaml
 ---
 name: imu
-description: StrawPot self-operation agent — manages projects, sessions, schedules, and packages
+description: Bot Imu — StrawPot self-operation agent. Manages projects, sessions, resources, schedules, and configuration globally.
 metadata:
   strawpot:
+    isolation: none
+    interactive: true
     dependencies:
       skills:
         - strawpot-cli
         - strawpot-config
+        - strawpot-gui-api
         - strawpot-schedules
         - strawhub-cli
         - strawpot-sessions
     default_agent: strawpot-claude-code
 ---
 
-# IMU — StrawPot Operator
+# Imu — StrawPot Operator
 
-You are IMU, the self-operation agent for StrawPot. You manage StrawPot
-itself: projects, sessions, scheduled tasks, roles, skills, agents, and
-configuration.
+You are **Imu**, the self-operation agent for StrawPot, displayed in
+the GUI as **Bot Imu**. You manage StrawPot globally — across all
+registered projects — through natural language.
+
+You have full access to StrawPot's CLI commands, GUI REST API, and
+configuration files. Your skills teach you exactly how to use each.
 
 ## What You Can Do
 
-- **Projects**: List registered projects, check their status, view
-  installed resources.
-- **Sessions**: Launch new sessions on any project, monitor running
-  sessions, review completed session traces and logs.
+- **Projects**: List all registered projects and their status via the
+  GUI API. Check which sessions are running, how many schedules are
+  active, and what resources are installed.
+
+- **Sessions**: Launch new headless or interactive sessions on any
+  project (`strawpot start`). Stop running sessions via the GUI API.
+  Review completed session traces, logs, and artifacts.
+
+- **Resources**: Search, install, update, and remove roles, skills,
+  agents, and memory providers from StrawHub. Apply them globally or
+  to a specific project.
+
+- **Configuration**: View and edit global (`~/.strawpot/strawpot.toml`)
+  and per-project (`<project>/strawpot.toml`) settings. Validate
+  changes before saving.
+
 - **Schedules**: Create, update, enable, disable, and delete cron
-  schedules. View schedule history and next-run times.
-- **Packages**: Search, install, and manage roles, skills, agents, and
-  memory providers from StrawHub.
-- **Configuration**: View and edit global and per-project
-  `strawpot.toml` settings.
+  schedules via the GUI API. Show next-run times in human-readable
+  form. Review schedule history.
+
+- **Traces & Logs**: Read session traces (`trace.jsonl`), agent logs
+  (`.log`), and artifacts to diagnose failures or summarize outcomes.
 
 ## What You Should Not Do
 
 - Do not directly edit project source code. If code changes are needed,
-  launch a session with an appropriate role.
-- Do not modify StrawPot's own source code (the cli/ or gui/ packages).
+  launch a session with the appropriate role (e.g. `implementer`).
+- Do not modify StrawPot's own source code (`cli/` or `gui/` packages).
 - Do not delete session history or artifacts unless explicitly asked.
+- Do not run destructive operations (drop tables, delete projects)
+  without explicit user confirmation.
 
 ## Interaction Style
 
-- Be concise. Show command output when relevant, summarize when not.
-- When launching sessions, confirm the project, role, and task before
-  proceeding.
-- When creating schedules, show the cron expression in human-readable
-  form and confirm before saving.
-- Proactively surface problems: stale sessions, missing credentials,
-  failed schedules.
+- Be concise. Show command output when useful, summarize when verbose.
+- Before launching a session, confirm: project, role, task description.
+- Before creating or deleting a schedule, confirm the cron expression
+  in human-readable form and the target project.
+- Before editing config, show the current value and the proposed change.
+- Proactively surface issues: stale sessions, missing API keys, failed
+  schedules, resources that need updating.
+- When the GUI is running, prefer GUI API calls over filesystem
+  operations — they are safer and return structured data.
 ```
 
 ---
@@ -168,7 +198,10 @@ strawpot start --working-dir /path/to/project --headless --task "fix bug" --syst
 
 ## Stop a Session
 
-Find the session PID from `session.json` and send SIGTERM:
+**Preferred (when GUI is running):** Use the GUI API (see
+`strawpot-gui-api` skill — `POST /api/projects/{id}/sessions/{run_id}/stop`).
+
+**Fallback (no GUI):** Find the session PID from `session.json`:
 
 ```bash
 kill <pid>
@@ -183,7 +216,126 @@ Check `.strawpot/running/` for active sessions and `.strawpot/sessions/<run_id>/
 Stale sessions (PID dead but still in running/) are cleaned up automatically on next `strawpot start`.
 ```
 
-### 2. `strawpot-config`
+### 2. `strawpot-gui-api`
+
+Projects, sessions, and resources via the GUI REST API. Preferred over
+CLI filesystem operations when the GUI server is running.
+
+```
+~/.strawpot/skills/strawpot-gui-api/SKILL.md
+```
+
+```yaml
+---
+name: strawpot-gui-api
+description: StrawPot GUI REST API — projects, sessions, resources
+metadata:
+  strawpot:
+    tools:
+      curl:
+        description: HTTP client for GUI API calls
+        install:
+          macos: built-in
+          linux: apt install curl
+    params:
+      gui_port:
+        type: integer
+        default: 8741
+        description: StrawPot GUI port
+---
+
+# StrawPot GUI REST API
+
+The GUI exposes a REST API at `http://127.0.0.1:{gui_port}/api`.
+Use this when the GUI is running — it is safer and returns structured
+JSON rather than requiring filesystem access.
+
+## Check if GUI is Running
+
+```bash
+curl -s http://127.0.0.1:8741/api/health
+```
+
+If not running, start it: `strawpot gui --port 8741 &`
+
+## Projects
+
+```bash
+# List all registered projects
+curl -s http://127.0.0.1:8741/api/projects | python3 -m json.tool
+
+# Get a specific project (with session count, resources)
+curl -s http://127.0.0.1:8741/api/projects/{id} | python3 -m json.tool
+```
+
+Key fields: `id`, `name`, `directory`, `session_count`,
+`active_session_count`, `installed_roles`, `installed_skills`.
+
+## Sessions
+
+```bash
+# List sessions for a project (newest first, paginated)
+curl -s "http://127.0.0.1:8741/api/projects/{id}/sessions?limit=10" | python3 -m json.tool
+
+# Get session detail (status, agents, trace events, tree)
+curl -s http://127.0.0.1:8741/api/projects/{id}/sessions/{run_id} | python3 -m json.tool
+
+# Launch a new session
+curl -s -X POST http://127.0.0.1:8741/api/projects/{id}/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task": "implement feature X",
+    "role": "implementer",
+    "interactive": false
+  }' | python3 -m json.tool
+
+# Stop a running session
+curl -s -X POST http://127.0.0.1:8741/api/projects/{id}/sessions/{run_id}/stop
+
+# Read an artifact by hash
+curl -s http://127.0.0.1:8741/api/sessions/{run_id}/artifacts/{hash}
+```
+
+Session status values: `starting`, `running`, `completed`, `failed`, `stopped`.
+
+## Installed Resources
+
+```bash
+# List globally installed roles
+curl -s http://127.0.0.1:8741/api/registry/roles | python3 -m json.tool
+
+# List globally installed skills
+curl -s http://127.0.0.1:8741/api/registry/skills | python3 -m json.tool
+
+# List project-scoped resources
+curl -s http://127.0.0.1:8741/api/projects/{id}/resources | python3 -m json.tool
+
+# Install a resource to a project
+curl -s -X POST http://127.0.0.1:8741/api/projects/{id}/resources \
+  -H "Content-Type: application/json" \
+  -d '{"type": "skill", "name": "git-workflow"}' | python3 -m json.tool
+
+# Remove a resource from a project
+curl -s -X DELETE http://127.0.0.1:8741/api/projects/{id}/resources/{type}/{name}
+```
+
+## Configuration
+
+```bash
+# Get project config
+curl -s http://127.0.0.1:8741/api/projects/{id}/config | python3 -m json.tool
+
+# Update a config key (PATCH merges, does not overwrite)
+curl -s -X PATCH http://127.0.0.1:8741/api/projects/{id}/config \
+  -H "Content-Type: application/json" \
+  -d '{"runtime": "strawpot-codex", "max_depth": 4}'
+
+# Get global config
+curl -s http://127.0.0.1:8741/api/config | python3 -m json.tool
+```
+```
+
+### 3. `strawpot-config`
 
 Reading and editing configuration files.
 
@@ -250,7 +402,7 @@ When editing TOML files, preserve existing comments and formatting.
 Only modify the specific fields requested.
 ```
 
-### 3. `strawpot-schedules`
+### 4. `strawpot-schedules`
 
 Cron schedule management through the GUI API.
 
@@ -378,7 +530,7 @@ Common patterns:
 | `enabled` | boolean | no | Default true |
 ```
 
-### 4. `strawhub-cli`
+### 5. `strawhub-cli`
 
 Package management — search, install, info.
 
@@ -459,7 +611,7 @@ strawhub uninstall role implementer --project /path/to/project
 ```
 ```
 
-### 5. `strawpot-sessions`
+### 6. `strawpot-sessions`
 
 Inspecting session traces, logs, and artifacts.
 
@@ -481,8 +633,8 @@ metadata:
 ## Session Storage
 
 Sessions are stored at `<project>/.strawpot/sessions/<run_id>/`.
-IMU sessions are stored at `~/.strawpot/.strawpot/sessions/<run_id>/`
-(IMU uses `~/.strawpot` as its working directory).
+Bot Imu sessions are stored at `~/.strawpot/.strawpot/sessions/<run_id>/`
+(Bot Imu uses `~/.strawpot` as its working directory).
 
 ## Find Sessions
 
@@ -555,8 +707,9 @@ curl -s http://127.0.0.1:8741/api/sessions/{run_id}/artifacts/{hash}
 
 ### Embedded Chat
 
-IMU is embedded in the GUI as a persistent chat panel. Users can also
-run it from the terminal with `strawpot start --role imu`.
+Bot Imu is embedded in the GUI as a persistent chat panel, accessible
+from anywhere via the `[Bot Imu]` button in the global navigation bar.
+Users can also run it from the terminal with `strawpot start --role imu`.
 
 #### Architecture
 
@@ -571,11 +724,11 @@ Session WebSocket handler
   │  ask_user bridge (file-based, chat_messages.jsonl)
   │
   ▼
-IMU Session (interactive mode — ask_user loop)
+Imu Session (interactive mode — ask_user loop)
 ```
 
-IMU uses the **existing interactive session infrastructure** — no
-custom PTY bridge, no new IPC protocol. The GUI launches IMU as a
+Bot Imu uses the **existing interactive session infrastructure** — no
+custom PTY bridge, no new IPC protocol. The GUI launches an Imu session as a
 regular interactive session. The agent loops through `ask_user` calls,
 each one holding for the user's next message. Output is structured
 (chat bubbles, Markdown) rather than raw terminal stream.
@@ -586,10 +739,10 @@ already implemented.
 
 Message flow per turn:
 
-1. User types a message in the IMU chat panel → submitted as an
+1. User types a message in the Bot Imu chat panel → submitted as an
    `ask_user_response` if the current session is waiting, or spawns
    a new interactive session if none is active.
-2. The IMU session's agent processes the request, calls `ask_user`
+2. The Imu session's agent processes the request, calls `ask_user`
    with its reply.
 3. The file-based bridge writes `ask_user_pending_*.json`; the session
    WebSocket delivers an `ask_user` message to the frontend.
@@ -598,81 +751,108 @@ Message flow per turn:
 5. User replies → `ask_user_response` sent over the WebSocket → bridge
    writes `ask_user_response_*.json` → agent continues.
 
-#### Backend: IMU Virtual Project & Conversation
+#### Backend: Global Conversation (project_id = 0)
 
-IMU sessions are stored under a virtual project (id = 0):
+The existing `conversations` table already supports any `project_id`.
+Bot Imu uses `project_id = 0` — a **virtual global project** — to
+hold its conversation outside any user project scope.
+
+A virtual project row is ensured at startup in `db.py`:
 
 ```sql
 INSERT OR IGNORE INTO projects (id, name, directory, created_at)
-VALUES (0, 'IMU', '~/.strawpot', datetime('now'));
+VALUES (0, 'Bot Imu', '~/.strawpot', datetime('now'));
 ```
 
-IMU uses a single persistent conversation (auto-created on first use)
-in the `conversations` table with `project_id = 0`. One new session
-is spawned per user "submit" if no session is currently waiting for
-input. All session WebSocket and ask_user bridge infrastructure is
-reused as-is — no new backend modules needed.
+Bot Imu's sessions are stored at `~/.strawpot/.strawpot/sessions/`
+(the virtual project uses `~/.strawpot` as its working directory).
 
-**New endpoint:**
+**New endpoint (single addition):**
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `GET /api/imu/conversation` | GET | Return (or create) the IMU conversation. Returns `{ conversation_id }`. |
+| `GET /api/imu/conversations` | GET | List Bot Imu conversations (project_id=0), newest first. Returns `[{ id, title, created_at, session_count }]`. |
+| `POST /api/imu/conversations` | POST | Create a new Bot Imu conversation. Returns `{ conversation_id }`. |
 
-All other operations use the existing conversation and session APIs:
-`POST /api/conversations/{id}/tasks`, `GET /api/conversations/{id}`,
-`/ws/sessions/{run_id}`.
+All other operations reuse the existing conversation and session APIs
+unchanged — the `project_id = 0` distinction is transparent:
 
-#### Frontend: Chat Panel
+| Operation | Existing API |
+|-----------|-------------|
+| Submit a message (new session) | `POST /api/conversations/{id}/tasks` |
+| Read conversation + sessions | `GET /api/conversations/{id}` |
+| Live session updates | `GET /ws/sessions/{run_id}` |
+| Reply to ask_user | `ask_user_response` over the session WS |
+| Load more history | `GET /api/conversations/{id}?before_id=...` |
 
-The IMU chat is a **slide-over panel** accessible from anywhere in the
-GUI via a persistent button in the global navigation bar. It does not
-navigate away from the current page — the user can monitor sessions
-while chatting with IMU.
+#### Frontend: Dedicated Page
+
+Bot Imu is a **dedicated page** at `/imu/:conversationId`, accessible
+via the "Bot Imu" entry in the global left navigation bar. When the
+user navigates to Bot Imu, the standard left sidebar is replaced by a
+conversation list — mirroring the same layout pattern as project
+`ConversationView`. This gives Bot Imu full screen real estate for
+longer conversations and natural history browsing.
+
+The main content area directly reuses the existing `ConversationView`
+component (built for item 12 — chat-mode sessions), scoped to
+`project_id = 0`. No new message rendering code is needed — the same
+`UserMessage`, chat bubble, `AgentMessage`, and `AskUserPanel`
+components render Imu's conversation identically to any project
+conversation.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  StrawPot    Dashboard  Projects  Schedules  Registry  [IMU]│
-├───────────────────────────────────────┬─────────────────────┤
-│                                       │ IMU                 │
-│  (current page content)               │                     │
-│                                       │ > What schedules    │
-│  Dashboard / Project Detail /         │   are active?       │
-│  Session Monitoring / etc.            │                     │
-│                                       │ You have 2 active   │
-│                                       │ schedules:          │
-│                                       │ • daily-github...   │
-│                                       │ • weekly-report...  │
-│                                       │                     │
-│                                       │ > Disable the       │
-│                                       │   weekly report     │
-│                                       │                     │
-│                                       │ Done. "weekly-..."  │
-│                                       │ is now disabled.    │
-│                                       │                     │
-│                                       ├─────────────────────┤
-│                                       │ [Type a message...] │
-└───────────────────────────────────────┴─────────────────────┘
+│  StrawPot    Dashboard  Projects  Schedules  Registry       │
+├──────────────────┬──────────────────────────────────────────┤
+│ Bot Imu          │                                          │
+│                  │  > What schedules are active?            │
+│ + New Conversation│                                          │
+│                  │  You have 2 active schedules:            │
+│ Today            │  • daily-github-triage                   │
+│  10:23am         │    (weekdays 9am — last run: today ✓)    │
+│  Managing sche..│  • weekly-report                         │
+│                  │    (Fridays 5pm — last run: Mar 7 ✓)    │
+│ Yesterday        │                                          │
+│  3:15pm          │  > Disable the weekly report             │
+│  Install github-│                                          │
+│                  │  Done. "weekly-report" is now disabled.  │
+│ Mar 9            │                                          │
+│  11:02am         │                                          │
+│  Review failed .│                                          │
+│                  ├──────────────────────────────────────────┤
+│                  │ [Type a message...]                      │
+└──────────────────┴──────────────────────────────────────────┘
 ```
 
-The panel embeds a trimmed `ConversationView`-equivalent component
-(the same interleaved-sessions view already implemented for item 12),
-scoped to the IMU conversation.
+**Routes:**
 
-**Panel behavior:**
+- `/imu` — redirects to the most recent Bot Imu conversation
+  (or shows a "Start a conversation" empty state if none exists).
+- `/imu/:conversationId` — displays the conversation via
+  `ConversationView` (`project_id = 0`).
 
-- **Toggle**: Click the `[IMU]` nav button to slide the panel open
-  or closed. Panel width: 400px (resizable).
-- **Persist**: Panel state (open/closed) persists across page
-  navigations and page refreshes (localStorage).
-- **Auto-start**: Submitting the first message creates the IMU
-  conversation and launches the first session. A brief "Launching
-  IMU..." spinner shows during start.
+**Left sidebar (conversation list):**
+
+- Shows all Bot Imu conversations, grouped by date (Today, Yesterday,
+  earlier dates), newest first.
+- Each entry shows the first user message as a title and a timestamp.
+- "New Conversation" button at the top creates a new conversation via
+  `POST /api/imu/conversations` and navigates to it.
+- Active conversation is highlighted; clicking another navigates to it.
+- Conversation list uses `GET /api/imu/conversations` and refreshes
+  via the same SSE invalidation as project conversations.
+
+**Page behavior:**
+
+- **Auto-start**: Submitting the first message in a new conversation
+  launches the first session. A brief "Launching Bot Imu..." spinner
+  shows during start.
 - **Reconnect**: The existing `useSessionWS` auto-reconnect handles
   WebSocket drops with exponential backoff.
-- **History**: `useConversationInfinite` loads recent sessions and
-  their chat messages on panel open. `chat_messages.jsonl` persists
-  the full conversation across GUI restarts.
+- **History**: `useConversationInfinite` loads recent sessions for the
+  current conversation. `chat_messages.jsonl` persists the full chat
+  history across GUI restarts.
 
 **Message rendering:**
 
@@ -682,43 +862,31 @@ scoped to the IMU conversation.
   `AgentMessage` component when a session completes.
 - Pending ask_user: input box active (same `AskUserPanel` component
   used on SessionDetail).
+### Bot Imu Session Discovery
 
-**Quick actions (optional, future):**
+The GUI session sync scans `~/.strawpot/.strawpot/sessions/` for Bot
+Imu session history. These appear under the "Bot Imu" virtual project
+(project_id = 0, auto-created at startup alongside
+`mark_orphaned_sessions_stopped`).
 
-Contextual shortcuts above the input box based on the current GUI
-page:
+The conversation sidebar's infinite scroll (`useConversationInfinite`)
+loads sessions newest-first, identical to any project conversation.
 
-- On project detail: "Launch session on {project}"
-- On schedules page: "Create new schedule"
-- On session detail: "What happened in this session?"
+### Schedule Management from Bot Imu
 
-These pre-fill the input box with a suggested message.
-
-### IMU Session Discovery
-
-The GUI session sync scans `~/.strawpot/.strawpot/sessions/` for IMU
-session history. These appear in the GUI under the "IMU" virtual
-project (project_id = 0, auto-created at startup).
-
-The virtual project row is ensured in `db.py` at startup (same place
-as `mark_orphaned_sessions_stopped`). IMU sessions reference
-`project_id = 0`.
-
-### Schedule Management from IMU
-
-IMU manages schedules by calling the GUI REST API directly (the GUI
-server is always running when the chat panel is open). The
+Bot Imu manages schedules by calling the GUI REST API directly (the
+GUI server is always running when the chat panel is open). The
 `strawpot-schedules` skill documents the API endpoints.
 
-When IMU runs from the terminal CLI and the GUI is not running, it
-can start the GUI server:
+When Bot Imu runs from the terminal CLI and the GUI is not running,
+it can start the GUI server:
 
 ```bash
 strawpot gui --port 8741 &
 ```
 
 Future improvement: extract schedule CRUD into a shared library so
-both the GUI router and IMU can operate on `gui.db` directly.
+both the GUI router and Bot Imu can operate on `gui.db` directly.
 
 ---
 
@@ -738,11 +906,11 @@ After this phase, `strawpot start --role imu` works from any terminal.
 Minimal backend additions — existing session and conversation
 infrastructure handles most of the work.
 
-3. **Virtual IMU project** (id=0) — ensure the row exists in `db.py`
-   startup (same place `mark_orphaned_sessions_stopped` runs).
-4. **`GET /api/imu/conversation`** — get or create the IMU
-   conversation (project_id=0). Returns `{ conversation_id }`.
-5. **IMU session storage path** — IMU sessions use `~/.strawpot` as
+3. **Virtual Bot Imu project** (id=0, name='Bot Imu') — ensure the
+   row exists at `db.py` startup alongside `mark_orphaned_sessions_stopped`.
+4. **`GET /api/imu/conversations`** and **`POST /api/imu/conversations`** —
+   list and create Bot Imu conversations (project_id=0).
+5. **Bot Imu session storage path** — IMU sessions use `~/.strawpot` as
    the working directory, stored in `~/.strawpot/.strawpot/sessions/`.
 
 No `IMUManager`, no PTY, no `/api/imu/ws` — all handled by existing
@@ -750,32 +918,35 @@ No `IMUManager`, no PTY, no `/api/imu/ws` — all handled by existing
 
 ### Phase 3: GUI Chat Frontend
 
-Build the slide-over panel that wraps the existing conversation UI.
+Build the dedicated Bot Imu page using existing conversation UI components.
 
-6. **IMU nav button** — persistent `[IMU]` button in the global
-   navigation bar.
-7. **Slide-over chat panel** — resizable side panel that renders the
-   IMU conversation using `useConversationInfinite` + `useSessionWS`.
-   Persists open/closed state in localStorage.
+6. **Bot Imu nav link** — permanent "Bot Imu" entry in the global left
+   navigation sidebar, below `Registry` (or similar position).
+7. **Dedicated page** (`/imu` and `/imu/:conversationId`) — left sidebar
+   shows conversation list + "New Conversation" button; main content
+   renders the selected conversation via `ConversationView`
+   (`project_id = 0`). Redirects `/imu` to latest conversation.
 8. **Submit input** — text input sends via existing
    `POST /api/conversations/{id}/tasks` (new session) or
    `respond()` from `useSessionWS` (active ask_user reply).
 9. **Connection management** — reuses `useSessionWS` auto-reconnect;
-   "Launching IMU..." spinner shown while first session starts.
+   "Launching Bot Imu..." spinner shown while first session starts.
 
 ### Phase 4: Session History & Schedules
 
-11. **IMU session discovery** — scan IMU sessions in `sync_sessions()`,
-    IMU badge in the GUI.
-12. **Session list in chat panel** — dropdown to browse past IMU
-    sessions and view their traces.
+11. **Bot Imu session discovery** — `sync_sessions()` already handles
+    `project_id = 0`; no extra scan needed. "Bot Imu" nav link
+    shows a badge when a session is active.
+12. **Session list in sidebar** — Bot Imu conversation history
+    is automatically loaded via `useConversationInfinite`; each
+    session's trace is accessible from the AgentMessage component.
 13. **`strawpot schedule` CLI commands** (optional) — `list`, `create`,
     `update`, `enable`, `disable`, `delete`, `history` for terminal
     users who don't want to curl the GUI API.
 
 ### Phase 5: Persistent Context
 
-Give IMU memory across sessions.
+Give Bot Imu memory across sessions.
 
 14. **Enable memory provider** for the `imu` role so it remembers
     prior conversations, user preferences, and recurring tasks.
@@ -906,27 +1077,47 @@ tried to create a PR. You can fix this by setting it in config:
 
 ---
 
+## Implementation Status
+
+| # | Item | Phase | Status |
+|---|------|-------|---------|
+| 1 | Create `imu` role (`ROLE.md`) | 1 — Role & Skills | Planned |
+| 2 | Create six skills (`strawpot-cli`, `strawpot-gui-api`, `strawpot-config`, `strawpot-schedules`, `strawhub-cli`, `strawpot-sessions`) | 1 — Role & Skills | Planned |
+| 3 | Virtual Bot Imu project (id=0) in `db.py` startup | 2 — Backend | Planned |
+| 4 | `GET /api/imu/conversations` and `POST /api/imu/conversations` | 2 — Backend | Planned |
+| 5 | Bot Imu session storage path (`~/.strawpot`) | 2 — Backend | Planned |
+| 6 | "Bot Imu" nav link in left sidebar | 3 — Frontend | Planned |
+| 7 | Dedicated page (`/imu`, `/imu/:conversationId`) with conversation list sidebar | 3 — Frontend | Planned |
+| 8 | Submit input (new session or ask_user reply) | 3 — Frontend | Planned |
+| 9 | Connection management + "Launching Bot Imu…" spinner | 3 — Frontend | Planned |
+| 10 | Active session badge on Bot Imu nav link | 4 — History | Planned |
+| 11 | Conversation history via `useConversationInfinite` + AgentMessage access | 4 — History | Planned |
+| 12 | `strawpot schedule` CLI commands (optional) | 4 — History | Planned |
+| 13 | Memory provider for cross-session context | 5 — Memory | Planned |
+
+---
+
 ## Open Questions
 
-1. **Project discovery.** When IMU launches a session on a project, it
-   needs the project's directory path. Should IMU discover projects
-   from `gui.db`, from scanning directories, or require the user to
-   specify a path? For MVP, the user specifies the path or name.
+1. ~~**Project discovery.**~~ **Resolved.** Bot Imu calls
+   `GET /api/projects` (documented in the `strawpot-gui-api` skill)
+   to list all registered projects with their `id`, `name`, and
+   `directory`. No filesystem scanning or user-specified paths needed.
 
-2. ~~**Terminal output vs structured messages.**~~ **Resolved.** IMU
+2. ~~**Terminal output vs structured messages.**~~ **Resolved.** Bot Imu
    uses the ask_user bridge (structured JSON messages), not raw PTY
    output. No ANSI parsing needed; agent replies render as Markdown
    chat bubbles via existing `chat_messages.jsonl` → session WS.
 
-3. **Chat panel vs dedicated page.** The slide-over panel keeps IMU
-   accessible alongside other pages but has limited width. Should
-   there also be a full-page IMU view for longer conversations?
-   Start with the panel; add a "pop out" button if users want more
-   space.
+3. ~~**Chat panel vs dedicated page.**~~ **Resolved.** Bot Imu uses a
+   **dedicated page** (`/imu/:conversationId`) with a conversation list
+   sidebar — the same layout pattern as project `ConversationView`.
+   This provides full screen real estate, natural history browsing,
+   and consistent UX with established chat interfaces.
 
 4. ~~**Session continuity across GUI restarts.**~~ **Resolved.** On
    GUI startup `mark_orphaned_sessions_stopped()` marks any
-   `running`/`starting` sessions as `stopped` — IMU sessions
+   `running`/`starting` sessions as `stopped` — Bot Imu sessions
    included. The next user message spawns a fresh interactive session.
    `chat_messages.jsonl` persists the full chat history across
    restarts. Memory provider handles long-term context continuity.
