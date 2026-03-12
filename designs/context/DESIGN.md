@@ -159,7 +159,7 @@ This instruction only appears when there is conversation context (not on the fir
 | 7 | Cap turns + tiered condensation | Done |
 | 8 | File change tracking in trace events | Done |
 | 9 | Structured context format | Done |
-| 10 | Richer session summaries | Discussion |
+| 10 | Richer session summaries | Done |
 
 ## Key files
 

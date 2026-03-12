@@ -89,6 +89,18 @@ concurrently.
 Chat history is persisted to `chat_messages.jsonl` by the CLI bridge
 (thread-safe), surviving tab switches, page reloads, and GUI restarts.
 
+## Conversations
+
+When sessions are part of a [conversation](/gui/quickstart#start-a-conversation), each new message spawns a fresh session with no shared state. Context handover bridges this gap through two mechanisms:
+
+1. **Conversation context** — A text prefix built from prior sessions in the conversation, prepended to the agent's task. Includes a condensed history of what was asked and what was done in each turn, plus file change information from recent turns.
+
+2. **Memory** — Context cards retrieved from the memory provider before the agent spawns, injected into the agent's system prompt. Memory operates across conversations, not just within one.
+
+The context builder applies tiered condensation: older turns get brief summaries while recent turns retain more detail. Only completed and failed sessions appear in context. The most recent 10 turns are included; earlier turns are omitted with a note.
+
+Agents in a conversation are asked to end their response with a structured `## Session Recap` section (what was accomplished, key decisions, open items). When present, this recap is stored as the session summary instead of the raw output, giving the next turn a more useful signal.
+
 ## Crash Recovery
 
 If StrawPot crashes or is interrupted, sessions may be left in a stale state. On the next `strawpot start`, StrawPot automatically:
@@ -138,7 +150,7 @@ This separation keeps the event stream small and scannable while preserving full
 | Event | When | Key data |
 |-------|------|----------|
 | `session_start` | Session begins | role, runtime, isolation, task_ref |
-| `session_end` | Session stops | merge_strategy, duration_ms, output_ref |
+| `session_end` | Session stops | merge_strategy, duration_ms, output_ref, files_changed |
 | `delegate_start` | Delegation begins | role, depth, context_ref, session_id, parent_agent_id |
 | `delegate_end` | Delegation completes | exit_code, summary, duration_ms, output_ref, role, session_id, agent_id |
 | `delegate_denied` | Policy blocks delegation | role, reason, depth |

@@ -193,6 +193,20 @@ def get_db_conn(request: Request):
 # ---------------------------------------------------------------------------
 
 
+def _extract_recap(content: str) -> str:
+    """Extract a '## Session Recap' block from agent output.
+
+    If present, returns the recap section (without the heading).
+    Otherwise returns the full content unchanged.
+    """
+    marker = "## Session Recap"
+    idx = content.rfind(marker)
+    if idx == -1:
+        return content
+    recap = content[idx + len(marker) :].strip()
+    return recap if recap else content
+
+
 def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
     """Extract completion fields from a trace.jsonl file.
 
@@ -225,7 +239,7 @@ def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
                             with open(artifact_path, encoding="utf-8") as af:
                                 content = af.read().strip()
                             if content:
-                                result["summary"] = content
+                                result["summary"] = _extract_recap(content)
                         except OSError:
                             pass
                     files_changed = data.get("files_changed")

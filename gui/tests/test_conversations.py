@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from test_sessions_sync import _register_project
 
-from strawpot_gui.db import get_db
+from strawpot_gui.db import _extract_recap, get_db
 from strawpot_gui.routers.conversations import _build_conversation_context
 
 
@@ -511,8 +511,8 @@ class TestBuildConversationContext:
         with get_db(app.state.db_path) as conn:
             ctx = _build_conversation_context(conn, cid)
 
-        # Extract text after "**Pending Follow-up:**"
-        followup = ctx.split("**Pending Follow-up:**\n")[1]
+        # Extract text between "**Pending Follow-up:**" and "**Recap Instruction:**"
+        followup = ctx.split("**Pending Follow-up:**\n")[1].split("\n\n**Recap Instruction:**")[0]
         assert len(followup) <= 810  # 800 + "…"
 
     def test_files_changed_shown_for_recent_turns(self, client, tmp_path, app):
@@ -568,3 +568,67 @@ class TestBuildConversationContext:
         assert "src/module_0.py" in ctx
         assert "src/module_9.py" in ctx
         assert "src/module_10.py" not in ctx
+
+    def test_recap_instruction_appended(self, client, tmp_path, app):
+        """Context includes recap instruction when there are prior turns."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid, task="first task", summary="did it",
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "## Session Recap" in ctx
+        assert "What was accomplished" in ctx
+
+    def test_no_context_means_no_recap_instruction(self, client, tmp_path, app):
+        """When there are no prior sessions, no context (and no recap instruction)."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert ctx == ""
+
+
+class TestExtractRecap:
+    def test_extracts_recap_block(self):
+        content = (
+            "I did a bunch of work.\n\n"
+            "## Session Recap\n"
+            "- Implemented the login page\n"
+            "- User chose JWT over sessions\n"
+            "- Open: need to add tests"
+        )
+        result = _extract_recap(content)
+        assert result.startswith("- Implemented the login page")
+        assert "Open: need to add tests" in result
+        assert "I did a bunch of work" not in result
+
+    def test_returns_full_content_when_no_recap(self):
+        content = "Just some regular output with no recap section."
+        assert _extract_recap(content) == content
+
+    def test_uses_last_occurrence(self):
+        content = (
+            "## Session Recap\nfirst recap\n\n"
+            "more output\n\n"
+            "## Session Recap\n- actual recap"
+        )
+        result = _extract_recap(content)
+        assert result == "- actual recap"
+
+    def test_empty_recap_returns_full_content(self):
+        content = "some output\n\n## Session Recap\n"
+        assert _extract_recap(content) == content

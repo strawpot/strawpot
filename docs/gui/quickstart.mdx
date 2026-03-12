@@ -66,6 +66,17 @@ Conversations let you have multi-turn interactions with agents. Each message you
 
 Conversations are useful for iterative tasks: reviewing code in stages, asking follow-up questions, or breaking a large task into sequential steps.
 
+### How context handover works
+
+Each new session in a conversation receives a **Prior Conversation** prefix containing:
+
+- **History** — A condensed summary of each prior turn (what was asked, what was done). Recent turns retain more detail than older ones. Only the most recent 10 turns are included.
+- **File changes** — Which files were modified in recent turns, so the agent knows where to look.
+- **Pending Follow-up** — The last session's full summary, useful when your follow-up is short (e.g. "yes", "go ahead").
+- **Recap instruction** — Asks the agent to end its response with a structured recap of accomplishments, decisions, and open items. This recap is used as the summary for the next turn.
+
+This is separate from [memory](/concepts/memory), which operates across conversations. Both work together: conversation context provides the sequential narrative, while memory provides long-lived knowledge.
+
 ## Browse Resources
 
 The **Resources** section in the sidebar lists installed packages by type:
