@@ -128,19 +128,21 @@ When you finish, end your response with a "## Session Recap" section containing:
 
 This instruction only appears when there is conversation context (not on the first turn).
 
-**Extraction:** In `_parse_trace()`, when reading the output artifact for `summary`, check if the output contains a `## Session Recap` block. If found, store that block as the summary instead of the full output. If not found, fall back to the current behavior (full output).
+**Extraction:** The DB stores the full agent output as the session `summary`. Extraction happens at read time in `_build_conversation_context()` — when building context for the next turn, `_extract_recap()` extracts just the recap section from the stored summary. This keeps the full output available for GUI display while giving the context builder a focused summary.
+
+`_extract_recap()` uses `rfind` to find the last `## Session Recap` heading (handles agents that produce multiple headings), returns everything after it. Falls back to the full content if no recap is found.
 
 **Why this works for both context and memory:**
 
-- **Conversation context:** The context builder condenses the summary via tiered truncation. A structured recap condenses much better than raw log output — 120 chars of recap carries more signal than 120 chars of log.
-- **Memory:** `memory_provider.dump(task, output, status)` receives the same output. A structured recap at the end gives the memory provider cleaner input to decide what's worth persisting long-term.
+- **Conversation context:** The context builder condenses the extracted recap via tiered truncation. A structured recap condenses much better than raw log output — 120 chars of recap carries more signal than 120 chars of log.
+- **Memory:** `memory_provider.dump(task, output, status)` receives the full output including the recap block. A structured recap at the end gives the memory provider cleaner input to decide what's worth persisting long-term.
 
 **Changes required:**
 
 | File | Change |
 |------|--------|
-| `gui/src/strawpot_gui/routers/conversations.py` | Append recap instruction in `_build_conversation_context()` |
-| `gui/src/strawpot_gui/db.py` | In `_parse_trace()`, prefer `## Session Recap` block over full output for `summary` |
+| `gui/src/strawpot_gui/routers/conversations.py` | Append recap instruction in `_build_conversation_context()`, apply `_extract_recap()` when reading summaries for context |
+| `gui/src/strawpot_gui/db.py` | `_extract_recap()` helper (used by context builder, not by `_parse_trace()`) |
 
 **Fallback:** If the agent doesn't produce the recap (crashed, non-compliant wrapper, first turn), the full output is used as before.
 

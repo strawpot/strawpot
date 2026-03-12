@@ -99,7 +99,7 @@ When sessions are part of a [conversation](/gui/quickstart#start-a-conversation)
 
 The context builder applies tiered condensation: older turns get brief summaries while recent turns retain more detail. Only completed and failed sessions appear in context. The most recent 10 turns are included; earlier turns are omitted with a note.
 
-Agents in a conversation are asked to end their response with a structured `## Session Recap` section (what was accomplished, key decisions, open items). When present, this recap is stored as the session summary instead of the raw output, giving the next turn a more useful signal.
+Agents in a conversation are asked to end their response with a structured `## Session Recap` section (what was accomplished, key decisions, open items). The database stores the full agent output as the session summary. When building context for the next turn, the context builder extracts just the recap section — giving subsequent sessions a focused signal while keeping the full output available for display in the GUI.
 
 ## Crash Recovery
 
