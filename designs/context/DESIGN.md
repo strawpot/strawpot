@@ -76,7 +76,36 @@ When `user_task` is NULL (sessions created before the column existed), fall back
 
 ### 4. File change tracking
 
-Record which files were modified during each session so the next session knows where to pick up. Add a `files_changed` field to the `session_end` trace event, populated by diffing the worktree at session completion. Parse in `_parse_trace()` and store as a JSON array column on the sessions table. In context, show file paths for the most recent 2-3 turns only.
+Record which files were modified during each session so the next session knows where to pick up.
+
+**How it works:**
+
+At session end (`Session.stop()` in `cli/src/strawpot/session.py`), before the tracer emits `session_end`, compute the list of changed files:
+
+- **Worktree sessions:** The worktree branch (`strawpot/<session_id>`) is created from the base branch at session start. Run `git diff --name-only <base_branch>..<session_branch>` in the worktree directory to get changed files. The infrastructure for this already exists in `cli/src/strawpot/merge.py` (`_generate_patch()`).
+- **Non-worktree sessions:** Run `git diff --name-only HEAD` to get uncommitted changes, plus `git diff --name-only HEAD~1` if the agent made commits. This is less reliable since concurrent sessions or user edits can pollute the diff — best-effort only.
+- **Non-git sessions:** Report empty list.
+
+**Data flow:**
+
+```
+Session.stop()
+  → compute files_changed list (before cleanup)
+  → tracer.session_end(..., files_changed=["src/foo.py", "tests/test_foo.py"])
+  → trace.jsonl stores files_changed in session_end event
+  → _parse_trace() reads it, stores as JSON array in sessions.files_changed column
+  → _build_conversation_context() shows "Files: src/foo.py, tests/test_foo.py"
+    for most recent 2-3 turns only
+```
+
+**Changes required:**
+
+| File | Change |
+|------|--------|
+| `cli/src/strawpot/session.py` | Compute `files_changed` in `stop()` before `session_end` emission |
+| `cli/src/strawpot/trace.py` | Add `files_changed: list[str]` param to `session_end()` |
+| `gui/src/strawpot_gui/db.py` | Add `files_changed TEXT` column (JSON array), parse in `_parse_trace()` |
+| `gui/src/strawpot_gui/routers/conversations.py` | Show file paths in context for recent turns |
 
 ### 5. Structured context format
 
@@ -90,9 +119,9 @@ Replace the current flat text format with a more structured output that separate
 | 2 | Memory get/dump integration at session level | Done |
 | 3 | Memory get/dump integration at delegation level | Done |
 | 4 | `user_task` / `memory_task` separation to prevent context pollution | Done |
-| 5 | Filter out non-terminal sessions | Planned |
-| 6 | Use `user_task` instead of `task` for asked lines | Planned |
-| 7 | Cap turns + tiered condensation | Planned |
+| 5 | Filter out non-terminal sessions | Done |
+| 6 | Use `user_task` instead of `task` for asked lines | Done |
+| 7 | Cap turns + tiered condensation | Done |
 | 8 | File change tracking in trace events | Planned |
 | 9 | Structured context format | Planned |
 
