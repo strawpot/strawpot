@@ -481,7 +481,8 @@ metadata:
 ## Session Storage
 
 Sessions are stored at `<project>/.strawpot/sessions/<run_id>/`.
-IMU sessions are stored at `~/.strawpot/imu/sessions/<run_id>/`.
+IMU sessions are stored at `~/.strawpot/.strawpot/sessions/<run_id>/`
+(IMU uses `~/.strawpot` as its working directory).
 
 ## Find Sessions
 
@@ -517,7 +518,7 @@ grep '"event": "delegate_start"' <project>/.strawpot/sessions/<run_id>/trace.jso
 
 Event types: `session_start`, `session_end`, `delegate_start`,
 `delegate_end`, `delegate_denied`, `agent_spawn`, `agent_end`,
-`memory_get`, `memory_dump`.
+`memory_get`, `memory_dump`, `memory_remember`.
 
 ## Read Agent Logs
 
@@ -562,135 +563,65 @@ run it from the terminal with `strawpot start --role imu`.
 ```
 Browser (React SPA)
   │
-  │  WebSocket: /api/imu/ws
+  │  WebSocket: /ws/sessions/{run_id}  (existing session WS)
   │
   ▼
-FastAPI WebSocket endpoint
+Session WebSocket handler
   │
-  │  PTY read/write
+  │  ask_user bridge (file-based, chat_messages.jsonl)
   │
   ▼
-IMU Agent Process (interactive mode)
+IMU Session (interactive mode — ask_user loop)
 ```
 
-The GUI backend manages a single IMU agent process. Communication
-flows through a pseudo-terminal (PTY):
+IMU uses the **existing interactive session infrastructure** — no
+custom PTY bridge, no new IPC protocol. The GUI launches IMU as a
+regular interactive session. The agent loops through `ask_user` calls,
+each one holding for the user's next message. Output is structured
+(chat bubbles, Markdown) rather than raw terminal stream.
 
-1. **Start**: When the user opens IMU chat (or sends the first
-   message), the backend spawns the IMU agent via the wrapper's
-   `build` command in interactive mode. The process is attached to a
-   PTY so the agent behaves as if talking to a terminal.
-2. **User → Agent**: User messages arrive via WebSocket, are written
-   to the PTY's stdin.
-3. **Agent → User**: Agent output is read from the PTY's stdout and
-   streamed back over the WebSocket in real time.
-4. **Lifecycle**: The agent process persists across messages within a
-   session. Closing the chat panel does not kill the agent — it
-   continues in the background. Reopening reconnects to the same
-   session.
+This aligns with the "Zero new protocols" goal: interactive mode,
+ask_user bridge, session WebSocket, and ConversationView are all
+already implemented.
 
-This approach is **agent-agnostic** — any wrapper's interactive mode
-works. No wrapper-specific JSON streaming protocol required.
+Message flow per turn:
 
-#### Backend: IMU Manager
+1. User types a message in the IMU chat panel → submitted as an
+   `ask_user_response` if the current session is waiting, or spawns
+   a new interactive session if none is active.
+2. The IMU session's agent processes the request, calls `ask_user`
+   with its reply.
+3. The file-based bridge writes `ask_user_pending_*.json`; the session
+   WebSocket delivers an `ask_user` message to the frontend.
+4. The chat panel renders the agent's reply as a chat bubble and waits
+   for the user's next input.
+5. User replies → `ask_user_response` sent over the WebSocket → bridge
+   writes `ask_user_response_*.json` → agent continues.
 
-A new module `gui/src/strawpot_gui/imu.py` manages the IMU agent
-lifecycle:
+#### Backend: IMU Virtual Project & Conversation
 
-```python
-class IMUManager:
-    """Manages the singleton IMU agent process."""
+IMU sessions are stored under a virtual project (id = 0):
 
-    def __init__(self) -> None:
-        self._process: subprocess.Popen | None = None
-        self._pty_master: int | None = None
-        self._run_id: str | None = None
-        self._websockets: set[WebSocket] = set()
-
-    async def ensure_running(self) -> str:
-        """Start the IMU agent if not already running. Return run_id."""
-        if self._process and self._process.poll() is None:
-            return self._run_id
-        return await self._spawn()
-
-    async def _spawn(self) -> str:
-        """Spawn IMU agent with a PTY."""
-        run_id = f"run_{uuid.uuid4().hex[:12]}"
-        master, slave = pty.openpty()
-
-        # Build the agent command via wrapper
-        cmd, cwd = build_imu_command(run_id)
-
-        self._process = subprocess.Popen(
-            cmd, cwd=cwd,
-            stdin=slave, stdout=slave, stderr=slave,
-            preexec_fn=os.setsid,
-        )
-        os.close(slave)
-        self._pty_master = master
-        self._run_id = run_id
-
-        # Start background reader task
-        asyncio.create_task(self._read_loop())
-        return run_id
-
-    async def send(self, message: str) -> None:
-        """Write user message to PTY stdin."""
-        os.write(self._pty_master, (message + "\n").encode())
-
-    async def _read_loop(self) -> None:
-        """Read PTY stdout and broadcast to connected WebSockets."""
-        loop = asyncio.get_event_loop()
-        while self._process and self._process.poll() is None:
-            data = await loop.run_in_executor(
-                None, os.read, self._pty_master, 4096
-            )
-            if not data:
-                break
-            text = data.decode(errors="replace")
-            for ws in list(self._websockets):
-                await ws.send_text(text)
-
-    async def stop(self) -> None:
-        """Gracefully stop the IMU agent."""
-        if self._process:
-            self._process.terminate()
-            self._process.wait(timeout=10)
+```sql
+INSERT OR IGNORE INTO projects (id, name, directory, created_at)
+VALUES (0, 'IMU', '~/.strawpot', datetime('now'));
 ```
 
-The `IMUManager` is instantiated once at app startup and shared across
-requests (same pattern as the scheduler).
+IMU uses a single persistent conversation (auto-created on first use)
+in the `conversations` table with `project_id = 0`. One new session
+is spawned per user "submit" if no session is currently waiting for
+input. All session WebSocket and ask_user bridge infrastructure is
+reused as-is — no new backend modules needed.
 
-#### Backend: WebSocket Endpoint
-
-```python
-@router.websocket("/api/imu/ws")
-async def imu_websocket(ws: WebSocket, manager: IMUManager = Depends()):
-    await ws.accept()
-    await manager.ensure_running()
-    manager._websockets.add(ws)
-    try:
-        while True:
-            message = await ws.receive_text()
-            await manager.send(message)
-    except WebSocketDisconnect:
-        manager._websockets.discard(ws)
-```
-
-Multiple browser tabs can connect to the same IMU session. All see
-the same conversation stream.
-
-#### Backend: REST Endpoints
-
-For non-WebSocket operations (session history, status):
+**New endpoint:**
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `GET /api/imu/status` | GET | IMU agent status (running/stopped, run_id, uptime) |
-| `POST /api/imu/start` | POST | Start IMU agent (no-op if already running) |
-| `POST /api/imu/stop` | POST | Stop IMU agent |
-| `GET /api/imu/sessions` | GET | List past IMU sessions |
-| `GET /api/imu/sessions/{run_id}` | GET | IMU session detail |
+| `GET /api/imu/conversation` | GET | Return (or create) the IMU conversation. Returns `{ conversation_id }`. |
+
+All other operations use the existing conversation and session APIs:
+`POST /api/conversations/{id}/tasks`, `GET /api/conversations/{id}`,
+`/ws/sessions/{run_id}`.
 
 #### Frontend: Chat Panel
 
@@ -724,29 +655,33 @@ while chatting with IMU.
 └───────────────────────────────────────┴─────────────────────┘
 ```
 
+The panel embeds a trimmed `ConversationView`-equivalent component
+(the same interleaved-sessions view already implemented for item 12),
+scoped to the IMU conversation.
+
 **Panel behavior:**
 
 - **Toggle**: Click the `[IMU]` nav button to slide the panel open
   or closed. Panel width: 400px (resizable).
 - **Persist**: Panel state (open/closed) persists across page
   navigations and page refreshes (localStorage).
-- **Auto-start**: Opening the panel auto-starts the IMU agent if not
-  running. A brief "Starting IMU..." spinner shows during boot.
-- **Reconnect**: If the WebSocket disconnects, auto-reconnect with
-  exponential backoff. Show a subtle "Reconnecting..." indicator.
-- **History**: On panel open, fetch recent messages from the current
-  session's log for scroll-back context.
+- **Auto-start**: Submitting the first message creates the IMU
+  conversation and launches the first session. A brief "Launching
+  IMU..." spinner shows during start.
+- **Reconnect**: The existing `useSessionWS` auto-reconnect handles
+  WebSocket drops with exponential backoff.
+- **History**: `useConversationInfinite` loads recent sessions and
+  their chat messages on panel open. `chat_messages.jsonl` persists
+  the full conversation across GUI restarts.
 
 **Message rendering:**
 
-- User messages: right-aligned bubbles (standard chat UI).
-- Agent output: left-aligned, rendered as Markdown (code blocks,
-  lists, links). Agent tool invocations (shell commands) shown in
-  distinct styled blocks.
-- Status indicators: typing/thinking indicator while agent is
-  processing, timestamp on each message.
-- Terminal output: raw terminal output from the agent rendered in a
-  monospace font block with ANSI color support.
+- User messages: right-aligned bubbles.
+- Agent `ask_user` replies: left-aligned, rendered as Markdown.
+- Session outputs (agent summary): rendered via the existing
+  `AgentMessage` component when a session completes.
+- Pending ask_user: input box active (same `AskUserPanel` component
+  used on SessionDetail).
 
 **Quick actions (optional, future):**
 
@@ -759,41 +694,15 @@ page:
 
 These pre-fill the input box with a suggested message.
 
-#### Terminal Output Handling
-
-The PTY produces raw terminal output including ANSI escape codes.
-The frontend needs to handle this:
-
-1. **ANSI parsing**: Use a library like `xterm.js` or `anser` to
-   convert ANSI escape codes to styled HTML.
-2. **Message boundaries**: Agent output is a continuous stream, not
-   discrete messages. The frontend accumulates output until the agent
-   returns to its input prompt, then treats the accumulated text as
-   one "message."
-3. **Prompt detection**: Detect the agent's input prompt pattern
-   (e.g., `> ` for Claude Code) to know when the agent is waiting
-   for input. This signals the frontend to show the input box as
-   active and stop the typing indicator.
-
-Alternatively, if the agent wrapper supports structured JSON output
-mode, the frontend can parse discrete message objects instead of raw
-terminal output. This is a per-wrapper optimization — PTY mode is the
-universal fallback.
-
 ### IMU Session Discovery
 
-The GUI session sync also scans `~/.strawpot/imu/sessions/` for IMU
-session history. These appear in the GUI under a special "IMU" virtual
-project (auto-registered, not tied to a user project).
+The GUI session sync scans `~/.strawpot/.strawpot/sessions/` for IMU
+session history. These appear in the GUI under the "IMU" virtual
+project (project_id = 0, auto-created at startup).
 
-In `db.py`, ensure a virtual project row exists:
-
-```sql
-INSERT OR IGNORE INTO projects (id, name, directory, created_at)
-VALUES (0, 'IMU', '~/.strawpot', datetime('now'));
-```
-
-IMU sessions reference `project_id = 0`.
+The virtual project row is ensured in `db.py` at startup (same place
+as `mark_orphaned_sessions_stopped`). IMU sessions reference
+`project_id = 0`.
 
 ### Schedule Management from IMU
 
@@ -826,29 +735,33 @@ After this phase, `strawpot start --role imu` works from any terminal.
 
 ### Phase 2: GUI Chat Backend
 
-Add the PTY-bridged WebSocket backend for GUI-embedded chat.
+Minimal backend additions — existing session and conversation
+infrastructure handles most of the work.
 
-3. **`IMUManager` class** in `gui/src/strawpot_gui/imu.py` — PTY
-   process management, WebSocket broadcast, lifecycle control.
-4. **WebSocket endpoint** `/api/imu/ws` — bidirectional message
-   relay between frontend and IMU agent process.
-5. **REST endpoints** — `/api/imu/status`, `/api/imu/start`,
-   `/api/imu/stop` for lifecycle control.
-6. **App integration** — instantiate `IMUManager` at startup,
-   graceful shutdown on exit.
+3. **Virtual IMU project** (id=0) — ensure the row exists in `db.py`
+   startup (same place `mark_orphaned_sessions_stopped` runs).
+4. **`GET /api/imu/conversation`** — get or create the IMU
+   conversation (project_id=0). Returns `{ conversation_id }`.
+5. **IMU session storage path** — IMU sessions use `~/.strawpot` as
+   the working directory, stored in `~/.strawpot/.strawpot/sessions/`.
+
+No `IMUManager`, no PTY, no `/api/imu/ws` — all handled by existing
+`/ws/sessions/{run_id}` and `/api/conversations/{id}/tasks`.
 
 ### Phase 3: GUI Chat Frontend
 
-Build the chat panel in the React frontend.
+Build the slide-over panel that wraps the existing conversation UI.
 
-7. **IMU nav button** — persistent `[IMU]` button in the global
+6. **IMU nav button** — persistent `[IMU]` button in the global
    navigation bar.
-8. **Slide-over chat panel** — resizable side panel with WebSocket
-   connection, auto-start on open, persist open/closed state.
-9. **Message rendering** — Markdown rendering for agent output,
-   ANSI color support for terminal output, user message bubbles.
-10. **Connection management** — auto-reconnect with exponential
-    backoff, typing/thinking indicator, "Starting IMU..." spinner.
+7. **Slide-over chat panel** — resizable side panel that renders the
+   IMU conversation using `useConversationInfinite` + `useSessionWS`.
+   Persists open/closed state in localStorage.
+8. **Submit input** — text input sends via existing
+   `POST /api/conversations/{id}/tasks` (new session) or
+   `respond()` from `useSessionWS` (active ask_user reply).
+9. **Connection management** — reuses `useSessionWS` auto-reconnect;
+   "Launching IMU..." spinner shown while first session starts.
 
 ### Phase 4: Session History & Schedules
 
@@ -1000,11 +913,10 @@ tried to create a PR. You can fix this by setting it in config:
    from `gui.db`, from scanning directories, or require the user to
    specify a path? For MVP, the user specifies the path or name.
 
-2. **Terminal output vs structured messages.** The PTY bridge produces
-   raw terminal output. Should we invest in a structured message
-   protocol (JSON events for "thinking", "tool_use", "response") for
-   richer rendering, or keep the universal PTY approach? PTY-first
-   for MVP; structured mode as a per-wrapper optimization later.
+2. ~~**Terminal output vs structured messages.**~~ **Resolved.** IMU
+   uses the ask_user bridge (structured JSON messages), not raw PTY
+   output. No ANSI parsing needed; agent replies render as Markdown
+   chat bubbles via existing `chat_messages.jsonl` → session WS.
 
 3. **Chat panel vs dedicated page.** The slide-over panel keeps IMU
    accessible alongside other pages but has limited width. Should
@@ -1012,8 +924,9 @@ tried to create a PR. You can fix this by setting it in config:
    Start with the panel; add a "pop out" button if users want more
    space.
 
-4. **Session continuity across GUI restarts.** When the GUI server
-   restarts, the IMU agent process dies (child process). Should the
-   agent persist independently (daemonized) or restart on next
-   interaction? Restart is simpler; memory provider handles context
-   continuity.
+4. ~~**Session continuity across GUI restarts.**~~ **Resolved.** On
+   GUI startup `mark_orphaned_sessions_stopped()` marks any
+   `running`/`starting` sessions as `stopped` — IMU sessions
+   included. The next user message spawns a fresh interactive session.
+   `chat_messages.jsonl` persists the full chat history across
+   restarts. Memory provider handles long-term context continuity.
