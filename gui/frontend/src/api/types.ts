@@ -221,6 +221,14 @@ export interface ConversationList {
   per_page: number;
 }
 
+export interface ImuConversation {
+  id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string | null;
+  session_count: number;
+}
+
 export interface Schedule {
   id: number;
   name: string;

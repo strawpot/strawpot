@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Conversation, ConversationList } from "@/api/types";
+import type { Conversation, ConversationList, ImuConversation } from "@/api/types";
 
 interface CreateConversationBody {
   project_id: number;
@@ -60,6 +60,55 @@ export function useRenameConversation(projectId: number) {
     onSuccess: (_data, { conversationId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations.all(projectId) });
       qc.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+    },
+  });
+}
+
+export function useCreateImuConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<Pick<ImuConversation, "id" | "title" | "created_at" | "updated_at">>(
+        "/imu/conversations",
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["imu", "conversations"] });
+    },
+  });
+}
+
+export function useRenameImuConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, title }: { conversationId: number; title: string | null }) =>
+      api.patch<Conversation>(`/conversations/${conversationId}`, { title }),
+    onSuccess: (_data, { conversationId }) => {
+      qc.invalidateQueries({ queryKey: ["imu", "conversations"] });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+    },
+  });
+}
+
+export function useDeleteImuConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: number) => api.delete(`/conversations/${conversationId}`),
+    onMutate: async (conversationId: number) => {
+      await qc.cancelQueries({ queryKey: ["imu", "conversations"] });
+      const previous = qc.getQueryData<ImuConversation[]>(["imu", "conversations"]);
+      qc.setQueryData<ImuConversation[]>(["imu", "conversations"], (old) =>
+        old ? old.filter((c) => c.id !== conversationId) : old,
+      );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        qc.setQueryData(["imu", "conversations"], context.previous);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["imu", "conversations"] });
     },
   });
 }

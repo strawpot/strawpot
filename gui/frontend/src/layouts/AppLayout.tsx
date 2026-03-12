@@ -4,8 +4,9 @@ import { useTheme } from "next-themes";
 import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, BotMessageSquare, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject, useProjects } from "@/hooks/queries/use-projects";
-import { useProjectConversations } from "@/hooks/queries/use-conversations";
-import { useCreateConversation, useRenameConversation, useDeleteConversation } from "@/hooks/mutations/use-conversations";
+import { useImuConversations, useProjectConversations } from "@/hooks/queries/use-conversations";
+import { useCreateConversation, useCreateImuConversation, useDeleteImuConversation, useDeleteConversation, useRenameConversation, useRenameImuConversation } from "@/hooks/mutations/use-conversations";
+import type { ImuConversation } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import CommandPalette from "@/components/CommandPalette";
@@ -157,6 +158,160 @@ function ConversationSidebarItem({
   );
 }
 
+function ImuConversationSidebarItem({
+  conv,
+  isActive,
+  navigate,
+}: {
+  conv: ImuConversation;
+  isActive: boolean;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rename = useRenameImuConversation();
+  const del = useDeleteImuConversation();
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDraft(conv.title ?? "");
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const save = () => {
+    const trimmed = draft.trim();
+    rename.mutate({ conversationId: conv.id, title: trimmed || null });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="px-1">
+        <Input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); save(); }
+            if (e.key === "Escape") { e.stopPropagation(); setEditing(false); }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="h-7 text-xs px-2"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        "flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors",
+        isActive
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
+      )}
+    >
+      <button
+        onClick={() => navigate(`/imu/${conv.id}`)}
+        className="flex-1 min-w-0 text-left text-sm"
+      >
+        <span className="truncate block">{conv.title ?? `Conversation #${conv.id}`}</span>
+      </button>
+      {confirming ? (
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); del.mutate(conv.id); setConfirming(false); navigate("/imu"); }}
+            className="text-xs text-destructive hover:text-destructive/80 font-medium"
+            disabled={del.isPending}
+          >
+            Delete
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirming(false); }}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            No
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-0.5 shrink-0" style={{ opacity: hovered ? 1 : 0 }}>
+          <button
+            onClick={startEdit}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
+            title="Rename"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          {!isActive && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+              className="p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImuSidebar({ conversationId }: { conversationId: number }) {
+  const navigate = useNavigate();
+  const conversations = useImuConversations();
+  const createConversation = useCreateImuConversation();
+
+  return (
+    <aside className="flex w-56 flex-col border-r border-border bg-card">
+      <div className="flex h-14 items-center border-b border-border px-4">
+        <Link to="/" className="text-lg font-bold tracking-tight hover:text-foreground/80">StrawPot</Link>
+      </div>
+      <div className="flex flex-col gap-1 p-3 flex-1 min-h-0">
+        <button
+          onClick={() => navigate("/imu")}
+          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground transition-colors"
+        >
+          <BotMessageSquare className="h-4 w-4 shrink-0" />
+          <span className="truncate">Bot Imu</span>
+        </button>
+
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">Conversations</span>
+          <button
+            onClick={() => createConversation.mutate(undefined, {
+              onSuccess: (conv) => navigate(`/imu/${conv.id}`),
+            })}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="New conversation"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-0.5">
+          {(conversations.data ?? []).map((conv) => (
+            <ImuConversationSidebarItem
+              key={conv.id}
+              conv={conv}
+              isActive={conv.id === conversationId}
+              navigate={navigate}
+            />
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function ConversationSidebar({ projectId, conversationId }: { projectId: number; conversationId: number }) {
   const navigate = useNavigate();
   const conversations = useProjectConversations(projectId, 1, 50);
@@ -219,6 +374,11 @@ function useBreadcrumbs() {
   const { data: conversationsListData } = useProjectConversations(projectId, 1, 50);
   const conversationTitle = conversationsListData?.items.find((c) => c.id === conversationId)?.title ?? null;
 
+  // Imu conversation title (cache hit from ImuSidebar)
+  const imuConvId = segments[0] === "imu" && segments[1] ? Number(segments[1]) : 0;
+  const { data: imuConversations } = useImuConversations();
+  const imuConvTitle = imuConversations?.find((c) => c.id === imuConvId)?.title ?? null;
+
   const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [
     { label: "Dashboard", href: "/" },
   ];
@@ -236,6 +396,13 @@ function useBreadcrumbs() {
       } else if (segments[2] === "conversations" && segments[3]) {
         crumbs.push({ label: conversationTitle ?? `Conversation #${segments[3]}` });
       }
+    }
+  }
+
+  if (segments[0] === "imu") {
+    crumbs.push({ label: "Bot Imu", href: "/imu" });
+    if (segments[1]) {
+      crumbs.push({ label: imuConvTitle ?? `Conversation #${segments[1]}` });
     }
   }
 
@@ -274,6 +441,8 @@ export default function AppLayout() {
   const convMatch = useMatch("/projects/:projectId/conversations/:conversationId");
   const convProjectId = convMatch ? Number(convMatch.params.projectId) : 0;
   const convId = convMatch ? Number(convMatch.params.conversationId) : 0;
+  const imuMatch = useMatch("/imu/:conversationId");
+  const imuConvId = imuMatch ? Number(imuMatch.params.conversationId) : 0;
 
   useKeyboardShortcuts({
     onCommandPalette: () => setCmdOpen(true),
@@ -285,6 +454,8 @@ export default function AppLayout() {
       {/* Sidebar */}
       {convMatch ? (
         <ConversationSidebar projectId={convProjectId} conversationId={convId} />
+      ) : imuMatch ? (
+        <ImuSidebar conversationId={imuConvId} />
       ) : (
         <aside className="flex w-56 flex-col border-r border-border bg-card">
           <div className="flex h-14 items-center border-b border-border px-4">
