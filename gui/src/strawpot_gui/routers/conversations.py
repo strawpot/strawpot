@@ -377,7 +377,10 @@ def get_conversation(
     sessions = list(reversed(rows[:limit]))  # ascending for display
 
     result = dict(row)
-    result["sessions"] = [dict(s) for s in sessions]
+    result["sessions"] = [
+        {**dict(s), "summary": _strip_recap(s["summary"]) if s["summary"] else s["summary"]}
+        for s in sessions
+    ]
     result["has_more"] = has_more
     return result
 
