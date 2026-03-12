@@ -903,7 +903,7 @@ function ImuHome() {
             Bot Imu
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your personal StrawPot assistant. Ask it to manage projects, run agents, configure schedules, or anything else in your StrawPot workspace.
+            Your personal StrawPot overlord. Ask it to manage projects, run agents, configure schedules, or anything else in your StrawPot workspace.
           </p>
         </div>
         <Button
