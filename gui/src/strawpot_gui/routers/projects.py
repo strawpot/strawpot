@@ -45,7 +45,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 @router.get("/projects")
 def list_projects(conn=Depends(get_db_conn)):
     rows = conn.execute(
-        "SELECT id, display_name, working_dir, created_at FROM projects ORDER BY id"
+        "SELECT id, display_name, working_dir, created_at FROM projects WHERE id != 0 ORDER BY id"
     ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
