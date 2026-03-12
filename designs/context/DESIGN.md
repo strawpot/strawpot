@@ -111,6 +111,19 @@ Session.stop()
 
 Replace the current flat text format with a more structured output that separates metadata from content. Include turn status (completed/failed), duration, and optional file paths — giving the agent richer signals about what happened.
 
+### 6. Richer session summaries
+
+Currently the session summary is the raw agent output — it captures *what* was done but loses the mid-session discussion: user corrections, design decisions, rejected alternatives, and open items. This means the next session in a conversation has no awareness of the "why" behind prior turns.
+
+The idea is to have the agent produce a structured recap at session end that captures:
+- What was accomplished
+- Key decisions made ("user chose X over Y")
+- Open items / next steps
+
+This fits into the existing flow — the `summary` field already propagates through `session_end` → `_parse_trace()` → DB → context builder. The question is how to produce the richer summary: prompt the agent wrapper to emit one at session end, or post-process the conversation transcript.
+
+**Status:** Needs further discussion on approach before design is finalized.
+
 ## Implementation status
 
 | # | Item | Status |
@@ -124,6 +137,7 @@ Replace the current flat text format with a more structured output that separate
 | 7 | Cap turns + tiered condensation | Done |
 | 8 | File change tracking in trace events | Planned |
 | 9 | Structured context format | Planned |
+| 10 | Richer session summaries | Discussion |
 
 ## Key files
 
