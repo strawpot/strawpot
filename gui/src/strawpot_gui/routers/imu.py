@@ -19,7 +19,8 @@ def list_imu_conversations(
     """List Bot Imu conversations, newest first."""
     rows = conn.execute(
         """SELECT c.id, c.title, c.created_at, c.updated_at,
-                  COUNT(s.run_id) AS session_count
+                  COUNT(s.run_id) AS session_count,
+                  COUNT(CASE WHEN s.status IN ('running', 'starting') THEN 1 END) AS active_session_count
            FROM conversations c
            LEFT JOIN sessions s ON s.conversation_id = c.id
            WHERE c.project_id = ?

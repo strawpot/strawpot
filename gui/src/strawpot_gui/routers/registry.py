@@ -311,10 +311,15 @@ def install_resource(data: dict = Body(...)):
     return run_strawhub("install", singular, "-y", name, "--global")
 
 
+_PROTECTED_ROLES = {"imu"}
+
+
 @router.delete("/{resource_type}/{name}")
 def uninstall_resource(resource_type: str, name: str):
     """Uninstall a resource via strawhub."""
     validate_type(resource_type)
+    if resource_type == "roles" and name in _PROTECTED_ROLES:
+        raise HTTPException(403, f"'{name}' is a built-in role and cannot be uninstalled.")
     singular = resource_type.rstrip("s") if resource_type != "memories" else "memory"
     return run_strawhub("uninstall", singular, name, "--global")
 
