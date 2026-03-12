@@ -251,7 +251,7 @@ def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
                             with open(artifact_path, encoding="utf-8") as af:
                                 content = af.read().strip()
                             if content:
-                                result["summary"] = _extract_recap(content)
+                                result["summary"] = content
                         except OSError:
                             pass
                     files_changed = data.get("files_changed")
