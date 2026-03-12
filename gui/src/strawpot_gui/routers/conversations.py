@@ -115,6 +115,7 @@ def list_recent_conversations(
            FROM conversations c
            JOIN projects p ON p.id = c.project_id
            LEFT JOIN sessions s ON s.conversation_id = c.id
+           WHERE p.id != 0
            GROUP BY c.id
            ORDER BY COALESCE(MAX(s.started_at), c.created_at) DESC
            LIMIT ?""",

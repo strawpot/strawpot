@@ -357,6 +357,8 @@ def list_all_sessions(
     if project_id is not None:
         clauses.append("project_id = ?")
         params.append(project_id)
+    else:
+        clauses.append("project_id != 0")
     if status is not None:
         clauses.append("status = ?")
         params.append(status)

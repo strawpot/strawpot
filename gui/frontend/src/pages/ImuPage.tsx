@@ -1,18 +1,35 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useConversationInfinite, useImuConversations } from "@/hooks/queries/use-conversations";
-import { useCreateImuConversation, useRenameImuConversation, useSubmitConversationTask } from "@/hooks/mutations/use-conversations";
+import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
+import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
 import { useResources } from "@/hooks/queries/use-registry";
+import { useProjectFiles } from "@/hooks/queries/use-projects";
+import { api } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import SessionTable from "@/components/SessionTable";
+import Pagination from "@/components/Pagination";
+import { ProjectActivityTab } from "@/components/ProjectActivityTab";
+import ProjectFilesTab from "@/components/ProjectFilesTab";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,8 +40,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, Loader2, MessageSquare, Plus, Settings, Square, XCircle } from "lucide-react";
-import type { AskUserPending, ChatMessage, ConversationSession } from "@/api/types";
+import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
+import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
 const IMU_ROLE = "imu";
@@ -123,7 +140,13 @@ function ImuConversationView({ cid }: { cid: number }) {
   const [advCacheDelegations, setAdvCacheDelegations] = useState("");
   const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
   const [advCacheTtl, setAdvCacheTtl] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [showAllFiles, setShowAllFiles] = useState(false);
+  const [fileFilter, setFileFilter] = useState("");
   const [askUserResponse, setAskUserResponse] = useState("");
+  const qc = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef(0);
@@ -133,6 +156,12 @@ function ImuConversationView({ cid }: { cid: number }) {
 
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
+  const projectFiles = useProjectFiles(0);
+
+  const toggleFile = (path: string) =>
+    setSelectedFiles((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path],
+    );
 
   const { data, isLoading, error, fetchPreviousPage, hasPreviousPage, isFetchingPreviousPage } =
     useConversationInfinite(cid);
@@ -215,6 +244,29 @@ function ImuConversationView({ cid }: { cid: number }) {
     return () => observer.disconnect();
   }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    setIsUploading(true);
+    try {
+      const uploaded = await api.upload<ProjectFile[]>(`/projects/0/files`, files);
+      qc.invalidateQueries({ queryKey: queryKeys.projects.files(0) });
+      setSelectedFiles((prev) => {
+        const newPaths = uploaded.map((f) => f.path).filter((p) => !prev.includes(p));
+        return [...prev, ...newPaths];
+      });
+    } catch {
+      // upload error — silently ignore
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
@@ -224,6 +276,7 @@ function ImuConversationView({ cid }: { cid: number }) {
         task: trimmed,
         role: IMU_ROLE,
         interactive,
+        context_files: selectedFiles.length > 0 ? selectedFiles : undefined,
         system_prompt: advSystemPrompt.trim() || undefined,
         runtime: advRuntime.trim() || undefined,
         memory: advMemory.trim() || undefined,
@@ -232,7 +285,7 @@ function ImuConversationView({ cid }: { cid: number }) {
         cache_max_entries: advCacheMaxEntries.trim() ? Number(advCacheMaxEntries) : undefined,
         cache_ttl_seconds: advCacheTtl.trim() ? Number(advCacheTtl) : undefined,
       },
-      { onSuccess: () => setTask("") },
+      { onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); } },
     );
   }
 
@@ -413,19 +466,110 @@ function ImuConversationView({ cid }: { cid: number }) {
       {/* Task input */}
       <div className="flex-shrink-0 border-t border-border bg-background pt-4">
         <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-2">
-          <Textarea
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              hasActiveSession
-                ? "Bot Imu is working…"
-                : "Ask Bot Imu anything… (Enter to send, Shift+Enter for new line)"
-            }
-            disabled={hasActiveSession || submit.isPending}
-            className="h-[80px] resize-none overflow-y-auto"
-            autoFocus
-          />
+          <div
+            className="relative"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <Textarea
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                hasActiveSession
+                  ? "Bot Imu is working…"
+                  : "Ask Bot Imu anything… (Enter to send, Shift+Enter for new line, drag & drop files to attach)"
+              }
+              disabled={hasActiveSession || submit.isPending}
+              className="h-[80px] resize-none overflow-y-auto"
+              autoFocus
+            />
+            {(isDragging || isUploading) && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/80 pointer-events-none">
+                {isUploading ? (
+                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2 text-sm text-primary">
+                    <Upload className="h-4 w-4" /> Drop to upload &amp; attach
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs">
+                      <Paperclip className="mr-1 h-3 w-3" />
+                      Annotate files
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    <div className="px-2 py-1.5">
+                      <Input
+                        placeholder="Filter files…"
+                        value={fileFilter}
+                        onChange={(e) => setFileFilter(e.target.value)}
+                        className="h-7 text-xs"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {(projectFiles.data ?? [])
+                        .filter((f) => f.path.toLowerCase().includes(fileFilter.toLowerCase()))
+                        .map((f) => (
+                          <DropdownMenuCheckboxItem
+                            key={f.path}
+                            checked={selectedFiles.includes(f.path)}
+                            onCheckedChange={() => toggleFile(f.path)}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <span className="font-mono text-xs">{f.path}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {selectedFiles.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{selectedFiles.length} attached</span>
+                )}
+              </div>
+              {selectedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {(showAllFiles ? selectedFiles : selectedFiles.slice(0, 3)).map((path) => (
+                    <Badge key={path} variant="secondary" className="gap-1 font-mono text-xs">
+                      <button type="button" onClick={() => toggleFile(path)} className="mr-0.5 rounded-sm hover:bg-muted">
+                        <X className="h-3 w-3" />
+                      </button>
+                      @{path}
+                    </Badge>
+                  ))}
+                  {!showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(true)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      +{selectedFiles.length - 3} more
+                    </button>
+                  )}
+                  {showAllFiles && selectedFiles.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFiles(false)}
+                      className="basis-full text-left text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground px-1">Role: {IMU_ROLE}</span>
             <div className="flex items-center gap-1">
@@ -625,48 +769,232 @@ function ImuConversationView({ cid }: { cid: number }) {
   );
 }
 
-function ImuHome() {
-  const navigate = useNavigate();
-  const conversations = useImuConversations();
-  const createConversation = useCreateImuConversation();
+function ImuEditableTitleCell({
+  conv,
+}: {
+  conv: ImuConversation;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rename = useRenameImuConversation();
 
-  // Redirect to most recent conversation when one exists
-  useEffect(() => {
-    if (conversations.data && conversations.data.length > 0) {
-      navigate(`/imu/${conversations.data[0].id}`, { replace: true });
-    }
-  }, [conversations.data, navigate]);
+  function start(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(conv.title ?? "");
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
 
-  if (conversations.isLoading) {
+  function commit(e: React.SyntheticEvent) {
+    e.stopPropagation();
+    rename.mutate({ conversationId: conv.id, title: draft.trim() || null });
+    setEditing(false);
+  }
+
+  if (editing) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <Input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(e); }
+          if (e.key === "Escape") { e.stopPropagation(); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="h-7 text-sm font-medium w-full"
+        placeholder={`Conversation #${conv.id}`}
+      />
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-medium">{conv.title ?? `Conversation #${conv.id}`}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5 text-muted-foreground hover:text-foreground"
+        onClick={start}
+        aria-label="Rename"
+      >
+        <Pencil className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+function ImuDeleteButton({ conv }: { conv: ImuConversation }) {
+  const [confirming, setConfirming] = useState(false);
+  const del = useDeleteImuConversation();
+
+  if (confirming) {
+    return (
+      <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={del.isPending}
+          onClick={(e) => {
+            e.stopPropagation();
+            del.mutate(conv.id, {
+              onSuccess: () => setConfirming(false),
+              onError: () => setConfirming(false),
+            });
+          }}
+        >
+          Confirm
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => { e.stopPropagation(); setConfirming(false); }}
+        >
+          No
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
-      <BotMessageSquare className="h-12 w-12 text-muted-foreground/40" />
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">Bot Imu</h2>
-        <p className="text-sm text-muted-foreground mt-1">Your personal AI assistant</p>
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+      onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+      aria-label="Delete conversation"
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+function ImuHome() {
+  const navigate = useNavigate();
+  const conversations = useImuConversations();
+  const createConversation = useCreateImuConversation();
+  const [sessionPage, setSessionPage] = useState(1);
+  const sessions = useProjectSessions(0, sessionPage);
+  const [activeTab, setActiveTab] = useState("conversations");
+
+  const sessionList = sessions.data?.items ?? [];
+  const sessionTotal = sessions.data?.total ?? 0;
+  const sessionTotalPages = sessions.data
+    ? Math.ceil(sessions.data.total / sessions.data.per_page)
+    : 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <BotMessageSquare className="h-6 w-6" />
+          Bot Imu
+        </h1>
+        <Button
+          onClick={() =>
+            createConversation.mutate(undefined, {
+              onSuccess: (conv) => navigate(`/imu/${conv.id}`),
+            })
+          }
+          disabled={createConversation.isPending}
+        >
+          {createConversation.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <MessageSquare className="mr-2 h-4 w-4" />
+          )}
+          New Conversation
+        </Button>
       </div>
-      <Button
-        onClick={() =>
-          createConversation.mutate(undefined, {
-            onSuccess: (conv) => navigate(`/imu/${conv.id}`),
-          })
-        }
-        disabled={createConversation.isPending}
-      >
-        {createConversation.isPending ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <Plus className="mr-2 h-4 w-4" />
-        )}
-        New Conversation
-      </Button>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="conversations">
+            Conversations ({conversations.data?.length ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="sessions">
+            Sessions ({sessionTotal})
+          </TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="conversations" className="mt-4 space-y-3">
+          {(conversations.data ?? []).length === 0 ? (
+            <p className="text-sm italic text-muted-foreground">
+              No conversations yet. Click "New Conversation" to start one.
+            </p>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-2 font-medium">Title</th>
+                      <th className="px-4 py-2 font-medium">Sessions</th>
+                      <th className="px-4 py-2 font-medium">Last activity</th>
+                      <th className="px-4 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(conversations.data ?? []).map((conv) => (
+                      <tr
+                        key={conv.id}
+                        className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/50"
+                        onClick={() => navigate(`/imu/${conv.id}`)}
+                      >
+                        <td className="px-4 py-2">
+                          <ImuEditableTitleCell conv={conv} />
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">
+                          {conv.session_count}
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">
+                          {conv.updated_at
+                            ? new Date(conv.updated_at).toLocaleString()
+                            : new Date(conv.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <ImuDeleteButton conv={conv} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="sessions" className="mt-4 space-y-3">
+          {sessionTotal === 0 ? (
+            <p className="text-sm italic text-muted-foreground">No sessions yet.</p>
+          ) : (
+            <>
+              <Card>
+                <CardContent className="p-0">
+                  <SessionTable sessions={sessionList} />
+                </CardContent>
+              </Card>
+              <Pagination
+                page={sessionPage}
+                totalPages={sessionTotalPages}
+                onPageChange={setSessionPage}
+              />
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <ProjectActivityTab projectId={0} />
+        </TabsContent>
+
+        <TabsContent value="files" className="mt-4">
+          <ProjectFilesTab projectId={0} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

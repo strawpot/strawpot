@@ -280,6 +280,7 @@ function ImuSidebar({ conversationId }: { conversationId: number }) {
           onClick={() => navigate("/imu")}
           className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground transition-colors"
         >
+          <ArrowLeft className="h-4 w-4 shrink-0" />
           <BotMessageSquare className="h-4 w-4 shrink-0" />
           <span className="truncate">Bot Imu</span>
         </button>
@@ -379,9 +380,7 @@ function useBreadcrumbs() {
   const { data: imuConversations } = useImuConversations();
   const imuConvTitle = imuConversations?.find((c) => c.id === imuConvId)?.title ?? null;
 
-  const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [
-    { label: "Dashboard", href: "/" },
-  ];
+  const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [];
 
   if (segments[0] === "projects") {
     crumbs.push({ label: "Projects", href: "/projects" });
