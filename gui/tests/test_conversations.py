@@ -569,27 +569,8 @@ class TestBuildConversationContext:
         assert "src/module_9.py" in ctx
         assert "src/module_10.py" not in ctx
 
-    def test_recap_instruction_appended(self, client, tmp_path, app):
-        """Context includes recap instruction when there are prior turns."""
-        d = tmp_path / "proj"
-        d.mkdir()
-        pid = _register_project(client, d)
-        conv = _create_conversation(client, pid)
-        cid = conv["id"]
-
-        with get_db(app.state.db_path) as conn:
-            _insert_completed_session(
-                conn, pid, cid, task="first task", summary="did it",
-            )
-
-        with get_db(app.state.db_path) as conn:
-            ctx = _build_conversation_context(conn, cid)
-
-        assert "## Session Recap" in ctx
-        assert "What was accomplished" in ctx
-
-    def test_no_context_means_no_recap_instruction(self, client, tmp_path, app):
-        """When there are no prior sessions, no context (and no recap instruction)."""
+    def test_no_context_when_no_prior_sessions(self, client, tmp_path, app):
+        """When there are no prior sessions, context is empty."""
         d = tmp_path / "proj"
         d.mkdir()
         pid = _register_project(client, d)

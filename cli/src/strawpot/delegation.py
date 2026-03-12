@@ -550,6 +550,8 @@ def stage_role(
 
     # Always stage denden — required for agent communication
     _ensure_denden_staged(skills_dir)
+    # Always stage session-recap — required for memory summary quality
+    _ensure_session_recap_staged(skills_dir)
 
     # Stage role deps
     roles_dir = os.path.join(role_stage_dir, "roles")
@@ -584,6 +586,16 @@ def _ensure_denden_staged(skills_dir: str) -> None:
     denden_path = get_strawpot_home() / "skills" / "denden"
     if denden_path.is_dir() and (denden_path / "SKILL.md").is_file():
         _symlink(str(denden_path), dest)
+
+
+def _ensure_session_recap_staged(skills_dir: str) -> None:
+    """Always stage the session-recap skill — it is required for memory summary quality."""
+    dest = os.path.join(skills_dir, "strawpot-session-recap")
+    if os.path.exists(dest):
+        return
+    recap_path = get_strawpot_home() / "skills" / "strawpot-session-recap"
+    if recap_path.is_dir() and (recap_path / "SKILL.md").is_file():
+        _symlink(str(recap_path), dest)
 
 
 def create_agent_workspace(session_dir: str, agent_id: str) -> str:

@@ -332,6 +332,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     # 0b. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
     _ensure_skill_installed("denden", working_dir, auto_setup=headless)
+    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=headless)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=headless)
     _ensure_role_installed("ai-employee", working_dir, auto_setup=headless)
     if config.memory:

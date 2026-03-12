@@ -18,8 +18,11 @@ import { useUninstallResource } from "@/hooks/mutations/use-registry";
 import { Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+// Built-in resources that cannot be uninstalled.
+// IMPORTANT: Keep in sync with registry.py (_PROTECTED_ROLES/SKILLS/AGENTS/MEMORIES)
+// and ResourceDetailSheet.tsx — all three must be updated together.
 const PROTECTED: Record<string, string[]> = {
-  skills: ["denden"],
+  skills: ["denden", "strawpot-session-recap"],
   roles: ["ai-ceo", "ai-employee"],
   agents: ["strawpot-claude-code"],
   memories: ["dial"],
