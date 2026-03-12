@@ -752,3 +752,145 @@ class TestRecapInstruction:
             ctx = _build_conversation_context(conn, cid)
 
         assert ctx == ""
+
+
+class TestHistoryFileHint:
+    def test_hint_included_when_path_provided(self, client, tmp_path, app):
+        """Context includes history file hint when history_path is given."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="first", user_task="first", summary="done",
+            )
+            ctx = _build_conversation_context(
+                conn, cid, history_path="/tmp/test/conversation_history.md"
+            )
+
+        assert "/tmp/test/conversation_history.md" in ctx
+        assert "read it if you need more detail" in ctx
+
+    def test_no_hint_when_path_is_none(self, client, tmp_path, app):
+        """Context omits history file hint when history_path is None."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="first", user_task="first", summary="done",
+            )
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "conversation_history.md" not in ctx
+
+
+class TestWriteConversationHistory:
+    def test_writes_history_file(self, client, tmp_path, app):
+        """History file is written with full output for recent turns."""
+        from strawpot_gui.routers.conversations import _write_conversation_history
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="implement login", user_task="implement login",
+                summary="Built the login page with JWT auth.",
+                started_at="2026-01-01T10:00:00",
+                files_changed=["src/login.tsx"],
+            )
+            path = _write_conversation_history(conn, cid, str(d))
+
+        assert path is not None
+        content = open(path).read()
+        assert "# Conversation History" in content
+        assert "implement login" in content
+        assert "Built the login page with JWT auth." in content
+        assert "src/login.tsx" in content
+
+    def test_returns_none_when_no_sessions(self, client, tmp_path, app):
+        """Returns None when there are no completed sessions."""
+        from strawpot_gui.routers.conversations import _write_conversation_history
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            path = _write_conversation_history(conn, cid, str(d))
+
+        assert path is None
+
+    def test_recent_turns_full_output_older_turns_recap(self, client, tmp_path, app):
+        """Last 5 turns get full output; older turns get recap only."""
+        from strawpot_gui.routers.conversations import _write_conversation_history
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            for i in range(8):
+                full_output = f"FULL_OUTPUT_{i} detailed work here"
+                recap = f"RECAP_ONLY_{i}"
+                summary = f"{full_output}\n\n## Session Recap\n{recap}"
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i}", user_task=f"task-{i}",
+                    summary=summary,
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                )
+            path = _write_conversation_history(conn, cid, str(d))
+
+        content = open(path).read()
+        # Turns 1-3 (old, 5+ from end): recap only, no full output
+        assert "FULL_OUTPUT_0" not in content
+        assert "RECAP_ONLY_0" in content
+        assert "FULL_OUTPUT_2" not in content
+        assert "RECAP_ONLY_2" in content
+        # Turns 4-8 (recent, last 5): full output present
+        assert "FULL_OUTPUT_3" in content
+        assert "FULL_OUTPUT_7" in content
+
+    def test_caps_at_10_turns(self, client, tmp_path, app):
+        """History file includes at most 10 turns."""
+        from strawpot_gui.routers.conversations import _write_conversation_history
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            for i in range(15):
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i:02d}", user_task=f"task-{i:02d}",
+                    summary=f"result-{i:02d}",
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                )
+            path = _write_conversation_history(conn, cid, str(d))
+
+        content = open(path).read()
+        assert content.count("## Turn ") == 10
+        assert "5 earlier turns omitted" in content
+        assert "task-00" not in content
+        assert "task-14" in content

@@ -1,7 +1,9 @@
 """Conversation endpoints — chat-mode sessions with sequential task submission."""
 
 import json
+import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -53,10 +55,13 @@ def _strip_prior_context(task: str) -> str:
     return task
 
 
+logger = logging.getLogger(__name__)
+
 _MAX_TURNS = 10
+_HISTORY_FULL_OUTPUT_TURNS = 5
 
 
-def _build_conversation_context(conn, conversation_id: int) -> str:
+def _build_conversation_context(conn, conversation_id: int, *, history_path: str | None = None) -> str:
     """Build a prior-turns summary to prepend to the next session's task."""
     rows = conn.execute(
         "SELECT task, user_task, summary, exit_code, status, "
@@ -168,6 +173,14 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
     else:
         parts.append("(none)")
 
+    # History file hint (if written)
+    if history_path:
+        parts.append("")
+        parts.append(
+            f"> Full session outputs available at `{history_path}` — "
+            "read it if you need more detail than the summaries above."
+        )
+
     # Recap instruction: ask the agent to produce a structured recap
     parts.append("")
     parts.append(
@@ -184,6 +197,86 @@ def _build_conversation_context(conn, conversation_id: int) -> str:
     )
 
     return "\n".join(parts)
+
+
+def _write_conversation_history(conn, conversation_id: int, working_dir: str) -> str | None:
+    """Write full conversation history to .strawpot/conversation_history.md.
+
+    Returns the absolute path to the file, or None if nothing was written.
+    Last 5 turns get full output; turns 6-10 get recap only; older turns omitted.
+    """
+    rows = conn.execute(
+        "SELECT task, user_task, summary, exit_code, status, "
+        "files_changed, duration_ms, started_at "
+        "FROM sessions "
+        "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
+        "ORDER BY started_at",
+        (conversation_id,),
+    ).fetchall()
+    if not rows:
+        return None
+
+    # Cap at 10 turns
+    dropped = max(0, len(rows) - _MAX_TURNS)
+    rows = rows[-_MAX_TURNS:]
+
+    parts = ["# Conversation History", ""]
+    if dropped:
+        parts.append(f"(… {dropped} earlier turns omitted)")
+        parts.append("")
+
+    total = len(rows)
+    for i, row in enumerate(rows, 1):
+        remaining = total - i
+
+        # Turn header
+        meta = [row["status"]]
+        duration_ms = row["duration_ms"]
+        if duration_ms is not None:
+            if duration_ms < 60_000:
+                meta.append(f"{duration_ms // 1000}s")
+            else:
+                meta.append(f"{duration_ms // 60_000}m{(duration_ms % 60_000) // 1000}s")
+        parts.append(f"## Turn {i} — {row['started_at']} [{', '.join(meta)}]")
+
+        task_text = row["user_task"] or _strip_prior_context(row["task"])
+        parts.append(f"**Task:** {task_text}")
+
+        if row["files_changed"]:
+            try:
+                files = json.loads(row["files_changed"])
+                if files:
+                    parts.append(f"**Files changed:** {', '.join(files)}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        parts.append("")
+        parts.append("### Output")
+
+        if remaining < _HISTORY_FULL_OUTPUT_TURNS:
+            # Recent turns: full output
+            parts.append(row["summary"] or "(no output)")
+        else:
+            # Older turns: recap only
+            if row["summary"]:
+                recap = _extract_recap(row["summary"])
+                parts.append(recap)
+            else:
+                parts.append("(no output)")
+
+        parts.append("")
+        parts.append("---")
+        parts.append("")
+
+    history_dir = Path(working_dir) / ".strawpot"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_path = history_dir / "conversation_history.md"
+    try:
+        history_path.write_text("\n".join(parts), encoding="utf-8")
+        return str(history_path)
+    except OSError:
+        logger.warning("Failed to write conversation history to %s", history_path)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -350,8 +443,18 @@ def submit_task(
 
     project_id = conv["project_id"]
 
+    # Write conversation history file for on-demand retrieval by the agent
+    hist_path = None
+    project_row = conn.execute(
+        "SELECT working_dir FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if project_row and project_row["working_dir"]:
+        hist_path = _write_conversation_history(
+            conn, conversation_id, project_row["working_dir"]
+        )
+
     # Build prior conversation context and prepend to task for the agent
-    context = _build_conversation_context(conn, conversation_id)
+    context = _build_conversation_context(conn, conversation_id, history_path=hist_path)
     full_task = f"{context}\n\n---\n\n{body.task}" if context else body.task
 
     try:

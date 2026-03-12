@@ -99,7 +99,9 @@ When sessions are part of a [conversation](/gui/quickstart#start-a-conversation)
 
 The context builder applies tiered condensation: older turns get brief summaries while recent turns retain more detail. Only completed and failed sessions appear in context. The most recent 10 turns are included; earlier turns are omitted with a note.
 
-Agents in a conversation are asked to end their response with a structured `## Session Recap` section (what was accomplished, key decisions, open items). The database stores the full agent output as the session summary. When building context for the next turn, the context builder extracts just the recap section — giving subsequent sessions a focused signal while keeping the full output available for display in the GUI.
+Agents in a conversation are asked to end their response with a structured `## Session Recap` section covering accomplishments (with file paths and specifics), changes made, key decisions, and open items. The database stores the full agent output as the session summary. When building context for the next turn, the context builder extracts the recap section for condensed history lines, while the **Pending Follow-up** for the last turn includes both the structured recap and a tail of the raw agent output — giving the next session both curated insight and ground truth.
+
+Additionally, full session outputs are written to `.strawpot/conversation_history.md` in the project directory before each session spawns. The agent can read this file on demand when the condensed summaries in the context prefix aren't sufficient. The file includes full output for the last 5 turns and recap only for older turns (up to 10 total).
 
 ## Crash Recovery
 

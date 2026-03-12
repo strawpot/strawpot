@@ -320,9 +320,9 @@ Events are stored in the trace and queryable by the conversation history service
 | 8 | File change tracking in trace events | Done |
 | 9 | Structured context format | Done |
 | 10 | Richer session summaries (basic recap instruction) | Done |
-| 11 | Enhanced recap instruction (Phase 1a) | Planned |
-| 12 | Dual Pending Follow-up with raw output tail (Phase 1b) | Planned |
-| 13 | Conversation history file (Phase 2) | Planned |
+| 11 | Enhanced recap instruction (Phase 1a) | Done |
+| 12 | Dual Pending Follow-up with raw output tail (Phase 1b) | Done |
+| 13 | Conversation history file (Phase 2) | Done |
 | 14 | Conversation history service (Phase 3) | Planned |
 | 15 | Structured decision events (Phase 4) | Planned |
 
