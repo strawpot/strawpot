@@ -75,7 +75,7 @@ def build_prompt(
             section is inserted after the role body.
 
     Returns:
-        System prompt string: skills first (resolver order), role last,
+        System prompt string: role first, then skills (resolver order),
         frontmatter stripped, sections separated by ``---``.
         If global_skills is provided, an Available Skills section follows.
         If delegatable_roles is provided, a Delegation section follows.
@@ -83,14 +83,14 @@ def build_prompt(
     """
     sections: list[str] = []
 
-    for dep in resolved.get("dependencies", []):
-        body = _read_body(dep["path"], dep["kind"])
-        sections.append(f"## {dep['kind'].capitalize()}: {dep['slug']}\n\n{body}")
-
     root_body = _read_body(resolved["path"], resolved["kind"])
     sections.append(
         f"## {resolved['kind'].capitalize()}: {resolved['slug']}\n\n{root_body}"
     )
+
+    for dep in resolved.get("dependencies", []):
+        body = _read_body(dep["path"], dep["kind"])
+        sections.append(f"## {dep['kind'].capitalize()}: {dep['slug']}\n\n{body}")
 
     if global_skills:
         sections.append(_build_available_skills_section(global_skills))

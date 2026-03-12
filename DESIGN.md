@@ -849,7 +849,7 @@ be launched with no instructions and no stdin — an error.
 <contents of implementer ROLE.md body>
 ```
 
-Dependencies come first (topological order from resolver), role last.
+Role comes first, then dependencies (topological order from resolver).
 Only the markdown body is included — frontmatter is stripped.
 
 When the agent has delegatable roles, a delegation section is appended:

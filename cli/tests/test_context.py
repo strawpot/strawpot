@@ -75,11 +75,11 @@ def test_role_with_skill_dependencies(tmp_path):
 
     result = build_prompt(resolved)
     assert result == (
+        "## Role: implementer\n\nYou implement things."
+        "\n---\n\n"
         "## Skill: git-workflow\n\nUse git flow."
         "\n---\n\n"
         "## Skill: code-review\n\nReview carefully."
-        "\n---\n\n"
-        "## Role: implementer\n\nYou implement things."
     )
 
 
@@ -107,9 +107,9 @@ def test_role_dependency_includes_role(tmp_path):
 
     result = build_prompt(resolved)
     assert result == (
-        "## Role: base-reviewer\n\nReview basics."
-        "\n---\n\n"
         "## Role: senior-reviewer\n\nSenior review."
+        "\n---\n\n"
+        "## Role: base-reviewer\n\nReview basics."
     )
 
 
@@ -175,7 +175,7 @@ def test_body_whitespace_stripped(tmp_path):
     }
 
     result = build_prompt(resolved)
-    assert result.startswith("## Skill: ws\n\nBody")
+    assert result.startswith("## Role: r\n\nRole.")
 
 
 # ---------------------------------------------------------------------------
@@ -239,10 +239,10 @@ def test_delegation_with_dependencies(tmp_path):
         delegatable_roles=[("implementer", "Writes code")],
     )
 
-    skill_pos = result.index("## Skill: git-workflow")
     role_pos = result.index("## Role: team-lead")
+    skill_pos = result.index("## Skill: git-workflow")
     delegation_pos = result.index("## Delegation")
-    assert skill_pos < role_pos < delegation_pos
+    assert role_pos < skill_pos < delegation_pos
 
 
 def test_no_delegation_when_none(tmp_path):
