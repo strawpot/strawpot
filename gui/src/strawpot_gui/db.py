@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     task        TEXT,
     user_task   TEXT,
     summary     TEXT,
+    files_changed TEXT,
     schedule_id INTEGER REFERENCES scheduled_tasks(id) ON DELETE SET NULL,
     conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
 );
@@ -227,6 +228,9 @@ def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
                                 result["summary"] = content
                         except OSError:
                             pass
+                    files_changed = data.get("files_changed")
+                    if files_changed:
+                        result["files_changed"] = json.dumps(files_changed)
                 elif etype == "delegate_end" and not event.get("parent_span"):
                     # Fallback: root delegation also carries an output ref
                     output_ref = data.get("output_ref")
@@ -373,8 +377,8 @@ def _upsert_session(
         """INSERT INTO sessions
            (run_id, project_id, role, runtime, isolation, status,
             started_at, ended_at, duration_ms, exit_code, session_dir,
-            task, summary, interactive)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            task, summary, files_changed, interactive)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(run_id) DO UPDATE SET
              project_id  = excluded.project_id,
              role        = excluded.role,
@@ -388,6 +392,7 @@ def _upsert_session(
              session_dir = excluded.session_dir,
              task        = excluded.task,
              summary     = COALESCE(excluded.summary, sessions.summary),
+             files_changed = COALESCE(excluded.files_changed, sessions.files_changed),
              interactive = excluded.interactive
              -- conversation_id intentionally omitted: preserve existing FK""",
         (
@@ -404,6 +409,7 @@ def _upsert_session(
             session_dir,
             data.get("task"),
             trace_info.get("summary"),
+            trace_info.get("files_changed"),
             1 if interactive else 0,
         ),
     )

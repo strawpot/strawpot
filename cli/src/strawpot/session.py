@@ -562,12 +562,14 @@ class Session:
             )
             result = self._orchestrator_result
             exit_code = result.exit_code if result else 0
+            files_changed = self._detect_files_changed()
             self._tracer.session_end(
                 span_id=self._session_span_id,
                 merge_strategy=self.config.merge_strategy,
                 duration_ms=duration_ms,
                 output=result.output if result else "",
                 exit_code=exit_code,
+                files_changed=files_changed,
             )
 
         # 1. Kill remaining sub-agents
@@ -1246,6 +1248,46 @@ class Session:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         return None
+
+    def _detect_files_changed(self) -> list[str]:
+        """Detect files changed during this session.
+
+        For worktree sessions, diffs the session branch against the base branch.
+        For non-worktree sessions, diffs uncommitted changes against HEAD.
+        Returns an empty list for non-git repos or on error.
+        """
+        try:
+            if self._env and self._env.branch:
+                # Worktree isolation: diff session branch vs base branch
+                base = self._session_data.get("base_branch", "main")
+                result = subprocess.run(
+                    ["git", "diff", "--name-only",
+                     f"{base}..{self._env.branch}"],
+                    cwd=self._env.path,
+                    capture_output=True, text=True, encoding="utf-8",
+                    timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip().splitlines()
+            else:
+                # No isolation: diff uncommitted + last commit against HEAD
+                cwd = self._working_dir
+                if not cwd:
+                    return []
+                # Uncommitted changes (staged + unstaged)
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    cwd=cwd,
+                    capture_output=True, text=True, encoding="utf-8",
+                    timeout=10,
+                )
+                files: set[str] = set()
+                if result.returncode == 0 and result.stdout.strip():
+                    files.update(result.stdout.strip().splitlines())
+                return sorted(files)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return []
 
     def _write_session_file(self) -> None:
         """Write session state to disk."""
