@@ -1344,5 +1344,5 @@ context injected, maintaining the feel of a continuous conversation.
 | 9 | Scheduled tasks — cron scheduler + CRUD API + GUI page | **Done** |
 | 10 | Activity charts (run frequency, success rate, duration trends) | **Done** |
 | 11 | Interactive sessions (ask_user bridge + chat panel) | **Done** |
-| 12 | Chat-mode sessions (conversation threading + sequential task submission) | Planned |
-| 13 | IMU — embedded self-operation agent (PTY + WebSocket chat panel). See [`imu/DESIGN.md`](../imu/DESIGN.md). | Planned |
+| 12 | Chat-mode sessions (conversation threading + sequential task submission) | **Done** |
+
