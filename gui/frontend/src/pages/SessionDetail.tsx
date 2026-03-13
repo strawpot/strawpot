@@ -101,7 +101,6 @@ export default function SessionDetail() {
 
   const artifacts = extractArtifacts(displayEvents);
   const outputRef = extractOutputRef(displayEvents);
-  const recallRef = extractRecallRef(displayEvents);
   const defaultTab =
     searchParams.get("tab") ?? (!active ? "overview" : "agent-tree");
 
@@ -190,27 +189,6 @@ export default function SessionDetail() {
                       <ArtifactText
                         runId={sessionData.run_id}
                         hash={outputRef}
-                      />
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          )}
-
-          {recallRef && (
-            <Collapsible defaultOpen>
-              <div className="space-y-2">
-                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
-                  Recall
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <Card>
-                    <CardContent className="pt-4">
-                      <ArtifactText
-                        runId={sessionData.run_id}
-                        hash={recallRef}
                       />
                     </CardContent>
                   </Card>
@@ -467,15 +445,6 @@ function extractOutputRef(events: TraceEvent[]): string | null {
   for (const e of events) {
     if (e.event === "session_end" && e.data.output_ref) {
       return String(e.data.output_ref);
-    }
-  }
-  return null;
-}
-
-function extractRecallRef(events: TraceEvent[]): string | null {
-  for (const e of events) {
-    if (e.event === "memory_get" && e.data.cards_ref) {
-      return String(e.data.cards_ref);
     }
   }
   return null;
