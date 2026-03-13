@@ -744,6 +744,7 @@ function ArtifactModalContent({
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"markdown" | "raw">("markdown");
 
   useEffect(() => {
     fetch(`/api/sessions/${runId}/artifacts/${hash}`)
@@ -762,11 +763,43 @@ function ArtifactModalContent({
     return <p className="text-sm text-muted-foreground">Loading...</p>;
   }
   return (
-    <ScrollArea className="max-h-[60vh]">
-      <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-4 font-mono text-xs leading-relaxed">
-        {content}
-      </pre>
-    </ScrollArea>
+    <div className="space-y-2">
+      <div className="flex gap-1">
+        <button
+          className={cn(
+            "rounded px-2 py-1 text-xs font-medium",
+            view === "markdown"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground hover:text-foreground",
+          )}
+          onClick={() => setView("markdown")}
+        >
+          Markdown
+        </button>
+        <button
+          className={cn(
+            "rounded px-2 py-1 text-xs font-medium",
+            view === "raw"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground hover:text-foreground",
+          )}
+          onClick={() => setView("raw")}
+        >
+          Raw
+        </button>
+      </div>
+      <ScrollArea className="max-h-[60vh]">
+        {view === "markdown" ? (
+          <div className="p-4">
+            <MarkdownContent content={content} className="text-sm" />
+          </div>
+        ) : (
+          <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+            {content}
+          </pre>
+        )}
+      </ScrollArea>
+    </div>
   );
 }
 
