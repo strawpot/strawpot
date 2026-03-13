@@ -65,10 +65,9 @@ def _pick_agent() -> str | None:
 
     Returns ``None`` if the user cancels (Ctrl-C or invalid input).
     """
-    click.echo("\nChoose your default agent:\n")
+    click.echo("Choose your default agent:")
     for i, (name, desc) in enumerate(_SEEDED_AGENTS, 1):
-        click.echo(f"  {i}) {name}")
-        click.echo(f"     {desc}\n")
+        click.echo(f"  {i}) {name} — {desc}")
 
     raw = click.prompt("Enter number (1-5)", default="1")
     try:
@@ -202,8 +201,11 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
+    install_cmd = [cmd, "install", "agent", name, "--global"]
+    if auto_setup:
+        install_cmd.append("--yes")
     result = subprocess.run(
-        [cmd, "install", "agent", name, "--global"],
+        install_cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -265,8 +267,11 @@ def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = F
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
+    install_cmd = [cmd, "install", "skill", name, "--global"]
+    if auto_setup:
+        install_cmd.append("--yes")
     result = subprocess.run(
-        [cmd, "install", "skill", name, "--global"],
+        install_cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -297,8 +302,11 @@ def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = 
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
+    install_cmd = [cmd, "install", "memory", name, "--global"]
+    if auto_setup:
+        install_cmd.append("--yes")
     result = subprocess.run(
-        [cmd, "install", "memory", name, "--global"],
+        install_cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -329,8 +337,11 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
+    install_cmd = [cmd, "install", "role", name, "--global"]
+    if auto_setup:
+        install_cmd.append("--yes")
     result = subprocess.run(
-        [cmd, "install", "role", name, "--global"],
+        install_cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -432,12 +443,12 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0b. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
-    _ensure_skill_installed("denden", working_dir, auto_setup=headless)
-    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=headless)
-    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=headless)
-    _ensure_role_installed("ai-employee", working_dir, auto_setup=headless)
+    _ensure_skill_installed("denden", working_dir, auto_setup=True)
+    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
+    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
+    _ensure_role_installed("ai-employee", working_dir, auto_setup=True)
     if config.memory:
-        _ensure_memory_installed(config.memory, working_dir, auto_setup=headless)
+        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
     # 1. Resolve agent spec
     try:
@@ -723,6 +734,15 @@ def gui(port):
         if agent_name is None:
             sys.exit(1)
         config = load_config(Path(working_dir))
+
+    # Auto-install default dependencies if not found
+    _ensure_agent_installed(config.runtime, working_dir, auto_setup=True)
+    _ensure_skill_installed("denden", working_dir, auto_setup=True)
+    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
+    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
+    _ensure_role_installed("ai-employee", working_dir, auto_setup=True)
+    if config.memory:
+        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
     from strawpot_gui.server import DEFAULT_PORT
     from strawpot_gui.server import main as gui_main
