@@ -459,16 +459,41 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
-    # 2. Validate agent dependencies
+    # 2. Validate agent dependencies — auto-install tools when possible
     validation = validate_agent(spec)
     if validation.missing_tools:
-        click.echo("Missing required tools:", err=True)
+        unresolvable = []
         for tool, hint in validation.missing_tools:
-            msg = f"  - {tool}"
             if hint:
-                msg += f"  (install: {hint})"
-            click.echo(msg, err=True)
-        sys.exit(1)
+                if headless:
+                    click.echo(f"Installing {tool}: {hint}")
+                    proceed = True
+                else:
+                    proceed = click.confirm(
+                        f"Missing tool '{tool}'. Install via: {hint}?"
+                    )
+                if proceed:
+                    result = subprocess.run(
+                        hint, shell=True, capture_output=False
+                    )
+                    if result.returncode != 0:
+                        click.echo(
+                            f"Failed to install {tool} (exit {result.returncode})",
+                            err=True,
+                        )
+                        unresolvable.append((tool, hint))
+                else:
+                    unresolvable.append((tool, hint))
+            else:
+                unresolvable.append((tool, None))
+        if unresolvable:
+            click.echo("Missing required tools:", err=True)
+            for tool, hint in unresolvable:
+                msg = f"  - {tool}"
+                if hint:
+                    msg += f"  (install: {hint})"
+                click.echo(msg, err=True)
+            sys.exit(1)
 
     if validation.missing_env:
         if headless:
