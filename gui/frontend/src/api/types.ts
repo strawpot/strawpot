@@ -197,6 +197,7 @@ export interface Conversation {
   title: string | null;
   created_at: string;
   updated_at: string | null;
+  pending_task: string | null;
   sessions: ConversationSession[];
   has_more: boolean;
 }

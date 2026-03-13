@@ -64,6 +64,18 @@ export function useRenameConversation(projectId: number) {
   });
 }
 
+export function useCancelPendingTask(conversationId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete(`/conversations/${conversationId}/pending_task`),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.conversations.detail(conversationId),
+      });
+    },
+  });
+}
+
 export function useCreateImuConversation() {
   const qc = useQueryClient();
   return useMutation({

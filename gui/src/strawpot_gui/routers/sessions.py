@@ -21,6 +21,40 @@ from strawpot_gui.event_bus import SessionEvent, event_bus
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+
+def _drain_pending_task(conn, conversation_id: int | None) -> None:
+    """If the conversation has a queued pending_task, launch it now."""
+    if not conversation_id:
+        return
+    conv = conn.execute(
+        "SELECT id, project_id, title, pending_task FROM conversations WHERE id = ?",
+        (conversation_id,),
+    ).fetchone()
+    if not conv or not conv["pending_task"]:
+        return
+
+    pending = conv["pending_task"]
+    # Clear pending_task first to avoid re-entry
+    conn.execute(
+        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+        (conversation_id,),
+    )
+
+    from strawpot_gui.routers.conversations import ConversationTask, _launch_conversation_task
+
+    try:
+        body = ConversationTask(task=pending)
+        _launch_conversation_task(conn, conv, body)
+        _logger.info("Auto-submitted pending task for conversation %d", conversation_id)
+    except Exception:
+        _logger.exception(
+            "Failed to auto-submit pending task for conversation %d", conversation_id
+        )
+
 
 def _refresh_session_status(conn, run_id: str) -> None:
     """Re-check status for a starting/running session from disk.
@@ -29,7 +63,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
     Updates the DB row if the status has changed.
     """
     row = conn.execute(
-        "SELECT status, session_dir, started_at FROM sessions WHERE run_id = ?",
+        "SELECT status, session_dir, started_at, conversation_id FROM sessions WHERE run_id = ?",
         (run_id,),
     ).fetchone()
     if not row or row["status"] not in ("starting", "running"):
@@ -86,6 +120,8 @@ def _refresh_session_status(conn, run_id: str) -> None:
                 run_id,
             ),
         )
+        # Auto-submit pending task if conversation has one queued
+        _drain_pending_task(conn, row["conversation_id"])
         return
 
     # Check PID liveness
