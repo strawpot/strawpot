@@ -279,9 +279,12 @@ class Tracer:
         query: str = "",
         scope: str = "",
         result_count: int = 0,
+        results: list | None = None,
         parent_agent_id: str | None = None,
     ) -> None:
-        """Emit ``memory_recall``."""
+        """Emit ``memory_recall``.  Stores results as artifact."""
+        results_content = json.dumps(results, indent=2) if results else ""
+        results_ref = self.store_artifact(results_content)
         self.emit(
             "memory_recall",
             span_id,
@@ -292,6 +295,7 @@ class Tracer:
             query=query,
             scope=scope,
             result_count=result_count,
+            results_ref=results_ref,
             parent_agent_id=parent_agent_id,
         )
 
