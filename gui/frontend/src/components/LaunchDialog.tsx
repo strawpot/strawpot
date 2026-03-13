@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProjectConfig, useProjectFiles } from "@/hooks/queries/use-projects";
-import { useRoles } from "@/hooks/queries/use-roles";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useResourceConfig } from "@/hooks/queries/use-resource-config";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
@@ -53,7 +53,7 @@ export default function LaunchDialog({
 }: LaunchDialogProps) {
   const navigate = useNavigate();
   const config = useProjectConfig(projectId);
-  const roles = useRoles();
+  const { data: projectResources } = useProjectResources(projectId);
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
   const projectFiles = useProjectFiles(projectId);
@@ -173,7 +173,10 @@ export default function LaunchDialog({
   };
 
   const defaultRole = defaults?.orchestrator_role ?? "orchestrator";
-  const installedRoles = (roles.data ?? []).filter((v) => v !== defaultRole);
+  const projectRoleNames = (projectResources ?? [])
+    .filter((r) => r.type === "roles")
+    .map((r) => r.name);
+  const installedRoles = projectRoleNames.filter((v) => v !== defaultRole);
   const allRoles = [defaultRole, ...installedRoles];
   const agentNames = (agents ?? []).map((a) => a.name);
   const memoryNames = new Set((memories ?? []).map((m) => m.name));
