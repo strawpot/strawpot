@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useConversationInfinite, useImuConversations } from "@/hooks/queries/use-conversations";
-import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask } from "@/hooks/mutations/use-conversations";
+import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask, useCancelPendingTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
@@ -162,6 +162,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   const prevLastSessionIdRef = useRef<string | undefined>(undefined);
   const prevChatLengthRef = useRef(0);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
@@ -185,10 +186,11 @@ function ImuConversationView({ cid }: { cid: number }) {
 
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
+  const cancelPending = useCancelPendingTask(cid);
   const rename = useRenameImuConversation();
   const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
-    !!lastSession && interactive,
+    hasActiveSession && interactive,
   );
 
   const agentNames = (agents ?? []).map((a: { name: string }) => a.name);
@@ -279,7 +281,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
-    if (!trimmed || hasActiveSession || hasAdvError) return;
+    if (!trimmed || hasAdvError) return;
     submit.mutate(
       {
         task: trimmed,
@@ -294,7 +296,7 @@ function ImuConversationView({ cid }: { cid: number }) {
         cache_max_entries: advCacheMaxEntries.trim() ? Number(advCacheMaxEntries) : undefined,
         cache_ttl_seconds: advCacheTtl.trim() ? Number(advCacheTtl) : undefined,
       },
-      { onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); } },
+      { onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); setTimeout(() => textareaRef.current?.focus(), 0); } },
     );
   }
 
@@ -390,8 +392,8 @@ function ImuConversationView({ cid }: { cid: number }) {
                 {(session.user_task ?? session.task) && (
                   <UserMessage task={(session.user_task ?? session.task)!} />
                 )}
-                {isLast &&
-                  chatMessages.map((msg: ChatMessage) => (
+                {/* Chat messages: live from WS for active session, persisted for completed */}
+                {(isLast && hasActiveSession ? chatMessages : session.chat_messages ?? []).map((msg: ChatMessage) => (
                     <div
                       key={msg.id}
                       className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -403,7 +405,7 @@ function ImuConversationView({ cid }: { cid: number }) {
                             : "bg-muted text-foreground"
                         }`}
                       >
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
                       </div>
                     </div>
                   ))}
@@ -414,6 +416,39 @@ function ImuConversationView({ cid }: { cid: number }) {
         </div>
       </div>
 
+      {/* Pending (queued) task indicator */}
+      {conversation?.pending_task && (() => {
+        const queuedTasks = conversation.pending_task.split("\n\n").filter(Boolean);
+        return (
+          <div className="flex-shrink-0 border-t border-border bg-background px-4 py-2">
+            <div className="mx-auto max-w-2xl space-y-1.5">
+              {queuedTasks.map((qt, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">
+                    Queued{queuedTasks.length > 1 ? ` (${i + 1}/${queuedTasks.length})` : ""}:{" "}
+                    <span className="text-foreground">{qt.split("\n")[0]}</span>
+                  </span>
+                </div>
+              ))}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => cancelPending.mutate()}
+                  disabled={cancelPending.isPending}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Cancel all
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Pending ask_user questions */}
       {pendingAskUsers.length > 0 && (
         <div className="flex-shrink-0 border-t border-border bg-background px-4 pt-3 pb-1">
@@ -423,11 +458,11 @@ function ImuConversationView({ cid }: { cid: number }) {
                 key={pending.request_id}
                 className="rounded-lg border border-border bg-muted/30 p-3 space-y-2"
               >
-                <p className="text-sm font-medium">{pending.question}</p>
+                <MarkdownContent content={pending.question} className="text-sm font-medium" />
                 {pending.why && (
-                  <p className="text-xs text-muted-foreground">{pending.why}</p>
+                  <MarkdownContent content={pending.why} className="text-xs text-muted-foreground" />
                 )}
-                {pending.choices ? (
+                {pending.choices && (
                   <div className="flex flex-wrap gap-1.5">
                     {pending.choices.map((choice) => (
                       <Button
@@ -441,31 +476,30 @@ function ImuConversationView({ cid }: { cid: number }) {
                       </Button>
                     ))}
                   </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <Input
-                      value={askUserResponse}
-                      onChange={(e) => setAskUserResponse(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleAskUserResponse(pending, askUserResponse);
-                        }
-                      }}
-                      placeholder="Your answer…"
-                      autoFocus
-                      className="text-sm"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      disabled={!askUserResponse.trim()}
-                      onClick={() => handleAskUserResponse(pending, askUserResponse)}
-                    >
-                      <CornerDownLeft className="h-4 w-4" />
-                    </Button>
-                  </div>
                 )}
+                <div className="flex gap-2">
+                  <Input
+                    value={askUserResponse}
+                    onChange={(e) => setAskUserResponse(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAskUserResponse(pending, askUserResponse);
+                      }
+                    }}
+                    placeholder="Your answer…"
+                    autoFocus
+                    className="text-sm"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    disabled={!askUserResponse.trim()}
+                    onClick={() => handleAskUserResponse(pending, askUserResponse)}
+                  >
+                    <CornerDownLeft className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -483,15 +517,16 @@ function ImuConversationView({ cid }: { cid: number }) {
             onDrop={handleDrop}
           >
             <Textarea
+              ref={textareaRef}
               value={task}
               onChange={(e) => setTask(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
                 hasActiveSession
-                  ? "Bot Imu is working…"
+                  ? "Queue a follow-up task… (Enter to queue, runs after current session)"
                   : "Ask Bot Imu anything… (Enter to send, Shift+Enter for new line, drag & drop files to attach)"
               }
-              disabled={hasActiveSession || submit.isPending}
+              disabled={submit.isPending}
               className="h-[80px] resize-none overflow-y-auto"
               autoFocus
             />
@@ -612,7 +647,7 @@ function ImuConversationView({ cid }: { cid: number }) {
                   </span>
                 )}
               </Button>
-              {hasActiveSession ? (
+              {hasActiveSession && (
                 <Button
                   type="button"
                   variant="destructive"
@@ -626,18 +661,19 @@ function ImuConversationView({ cid }: { cid: number }) {
                   )}
                   Stop
                 </Button>
-              ) : (
-                <Button
-                  type="submit"
-                  disabled={!task.trim() || submit.isPending || hasAdvError}
-                >
-                  {submit.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CornerDownLeft className="h-4 w-4" />
-                  )}
-                </Button>
               )}
+              <Button
+                type="submit"
+                disabled={!task.trim() || submit.isPending || hasAdvError}
+                variant={hasActiveSession ? "outline" : "default"}
+                title={hasActiveSession ? "Queue task (runs after current session)" : undefined}
+              >
+                {submit.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CornerDownLeft className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </div>
         </form>

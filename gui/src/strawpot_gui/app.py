@@ -146,6 +146,9 @@ def create_app(db_path: str | None = None) -> FastAPI:
             file_path = frontend_dir / full_path
             if full_path and file_path.is_file():
                 return FileResponse(str(file_path))
-            return FileResponse(str(index_html))
+            return FileResponse(
+                str(index_html),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
     return app

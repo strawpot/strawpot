@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from strawpot_gui.db import _extract_recap, _strip_recap, get_db_conn
 from strawpot_gui.routers.sessions import _refresh_session_status, launch_session_subprocess
+from strawpot_gui.routers.ws import _read_chat_messages
 
 router = APIRouter(prefix="/api", tags=["conversations"])
 
@@ -361,14 +362,14 @@ def get_conversation(
         if not cursor_row:
             raise HTTPException(400, "Invalid before_id")
         rows = conn.execute(
-            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role, interactive, session_dir "
             "FROM sessions WHERE conversation_id = ? AND started_at < ? "
             "ORDER BY started_at DESC LIMIT ?",
             (conversation_id, cursor_row["started_at"], limit + 1),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role "
+            "SELECT run_id, task, user_task, summary, status, exit_code, started_at, ended_at, duration_ms, role, interactive, session_dir "
             "FROM sessions WHERE conversation_id = ? "
             "ORDER BY started_at DESC LIMIT ?",
             (conversation_id, limit + 1),
@@ -378,10 +379,14 @@ def get_conversation(
     sessions = list(reversed(rows[:limit]))  # ascending for display
 
     result = dict(row)
-    result["sessions"] = [
-        {**dict(s), "summary": _strip_recap(s["summary"]) if s["summary"] else s["summary"]}
-        for s in sessions
-    ]
+    result["sessions"] = []
+    for s in sessions:
+        d = {k: s[k] for k in s.keys() if k != "session_dir"}
+        d["summary"] = _strip_recap(d["summary"]) if d["summary"] else d["summary"]
+        d["interactive"] = bool(d.get("interactive"))
+        if d["interactive"] and s["session_dir"]:
+            d["chat_messages"] = _read_chat_messages(s["session_dir"])
+        result["sessions"].append(d)
     result["has_more"] = has_more
     return result
 
