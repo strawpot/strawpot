@@ -744,6 +744,11 @@ class TestStripRecap:
         assert "more output" in result
         assert "actual recap" not in result
 
+    def test_returns_full_content_when_only_recap(self):
+        content = "## Session Recap\n- Implemented the login page"
+        result = _strip_recap(content)
+        assert result == content
+
 
 class TestRecapInstruction:
     def test_enhanced_recap_instruction(self, client, tmp_path, app):
