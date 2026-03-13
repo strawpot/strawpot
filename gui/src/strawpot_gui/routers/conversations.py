@@ -419,7 +419,7 @@ def list_project_conversations(
            LEFT JOIN sessions s ON s.conversation_id = c.id
            WHERE c.project_id = ?
            GROUP BY c.id
-           ORDER BY c.created_at DESC
+           ORDER BY COALESCE(c.updated_at, c.created_at) DESC
            LIMIT ? OFFSET ?""",
         (project_id, per_page, offset),
     ).fetchall()
