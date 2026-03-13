@@ -19,7 +19,7 @@ from strawpot.agents.interactive import (
 from strawpot.agents.registry import parse_agent_md, resolve_agent, validate_agent
 from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
-from strawpot.config import get_strawpot_home, load_config
+from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
 from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
@@ -27,6 +27,28 @@ from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 @click.version_option(version=__version__)
 def cli():
     """StrawPot — lightweight agent orchestration."""
+
+
+# ---------------------------------------------------------------------------
+# Onboarding
+# ---------------------------------------------------------------------------
+
+
+def needs_onboarding(config, working_dir: str) -> bool:
+    """Return True when the first-run onboarding wizard should be shown.
+
+    Conditions (all must be true):
+    1. No explicit ``runtime`` in any config file (global or project).
+    2. The default agent is not installed locally.
+    3. Session is interactive (caller checks ``--headless`` separately).
+    """
+    if has_explicit_runtime(Path(working_dir)):
+        return False
+    try:
+        resolve_agent(config.runtime, working_dir)
+        return False  # default agent already installed
+    except (FileNotFoundError, ValueError):
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +346,16 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     working_dir = str(Path.cwd())
 
-    # 0. Recover stale sessions from previous crashes
+    # 0. First-run onboarding
+    if not headless and needs_onboarding(config, working_dir):
+        click.echo(
+            "No agent runtime configured. "
+            "Run the onboarding wizard to get started."
+        )
+        # TODO: call _onboarding_wizard() (implementation steps 2-7)
+        sys.exit(1)
+
+    # 0a. Recover stale sessions from previous crashes
     recovered = recover_stale_sessions(working_dir, config)
     for rid in recovered:
         click.echo(f"Recovered stale session: {rid}")
@@ -614,6 +645,17 @@ def agents(session_id):
 @click.option("--port", default=None, type=int, help="Port for GUI server (default: 8741).")
 def gui(port):
     """Launch the StrawPot web dashboard."""
+    config = load_config(Path.cwd())
+    working_dir = str(Path.cwd())
+
+    if needs_onboarding(config, working_dir):
+        click.echo(
+            "No agent runtime configured. "
+            "Run the onboarding wizard to get started."
+        )
+        # TODO: call _onboarding_wizard() (implementation steps 2-7)
+        sys.exit(1)
+
     from strawpot_gui.server import DEFAULT_PORT
     from strawpot_gui.server import main as gui_main
 

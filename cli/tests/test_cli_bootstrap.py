@@ -10,7 +10,9 @@ from strawpot.cli import (
     _ensure_memory_installed,
     _ensure_role_installed,
     _ensure_skill_installed,
+    needs_onboarding,
 )
+from strawpot.config import StrawPotConfig
 
 # Prevent tests from finding real AGENT.md files in ~/.strawpot/
 _EMPTY_HOME = Path("/nonexistent/strawpot_test_home")
@@ -380,3 +382,43 @@ def test_ensure_memory_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock
 
     mock_confirm.assert_not_called()
     mock_run.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# needs_onboarding
+# ---------------------------------------------------------------------------
+
+
+def test_needs_onboarding_true_no_config_no_agent(tmp_path, monkeypatch):
+    """Returns True when no runtime in config and no agent installed."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('memory = "dial"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    config = StrawPotConfig()  # default runtime = "strawpot-claude-code"
+    assert needs_onboarding(config, str(tmp_path / "project")) is True
+
+
+def test_needs_onboarding_false_explicit_runtime(tmp_path, monkeypatch):
+    """Returns False when runtime is explicitly set in config."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('runtime = "strawpot-gemini"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    config = StrawPotConfig(runtime="strawpot-gemini")
+    assert needs_onboarding(config, str(tmp_path / "project")) is False
+
+
+def test_needs_onboarding_false_agent_installed(tmp_path, monkeypatch):
+    """Returns False when agent is installed even without explicit runtime."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('memory = "dial"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    config = StrawPotConfig()
+    with patch("strawpot.cli.resolve_agent") as mock_resolve:
+        mock_resolve.return_value = MagicMock()  # agent found
+        assert needs_onboarding(config, str(tmp_path / "project")) is False
