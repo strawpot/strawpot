@@ -431,7 +431,12 @@ function ImuConversationView({ cid }: { cid: number }) {
             </div>
           )}
           {!isLoading && allSessions.length === 0 && (
-            <ImuOnboarding onSelectPrompt={(text) => { setTask(text); setTimeout(() => textareaRef.current?.focus(), 0); }} />
+            <ImuOnboarding onSelectPrompt={(text) => {
+              submit.mutate(
+                { task: text, role: IMU_ROLE, interactive },
+                { onSuccess: () => { setTimeout(() => textareaRef.current?.focus(), 0); } },
+              );
+            }} />
           )}
           {allSessions.map((session, index) => {
             const isLast = index === allSessions.length - 1;

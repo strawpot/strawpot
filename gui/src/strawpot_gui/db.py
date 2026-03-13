@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     title       TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -181,6 +181,33 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_sessions_conversation "
         "ON sessions(conversation_id, started_at)"
     )
+
+    # Migrate conversations table to AUTOINCREMENT to prevent rowid reuse
+    # after deletion (added 2026-03-13).
+    # IMPORTANT: foreign_keys must be OFF during the table swap, otherwise
+    # DROP TABLE triggers ON DELETE SET NULL and wipes sessions.conversation_id.
+    has_autoincrement = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
+    ).fetchone() and conn.execute(
+        "SELECT 1 FROM sqlite_sequence WHERE name='conversations'"
+    ).fetchone()
+    if not has_autoincrement:
+        conn.executescript("""
+            PRAGMA foreign_keys=OFF;
+            CREATE TABLE conversations_new (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                title       TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT,
+                pending_task TEXT
+            );
+            INSERT INTO conversations_new SELECT id, project_id, title, created_at, updated_at, pending_task FROM conversations;
+            DROP TABLE conversations;
+            ALTER TABLE conversations_new RENAME TO conversations;
+            CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id, created_at DESC);
+            PRAGMA foreign_keys=ON;
+        """)
 
 
 @contextmanager

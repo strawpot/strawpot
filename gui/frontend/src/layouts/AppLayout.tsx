@@ -228,7 +228,7 @@ function ImuConversationSidebarItem({
       {confirming ? (
         <div className="flex items-center gap-1 shrink-0">
           <button
-            onClick={(e) => { e.stopPropagation(); del.mutate(conv.id); setConfirming(false); navigate("/imu"); }}
+            onClick={(e) => { e.stopPropagation(); del.mutate(conv.id); setConfirming(false); }}
             className="text-xs text-destructive hover:text-destructive/80 font-medium"
             disabled={del.isPending}
           >

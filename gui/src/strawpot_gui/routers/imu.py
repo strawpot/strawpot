@@ -25,7 +25,7 @@ def list_imu_conversations(
            LEFT JOIN sessions s ON s.conversation_id = c.id
            WHERE c.project_id = ?
            GROUP BY c.id
-           ORDER BY c.created_at DESC
+           ORDER BY COALESCE(c.updated_at, c.created_at) DESC
            LIMIT ?""",
         (_IMU_PROJECT_ID, limit),
     ).fetchall()
