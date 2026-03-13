@@ -34,6 +34,15 @@ def cli():
 # ---------------------------------------------------------------------------
 
 
+_SEEDED_AGENTS = [
+    ("strawpot-claude-code", "Anthropic Claude Code — requires Anthropic account or API key"),
+    ("strawpot-gemini", "Google Gemini CLI — requires Google account or API key"),
+    ("strawpot-codex", "OpenAI Codex CLI — requires OpenAI API key"),
+    ("strawpot-openhands", "OpenHands — open-source, configurable LLM backend"),
+    ("strawpot-pi", "Pi coding-agent — requires Anthropic account or API key"),
+]
+
+
 def needs_onboarding(config, working_dir: str) -> bool:
     """Return True when the first-run onboarding wizard should be shown.
 
@@ -49,6 +58,67 @@ def needs_onboarding(config, working_dir: str) -> bool:
         return False  # default agent already installed
     except (FileNotFoundError, ValueError):
         return True
+
+
+def _pick_agent() -> str | None:
+    """Display the agent picker and return the selected agent name.
+
+    Returns ``None`` if the user cancels (Ctrl-C or invalid input).
+    """
+    click.echo("\nChoose your default agent:\n")
+    for i, (name, desc) in enumerate(_SEEDED_AGENTS, 1):
+        click.echo(f"  {i}) {name}")
+        click.echo(f"     {desc}\n")
+
+    raw = click.prompt("Enter number (1-5)", default="1")
+    try:
+        idx = int(raw)
+        if 1 <= idx <= len(_SEEDED_AGENTS):
+            return _SEEDED_AGENTS[idx - 1][0]
+    except ValueError:
+        pass
+    click.echo(f"Invalid selection: {raw}", err=True)
+    return None
+
+
+def _onboarding_wizard(working_dir: str) -> str | None:
+    """Run the first-run onboarding wizard.
+
+    Returns the selected agent name so the caller can continue with a
+    normal start/gui flow, or ``None`` if the user cancelled.
+    """
+    click.echo("Welcome to StrawPot! Let's set up your first agent.\n")
+
+    # Step 2: Agent selection
+    agent_name = _pick_agent()
+    if agent_name is None:
+        return None
+
+    click.echo(f"\nSelected: {agent_name}")
+
+    # Step 3: Install agent wrapper from StrawHub
+    _ensure_agent_installed(agent_name, working_dir, auto_setup=True)
+
+    # Step 7: Save default runtime to global config
+    from strawpot.config import save_resource_config
+
+    save_resource_config(None, "agents", agent_name)
+
+    # Persist runtime choice to global strawpot.toml
+    import tomli_w
+
+    from strawpot.config import _read_toml
+
+    global_toml = get_strawpot_home() / "strawpot.toml"
+    data = _read_toml(global_toml)
+    data["runtime"] = agent_name
+    global_toml.parent.mkdir(parents=True, exist_ok=True)
+    with open(global_toml, "wb") as f:
+        tomli_w.dump(data, f)
+
+    click.echo(f"Saved runtime = \"{agent_name}\" to {global_toml}\n")
+
+    return agent_name
 
 
 # ---------------------------------------------------------------------------
@@ -348,12 +418,12 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0. First-run onboarding
     if not headless and needs_onboarding(config, working_dir):
-        click.echo(
-            "No agent runtime configured. "
-            "Run the onboarding wizard to get started."
-        )
-        # TODO: call _onboarding_wizard() (implementation steps 2-7)
-        sys.exit(1)
+        agent_name = _onboarding_wizard(working_dir)
+        if agent_name is None:
+            sys.exit(1)
+        # Reload config now that runtime has been saved
+        config = load_config(Path(working_dir))
+        runtime = agent_name
 
     # 0a. Recover stale sessions from previous crashes
     recovered = recover_stale_sessions(working_dir, config)
@@ -649,12 +719,10 @@ def gui(port):
     working_dir = str(Path.cwd())
 
     if needs_onboarding(config, working_dir):
-        click.echo(
-            "No agent runtime configured. "
-            "Run the onboarding wizard to get started."
-        )
-        # TODO: call _onboarding_wizard() (implementation steps 2-7)
-        sys.exit(1)
+        agent_name = _onboarding_wizard(working_dir)
+        if agent_name is None:
+            sys.exit(1)
+        config = load_config(Path(working_dir))
 
     from strawpot_gui.server import DEFAULT_PORT
     from strawpot_gui.server import main as gui_main

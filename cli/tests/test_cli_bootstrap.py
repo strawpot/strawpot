@@ -6,10 +6,13 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from strawpot.cli import (
+    _SEEDED_AGENTS,
     _ensure_agent_installed,
     _ensure_memory_installed,
     _ensure_role_installed,
     _ensure_skill_installed,
+    _onboarding_wizard,
+    _pick_agent,
     needs_onboarding,
 )
 from strawpot.config import StrawPotConfig
@@ -422,3 +425,94 @@ def test_needs_onboarding_false_agent_installed(tmp_path, monkeypatch):
     with patch("strawpot.cli.resolve_agent") as mock_resolve:
         mock_resolve.return_value = MagicMock()  # agent found
         assert needs_onboarding(config, str(tmp_path / "project")) is False
+
+
+# ---------------------------------------------------------------------------
+# _pick_agent
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.click.prompt", return_value="1")
+def test_pick_agent_selects_first(mock_prompt):
+    """Selecting 1 returns the first seeded agent."""
+    result = _pick_agent()
+    assert result == _SEEDED_AGENTS[0][0]
+
+
+@patch("strawpot.cli.click.prompt", return_value="3")
+def test_pick_agent_selects_third(mock_prompt):
+    """Selecting 3 returns the third seeded agent."""
+    result = _pick_agent()
+    assert result == _SEEDED_AGENTS[2][0]
+
+
+@patch("strawpot.cli.click.prompt", return_value="5")
+def test_pick_agent_selects_fifth(mock_prompt):
+    """Selecting 5 returns the fifth seeded agent."""
+    result = _pick_agent()
+    assert result == _SEEDED_AGENTS[4][0]
+
+
+@patch("strawpot.cli.click.prompt", return_value="0")
+def test_pick_agent_invalid_zero(mock_prompt):
+    """Out-of-range selection returns None."""
+    assert _pick_agent() is None
+
+
+@patch("strawpot.cli.click.prompt", return_value="abc")
+def test_pick_agent_invalid_text(mock_prompt):
+    """Non-numeric input returns None."""
+    assert _pick_agent() is None
+
+
+# ---------------------------------------------------------------------------
+# _onboarding_wizard
+# ---------------------------------------------------------------------------
+
+
+def test_onboarding_wizard_saves_runtime(tmp_path, monkeypatch):
+    """Wizard saves runtime to global strawpot.toml and returns agent name."""
+    import tomllib
+
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    with patch("strawpot.cli._pick_agent", return_value="strawpot-gemini"), \
+         patch("strawpot.cli._ensure_agent_installed"), \
+         patch("strawpot.cli.click.echo"):
+        result = _onboarding_wizard(str(tmp_path / "project"))
+
+    assert result == "strawpot-gemini"
+    with open(global_dir / "strawpot.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["runtime"] == "strawpot-gemini"
+
+
+def test_onboarding_wizard_returns_none_on_cancel(tmp_path, monkeypatch):
+    """Wizard returns None when user cancels agent selection."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    with patch("strawpot.cli._pick_agent", return_value=None), \
+         patch("strawpot.cli.click.echo"):
+        result = _onboarding_wizard(str(tmp_path / "project"))
+
+    assert result is None
+
+
+def test_onboarding_wizard_calls_ensure_agent_installed(tmp_path, monkeypatch):
+    """Wizard calls _ensure_agent_installed with auto_setup=True."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    with patch("strawpot.cli._pick_agent", return_value="strawpot-codex"), \
+         patch("strawpot.cli._ensure_agent_installed") as mock_install, \
+         patch("strawpot.cli.click.echo"):
+        _onboarding_wizard(str(tmp_path / "project"))
+
+    mock_install.assert_called_once_with(
+        "strawpot-codex", str(tmp_path / "project"), auto_setup=True,
+    )
