@@ -119,6 +119,22 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.trace = trace_section["enabled"]
 
 
+def has_explicit_runtime(project_dir: Path | None = None) -> bool:
+    """Return True if a ``runtime`` key is explicitly set in any config file.
+
+    Checks the global config and, if *project_dir* is given, the project-level
+    config.  Returns False when the runtime is only the dataclass default.
+    """
+    global_data = _read_toml(get_strawpot_home() / "strawpot.toml")
+    if "runtime" in global_data:
+        return True
+    if project_dir:
+        project_data = _read_toml(project_dir / "strawpot.toml")
+        if "runtime" in project_data:
+            return True
+    return False
+
+
 def ensure_global_config() -> Path:
     """Create the global strawpot.toml with recommended defaults if missing.
 

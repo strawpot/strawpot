@@ -1538,6 +1538,5 @@ Moved to dedicated design document: [designs/integration/DESIGN.md](../integrati
 | 11 | Interactive sessions (ask_user bridge + chat panel) | **Done** |
 | 12 | Chat-mode sessions (conversation threading + sequential task submission) | **Done** |
 | 13 | Message queuing for conversations (pending_task, auto-submit on completion) | **Done** |
-| 14 | Chat & community service integrations — see [designs/integration/DESIGN.md](../integration/DESIGN.md) | Planned |
-| 15 | SSE → WebSocket migration (agent logs + global events) — see [SSE → WebSocket Migration](#sse--websocket-migration) | **Done** |
+| 14 | SSE → WebSocket migration (agent logs + global events) — see [SSE → WebSocket Migration](#sse--websocket-migration) | **Done** |
 

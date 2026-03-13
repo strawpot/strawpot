@@ -27,6 +27,7 @@ def _make_spec(**overrides):
 # ---------------------------------------------------------------------------
 
 
+@patch("strawpot.cli.needs_onboarding", return_value=False)
 @patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_role_installed")
 @patch("strawpot.cli._ensure_skill_installed")
@@ -39,7 +40,8 @@ def _make_spec(**overrides):
 @patch("strawpot.cli.load_config")
 def test_start_resolves_agent(
     mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory,
+    _mock_onboarding,
 ):
     """start() calls resolve_agent with config.runtime."""
     from strawpot.config import StrawPotConfig
@@ -84,13 +86,14 @@ def test_start_resolves_agent_with_runtime_override(
     assert call_args[0][0] == "custom_agent"
 
 
+@patch("strawpot.cli.needs_onboarding", return_value=False)
 @patch("strawpot.cli._ensure_memory_installed")
 @patch("strawpot.cli._ensure_role_installed")
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory):
+def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory, _mock_onboarding):
     """FileNotFoundError from resolve_agent prints error and exits 1."""
     from strawpot.config import StrawPotConfig
 

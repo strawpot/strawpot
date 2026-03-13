@@ -3,7 +3,13 @@
 import tomllib
 from pathlib import Path
 
-from strawpot.config import StrawPotConfig, get_strawpot_home, load_config, save_skill_env
+from strawpot.config import (
+    StrawPotConfig,
+    get_strawpot_home,
+    has_explicit_runtime,
+    load_config,
+    save_skill_env,
+)
 
 
 def test_defaults():
@@ -315,3 +321,54 @@ def test_save_skill_env_merges_existing(tmp_path):
     assert data["runtime"] == "codex"
     assert data["skills"]["my_skill"]["env"]["EXISTING"] == "keep"
     assert data["skills"]["my_skill"]["env"]["NEW_VAR"] == "new_val"
+
+
+# ---------------------------------------------------------------------------
+# has_explicit_runtime
+# ---------------------------------------------------------------------------
+
+
+def test_has_explicit_runtime_false_when_no_files(tmp_path, monkeypatch):
+    """Returns False when no config files exist."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty"))
+    assert has_explicit_runtime(tmp_path / "project") is False
+
+
+def test_has_explicit_runtime_false_when_no_runtime_key(tmp_path, monkeypatch):
+    """Returns False when config exists but has no runtime key."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('memory = "dial"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+    assert has_explicit_runtime(tmp_path / "project") is False
+
+
+def test_has_explicit_runtime_true_in_global(tmp_path, monkeypatch):
+    """Returns True when runtime is set in global config."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('runtime = "strawpot-gemini"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+    assert has_explicit_runtime(tmp_path / "project") is True
+
+
+def test_has_explicit_runtime_true_in_project(tmp_path, monkeypatch):
+    """Returns True when runtime is set in project config only."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('memory = "dial"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "strawpot.toml").write_text('runtime = "strawpot-codex"\n')
+    assert has_explicit_runtime(project_dir) is True
+
+
+def test_has_explicit_runtime_no_project_dir(tmp_path, monkeypatch):
+    """Returns False when no project_dir given and global has no runtime."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "strawpot.toml").write_text('memory = "dial"\n')
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+    assert has_explicit_runtime(None) is False
