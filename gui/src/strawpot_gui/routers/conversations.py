@@ -182,21 +182,6 @@ def _build_conversation_context(conn, conversation_id: int, *, history_path: str
             "read it if you need more detail than the summaries above."
         )
 
-    # Recap instruction: ask the agent to produce a structured recap
-    parts.append("")
-    parts.append(
-        '**Recap Instruction:** When you finish, end your response with a '
-        '"## Session Recap" section containing:\n'
-        "### Accomplished\n"
-        "- What was done, with specifics (file paths, function names, error fixes)\n"
-        "### Changes Made\n"
-        "- Files modified and what changed in each\n"
-        "### Decisions\n"
-        '- Key choices and why (e.g., "used X over Y because...")\n'
-        "### Open Items\n"
-        "- What's left to do, blockers, or questions for the user"
-    )
-
     return "\n".join(parts)
 
 

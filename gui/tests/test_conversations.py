@@ -540,8 +540,8 @@ class TestBuildConversationContext:
         with get_db(app.state.db_path) as conn:
             ctx = _build_conversation_context(conn, cid)
 
-        # Extract text between "**Pending Follow-up:**" and "**Recap Instruction:**"
-        followup = ctx.split("**Pending Follow-up:**\n")[1].split("\n\n**Recap Instruction:**")[0]
+        # Extract text after "**Pending Follow-up:**"
+        followup = ctx.split("**Pending Follow-up:**\n")[1]
         assert len(followup) <= 2010  # 2000 + "…"
 
     def test_pending_followup_dual_with_recap(self, client, tmp_path, app):
@@ -616,7 +616,7 @@ class TestBuildConversationContext:
         with get_db(app.state.db_path) as conn:
             ctx = _build_conversation_context(conn, cid)
 
-        raw_section = ctx.split("**Recent output:**\n")[1].split("\n\n**Recap Instruction:**")[0]
+        raw_section = ctx.split("**Recent output:**\n")[1]
         assert len(raw_section) <= 1500
 
     def test_files_changed_shown_for_recent_turns(self, client, tmp_path, app):
@@ -748,44 +748,6 @@ class TestStripRecap:
         content = "## Session Recap\n- Implemented the login page"
         result = _strip_recap(content)
         assert result == content
-
-
-class TestRecapInstruction:
-    def test_enhanced_recap_instruction(self, client, tmp_path, app):
-        """Recap instruction includes structured sections."""
-        d = tmp_path / "proj"
-        d.mkdir()
-        pid = _register_project(client, d)
-        conv = _create_conversation(client, pid)
-        cid = conv["id"]
-
-        with get_db(app.state.db_path) as conn:
-            _insert_completed_session(
-                conn, pid, cid,
-                task="first task", user_task="first task",
-                summary="done",
-            )
-
-        with get_db(app.state.db_path) as conn:
-            ctx = _build_conversation_context(conn, cid)
-
-        assert "### Accomplished" in ctx
-        assert "### Changes Made" in ctx
-        assert "### Decisions" in ctx
-        assert "### Open Items" in ctx
-
-    def test_no_context_means_no_recap_instruction(self, client, tmp_path, app):
-        """First turn (no prior sessions) should have no recap instruction."""
-        d = tmp_path / "proj"
-        d.mkdir()
-        pid = _register_project(client, d)
-        conv = _create_conversation(client, pid)
-        cid = conv["id"]
-
-        with get_db(app.state.db_path) as conn:
-            ctx = _build_conversation_context(conn, cid)
-
-        assert ctx == ""
 
 
 class TestHistoryFileHint:
