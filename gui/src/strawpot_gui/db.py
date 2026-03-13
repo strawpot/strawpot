@@ -261,7 +261,8 @@ def _strip_recap(content: str) -> str:
     idx = content.rfind(marker)
     if idx == -1:
         return content
-    return content[:idx].rstrip()
+    before = content[:idx].rstrip()
+    return before if before else content
 
 
 def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
