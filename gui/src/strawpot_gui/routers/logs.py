@@ -21,7 +21,7 @@ _TERMINAL_STATUSES = ("completed", "failed", "stopped")
 _MAX_SNAPSHOT_LINES = 500
 
 
-def _read_log_tail(path: str, max_lines: int = _MAX_SNAPSHOT_LINES) -> tuple[list[str], int]:
+def read_log_tail(path: str, max_lines: int = _MAX_SNAPSHOT_LINES) -> tuple[list[str], int]:
     """Read the last *max_lines* lines from a log file.
 
     Returns (lines, byte_offset) where offset is the end-of-file position.
@@ -37,7 +37,7 @@ def _read_log_tail(path: str, max_lines: int = _MAX_SNAPSHOT_LINES) -> tuple[lis
         return [], 0
 
 
-def _read_log_delta(path: str, offset: int) -> tuple[list[str], int]:
+def read_log_delta(path: str, offset: int) -> tuple[list[str], int]:
     """Read new content from a log file starting at *offset*.
 
     Returns (new_lines, new_offset).
@@ -55,7 +55,7 @@ def _read_log_delta(path: str, offset: int) -> tuple[list[str], int]:
         return [], offset
 
 
-def _validate_agent(session_dir: str, agent_id: str) -> bool:
+def validate_agent(session_dir: str, agent_id: str) -> bool:
     """Check that agent_id exists in session.json agents dict."""
     path = os.path.join(session_dir, "session.json")
     try:
@@ -94,7 +94,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
             status_code=404,
         )
 
-    if not _validate_agent(session_dir, agent_id):
+    if not validate_agent(session_dir, agent_id):
         async def agent_not_found():
             yield format_sse(1, {"error": f"Agent {agent_id} not found"})
 
@@ -112,7 +112,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
         yield sse_retry(3000)
 
         # Snapshot: send last N lines
-        lines, offset = _read_log_tail(log_path)
+        lines, offset = read_log_tail(log_path)
         event_id += 1
         yield format_sse_typed(event_id, "snapshot", {
             "lines": lines,
@@ -139,7 +139,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
                     _, current_status, _ = resolve_session_dir(db_path, run_id)
                     if current_status in _TERMINAL_STATUSES:
                         # Final read
-                        new_lines, offset = _read_log_delta(log_path, offset)
+                        new_lines, offset = read_log_delta(log_path, offset)
                         if new_lines:
                             event_id += 1
                             yield format_sse_typed(event_id, "append", {
@@ -152,7 +152,7 @@ async def agent_log_sse(run_id: str, agent_id: str, request: Request):
                     continue
 
                 if any(f.endswith(".log") for f in changed_files):
-                    new_lines, offset = _read_log_delta(log_path, offset)
+                    new_lines, offset = read_log_delta(log_path, offset)
                     if new_lines:
                         event_id += 1
                         yield format_sse_typed(event_id, "append", {
@@ -187,7 +187,7 @@ async def agent_log_full(run_id: str, agent_id: str, request: Request):
     if session_dir is None:
         return PlainTextResponse("Session not found", status_code=404)
 
-    if not _validate_agent(session_dir, agent_id):
+    if not validate_agent(session_dir, agent_id):
         return PlainTextResponse(f"Agent {agent_id} not found", status_code=404)
 
     log_path = os.path.join(session_dir, "agents", agent_id, ".log")

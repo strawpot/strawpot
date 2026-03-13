@@ -836,8 +836,8 @@ strawpot start --task "implement feature X" --headless
 ```
 
 This is the mode the GUI uses to launch sessions. The GUI can stream the
-`.log` file via SSE for real-time output, and read `trace.jsonl` for
-structured lifecycle events.
+`.log` file via WebSocket for real-time output, and read `trace.jsonl`
+for structured lifecycle events.
 
 `--headless` requires `--task`. Without a task, the orchestrator would
 be launched with no instructions and no stdin — an error.

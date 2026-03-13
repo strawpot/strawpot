@@ -10,10 +10,10 @@ import ResourceBrowser from "./pages/ResourceBrowser";
 import ScheduledTasks from "./pages/ScheduledTasks";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
-import { useGlobalSSE } from "./hooks/useGlobalSSE";
+import { useGlobalWS } from "./hooks/useGlobalWS";
 
 export default function App() {
-  useGlobalSSE();
+  useGlobalWS();
 
   return (
     <Routes>
