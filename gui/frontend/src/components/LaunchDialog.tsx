@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProjectConfig, useProjectFiles } from "@/hooks/queries/use-projects";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
-import { useResources } from "@/hooks/queries/use-registry";
 import { useResourceConfig } from "@/hooks/queries/use-resource-config";
 import { useLaunchSession } from "@/hooks/mutations/use-sessions";
 import { api } from "@/api/client";
@@ -54,8 +53,6 @@ export default function LaunchDialog({
   const navigate = useNavigate();
   const config = useProjectConfig(projectId);
   const { data: projectResources } = useProjectResources(projectId);
-  const { data: agents } = useResources("agents");
-  const { data: memories } = useResources("memories");
   const projectFiles = useProjectFiles(projectId);
   const launchSession = useLaunchSession();
   const defaults = config.data?.merged as
@@ -178,8 +175,14 @@ export default function LaunchDialog({
     .map((r) => r.name);
   const installedRoles = projectRoleNames.filter((v) => v !== defaultRole);
   const allRoles = [defaultRole, ...installedRoles];
-  const agentNames = (agents ?? []).map((a) => a.name);
-  const memoryNames = new Set((memories ?? []).map((m) => m.name));
+  const agentNames = (projectResources ?? [])
+    .filter((r) => r.type === "agents")
+    .map((r) => r.name);
+  const memoryNames = new Set(
+    (projectResources ?? [])
+      .filter((r) => r.type === "memories")
+      .map((r) => r.name),
+  );
   memoryNames.add("none");
   const memoryOptions = [...memoryNames].sort();
 

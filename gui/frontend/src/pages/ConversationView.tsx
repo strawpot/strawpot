@@ -31,7 +31,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useResources } from "@/hooks/queries/use-registry";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
@@ -170,8 +169,6 @@ export default function ConversationView() {
   const projectRoleNames = (projectResources ?? [])
     .filter((r) => r.type === "roles")
     .map((r) => r.name);
-  const { data: agents } = useResources("agents");
-  const { data: memories } = useResources("memories");
   const config = useProjectConfig(pid);
   const projectFiles = useProjectFiles(pid);
   const defaults = config.data?.merged as {
@@ -254,8 +251,13 @@ export default function ConversationView() {
     return () => observer.disconnect();
   }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 
-  const agentNames = (agents ?? []).map((a: { name: string }) => a.name);
-  const memoryNames = [...new Set((memories ?? []).map((m: { name: string }) => m.name)), "none"].sort();
+  const agentNames = (projectResources ?? [])
+    .filter((r) => r.type === "agents")
+    .map((r) => r.name);
+  const memoryNames = [
+    ...new Set((projectResources ?? []).filter((r) => r.type === "memories").map((r) => r.name)),
+    "none",
+  ].sort();
 
   const advRuntimeError = advRuntime.trim() && agentNames.length > 0 && !agentNames.includes(advRuntime.trim())
     ? "Runtime not found in installed agents" : "";
