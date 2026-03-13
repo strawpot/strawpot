@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useSession } from "@/hooks/queries/use-sessions";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
@@ -745,6 +745,28 @@ function ArtifactModalContent({
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"markdown" | "raw">("markdown");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Scope Cmd+A / Ctrl+A to content area only (excludes tab buttons)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const el = contentRef.current ?? containerRef.current;
+      if (!el) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+        e.preventDefault();
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          sel.addRange(range);
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/sessions/${runId}/artifacts/${hash}`)
@@ -756,49 +778,51 @@ function ArtifactModalContent({
       .catch((err) => setError(err.message));
   }, [runId, hash]);
 
-  if (error) {
-    return <p className="text-sm text-destructive">Error: {error}</p>;
-  }
-  if (content === null) {
-    return <p className="text-sm text-muted-foreground">Loading...</p>;
-  }
   return (
-    <div className="space-y-2">
-      <div className="flex gap-1">
-        <button
-          className={cn(
-            "rounded px-2 py-1 text-xs font-medium",
-            view === "markdown"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:text-foreground",
-          )}
-          onClick={() => setView("markdown")}
-        >
-          Markdown
-        </button>
-        <button
-          className={cn(
-            "rounded px-2 py-1 text-xs font-medium",
-            view === "raw"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:text-foreground",
-          )}
-          onClick={() => setView("raw")}
-        >
-          Raw
-        </button>
-      </div>
-      <div className="max-h-[60vh] overflow-y-auto">
-        {view === "markdown" ? (
-          <div className="p-4">
-            <MarkdownContent content={content} className="text-sm" />
+    <div ref={containerRef} className="space-y-2">
+      {error ? (
+        <p className="text-sm text-destructive">Error: {error}</p>
+      ) : content === null ? (
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      ) : (
+        <>
+          <div className="flex gap-1">
+            <button
+              className={cn(
+                "rounded px-2 py-1 text-xs font-medium",
+                view === "markdown"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setView("markdown")}
+            >
+              Markdown
+            </button>
+            <button
+              className={cn(
+                "rounded px-2 py-1 text-xs font-medium",
+                view === "raw"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setView("raw")}
+            >
+              Raw
+            </button>
           </div>
-        ) : (
-          <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-4 font-mono text-xs leading-relaxed">
-            {content}
-          </pre>
-        )}
-      </div>
+          <div ref={contentRef} className="max-h-[60vh] overflow-y-auto">
+            {view === "markdown" ? (
+              <div className="p-4">
+                <MarkdownContent content={content} className="text-sm" />
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+                {content}
+              </pre>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
