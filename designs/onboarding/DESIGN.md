@@ -136,10 +136,32 @@ design.
 
 ## Tool Installation
 
-Each AGENT.md already declares required tools with install commands:
+Each AGENT.md declares required tools with install commands. The onboarding
+wizard checks these via `validate_agent()` (`shutil.which`) and offers to
+install missing ones interactively.
+
+### Package manager prerequisites
+
+The underlying CLI tools are installed via `npm` (4 agents) or `pip` (1 agent).
+These package managers must be declared as tool dependencies in each AGENT.md
+so the validation pipeline catches them early — before attempting to install
+the CLI tool itself.
+
+| Agent | Package manager | CLI tool install |
+|-------|----------------|-----------------|
+| strawpot-claude-code | `npm` | `npm install -g @anthropic-ai/claude-code` |
+| strawpot-gemini | `npm` | `npm install -g @google/gemini-cli` |
+| strawpot-codex | `npm` | `npm install -g @openai/codex` |
+| strawpot-pi | `npm` | `npm install -g @mariozechner/pi-coding-agent` |
+| strawpot-openhands | `pip` | `pip install openhands-ai` |
+
+Each AGENT.md should declare the package manager as a tool **without** an
+install command (installation varies by platform/preference). Example:
 
 ```yaml
 tools:
+  npm:
+    description: Node.js package manager (https://nodejs.org)
   claude:
     description: Claude Code CLI
     install:
@@ -147,8 +169,12 @@ tools:
       linux: npm install -g @anthropic-ai/claude-code
 ```
 
-The existing `validate_agent()` checks tools on PATH and reports install hints.
-During onboarding, instead of just printing the hint and exiting, we should:
+For `pip`, strawpot itself is a Python package so `pip` is almost certainly
+present, but declaring it catches edge cases (e.g. `pipx`-only installs).
+
+### Onboarding behavior
+
+During onboarding, instead of just printing the install hint and exiting:
 
 1. Show the install command
 2. Ask "Install now? [Y/n]"
@@ -162,6 +188,11 @@ During onboarding, instead of just printing the hint and exiting, we should:
 | `cli/src/strawpot/cli.py` | Add `_onboarding_wizard()`, call it from `start` and `gui` commands when first-run detected |
 | `cli/src/strawpot/config.py` | No changes needed — `save_resource_config` already supports agents |
 | `cli/src/strawpot/agents/registry.py` | Add `probe_auth(spec)` for lightweight credential validation |
+| `strawpot_claude_code_cli: AGENT.md` | Add `npm` as tool dependency |
+| `strawpot_gemini_cli: AGENT.md` | Add `npm` as tool dependency |
+| `strawpot_codex_cli: AGENT.md` | Add `npm` as tool dependency |
+| `strawpot_pi_cli: AGENT.md` | Add `npm` as tool dependency |
+| `strawpot_openhands_cli: AGENT.md` | Add `pip` as tool dependency |
 
 ## Implementation Status
 
@@ -170,7 +201,8 @@ During onboarding, instead of just printing the hint and exiting, we should:
 | 1 | First-run detection (no runtime in config + no agent installed) | Planned |
 | 2 | Interactive agent picker (5 seeded agents with descriptions) | Planned |
 | 3 | Auto-install agent wrapper from StrawHub | Planned |
-| 4 | Auto-install underlying CLI tool (from AGENT.md `tools.*.install`) | Planned |
+| 4a | Add `npm`/`pip` as tool prerequisites in AGENT.md (5 wrapper repos) | Planned |
+| 4b | Auto-install underlying CLI tool (from AGENT.md `tools.*.install`) | Planned |
 | 5 | Auth flow: API key prompt or `<wrapper> setup` login | Planned |
 | 6 | Lightweight auth probe / credential validation | Planned |
 | 7 | Save default runtime to `strawpot.toml` | Planned |
@@ -183,4 +215,4 @@ During onboarding, instead of just printing the hint and exiting, we should:
 - GUI-based setup wizard (terminal wizard is sufficient)
 - OS keychain integration for env var storage
 - Adding more agents to the picker (users can `strawpot install agent <name>` anytime)
-- Modifying agent wrapper repos (AGENT.md already has the needed metadata)
+- OS-level package manager auto-install (e.g. installing Node.js/npm itself)
