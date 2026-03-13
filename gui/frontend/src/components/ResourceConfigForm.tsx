@@ -130,7 +130,7 @@ export default function ResourceConfigForm({
                       {schema.description}
                     </p>
                   )}
-                  <div className="flex gap-1">
+                  <div className="relative">
                     <Input
                       type={isVisible ? "text" : "password"}
                       value={envState[key] ?? ""}
@@ -141,13 +141,11 @@ export default function ResourceConfigForm({
                         }))
                       }
                       placeholder={key}
-                      className="h-8 text-xs font-mono"
+                      className="h-8 pr-8 text-xs font-mono"
                     />
-                    <Button
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 shrink-0 p-0"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       onClick={() => toggleVisible(key)}
                     >
                       {isVisible ? (
@@ -155,7 +153,7 @@ export default function ResourceConfigForm({
                       ) : (
                         <Eye className="h-3.5 w-3.5" />
                       )}
-                    </Button>
+                    </button>
                   </div>
                 </div>
               );

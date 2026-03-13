@@ -125,14 +125,13 @@ export default function ResourceDetailSheet({
     agents: ["strawpot-claude-code"],
     memories: ["dial"],
   };
-  const isProtected =
-    !projectId && PROTECTED[resourceType]?.includes(resource.name);
+  const isProtected = PROTECTED[resourceType]?.includes(resource.name) ?? false;
 
   const metadata = resource.frontmatter?.metadata as Record<string, unknown> | undefined;
 
   return (
     <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); setConfirming(false); }}>
-      <SheetContent side="right" className="flex h-full flex-col sm:max-w-lg">
+      <SheetContent side="right" className="flex h-full flex-col sm:max-w-xl overflow-x-hidden">
         <SheetHeader className="shrink-0">
           <SheetTitle className="flex items-center gap-2">
             {resource.name}
@@ -163,18 +162,20 @@ export default function ResourceDetailSheet({
           )}
         </div>
 
-        <ScrollArea className="min-h-0 flex-1 px-4">
-          {resourceType === "agents" && (
-            <AgentSetupGuide agentName={resource.name} />
-          )}
-          <ResourceConfigForm
-            resourceType={resourceType}
-            resourceName={resource.name}
-            enabled={open}
-            projectId={projectId}
-          />
-          <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap mt-4">
-            {resource.body || "No content."}
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="px-4 overflow-hidden">
+            {resourceType === "agents" && (
+              <AgentSetupGuide agentName={resource.name} />
+            )}
+            <ResourceConfigForm
+              resourceType={resourceType}
+              resourceName={resource.name}
+              enabled={open}
+              projectId={projectId}
+            />
+            <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap mt-4">
+              {resource.body || "No content."}
+            </div>
           </div>
         </ScrollArea>
 

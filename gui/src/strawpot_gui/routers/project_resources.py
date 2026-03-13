@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from strawpot.config import _read_toml, save_resource_config
+from strawpot.config import _read_toml, get_strawpot_home, save_resource_config
 
 from strawpot_gui.db import get_db_conn
 from strawpot_gui.routers.registry import (
@@ -35,40 +35,90 @@ def _get_project_dir(project_id: int, conn) -> str:
     return working_dir
 
 
+def _count_config_overrides(toml_data: dict, resource_type: str, name: str) -> int:
+    """Count the number of env/param overrides for a resource in TOML data."""
+    count = 0
+    if resource_type == "roles":
+        count = len(toml_data.get("roles", {}).get(name, {}))
+    elif resource_type == "skills":
+        count = len(toml_data.get("skills", {}).get(name, {}).get("env", {}))
+    elif resource_type == "agents":
+        agent_data = toml_data.get("agents", {}).get(name, {})
+        count = len(agent_data.get("env", {}))
+        # Count non-env params (keys other than "env")
+        count += sum(1 for k in agent_data if k != "env")
+    elif resource_type == "memories":
+        count = len(toml_data.get("memories", {}).get(name, {}).get("env", {}))
+        # memory_config is shared across all memory providers, count if any
+        count += len(toml_data.get("memory_config", {}))
+    return count
+
+
 @router.get("/{project_id}/resources")
 def list_project_resources(project_id: int, conn=Depends(get_db_conn)):
-    """List all installed resources across all types for a project."""
+    """List all resources available to a project (project-local + global).
+
+    Project-local resources take precedence over global ones with the same name.
+    Each resource includes a config_count of project-level overrides from
+    strawpot.toml.
+    """
     working_dir = _get_project_dir(project_id, conn)
-    base = Path(working_dir) / ".strawpot"
+    project_base = Path(working_dir) / ".strawpot"
+    global_base = get_strawpot_home()
+    toml_path = Path(working_dir) / "strawpot.toml"
+    toml_data = _read_toml(toml_path)
     results = []
     for rtype, (dir_name, manifest) in RESOURCE_TYPES.items():
-        for item in scan_dir(base, dir_name, manifest, rtype, "project"):
+        # Scan project-local first, track names to avoid duplicates
+        seen: set[str] = set()
+        for item in scan_dir(project_base, dir_name, manifest, rtype, "project"):
             item["type"] = rtype
+            item["config_count"] = _count_config_overrides(toml_data, rtype, item["name"])
             results.append(item)
+            seen.add(item["name"])
+        # Add global resources not shadowed by project-local ones
+        for item in scan_dir(global_base, dir_name, manifest, rtype, "global"):
+            if item["name"] not in seen:
+                item["type"] = rtype
+                item["config_count"] = _count_config_overrides(toml_data, rtype, item["name"])
+                results.append(item)
     return results
+
+
+def _resolve_resource_dir(
+    working_dir: str, dir_name: str, manifest: str, name: str
+) -> tuple[Path, str]:
+    """Find a resource directory, checking project-local first then global.
+
+    Returns (resource_dir, source) where source is "project" or "global".
+    Raises HTTPException(404) if not found in either location.
+    """
+    project_dir = Path(working_dir) / ".strawpot" / dir_name / name
+    if (project_dir / manifest).is_file():
+        return project_dir, "project"
+    global_dir = get_strawpot_home() / dir_name / name
+    if (global_dir / manifest).is_file():
+        return global_dir, "global"
+    raise HTTPException(404, f"Resource not found: {dir_name}/{name}")
 
 
 @router.get("/{project_id}/resources/{resource_type}/{name}")
 def get_project_resource(
     project_id: int, resource_type: str, name: str, conn=Depends(get_db_conn)
 ):
-    """Get detail for a single project-scoped resource."""
+    """Get detail for a resource available to this project."""
     working_dir = _get_project_dir(project_id, conn)
     dir_name, manifest = validate_type(resource_type)
+    resource_dir, source = _resolve_resource_dir(working_dir, dir_name, manifest, name)
 
-    resource_dir = Path(working_dir) / ".strawpot" / dir_name / name
-    manifest_path = resource_dir / manifest
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Resource not found: {resource_type}/{name}")
-
-    fm, body = parse_manifest(manifest_path, resource_type)
+    fm, body = parse_manifest(resource_dir / manifest, resource_type)
     return {
         "name": fm.get("name", name),
         "version": read_version(resource_dir, fm),
         "description": fm.get("description", ""),
         "frontmatter": fm,
         "body": body,
-        "source": "project",
+        "source": source,
         "path": str(resource_dir),
     }
 
@@ -80,13 +130,9 @@ def get_project_resource_config(
     """Get env/params schema and saved values from project's strawpot.toml."""
     working_dir = _get_project_dir(project_id, conn)
     dir_name, manifest = validate_type(resource_type)
+    resource_dir, _ = _resolve_resource_dir(working_dir, dir_name, manifest, name)
 
-    resource_dir = Path(working_dir) / ".strawpot" / dir_name / name
-    manifest_path = resource_dir / manifest
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Resource not found: {resource_type}/{name}")
-
-    fm, _ = parse_manifest(manifest_path, resource_type)
+    fm, _ = parse_manifest(resource_dir / manifest, resource_type)
     strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
 
     env_schema = strawpot_meta.get("env", {})
@@ -127,10 +173,8 @@ def put_project_resource_config(
     """Save env and param values for a project-scoped resource."""
     working_dir = _get_project_dir(project_id, conn)
     dir_name, manifest = validate_type(resource_type)
-
-    manifest_path = Path(working_dir) / ".strawpot" / dir_name / name / manifest
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Resource not found: {resource_type}/{name}")
+    resource_dir, _ = _resolve_resource_dir(working_dir, dir_name, manifest, name)
+    manifest_path = resource_dir / manifest
 
     env_values = data.get("env_values")
     params_values = data.get("params_values")

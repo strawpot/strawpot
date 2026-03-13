@@ -122,6 +122,7 @@ export interface ResourceDetail extends Resource {
 
 export interface ProjectResource extends Resource {
   type: string; // "roles" | "skills" | "agents" | "memories"
+  config_count: number;
 }
 
 export interface InstallResult {
