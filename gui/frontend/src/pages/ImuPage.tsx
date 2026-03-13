@@ -136,6 +136,56 @@ function UserMessage({ task }: { task: string }) {
   );
 }
 
+const IMU_SUGGESTED_PROMPTS = [
+  {
+    group: "Getting started",
+    prompts: [
+      { label: "What can you do?", text: "What can you do?" },
+    ],
+  },
+  {
+    group: "Do something",
+    prompts: [
+      { label: "Show me all my projects", text: "Show me all my projects" },
+      { label: "What roles and skills are available?", text: "What roles and skills are available?" },
+      { label: "Register my project", text: "Register my project at ~/path/to/repo" },
+    ],
+  },
+];
+
+function ImuOnboarding({ onSelectPrompt }: { onSelectPrompt: (text: string) => void }) {
+  return (
+    <div className="flex flex-col items-center gap-6 py-12 px-4">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <BotMessageSquare className="h-10 w-10 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Hi, I'm Imu</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          Your StrawPot operator. I manage projects, run agents, and keep things on schedule.
+        </p>
+      </div>
+      <div className="w-full max-w-md space-y-4">
+        {IMU_SUGGESTED_PROMPTS.map((group) => (
+          <div key={group.group} className="space-y-2">
+            <span className="text-xs font-medium text-muted-foreground">{group.group}</span>
+            <div className="flex flex-col gap-1.5">
+              {group.prompts.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => onSelectPrompt(p.text)}
+                  className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ImuConversationView({ cid }: { cid: number }) {
   const [task, setTask] = useState("");
   const [interactive, setInteractive] = useState(true);
@@ -381,9 +431,7 @@ function ImuConversationView({ cid }: { cid: number }) {
             </div>
           )}
           {!isLoading && allSessions.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground py-12">
-              Start a conversation with Bot Imu below.
-            </p>
+            <ImuOnboarding onSelectPrompt={(text) => { setTask(text); setTimeout(() => textareaRef.current?.focus(), 0); }} />
           )}
           {allSessions.map((session, index) => {
             const isLast = index === allSessions.length - 1;
