@@ -208,7 +208,9 @@ def install_project_resource(
     if not resource_type or not name:
         raise HTTPException(400, "Both 'type' and 'name' are required")
     singular = singular_type(resource_type)
-    return run_strawhub("--root", working_dir, "install", singular, "-y", name)
+    # --update ensures install proceeds even when the package already exists
+    # globally, writing a project-local copy under .strawpot/.
+    return run_strawhub("--root", working_dir, "install", singular, "-y", "--update", name)
 
 
 @router.delete("/{project_id}/resources/{resource_type}/{name}")
