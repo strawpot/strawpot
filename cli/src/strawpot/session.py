@@ -394,7 +394,7 @@ class Session:
             # Build delegatable roles so the orchestrator prompt lists them
             _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
             if wildcard:
-                role_dep_slugs = [slug for slug, _ in _discover_all_roles()]
+                role_dep_slugs = [slug for slug, _ in _discover_all_roles(working_dir)]
             delegatable = _build_delegatable_roles(
                 role_dep_slugs,
                 self.config.orchestrator_role,
@@ -414,6 +414,7 @@ class Session:
             skills_dir, roles_dir = stage_role(
                 self._session_dir(), resolved,
                 global_skills=global_skills or None,
+                working_dir=working_dir,
             )
             workspace = create_agent_workspace(
                 self._session_dir(), agent_id

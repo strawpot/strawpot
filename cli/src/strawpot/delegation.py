@@ -267,32 +267,40 @@ def discover_global_skills(
     return global_skills
 
 
-def _discover_all_roles() -> list[tuple[str, str]]:
-    """Discover all globally installed roles.
+def _discover_all_roles(working_dir: str | None = None) -> list[tuple[str, str]]:
+    """Discover all installed roles, checking project-local first then global.
 
-    Scans ``~/.strawpot/roles/`` for installed role directories.
-    Accepts both plain slug directories (``ai-ceo``) and versioned
-    directories (``ai-ceo-1.0.0``).
+    Project-local roles take precedence over global ones with the same slug.
 
     Returns:
         List of (slug, path) tuples for each installed role.
     """
     from strawhub.version_spec import parse_dir_name
 
-    roles_dir = get_strawpot_home() / "roles"
-    if not roles_dir.is_dir():
-        return []
-
+    seen: set[str] = set()
     roles: list[tuple[str, str]] = []
-    for entry in sorted(roles_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        role_md = entry / "ROLE.md"
-        if not role_md.is_file():
-            continue
-        parsed = parse_dir_name(entry.name)
-        slug = parsed[0] if parsed else entry.name
-        roles.append((slug, str(entry)))
+
+    dirs_to_scan: list[Path] = []
+    if working_dir:
+        local_roles = Path(working_dir) / ".strawpot" / "roles"
+        if local_roles.is_dir():
+            dirs_to_scan.append(local_roles)
+    global_roles = get_strawpot_home() / "roles"
+    if global_roles.is_dir():
+        dirs_to_scan.append(global_roles)
+
+    for roles_dir in dirs_to_scan:
+        for entry in sorted(roles_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            role_md = entry / "ROLE.md"
+            if not role_md.is_file():
+                continue
+            parsed = parse_dir_name(entry.name)
+            slug = parsed[0] if parsed else entry.name
+            if slug not in seen:
+                seen.add(slug)
+                roles.append((slug, str(entry)))
     return roles
 
 
@@ -484,6 +492,7 @@ def stage_role(
     session_dir: str,
     resolved: dict,
     global_skills: list[tuple[str, str, str]] | None = None,
+    working_dir: str | None = None,
 ) -> tuple[str, str]:
     """Stage a resolved role into the session directory.
 
@@ -549,17 +558,17 @@ def stage_role(
                 _symlink(gpath, dest)
 
     # Always stage denden — required for agent communication
-    _ensure_denden_staged(skills_dir)
+    _ensure_denden_staged(skills_dir, working_dir)
     # Always stage session-recap — required for memory summary quality
-    _ensure_session_recap_staged(skills_dir)
+    _ensure_session_recap_staged(skills_dir, working_dir)
 
     # Stage role deps
     roles_dir = os.path.join(role_stage_dir, "roles")
     os.makedirs(roles_dir, exist_ok=True)
 
     if wildcard_roles:
-        # "*" — stage all globally installed roles
-        for role_slug, role_path in _discover_all_roles():
+        # "*" — stage all installed roles (project-local + global)
+        for role_slug, role_path in _discover_all_roles(working_dir):
             if role_slug == slug:  # skip self
                 continue
             dest = os.path.join(roles_dir, role_slug)
@@ -578,24 +587,36 @@ def stage_role(
     return skills_dir, roles_dir
 
 
-def _ensure_denden_staged(skills_dir: str) -> None:
+def _find_skill(slug: str, working_dir: str | None) -> Path | None:
+    """Find a skill directory, checking project-local first then global."""
+    if working_dir:
+        local = Path(working_dir) / ".strawpot" / "skills" / slug
+        if local.is_dir() and (local / "SKILL.md").is_file():
+            return local
+    global_path = get_strawpot_home() / "skills" / slug
+    if global_path.is_dir() and (global_path / "SKILL.md").is_file():
+        return global_path
+    return None
+
+
+def _ensure_denden_staged(skills_dir: str, working_dir: str | None = None) -> None:
     """Always stage the denden skill — it is required for agent communication."""
     dest = os.path.join(skills_dir, "denden")
     if os.path.exists(dest):
         return
-    denden_path = get_strawpot_home() / "skills" / "denden"
-    if denden_path.is_dir() and (denden_path / "SKILL.md").is_file():
-        _symlink(str(denden_path), dest)
+    path = _find_skill("denden", working_dir)
+    if path:
+        _symlink(str(path), dest)
 
 
-def _ensure_session_recap_staged(skills_dir: str) -> None:
+def _ensure_session_recap_staged(skills_dir: str, working_dir: str | None = None) -> None:
     """Always stage the session-recap skill — it is required for memory summary quality."""
     dest = os.path.join(skills_dir, "strawpot-session-recap")
     if os.path.exists(dest):
         return
-    recap_path = get_strawpot_home() / "skills" / "strawpot-session-recap"
-    if recap_path.is_dir() and (recap_path / "SKILL.md").is_file():
-        _symlink(str(recap_path), dest)
+    path = _find_skill("strawpot-session-recap", working_dir)
+    if path:
+        _symlink(str(path), dest)
 
 
 def create_agent_workspace(session_dir: str, agent_id: str) -> str:
@@ -820,7 +841,7 @@ def handle_delegate(
     #    Candidates come from the role's own declared role dependencies.
     _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
     if wildcard:
-        role_dep_slugs = [slug for slug, _ in _discover_all_roles()]
+        role_dep_slugs = [slug for slug, _ in _discover_all_roles(working_dir)]
     delegatable = _build_delegatable_roles(
         role_dep_slugs, request.role_slug, resolve_role_dirs,
         requester_role=request.parent_role,
@@ -836,7 +857,8 @@ def handle_delegate(
 
     # 5. Stage role (session-level, idempotent)
     skills_dir, roles_dir = stage_role(
-        session_dir, resolved, global_skills=global_skills or None
+        session_dir, resolved, global_skills=global_skills or None,
+        working_dir=working_dir,
     )
 
     # 6-9. Spawn/wait loop with retry on format validation failure
