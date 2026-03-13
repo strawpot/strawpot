@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import cronstrue from "cronstrue";
 import { useProjects } from "@/hooks/queries/use-projects";
-import { useRoles } from "@/hooks/queries/use-roles";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useCreateSchedule, useUpdateSchedule } from "@/hooks/mutations/use-schedules";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,7 +55,6 @@ export default function CreateScheduleDialog({
   editing,
 }: CreateScheduleDialogProps) {
   const { data: projects } = useProjects();
-  const { data: roles } = useRoles();
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
 
@@ -67,6 +66,16 @@ export default function CreateScheduleDialog({
   const [systemPrompt, setSystemPrompt] = useState("");
   const [skipIfRunning, setSkipIfRunning] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const selectedProjectId = editing ? editing.project_id : Number(projectId) || 0;
+  const { data: projectResources } = useProjectResources(selectedProjectId);
+  const roles = useMemo(
+    () =>
+      (projectResources ?? [])
+        .filter((r) => r.type === "roles")
+        .map((r) => r.name),
+    [projectResources],
+  );
 
   useEffect(() => {
     if (open && editing) {
@@ -235,14 +244,17 @@ export default function CreateScheduleDialog({
               id="sched-role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              placeholder={roles?.[0] ?? "orchestrator"}
+              placeholder={roles[0] ?? "orchestrator"}
               list="sched-role-list"
             />
             <datalist id="sched-role-list">
-              {(roles ?? []).map((r) => (
+              {roles.map((r) => (
                 <option key={r} value={r} />
               ))}
             </datalist>
+            {role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
+              <p className="text-xs text-destructive">Role not found in installed roles</p>
+            )}
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
@@ -302,7 +314,7 @@ export default function CreateScheduleDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}>
               {isPending
                 ? "Saving..."
                 : editing

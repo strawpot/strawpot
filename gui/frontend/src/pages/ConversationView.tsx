@@ -5,7 +5,7 @@ import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation, useCancelPendingTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
-import { useRoles } from "@/hooks/queries/use-roles";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -166,7 +166,10 @@ export default function ConversationView() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
-  const roles = useRoles();
+  const { data: projectResources } = useProjectResources(pid);
+  const projectRoleNames = (projectResources ?? [])
+    .filter((r) => r.type === "roles")
+    .map((r) => r.name);
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
   const config = useProjectConfig(pid);
@@ -201,7 +204,7 @@ export default function ConversationView() {
   );
 
   const roleError =
-    role.trim() && !(roles.data ?? []).includes(role.trim())
+    role.trim() && !projectRoleNames.includes(role.trim())
       ? "Role not found in installed roles"
       : "";
 
@@ -636,7 +639,7 @@ export default function ConversationView() {
                 )}
               </div>
               <datalist id="datalist-role">
-                {(roles.data ?? []).map((r) => (
+                {projectRoleNames.map((r) => (
                   <option key={r} value={r} />
                 ))}
               </datalist>
