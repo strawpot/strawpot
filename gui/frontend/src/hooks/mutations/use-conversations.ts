@@ -67,6 +67,8 @@ export function useSubmitConversationTask(conversationId: number) {
         queryKey: queryKeys.conversations.detail(conversationId),
       });
       qc.invalidateQueries({ queryKey: ["sessions"] });
+      // Also refresh the Imu conversation list so sidebar title updates
+      qc.invalidateQueries({ queryKey: ["imu", "conversations"] });
     },
   });
 }
@@ -131,6 +133,8 @@ export function useDeleteImuConversation() {
       qc.setQueryData<ImuConversation[]>(["imu", "conversations"], (old) =>
         old ? old.filter((c) => c.id !== conversationId) : old,
       );
+      // Remove detail cache so a reused rowid doesn't serve stale data
+      qc.removeQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
       return { previous };
     },
     onError: (_err, _id, context) => {
@@ -156,6 +160,7 @@ export function useDeleteConversation(projectId: number) {
         if (!old) return old;
         return { ...old, items: old.items.filter((c) => c.id !== conversationId), total: old.total - 1 };
       });
+      qc.removeQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
       return { previous };
     },
     onError: (_err, _id, context) => {
