@@ -590,9 +590,10 @@ the full design.
 3. **Bidirectional ask_user** — `ask_user_response` messages go back
    through the same WebSocket connection, eliminating the separate
    REST call.
-4. **Global lifecycle stays SSE** — `GET /api/events` is one connection
-   globally; it has no connection-limit problem and remains SSE for
-   simplicity.
+4. **All real-time over WebSocket** — agent log streaming and global
+   lifecycle events are delivered over WebSocket connections, not SSE.
+   This eliminates HTTP/1.1 connection-pool exhaustion entirely.
+   See [SSE → WebSocket Migration](#sse--websocket-migration).
 
 ### WebSocket protocol: `GET /ws/sessions/{run_id}`
 
@@ -669,12 +670,10 @@ orchestrator (running, 45s)
     └── [pending: fixer]
 ```
 
-### Global SSE event bus
+### Global event bus
 
-`GET /api/events` remains Server-Sent Events — it is one connection
-globally and has no connection-limit problem. Broadcasts session
-lifecycle events so the frontend can invalidate TanStack Query caches
-without per-page polling.
+Broadcasts session lifecycle events so the frontend can invalidate
+TanStack Query caches without per-page polling.
 
 **Event types:**
 
@@ -684,6 +683,9 @@ without per-page polling.
 {"kind": "session_failed",    "run_id": "...", "project_id": 3}
 {"kind": "session_stopped",   "run_id": "...", "project_id": 3}
 ```
+
+Currently delivered via SSE (`GET /api/events`). Will migrate to a
+global WebSocket — see [SSE → WebSocket Migration](#sse--websocket-migration).
 
 ### File watching
 
@@ -701,13 +703,15 @@ trace events, but actual CLI output — is the biggest gap in the current
 GUI. This section designs the full stack from backend endpoint to
 frontend viewer.
 
-### Backend: SSE endpoint
+### Backend: log streaming endpoint
 
 ```
 GET /api/sessions/{run_id}/logs/{agent_id}
 ```
 
-Streams the agent's `.log` file as SSE events.
+Streams the agent's `.log` file. Currently delivered via SSE; will
+migrate to the per-session WebSocket — see
+[SSE → WebSocket Migration](#sse--websocket-migration).
 
 **Protocol:**
 
@@ -782,9 +786,9 @@ A terminal-style component for viewing streaming agent output.
 **Data flow:**
 
 ```
-SSE: /api/sessions/{runId}/logs/{agentId}
+WebSocket: /ws/sessions/{runId}  (agent_log_snapshot / agent_log_delta)
   ↓
-useAgentLogSSE hook
+useSessionWS hook → agentLogs state
   ↓ lines[]
 AgentLogViewer component
   ↓ renders visible lines
@@ -793,6 +797,113 @@ Virtual scroll viewport
 
 The hook maintains a line buffer capped at 10,000 lines (oldest lines
 evicted). The component renders only the visible window.
+
+---
+
+## SSE → WebSocket Migration
+
+### Problem
+
+Browsers enforce a 6-connection-per-origin limit for HTTP/1.1. Each SSE
+stream (`EventSource`) holds one connection open indefinitely. With
+multiple session tabs open — each consuming an agent log SSE — plus the
+global events SSE, the connection pool fills up. Subsequent HTTP requests
+(REST fetches, artifact loads) queue behind the long-lived SSE
+connections and appear to hang.
+
+The per-session WebSocket already solved this for tree, trace, ask_user,
+and chat by multiplexing on a single connection. This migration extends
+that pattern to cover the two remaining SSE endpoints:
+
+| Current SSE endpoint | Connections consumed | Migration target |
+|----------------------|---------------------|-----------------|
+| `/api/sessions/:id/logs/:agent_id` | 1 per agent viewed | Per-session WebSocket (`/ws/sessions/:id`) |
+| `/api/events` | 1 globally | Global WebSocket (`/ws/events`) |
+
+After migration, a user with N session tabs open uses N+1 WebSocket
+connections (one per session + one global) instead of N×2+1 HTTP
+connections. WebSocket connections do not count against the browser's
+HTTP connection limit.
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Agent logs over per-session WebSocket | The session WS already watches the session directory. Adding `.log` file watching is incremental — no new connection, no new file watcher process. |
+| Global events over a new `/ws/events` WebSocket | The global event bus is session-independent. Putting it on a per-session WS would require opening a session WS just for lifecycle events, which is awkward. A dedicated global WS is cleaner. |
+| Client subscribes to agent logs explicitly | Agent log watching is expensive (file I/O per agent). The client sends `{"type": "subscribe_logs", "agent_id": "..."}` and `{"type": "unsubscribe_logs", "agent_id": "..."}` so the server only watches logs the user is actively viewing. |
+| Keep SSE endpoints as deprecated fallback | External consumers (adapters, scripts) may use the SSE endpoints. Keep them functional but undocumented. Remove in a future major version. |
+| Reuse snapshot/delta protocol | Same `snapshot` + `delta` pattern as trace events. Clients resume from a byte offset on reconnect. |
+
+### Protocol additions
+
+#### Per-session WebSocket: agent log messages
+
+**Client → server:**
+
+| `type` | Payload | Action |
+|--------|---------|--------|
+| `subscribe_logs` | `{ agent_id: string, offset?: number }` | Start watching agent's `.log` file from offset (default: tail 500 lines) |
+| `unsubscribe_logs` | `{ agent_id: string }` | Stop watching agent's log file |
+
+**Server → client:**
+
+| `type` | When sent | Payload |
+|--------|-----------|---------|
+| `agent_log_snapshot` | After `subscribe_logs` | `{ agent_id, lines: string[], offset: number }` |
+| `agent_log_delta` | When `.log` file grows | `{ agent_id, lines: string[], offset: number }` |
+| `agent_log_done` | When session reaches terminal state | `{ agent_id }` |
+
+The `agent_id` field in each message lets the client demux logs for
+multiple agents on the same WebSocket connection.
+
+#### Global WebSocket: `/ws/events`
+
+**Server → client:**
+
+| `type` | When sent | Payload |
+|--------|-----------|---------|
+| `session_started` | Session launched | `{ run_id, project_id, ...extra }` |
+| `session_completed` | Session exited successfully | `{ run_id, project_id, ...extra }` |
+| `session_failed` | Session exited with error | `{ run_id, project_id, ...extra }` |
+| `session_stopped` | Session stopped by user | `{ run_id, project_id, ...extra }` |
+
+No client → server messages needed. The connection is receive-only
+(the server accepts but ignores any client frames). Same reconnection
+strategy as the session WebSocket: exponential backoff 1s → 15s.
+
+### Backend changes
+
+| File | Change |
+|------|--------|
+| `routers/ws.py` | Add `subscribe_logs` / `unsubscribe_logs` message handling. For each subscribed agent, spawn a file watcher task that reads `.log` deltas and pushes `agent_log_*` messages through the sender queue. |
+| `routers/ws.py` (new endpoint) | Add `global_events_ws()` at `/ws/events`. Subscribe to the existing `EventBus` and forward events as WebSocket frames. |
+| `routers/logs.py` | Keep SSE endpoint functional (deprecated). Extract shared log-reading logic into a helper used by both SSE and WS code paths. |
+| `routers/sse.py` | Keep SSE endpoint functional (deprecated). Extract `EventBus` subscription logic into a shared helper. |
+
+### Frontend changes
+
+| File | Change |
+|------|--------|
+| `hooks/useSessionWS.ts` | Add `subscribeLogs(agentId, offset?)` and `unsubscribeLogs(agentId)` methods. Handle `agent_log_snapshot`, `agent_log_delta`, `agent_log_done` message types. Maintain `agentLogs: Map<string, { lines, offset, done }>` state. |
+| `hooks/useGlobalWS.ts` (new) | Replace `useGlobalSSE`. Connect to `/ws/events`. Same reconnection/backoff logic. Fire TanStack Query invalidations on lifecycle events. |
+| `hooks/useAgentLogSSE.ts` | Deprecated. Components switch to `useSessionWS().subscribeLogs()`. |
+| `hooks/useGlobalSSE.ts` | Deprecated. Layout switches to `useGlobalWS()`. |
+| `pages/SessionDetail.tsx` | Agent log viewer calls `subscribeLogs(agentId)` / `unsubscribeLogs(agentId)` on agent selection change instead of creating a new `EventSource`. |
+| `components/Layout.tsx` | Replace `useGlobalSSE()` with `useGlobalWS()`. |
+
+### Implementation order
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Extract shared log-reading helper from `logs.py` | Planned |
+| 2 | Backend: handle `subscribe_logs` / `unsubscribe_logs` in session WS | Planned |
+| 3 | Frontend: extend `useSessionWS` with agent log state + subscribe/unsubscribe | Planned |
+| 4 | Frontend: migrate `AgentLogViewer` to use WS-based log streaming | Planned |
+| 5 | Backend: add `/ws/events` global WebSocket endpoint | Planned |
+| 6 | Frontend: create `useGlobalWS` hook, migrate Layout | Planned |
+| 7 | Deprecate SSE endpoints (keep functional, remove from docs) | Planned |
+| 8 | Remove `useAgentLogSSE` and `useGlobalSSE` hooks | Planned |
 
 ---
 
@@ -1043,7 +1154,7 @@ the scheduling system.
 | POST | `/api/sessions` | Launch new session (project_id, task, role, overrides, context_files, system_prompt) |
 | GET | `/api/projects/:id/sessions/:run_id` | Session detail (metadata + agents + trace events) |
 | GET | `/ws/sessions/:id` | WebSocket: real-time tree, trace, ask_user, chat (bidirectional) |
-| GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream (snapshot + live tail) |
+| GET | `/api/sessions/:id/logs/:agent_id` | SSE: agent log stream (snapshot + live tail) — deprecated, use session WebSocket `subscribe_logs` |
 | GET | `/api/sessions/:id/logs/:agent_id/full` | Full log file download (text/plain) |
 | GET | `/api/sessions/:id/artifacts/:hash` | Read artifact content |
 | POST | `/api/sessions/:id/stop` | Stop session (SIGTERM to orchestrator PID) |
@@ -1052,7 +1163,8 @@ the scheduling system.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/events` | SSE: global event bus (session lifecycle, agent spawn/end, change notifications) |
+| GET | `/api/events` | SSE: global event bus (session lifecycle, agent spawn/end, change notifications) — deprecated, use `/ws/events` |
+| GET | `/ws/events` | WebSocket: global event bus (replaces SSE `/api/events`) |
 
 ### Registry (Global Resources)
 
@@ -1408,4 +1520,5 @@ Moved to dedicated design document: [designs/integration/DESIGN.md](../integrati
 | 12 | Chat-mode sessions (conversation threading + sequential task submission) | **Done** |
 | 13 | Message queuing for conversations (pending_task, auto-submit on completion) | **Done** |
 | 14 | Chat & community service integrations — see [designs/integration/DESIGN.md](../integration/DESIGN.md) | Planned |
+| 15 | SSE → WebSocket migration (agent logs + global events) — see [SSE → WebSocket Migration](#sse--websocket-migration) | Planned |
 
