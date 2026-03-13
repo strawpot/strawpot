@@ -11,18 +11,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ResourceDetailSheet from "@/components/ResourceDetailSheet";
 import InstallDialog from "@/components/InstallDialog";
 import { useUninstallProjectResource } from "@/hooks/mutations/use-project-resources";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import type { ProjectResource } from "@/api/types";
+
+const RESOURCE_TYPES = ["roles", "skills", "agents", "memories"] as const;
 
 const TYPE_LABELS: Record<string, string> = {
-  roles: "Role",
-  skills: "Skill",
-  agents: "Agent",
-  memories: "Memory",
+  roles: "Roles",
+  skills: "Skills",
+  agents: "Agents",
+  memories: "Memories",
 };
 
 interface Props {
@@ -52,11 +56,17 @@ export default function ProjectResourcesTab({
     { enabled: sheetOpen && !!selectedName && !!selectedType },
   );
 
+  const openDetail = (r: ProjectResource) => {
+    setSelectedName(r.name);
+    setSelectedType(r.type);
+    setSheetOpen(true);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Resources installed to this project
+          Resources available to this project
         </p>
         <Button onClick={() => setInstallOpen(true)} size="sm">
           <Download className="mr-2 h-4 w-4" />
@@ -72,57 +82,40 @@ export default function ProjectResourcesTab({
         </div>
       ) : !resources || resources.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
-          No project resources installed yet.
+          No resources available yet.
         </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="w-24" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {resources.map((r) => (
-                  <TableRow
-                    key={`${r.type}-${r.name}`}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      setSelectedName(r.name);
-                      setSelectedType(r.type);
-                      setSheetOpen(true);
-                    }}
-                  >
-                    <TableCell className="font-medium">{r.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {TYPE_LABELS[r.type] ?? r.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {r.version ?? "—"}
-                    </TableCell>
-                    <TableCell className="max-w-[300px] truncate text-sm">
-                      {r.description || "—"}
-                    </TableCell>
-                    <TableCell>
-                      <ProjectUninstallButton
-                        projectId={projectId}
-                        resourceType={r.type}
-                        name={r.name}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            {RESOURCE_TYPES.map((t) => {
+              const count = resources.filter((r) => r.type === t).length;
+              return (
+                <TabsTrigger key={t} value={t} disabled={count === 0}>
+                  {TYPE_LABELS[t]} ({count})
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+
+          <TabsContent value="all">
+            <ResourceTable
+              resources={resources}
+              showType
+              projectId={projectId}
+              onSelect={openDetail}
+            />
+          </TabsContent>
+          {RESOURCE_TYPES.map((t) => (
+            <TabsContent key={t} value={t}>
+              <ResourceTable
+                resources={resources.filter((r) => r.type === t)}
+                projectId={projectId}
+                onSelect={openDetail}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
       )}
 
       <ResourceDetailSheet
@@ -139,6 +132,95 @@ export default function ProjectResourcesTab({
         projectId={projectId}
       />
     </div>
+  );
+}
+
+function ResourceTable({
+  resources,
+  showType,
+  projectId,
+  onSelect,
+}: {
+  resources: ProjectResource[];
+  showType?: boolean;
+  projectId: number;
+  onSelect: (r: ProjectResource) => void;
+}) {
+  if (resources.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
+        No resources in this category.
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Source</TableHead>
+              {showType && <TableHead>Type</TableHead>}
+              <TableHead>Version</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Config</TableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {resources.map((r) => (
+              <TableRow
+                key={`${r.type}-${r.name}`}
+                className="cursor-pointer"
+                onClick={() => onSelect(r)}
+              >
+                <TableCell className="font-medium">{r.name}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${r.source === "global" ? "border-dashed" : ""}`}
+                  >
+                    {r.source === "global" ? "Global" : "Project"}
+                  </Badge>
+                </TableCell>
+                {showType && (
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {TYPE_LABELS[r.type] ?? r.type}
+                    </Badge>
+                  </TableCell>
+                )}
+                <TableCell className="text-sm text-muted-foreground">
+                  {r.version ?? "—"}
+                </TableCell>
+                <TableCell className="max-w-[300px] truncate text-sm">
+                  {r.description || "—"}
+                </TableCell>
+                <TableCell>
+                  {r.config_count > 0 && (
+                    <Badge variant="secondary" className="text-xs gap-1">
+                      <Settings className="h-3 w-3" />
+                      {r.config_count}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.source === "project" && (
+                    <ProjectUninstallButton
+                      projectId={projectId}
+                      resourceType={r.type}
+                      name={r.name}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
