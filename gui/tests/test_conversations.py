@@ -361,22 +361,25 @@ def _insert_completed_session(
     conn, project_id, conversation_id, *,
     task="do something", user_task=None, summary="done", exit_code=0,
     status="completed", started_at=None, files_changed=None,
+    session_dir=None, interactive=False,
 ):
     """Insert a session row directly for testing context building."""
     run_id = uuid.uuid4().hex[:12]
     if started_at is None:
         started_at = "2026-01-01T00:00:00"
+    if session_dir is None:
+        session_dir = f"/tmp/{run_id}"
     import json as _json
     fc_json = _json.dumps(files_changed) if files_changed else None
     conn.execute(
         "INSERT INTO sessions "
         "(run_id, project_id, role, runtime, isolation, status, task, user_task, "
         "summary, exit_code, conversation_id, started_at, session_dir, "
-        "files_changed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "files_changed, interactive) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (run_id, project_id, "default", "claude-code", "none", status, task,
          user_task, summary, exit_code, conversation_id, started_at,
-         f"/tmp/{run_id}", fc_json),
+         session_dir, fc_json, int(interactive)),
     )
     return run_id
 
@@ -1043,3 +1046,119 @@ class TestWriteConversationHistory:
         assert "5 earlier turns omitted" in content
         assert "task-00" not in content
         assert "task-14" in content
+
+
+class TestChatMessagePersistence:
+    """Tests for chat message persistence in conversation responses."""
+
+    def test_interactive_session_includes_chat_messages(self, client, tmp_path, app):
+        """Interactive sessions with chat_messages.jsonl return messages in API."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        # Create a session dir with chat_messages.jsonl
+        import json as _json
+        session_dir = tmp_path / "session_with_chat"
+        session_dir.mkdir()
+        messages = [
+            {"id": "req_1", "role": "agent", "text": "What color?", "timestamp": 1000.0},
+            {"id": "user-req_1", "role": "user", "text": "Blue", "timestamp": 1001.0},
+        ]
+        with open(session_dir / "chat_messages.jsonl", "w") as f:
+            for msg in messages:
+                f.write(_json.dumps(msg) + "\n")
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="interactive task", user_task="interactive task",
+                summary="done",
+                session_dir=str(session_dir),
+                interactive=True,
+            )
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        session = data["sessions"][0]
+        assert session["interactive"] is True
+        assert len(session["chat_messages"]) == 2
+        assert session["chat_messages"][0]["text"] == "What color?"
+        assert session["chat_messages"][1]["text"] == "Blue"
+
+    def test_non_interactive_session_has_no_chat_messages(self, client, tmp_path, app):
+        """Non-interactive sessions do not include chat_messages field."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="normal task", user_task="normal task",
+                summary="done",
+            )
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        session = data["sessions"][0]
+        assert session.get("interactive") is False
+        assert "chat_messages" not in session
+
+    def test_interactive_session_without_chat_file_returns_empty(self, client, tmp_path, app):
+        """Interactive session with no chat_messages.jsonl returns empty list."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        session_dir = tmp_path / "session_no_chat"
+        session_dir.mkdir()
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid,
+                task="interactive no chat", user_task="interactive no chat",
+                summary="done",
+                session_dir=str(session_dir),
+                interactive=True,
+            )
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        session = data["sessions"][0]
+        assert session["interactive"] is True
+        assert session["chat_messages"] == []
+
+    def test_chat_messages_preserved_across_multiple_sessions(self, client, tmp_path, app):
+        """Each interactive session keeps its own chat messages."""
+        import json as _json
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        for i in range(2):
+            session_dir = tmp_path / f"session_{i}"
+            session_dir.mkdir()
+            msgs = [{"id": f"q_{i}", "role": "agent", "text": f"Question {i}", "timestamp": float(1000 + i)}]
+            with open(session_dir / "chat_messages.jsonl", "w") as f:
+                f.write(_json.dumps(msgs[0]) + "\n")
+
+            with get_db(app.state.db_path) as conn:
+                _insert_completed_session(
+                    conn, pid, cid,
+                    task=f"task-{i}", user_task=f"task-{i}",
+                    summary=f"done-{i}",
+                    started_at=f"2026-01-01T00:0{i}:00",
+                    session_dir=str(session_dir),
+                    interactive=True,
+                )
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        assert len(data["sessions"]) == 2
+        assert data["sessions"][0]["chat_messages"][0]["text"] == "Question 0"
+        assert data["sessions"][1]["chat_messages"][0]["text"] == "Question 1"

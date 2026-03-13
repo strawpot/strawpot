@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { Conversation, ConversationList, ImuConversation } from "@/api/types";
+import type { InfiniteData } from "@tanstack/react-query";
 
 interface CreateConversationBody {
   project_id: number;
@@ -39,11 +40,29 @@ export function useSubmitConversationTask(conversationId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: SubmitTaskBody) =>
-      api.post<{ run_id: string; conversation_id: number }>(
+      api.post<{ run_id?: string; queued?: boolean; conversation_id: number }>(
         `/conversations/${conversationId}/tasks`,
         body,
       ),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      if (data.queued) {
+        // Optimistically append to pending_task in the infinite query cache
+        qc.setQueryData<InfiniteData<Conversation>>(
+          queryKeys.conversations.detail(conversationId),
+          (old) => {
+            if (!old) return old;
+            const pages = old.pages.map((page, i) => {
+              if (i !== old.pages.length - 1) return page;
+              const existing = page.pending_task || "";
+              const newPending = existing
+                ? `${existing}\n\n${variables.task}`
+                : variables.task;
+              return { ...page, pending_task: newPending };
+            });
+            return { ...old, pages };
+          },
+        );
+      }
       qc.invalidateQueries({
         queryKey: queryKeys.conversations.detail(conversationId),
       });

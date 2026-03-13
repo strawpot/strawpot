@@ -189,6 +189,8 @@ export interface ConversationSession {
   ended_at: string | null;
   duration_ms: number | null;
   role: string;
+  interactive?: boolean;
+  chat_messages?: ChatMessage[];
 }
 
 export interface Conversation {

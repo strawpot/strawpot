@@ -528,7 +528,7 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
 def stop_session(run_id: str, conn=Depends(get_db_conn)):
     """Stop a running session by sending SIGTERM to the orchestrator PID."""
     row = conn.execute(
-        "SELECT run_id, status, session_dir, project_id FROM sessions WHERE run_id = ?",
+        "SELECT run_id, status, session_dir, project_id, conversation_id FROM sessions WHERE run_id = ?",
         (run_id,),
     ).fetchone()
     if not row:
@@ -540,6 +540,14 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
         )
 
     project_id = row["project_id"]
+    conversation_id = row["conversation_id"]
+
+    # Clear any queued pending_task — user explicitly interrupted the flow
+    if conversation_id:
+        conn.execute(
+            "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+            (conversation_id,),
+        )
 
     # Read PID from session.json
     session_dir = Path(row["session_dir"])

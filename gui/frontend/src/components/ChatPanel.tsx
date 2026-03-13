@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import MarkdownContent from "@/components/MarkdownContent";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatPanel({
@@ -119,7 +120,7 @@ export default function ChatPanel({
                           : "bg-muted",
                       )}
                     >
-                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                      <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
                     </div>
                   </div>
                   {/* Inline choice buttons for pending questions */}
