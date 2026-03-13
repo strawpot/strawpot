@@ -788,7 +788,7 @@ function ArtifactModalContent({
           Raw
         </button>
       </div>
-      <ScrollArea className="max-h-[60vh]">
+      <div className="max-h-[60vh] overflow-y-auto">
         {view === "markdown" ? (
           <div className="p-4">
             <MarkdownContent content={content} className="text-sm" />
@@ -798,7 +798,7 @@ function ArtifactModalContent({
             {content}
           </pre>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }
