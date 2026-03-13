@@ -219,3 +219,124 @@ class TestSessionWSTraceResumption:
         assert "trace_snapshot" not in types2
         assert "tree_snapshot" in types2
         assert "stream_complete" in types2
+
+
+# ---------------------------------------------------------------------------
+# Agent log subscriptions (subscribe_logs / unsubscribe_logs)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionWSAgentLogs:
+    def test_subscribe_logs_terminal_session(self, client, tmp_path):
+        """subscribe_logs on a terminal session sends snapshot + done."""
+        _register_project(client, tmp_path)
+        session_dir = _write_session(tmp_path, "run_log1", archived=True)
+
+        # Write a log file for the agent
+        agent_dir = os.path.join(session_dir, "agents", "agent_abc")
+        os.makedirs(agent_dir, exist_ok=True)
+        with open(os.path.join(agent_dir, ".log"), "w") as f:
+            f.write("line 1\nline 2\nline 3\n")
+
+        sync_sessions(client.app.state.db_path)
+
+        with client.websocket_connect("/ws/sessions/run_log1") as ws:
+            # Send subscribe_logs immediately (server drains these for terminal sessions)
+            ws.send_json({"type": "subscribe_logs", "agent_id": "agent_abc"})
+            messages = _collect_until(ws, "stream_complete")
+
+        # Find log messages
+        snapshot = next((m for m in messages if m["type"] == "agent_log_snapshot"), None)
+        done = next((m for m in messages if m["type"] == "agent_log_done"), None)
+
+        assert snapshot is not None
+        assert snapshot["agent_id"] == "agent_abc"
+        assert snapshot["lines"] == ["line 1", "line 2", "line 3"]
+        assert snapshot["offset"] > 0
+        assert done is not None
+        assert done["agent_id"] == "agent_abc"
+
+    def test_subscribe_logs_invalid_agent(self, client, tmp_path):
+        """subscribe_logs with unknown agent_id is silently ignored."""
+        _register_project(client, tmp_path)
+        _write_session(tmp_path, "run_log2", archived=True)
+        sync_sessions(client.app.state.db_path)
+
+        with client.websocket_connect("/ws/sessions/run_log2") as ws:
+            # Send immediately — server drains subscribe_logs for terminal sessions
+            ws.send_json({"type": "subscribe_logs", "agent_id": "nonexistent"})
+            messages = _collect_until(ws, "stream_complete")
+
+        # No agent_log_snapshot for invalid agent
+        log_msgs = [m for m in messages if m["type"].startswith("agent_log_")]
+        assert len(log_msgs) == 0
+
+    def test_subscribe_logs_empty_log(self, client, tmp_path):
+        """subscribe_logs with no log file sends empty snapshot + done."""
+        _register_project(client, tmp_path)
+        session_dir = _write_session(tmp_path, "run_log3", archived=True)
+
+        # Create agent dir but no .log file
+        agent_dir = os.path.join(session_dir, "agents", "agent_abc")
+        os.makedirs(agent_dir, exist_ok=True)
+
+        sync_sessions(client.app.state.db_path)
+
+        with client.websocket_connect("/ws/sessions/run_log3") as ws:
+            # Send immediately — server drains subscribe_logs for terminal sessions
+            ws.send_json({"type": "subscribe_logs", "agent_id": "agent_abc"})
+            messages = _collect_until(ws, "stream_complete")
+
+        snapshot = next((m for m in messages if m["type"] == "agent_log_snapshot"), None)
+        assert snapshot is not None
+        assert snapshot["lines"] == []
+        assert snapshot["offset"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Global WebSocket: /ws/events
+# ---------------------------------------------------------------------------
+
+
+class TestGlobalEventsWS:
+    def test_receives_lifecycle_event(self, client):
+        """Global WS receives events published to the event bus."""
+        from strawpot_gui.event_bus import SessionEvent, event_bus
+
+        with client.websocket_connect("/ws/events") as ws:
+            # Publish an event
+            event_bus.publish(SessionEvent(
+                kind="session_completed",
+                run_id="run_evt1",
+                project_id=42,
+            ))
+
+            msg = ws.receive_json()
+            # Skip pings if any
+            while msg.get("type") == "ping":
+                msg = ws.receive_json()
+
+        assert msg["type"] == "session_completed"
+        assert msg["run_id"] == "run_evt1"
+        assert msg["project_id"] == 42
+
+    def test_receives_multiple_events(self, client):
+        """Global WS receives multiple events in sequence."""
+        from strawpot_gui.event_bus import SessionEvent, event_bus
+
+        with client.websocket_connect("/ws/events") as ws:
+            event_bus.publish(SessionEvent(kind="session_started", run_id="r1"))
+            event_bus.publish(SessionEvent(kind="session_completed", run_id="r2"))
+
+            events = []
+            for _ in range(10):  # read up to 10 messages
+                msg = ws.receive_json()
+                if msg.get("type") != "ping":
+                    events.append(msg)
+                if len(events) >= 2:
+                    break
+
+        assert events[0]["type"] == "session_started"
+        assert events[0]["run_id"] == "r1"
+        assert events[1]["type"] == "session_completed"
+        assert events[1]["run_id"] == "r2"

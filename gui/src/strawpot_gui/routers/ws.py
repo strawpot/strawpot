@@ -169,11 +169,14 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
 
     # ---- Read optional init message for trace offset resumption ----
     trace_offset = 0
+    early_subscribes: list[dict] = []
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
         msg = json.loads(raw)
         if msg.get("type") == "init":
             trace_offset = int(msg.get("trace_offset", 0))
+        elif msg.get("type") == "subscribe_logs":
+            early_subscribes.append(msg)
     except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, WebSocketDisconnect):
         pass
 
@@ -201,8 +204,44 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
         known_pending_ids.add(req_id)
         await websocket.send_json({"type": "ask_user", **ask_data})
 
-    # Terminal sessions: send final state and close
+    # Terminal sessions: handle pending subscribe_logs, send final state, close
     if status in ("completed", "failed", "stopped") or state.is_terminal:
+        async def _send_log_snapshot(agent_id: str) -> None:
+            if validate_agent(session_dir, agent_id):
+                lines, offset = read_log_tail(
+                    os.path.join(session_dir, "agents", agent_id, ".log")
+                )
+                await websocket.send_json({
+                    "type": "agent_log_snapshot",
+                    "agent_id": agent_id,
+                    "lines": lines,
+                    "offset": offset,
+                })
+                await websocket.send_json({
+                    "type": "agent_log_done",
+                    "agent_id": agent_id,
+                })
+
+        # Process any subscribe_logs received during init
+        for sub in early_subscribes:
+            aid = sub.get("agent_id", "")
+            if aid:
+                await _send_log_snapshot(aid)
+
+        # Drain additional subscribe_logs from the client
+        try:
+            while True:
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("type") == "subscribe_logs":
+                    aid = msg.get("agent_id", "")
+                    if aid:
+                        await _send_log_snapshot(aid)
+        except (asyncio.TimeoutError, WebSocketDisconnect):
+            pass
         await websocket.send_json({"type": "stream_complete"})
         await websocket.close()
         return
