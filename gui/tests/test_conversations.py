@@ -95,14 +95,19 @@ class TestGetConversation:
         data = client.get(f"/api/conversations/{conv['id']}").json()
         assert len(data["sessions"]) == 1
 
-    def test_pagination_limit(self, client, tmp_path):
+    def test_pagination_limit(self, client, tmp_path, app):
         d = tmp_path / "proj"
         d.mkdir()
         pid = _register_project(client, d)
         conv = _create_conversation(client, pid)
-        for _ in range(3):
-            _submit_task(client, conv["id"])
-        data = client.get(f"/api/conversations/{conv['id']}?limit=2").json()
+        cid = conv["id"]
+        with get_db(app.state.db_path) as conn:
+            for i in range(3):
+                _insert_completed_session(
+                    conn, pid, cid, task=f"task-{i}",
+                    started_at=f"2026-01-01T00:{i:02d}:00",
+                )
+        data = client.get(f"/api/conversations/{cid}?limit=2").json()
         assert len(data["sessions"]) == 2
         assert data["has_more"] is True
 
@@ -812,6 +817,129 @@ class TestHistoryFileHint:
             ctx = _build_conversation_context(conn, cid)
 
         assert "conversation_history.md" not in ctx
+
+
+class TestMessageQueuing:
+    """Tests for pending_task message queuing."""
+
+    def test_queues_when_session_active(self, client, tmp_path, app):
+        """Submitting while a session is active returns 202 and queues the task."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        # First task launches normally (201)
+        resp1 = _submit_task(client, cid, task="First task")
+        assert resp1.status_code == 201
+
+        # Session is still "starting" — second task should be queued (202)
+        resp2 = _submit_task(client, cid, task="Second task")
+        assert resp2.status_code == 202
+        assert resp2.json()["queued"] is True
+
+        # Verify pending_task is stored
+        data = client.get(f"/api/conversations/{cid}").json()
+        assert data["pending_task"] == "Second task"
+
+    def test_queued_tasks_concatenate(self, client, tmp_path, app):
+        """Multiple queued tasks are concatenated."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        _submit_task(client, cid, task="First task")
+        _submit_task(client, cid, task="Task A")
+        _submit_task(client, cid, task="Task B")
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        assert "Task A" in data["pending_task"]
+        assert "Task B" in data["pending_task"]
+
+    def test_cancel_pending_task(self, client, tmp_path, app):
+        """DELETE /conversations/{id}/pending_task clears the queue."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        _submit_task(client, cid, task="First task")
+        _submit_task(client, cid, task="Queued task")
+
+        resp = client.delete(f"/api/conversations/{cid}/pending_task")
+        assert resp.status_code == 204
+
+        data = client.get(f"/api/conversations/{cid}").json()
+        assert data["pending_task"] is None
+
+    def test_cancel_pending_task_404(self, client):
+        """Cancel on non-existent conversation returns 404."""
+        resp = client.delete("/api/conversations/9999/pending_task")
+        assert resp.status_code == 404
+
+    def test_pending_task_null_when_no_queue(self, client, tmp_path):
+        """Conversation without queued tasks has pending_task = null."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        data = client.get(f"/api/conversations/{conv['id']}").json()
+        assert data["pending_task"] is None
+
+    def test_auto_submit_drains_pending_on_completion(self, client, tmp_path, app):
+        """When a session completes and pending_task exists, a new session is launched."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        # Launch first task
+        resp1 = _submit_task(client, cid, task="First task")
+        run_id1 = resp1.json()["run_id"]
+
+        # Queue a second task
+        _submit_task(client, cid, task="Auto-submit me")
+
+        # Verify pending_task is set
+        with get_db(app.state.db_path) as conn:
+            row = conn.execute(
+                "SELECT pending_task FROM conversations WHERE id = ?", (cid,)
+            ).fetchone()
+        assert row["pending_task"] == "Auto-submit me"
+
+        # Simulate session completion by calling _drain_pending_task
+        from strawpot_gui.routers.sessions import _drain_pending_task
+        with patch("strawpot_gui.routers.sessions.shutil.which", return_value="/usr/bin/strawpot"), \
+             patch("strawpot_gui.routers.sessions.subprocess.Popen"), \
+             patch("strawpot_gui.routers.sessions.load_config") as mock_config:
+            from strawpot.config import StrawPotConfig
+            mock_config.return_value = StrawPotConfig()
+            with get_db(app.state.db_path) as conn:
+                # Mark first session as completed
+                conn.execute(
+                    "UPDATE sessions SET status = 'completed', exit_code = 0 WHERE run_id = ?",
+                    (run_id1,),
+                )
+                _drain_pending_task(conn, cid)
+
+        # pending_task should be cleared
+        with get_db(app.state.db_path) as conn:
+            row = conn.execute(
+                "SELECT pending_task FROM conversations WHERE id = ?", (cid,)
+            ).fetchone()
+        assert row["pending_task"] is None
+
+        # A new session should have been created
+        with get_db(app.state.db_path) as conn:
+            sessions = conn.execute(
+                "SELECT run_id FROM sessions WHERE conversation_id = ?", (cid,)
+            ).fetchall()
+        assert len(sessions) == 2  # original + auto-submitted
 
 
 class TestWriteConversationHistory:

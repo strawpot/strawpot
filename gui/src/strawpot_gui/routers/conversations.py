@@ -338,7 +338,8 @@ def get_conversation(
 ):
     """Get a conversation with its paginated sessions (newest page first)."""
     row = conn.execute(
-        "SELECT id, project_id, title, created_at, updated_at FROM conversations WHERE id = ?",
+        "SELECT id, project_id, title, created_at, updated_at, pending_task "
+        "FROM conversations WHERE id = ?",
         (conversation_id,),
     ).fetchone()
     if not row:
@@ -426,24 +427,60 @@ def list_project_conversations(
     }
 
 
-@router.post("/conversations/{conversation_id}/tasks", status_code=201)
+@router.post("/conversations/{conversation_id}/tasks")
 def submit_task(
     conversation_id: int,
     body: ConversationTask,
     conn=Depends(get_db_conn),
+    response: "Response | None" = None,
 ):
     """Submit a new task in a conversation.
 
-    Builds context from prior sessions and launches a new session with
-    the conversation history prepended to the task.
+    If no session is active, builds context from prior sessions and launches a
+    new session (201).  If a session is already running, the task is appended to
+    ``pending_task`` on the conversation and will be auto-submitted when the
+    current session completes (202).
     """
+    from starlette.responses import JSONResponse
+
     conv = conn.execute(
-        "SELECT id, project_id, title FROM conversations WHERE id = ?",
+        "SELECT id, project_id, title, pending_task FROM conversations WHERE id = ?",
         (conversation_id,),
     ).fetchone()
     if not conv:
         raise HTTPException(404, "Conversation not found")
 
+    project_id = conv["project_id"]
+
+    # Check for an active session in this conversation
+    active = conn.execute(
+        "SELECT run_id FROM sessions "
+        "WHERE conversation_id = ? AND status IN ('starting', 'running')",
+        (conversation_id,),
+    ).fetchone()
+
+    if active:
+        # Queue the task — concatenate with existing pending_task
+        existing = conv["pending_task"] or ""
+        new_pending = f"{existing}\n\n{body.task}".strip() if existing else body.task
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE conversations SET pending_task = ?, updated_at = ? WHERE id = ?",
+            (new_pending, now, conversation_id),
+        )
+        return JSONResponse(
+            status_code=202,
+            content={"queued": True, "conversation_id": conversation_id},
+        )
+
+    return _launch_conversation_task(conn, conv, body)
+
+
+def _launch_conversation_task(conn, conv, body: ConversationTask):
+    """Build context and launch a session for the conversation task."""
+    from starlette.responses import JSONResponse
+
+    conversation_id = conv["id"]
     project_id = conv["project_id"]
 
     # Write conversation history file for on-demand retrieval by the agent
@@ -501,7 +538,16 @@ def submit_task(
             (now, conversation_id),
         )
 
-    return {"run_id": run_id, "conversation_id": conversation_id}
+    # Clear pending_task since we just launched
+    conn.execute(
+        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+        (conversation_id,),
+    )
+
+    return JSONResponse(
+        status_code=201,
+        content={"run_id": run_id, "conversation_id": conversation_id},
+    )
 
 
 class ConversationUpdate(BaseModel):
@@ -544,3 +590,17 @@ def delete_conversation(conversation_id: int, conn=Depends(get_db_conn)):
         (conversation_id,),
     )
     conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+
+@router.delete("/conversations/{conversation_id}/pending_task", status_code=204)
+def cancel_pending_task(conversation_id: int, conn=Depends(get_db_conn)):
+    """Cancel the queued pending task for a conversation."""
+    row = conn.execute(
+        "SELECT id FROM conversations WHERE id = ?", (conversation_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Conversation not found")
+    conn.execute(
+        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+        (conversation_id,),
+    )

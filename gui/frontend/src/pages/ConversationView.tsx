@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConversationInfinite } from "@/hooks/queries/use-conversations";
-import { useSubmitConversationTask, useRenameConversation } from "@/hooks/mutations/use-conversations";
+import { useSubmitConversationTask, useRenameConversation, useCancelPendingTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
 import { useRoles } from "@/hooks/queries/use-roles";
@@ -193,6 +193,7 @@ export default function ConversationView() {
 
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
+  const cancelPending = useCancelPendingTask(cid);
   const rename = useRenameConversation(pid);
   const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
@@ -294,7 +295,7 @@ export default function ConversationView() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
-    if (!trimmed || isActive || !!roleError || hasAdvError) return;
+    if (!trimmed || !!roleError || hasAdvError) return;
     const body: Parameters<typeof submit.mutate>[0] = {
       task: trimmed,
       role: role.trim() || undefined,
@@ -429,6 +430,29 @@ export default function ConversationView() {
         </div>
       </div>
 
+      {/* Pending (queued) task indicator */}
+      {conversation?.pending_task && (
+        <div className="flex-shrink-0 border-t border-border bg-background px-4 py-2">
+          <div className="mx-auto max-w-2xl flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
+            <span className="text-xs text-muted-foreground flex-1 truncate">
+              Queued: <span className="text-foreground">{conversation.pending_task.split("\n")[0]}</span>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+              onClick={() => cancelPending.mutate()}
+              disabled={cancelPending.isPending}
+            >
+              <X className="h-3 w-3 mr-1" />
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Pending ask_user questions */}
       {pendingAskUsers.length > 0 && (
         <div className="flex-shrink-0 border-t border-border bg-background px-4 pt-3 pb-1">
@@ -501,10 +525,10 @@ export default function ConversationView() {
               onKeyDown={handleKeyDown}
               placeholder={
                 isActive
-                  ? "Agent is working…"
+                  ? "Queue a follow-up task… (Enter to queue, runs after current session)"
                   : "Describe the next task… (Enter to submit, Shift+Enter for new line, drag & drop files to attach)"
               }
-              disabled={isActive || submit.isPending}
+              disabled={submit.isPending}
               className="h-[80px] resize-none overflow-y-auto"
               autoFocus
             />
@@ -643,7 +667,7 @@ export default function ConversationView() {
                     </span>
                   )}
                 </Button>
-                {isActive ? (
+                {isActive && (
                   <Button
                     type="button"
                     variant="destructive"
@@ -657,18 +681,19 @@ export default function ConversationView() {
                     )}
                     Stop
                   </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    disabled={!task.trim() || submit.isPending || !!roleError || hasAdvError}
-                  >
-                    {submit.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CornerDownLeft className="h-4 w-4" />
-                    )}
-                  </Button>
                 )}
+                <Button
+                  type="submit"
+                  disabled={!task.trim() || submit.isPending || !!roleError || hasAdvError}
+                  variant={isActive ? "outline" : "default"}
+                  title={isActive ? "Queue task (runs after current session)" : undefined}
+                >
+                  {submit.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CornerDownLeft className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
             </div>
           </div>

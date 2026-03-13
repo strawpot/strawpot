@@ -158,6 +158,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add pending_task column to conversations (added 2026-03-12)
+    try:
+        conn.execute("ALTER TABLE conversations ADD COLUMN pending_task TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Add files_changed column to sessions (added 2026-03-12)
     try:
         conn.execute("ALTER TABLE sessions ADD COLUMN files_changed TEXT")
