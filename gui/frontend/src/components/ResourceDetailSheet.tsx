@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ResourceDetail } from "@/api/types";
 import {
   useUninstallResource,
@@ -10,6 +11,7 @@ import {
   useUpdateProjectResource,
   useReinstallProjectResource,
 } from "@/hooks/mutations/use-project-resources";
+import { queryKeys } from "@/lib/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +41,16 @@ export default function ResourceDetailSheet({
   onOpenChange,
   projectId,
 }: Props) {
+  const qc = useQueryClient();
+
+  // When a global resource is mutated from a project page, also refresh
+  // the project resource list (which includes global resources).
+  const invalidateProjectResources = () => {
+    if (projectId != null) {
+      qc.invalidateQueries({ queryKey: queryKeys.projects.resources(projectId) });
+    }
+  };
+
   // Global mutations
   const globalUninstall = useUninstallResource();
   const globalUpdate = useUpdateResource();
@@ -49,10 +61,12 @@ export default function ResourceDetailSheet({
   const projUpdate = useUpdateProjectResource(projectId ?? 0);
   const projReinstall = useReinstallProjectResource(projectId ?? 0);
 
-  // Pick the right set based on scope
-  const uninstall = projectId ? projUninstall : globalUninstall;
-  const updateResource = projectId ? projUpdate : globalUpdate;
-  const reinstall = projectId ? projReinstall : globalReinstall;
+  // Pick the right set based on the resource's actual scope, not the page context.
+  // A global resource viewed from a project page should still use global mutations.
+  const isProjectScoped = projectId != null && resource?.source === "project";
+  const uninstall = isProjectScoped ? projUninstall : globalUninstall;
+  const updateResource = isProjectScoped ? projUpdate : globalUpdate;
+  const reinstall = isProjectScoped ? projReinstall : globalReinstall;
 
   const [confirming, setConfirming] = useState(false);
   const actionPending = updateResource.isPending || reinstall.isPending || uninstall.isPending;
@@ -70,6 +84,7 @@ export default function ResourceDetailSheet({
         onSuccess: (result) => {
           if (result.exit_code === 0) {
             toast.success(`Uninstalled ${resource.name}`);
+            if (!isProjectScoped) invalidateProjectResources();
             onOpenChange(false);
           } else {
             toast.error(`Uninstall failed: ${result.stderr || result.stdout}`);
@@ -91,6 +106,7 @@ export default function ResourceDetailSheet({
         onSuccess: (result) => {
           if (result.exit_code === 0) {
             toast.success(`Updated ${resource.name}`);
+            if (!isProjectScoped) invalidateProjectResources();
           } else {
             toast.error(`Update failed: ${result.stderr || result.stdout}`);
           }
@@ -107,6 +123,7 @@ export default function ResourceDetailSheet({
         onSuccess: (result) => {
           if (result.exit_code === 0) {
             toast.success(`Reinstalled ${resource.name}`);
+            if (!isProjectScoped) invalidateProjectResources();
           } else {
             toast.error(`Reinstall failed: ${result.stderr || result.stdout}`);
           }
