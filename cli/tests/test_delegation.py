@@ -17,6 +17,7 @@ from strawpot.delegation import (
     _check_inherit_global_skills,
     _check_policy,
     _collect_transitive_skills,
+    _find_skill,
     _format_memory_prompt,
     _get_default_agent,
     _merge_env_entry,
@@ -2116,6 +2117,191 @@ class TestStageRoleGlobalSkills:
         assert os.path.islink(staged)
         # Should point to dep path, not global
         assert os.readlink(staged) == denden_dep
+
+
+# ---------------------------------------------------------------------------
+# Project-local resource discovery
+# ---------------------------------------------------------------------------
+
+
+class TestFindSkill:
+    """Tests for _find_skill — project-local first, then global."""
+
+    def test_prefers_local_over_global(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        # Install in both locations
+        for base in [tmp_path / "project" / ".strawpot", global_home]:
+            skill_dir = base / "skills" / "my-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n")
+
+        result = _find_skill("my-skill", str(tmp_path / "project"))
+        assert result == tmp_path / "project" / ".strawpot" / "skills" / "my-skill"
+
+    def test_falls_back_to_global(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        skill_dir = global_home / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n")
+
+        result = _find_skill("my-skill", str(tmp_path / "project"))
+        assert result == skill_dir
+
+    def test_returns_none_when_not_found(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty"))
+        assert _find_skill("missing", str(tmp_path / "project")) is None
+
+    def test_none_working_dir_checks_global_only(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        skill_dir = global_home / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n")
+
+        result = _find_skill("my-skill", None)
+        assert result == skill_dir
+
+
+class TestDiscoverAllRolesLocal:
+    """Tests for _discover_all_roles with project-local roles."""
+
+    def test_local_takes_precedence(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        project = tmp_path / "project"
+        # Install same role in both locations
+        for base in [project / ".strawpot", global_home]:
+            role_dir = base / "roles" / "reviewer"
+            role_dir.mkdir(parents=True)
+            (role_dir / "ROLE.md").write_text("---\nname: reviewer\n---\n")
+
+        result = _discover_all_roles(str(project))
+        slugs = [s for s, _ in result]
+        assert slugs.count("reviewer") == 1
+        # Should point to local
+        path = dict(result)["reviewer"]
+        assert "project" in path
+
+    def test_merges_local_and_global(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        project = tmp_path / "project"
+        # Local-only role
+        local_dir = project / ".strawpot" / "roles" / "local-role"
+        local_dir.mkdir(parents=True)
+        (local_dir / "ROLE.md").write_text("---\nname: local-role\n---\n")
+        # Global-only role
+        global_dir = global_home / "roles" / "global-role"
+        global_dir.mkdir(parents=True)
+        (global_dir / "ROLE.md").write_text("---\nname: global-role\n---\n")
+
+        result = _discover_all_roles(str(project))
+        slugs = [s for s, _ in result]
+        assert "local-role" in slugs
+        assert "global-role" in slugs
+
+    def test_no_working_dir_returns_global_only(self, tmp_path, monkeypatch):
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        role_dir = global_home / "roles" / "reviewer"
+        role_dir.mkdir(parents=True)
+        (role_dir / "ROLE.md").write_text("---\nname: reviewer\n---\n")
+
+        result = _discover_all_roles(None)
+        assert len(result) == 1
+        assert result[0][0] == "reviewer"
+
+
+class TestEnsureStagedLocal:
+    """Tests for denden/session-recap staging with project-local skills."""
+
+    def test_denden_staged_from_local(self, tmp_path, monkeypatch):
+        """Denden is staged from project-local when available."""
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        project = tmp_path / "project"
+
+        # Install denden locally only
+        local_denden = project / ".strawpot" / "skills" / "denden"
+        local_denden.mkdir(parents=True)
+        (local_denden / "SKILL.md").write_text("---\nname: denden\n---\n")
+
+        registry = str(tmp_path / "registry")
+        role_path = _write_role(registry, "worker")
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        session = str(tmp_path / "session")
+        skills_dir, _ = stage_role(
+            session, resolved, global_skills=None, working_dir=str(project),
+        )
+
+        staged = os.path.join(skills_dir, "denden")
+        assert os.path.islink(staged)
+        assert os.readlink(staged) == str(local_denden)
+
+    def test_denden_prefers_local_over_global(self, tmp_path, monkeypatch):
+        """When denden exists in both scopes, project-local wins."""
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        project = tmp_path / "project"
+
+        # Install in both
+        for base in [project / ".strawpot", global_home]:
+            d = base / "skills" / "denden"
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text("---\nname: denden\n---\n")
+
+        registry = str(tmp_path / "registry")
+        role_path = _write_role(registry, "worker")
+        resolved = {
+            "slug": "worker", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        session = str(tmp_path / "session")
+        skills_dir, _ = stage_role(
+            session, resolved, global_skills=None, working_dir=str(project),
+        )
+
+        staged = os.path.join(skills_dir, "denden")
+        assert os.path.islink(staged)
+        assert os.readlink(staged) == str(project / ".strawpot" / "skills" / "denden")
+
+    def test_wildcard_roles_includes_local(self, tmp_path, monkeypatch):
+        """Wildcard '*' role deps stage project-local roles too."""
+        global_home = tmp_path / "global"
+        monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+        project = tmp_path / "project"
+
+        # Global role
+        g_role = global_home / "roles" / "global-role"
+        g_role.mkdir(parents=True)
+        (g_role / "ROLE.md").write_text("---\nname: global-role\n---\n")
+        # Local-only role
+        l_role = project / ".strawpot" / "roles" / "local-role"
+        l_role.mkdir(parents=True)
+        (l_role / "ROLE.md").write_text("---\nname: local-role\n---\n")
+
+        registry = str(tmp_path / "registry")
+        role_path = _write_role(registry, "orchestrator", role_deps=["*"])
+        resolved = {
+            "slug": "orchestrator", "kind": "role", "version": "1.0.0",
+            "path": role_path, "source": "local", "dependencies": [],
+        }
+
+        session = str(tmp_path / "session")
+        _, roles_dir = stage_role(
+            session, resolved, global_skills=None, working_dir=str(project),
+        )
+
+        staged_slugs = os.listdir(roles_dir)
+        assert "global-role" in staged_slugs
+        assert "local-role" in staged_slugs
 
 
 # ---------------------------------------------------------------------------
