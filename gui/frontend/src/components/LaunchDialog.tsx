@@ -394,10 +394,10 @@ export default function LaunchDialog({
                     onChange={(e) => setRuntime(e.target.value)}
                     placeholder={runtimePlaceholder}
                   />
-                  {agents && (
+                  {agentNames.length > 0 && (
                     <datalist id="datalist-runtime">
-                      {agents.map((a) => (
-                        <option key={a.name} value={a.name} />
+                      {agentNames.map((name) => (
+                        <option key={name} value={name} />
                       ))}
                     </datalist>
                   )}

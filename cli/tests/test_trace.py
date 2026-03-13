@@ -353,11 +353,16 @@ class TestMemoryEvents:
 
     def test_memory_recall_stores_all_arguments(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
+        results = [
+            {"content": "memory card 1", "score": 0.9, "scope": "project"},
+            {"content": "memory card 2", "score": 0.7, "scope": "global"},
+        ]
         tracer.memory_recall(
             span_id="s1", provider="dial",
             session_id="run_abc", agent_id="agent_123",
             role="implementer", query="testing framework",
-            scope="project", result_count=3,
+            scope="project", result_count=2,
+            results=results,
             parent_agent_id="agent_000",
         )
         events = _read_events(session_dir)
@@ -369,8 +374,17 @@ class TestMemoryEvents:
         assert data["role"] == "implementer"
         assert data["query"] == "testing framework"
         assert data["scope"] == "project"
-        assert data["result_count"] == 3
+        assert data["result_count"] == 2
         assert data["parent_agent_id"] == "agent_000"
+        # results_ref should point to stored artifact
+        assert data["results_ref"] is not None
+        artifact_path = os.path.join(session_dir, "artifacts", data["results_ref"])
+        assert os.path.isfile(artifact_path)
+        import json
+        with open(artifact_path, encoding="utf-8") as f:
+            stored = json.loads(f.read())
+        assert len(stored) == 2
+        assert stored[0]["content"] == "memory card 1"
 
     def test_memory_recall_defaults(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
@@ -383,6 +397,7 @@ class TestMemoryEvents:
         assert data["query"] == ""
         assert data["scope"] == ""
         assert data["result_count"] == 0
+        assert data["results_ref"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -1194,6 +1194,10 @@ class Session:
                         query=recall.query,
                         scope=recall.scope or "",
                         result_count=len(result.entries),
+                        results=[
+                            {"content": e.content, "score": e.score, "scope": e.scope}
+                            for e in result.entries
+                        ] if result.entries else None,
                         parent_agent_id=None,
                     )
             return ok_response(
