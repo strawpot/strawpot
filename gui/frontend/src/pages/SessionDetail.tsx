@@ -64,7 +64,7 @@ export default function SessionDetail() {
   }, [active, session]);
 
   const isInteractive = !!sessionData?.interactive;
-  const { pendingAskUsers, chatMessages, traceEvents, treeData: wsTreeData, connected, respond } = useSessionWS(
+  const { pendingAskUsers, chatMessages, traceEvents, treeData: wsTreeData, connected, agentLogs, respond, subscribeLogs, unsubscribeLogs } = useSessionWS(
     runId ?? "",
     active || isInteractive,
   );
@@ -224,6 +224,10 @@ export default function SessionDetail() {
               runId={sessionData.run_id}
               agents={sessionData.agents}
               active={active}
+              agentLogs={agentLogs}
+              wsConnected={connected}
+              subscribeLogs={subscribeLogs}
+              unsubscribeLogs={unsubscribeLogs}
             />
           ) : (
             <p className="text-sm text-muted-foreground">

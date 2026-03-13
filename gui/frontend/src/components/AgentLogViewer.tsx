@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAgentLogSSE } from "@/hooks/useAgentLogSSE";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowDown, Download, Search } from "lucide-react";
 import type { AgentInfo } from "@/api/types";
+import type { AgentLogState } from "@/hooks/useSessionWS";
 
 const LINE_HEIGHT = 18;
 const OVERSCAN = 10;
@@ -19,17 +19,38 @@ interface AgentLogViewerProps {
   runId: string;
   agents: Record<string, AgentInfo>;
   active: boolean;
+  agentLogs: Map<string, AgentLogState>;
+  wsConnected: boolean;
+  subscribeLogs: (agentId: string, offset?: number) => void;
+  unsubscribeLogs: (agentId: string) => void;
 }
 
 export default function AgentLogViewer({
   runId,
   agents,
   active,
+  agentLogs,
+  wsConnected,
+  subscribeLogs,
+  unsubscribeLogs,
 }: AgentLogViewerProps) {
   const agentIds = Object.keys(agents);
   const rootId = agentIds.find((id) => agents[id].parent === null) ?? agentIds[0] ?? "";
   const [selectedAgent, setSelectedAgent] = useState(rootId);
-  const { lines, connected, done } = useAgentLogSSE(runId, selectedAgent, true);
+
+  // Subscribe/unsubscribe to agent logs via WS
+  useEffect(() => {
+    if (!selectedAgent || !wsConnected) return;
+    subscribeLogs(selectedAgent);
+    return () => {
+      unsubscribeLogs(selectedAgent);
+    };
+  }, [selectedAgent, wsConnected, subscribeLogs, unsubscribeLogs]);
+
+  const logState = agentLogs.get(selectedAgent);
+  const lines = logState?.lines ?? [];
+  const done = logState?.done ?? false;
+  const connected = wsConnected;
 
   // Search
   const [search, setSearch] = useState("");

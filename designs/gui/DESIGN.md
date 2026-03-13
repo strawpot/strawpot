@@ -94,7 +94,7 @@ one-shot task runner.
 | Icons | lucide-react |
 | Toasts | sonner (via shadcn) |
 | Command palette | cmdk (via shadcn) |
-| Real-time | WebSocket (per-session) + SSE (global lifecycle) |
+| Real-time | WebSocket (per-session + global lifecycle) |
 | Tree visualization | React Flow (@xyflow/react) |
 | GUI state | SQLite (`~/.strawpot/gui.db`) |
 
@@ -125,7 +125,7 @@ strawpot gui [--port PORT]
 - **Single instance only.** On startup, check whether the port is
   already in use. If so, open the browser to the existing instance
   instead of starting a second server. Avoids SQLite write contention
-  and SSE duplication.
+  and WebSocket duplication.
 - If a native desktop window is desired later, the same React frontend
   can be wrapped in Tauri (~5 MB) without rewriting.
 - Health check: `GET /api/health` returns `{"status": "ok"}`.
@@ -145,11 +145,11 @@ FastAPI server                              ← strawpot-gui package
   ├─ /api/projects/:id/resources/*          project-scoped resource CRUD
   ├─ /api/projects/:id/files                file upload/list/delete
   ├─ /api/sessions/*                        list / launch / stop
-  ├─ /api/sessions/:id/tree                 SSE  real-time agent tree
-  ├─ /api/sessions/:id/logs/:agent_id       SSE  agent log stream
-  ├─ /api/sessions/:id/events               SSE  trace event stream
+  ├─ /ws/sessions/:id                       WS   real-time tree, trace, logs, ask_user, chat
+  ├─ /api/sessions/:id/logs/:agent_id       SSE  agent log stream (deprecated)
   ├─ /api/sessions/:id/artifacts/:hash      read artifact content
-  ├─ /api/events                            SSE  global event bus
+  ├─ /ws/events                             WS   global lifecycle events
+  ├─ /api/events                            SSE  global event bus (deprecated)
   ├─ /api/registry/*                        global resource CRUD + install
   ├─ /api/config/global                     read/write global config
   ├─ /api/roles                             list installed role slugs
@@ -329,7 +329,7 @@ may be on an unmounted volume or temporarily moved.
 optional task description, optionally override config fields, then
 start via `strawpot start` subprocess. The `POST /api/sessions`
 endpoint returns immediately with a session ID and `status: "starting"`.
-The frontend subscribes to the session's SSE tree endpoint, which emits
+The frontend subscribes to the session's WebSocket endpoint, which emits
 a `session_start` event once `session.json` appears. If the subprocess
 exits before producing `session.json`, the endpoint emits an error
 event with stderr output.
@@ -357,13 +357,13 @@ header is a dropdown that lists all projects for quick switching.
 `ask_user` prompts appear and the user can respond inline. Sessions
 launched with `interactive: true` set `STRAWPOT_ASK_USER_BRIDGE=file`,
 enabling a file-based bridge: the CLI writes
-`ask_user_pending_{id}.json`, the GUI detects it via SSE and displays the
-question, the user responds, and the GUI writes
-`ask_user_response_{id}.json`. Per-request file naming supports parallel
-sub-agents asking questions concurrently. Chat history is persisted to
-`chat_messages.jsonl` by the CLI bridge (thread-safe) and sent to the
-frontend via SSE `chat_history` events, surviving tab switches and page
-reloads.
+`ask_user_pending_{id}.json`, the GUI detects it via the session WebSocket
+and displays the question, the user responds through the same WebSocket,
+and the server writes `ask_user_response_{id}.json`. Per-request file
+naming supports parallel sub-agents asking questions concurrently. Chat
+history is persisted to `chat_messages.jsonl` by the CLI bridge
+(thread-safe) and sent to the frontend via WebSocket `chat_history`
+messages, surviving tab switches and page reloads.
 
 ### 3. Session Monitoring
 
@@ -424,11 +424,12 @@ on viewport width).
 
 **Data flow:**
 
-1. The global SSE connection (see [Real-Time Engine](#real-time-engine))
+1. The global WebSocket connection (see [Real-Time Engine](#real-time-engine))
    notifies the frontend when agents spawn or complete.
 2. For each active agent, the frontend opens a per-agent log SSE
    connection (see [Agent Log Streaming](#agent-log-streaming)) to
-   receive output lines.
+   receive output lines. (Uses deprecated SSE endpoint; migration to
+   per-session WebSocket deferred — see implementation order step 9.)
 3. Activity cards manage their own SSE connection lifecycle — opening
    when the card mounts, closing on unmount or agent completion.
 
@@ -458,9 +459,10 @@ flood of stale notifications.
 **Toast actions:** Each toast includes a clickable link to the relevant
 session detail page.
 
-**Data source:** Toasts are fired from the global SSE event hook. The
-global SSE connection already receives session lifecycle events — the
-toast system consumes these without additional API calls.
+**Data source:** Toasts are fired from the global WebSocket event hook
+(`useGlobalWS`). The global WebSocket connection receives session
+lifecycle events — the toast system consumes these without additional
+API calls.
 
 ### 6. Session History
 
@@ -640,20 +642,27 @@ Reconnection uses exponential backoff (1 s → 2 s → … → 15 s).
 
 ### Frontend: `useSessionWS(runId, active)`
 
-Replaces `useAskUserSSE`. Returns:
+Replaces `useAskUserSSE` and `useAgentLogSSE`. Returns:
 
 ```typescript
 {
   pendingAskUsers: AskUserPending[];
   chatMessages: ChatMessage[];
   traceEvents: TraceEvent[];
+  treeData: TreeData | null;
   connected: boolean;
+  agentLogs: Map<string, AgentLogState>;
   respond: (requestId: string, text: string) => void;
+  subscribeLogs: (agentId: string, offset?: number) => void;
+  unsubscribeLogs: (agentId: string) => void;
 }
 ```
 
 `respond` sends `{ type: "ask_user_response", ... }` through the open
 WebSocket, replacing the former REST `POST /sessions/:id/respond`.
+`subscribeLogs` / `unsubscribeLogs` send `subscribe_logs` /
+`unsubscribe_logs` messages to start/stop agent log streaming over
+the same connection.
 
 ### Agent tree rendering
 
@@ -684,8 +693,8 @@ TanStack Query caches without per-page polling.
 {"kind": "session_stopped",   "run_id": "...", "project_id": 3}
 ```
 
-Currently delivered via SSE (`GET /api/events`). Will migrate to a
-global WebSocket — see [SSE → WebSocket Migration](#sse--websocket-migration).
+Delivered via the global WebSocket (`/ws/events`). The SSE endpoint
+(`GET /api/events`) is kept as a deprecated fallback.
 
 ### File watching
 
@@ -709,9 +718,9 @@ frontend viewer.
 GET /api/sessions/{run_id}/logs/{agent_id}
 ```
 
-Streams the agent's `.log` file. Currently delivered via SSE; will
-migrate to the per-session WebSocket — see
-[SSE → WebSocket Migration](#sse--websocket-migration).
+Streams the agent's `.log` file. Now delivered via the per-session
+WebSocket (`subscribe_logs` / `unsubscribe_logs`). The SSE endpoint
+is kept as a deprecated fallback (used by `AgentActivityCard`).
 
 **Protocol:**
 
@@ -770,7 +779,8 @@ A terminal-style component for viewing streaming agent output.
 **Features:**
 
 - **Agent selector** — dropdown listing all agents in the session (from
-  `session.json` agents map). Switching agents reconnects the log SSE.
+  `session.json` agents map). Switching agents sends `unsubscribe_logs`
+  then `subscribe_logs` over the session WebSocket.
 - **Dark terminal theme** — dark background, monospace font, light text.
   Distinct from the rest of the UI to signal "this is raw output."
 - **Line numbers** — gutter showing line numbers.
@@ -896,14 +906,21 @@ strategy as the session WebSocket: exponential backoff 1s → 15s.
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Extract shared log-reading helper from `logs.py` | Planned |
-| 2 | Backend: handle `subscribe_logs` / `unsubscribe_logs` in session WS | Planned |
-| 3 | Frontend: extend `useSessionWS` with agent log state + subscribe/unsubscribe | Planned |
-| 4 | Frontend: migrate `AgentLogViewer` to use WS-based log streaming | Planned |
-| 5 | Backend: add `/ws/events` global WebSocket endpoint | Planned |
-| 6 | Frontend: create `useGlobalWS` hook, migrate Layout | Planned |
-| 7 | Deprecate SSE endpoints (keep functional, remove from docs) | Planned |
-| 8 | Remove `useAgentLogSSE` and `useGlobalSSE` hooks | Planned |
+| 1 | Extract shared log-reading helper from `logs.py` | Done |
+| 2 | Backend: handle `subscribe_logs` / `unsubscribe_logs` in session WS | Done |
+| 3 | Frontend: extend `useSessionWS` with agent log state + subscribe/unsubscribe | Done |
+| 4 | Frontend: migrate `AgentLogViewer` to use WS-based log streaming | Done |
+| 5 | Backend: add `/ws/events` global WebSocket endpoint | Done |
+| 6 | Frontend: create `useGlobalWS` hook, migrate App | Done |
+| 7 | Deprecate SSE endpoints (keep functional, remove from docs) | Done |
+| 8 | Remove `useGlobalSSE` hook | Done |
+| 9 | Migrate `AgentActivityCard` from `useAgentLogSSE` to WS | Deferred |
+
+> **Note on step 9:** `AgentActivityCard` (in `ActiveAgentsPanel`) still uses `useAgentLogSSE`.
+> It shows log tails across up to 8 different sessions simultaneously. Migrating it would
+> require either (a) a shared session-WS connection manager/context so multiple components
+> can share a single WS per `runId`, or (b) a lightweight log-only WS endpoint. The SSE
+> log endpoint is kept functional as a deprecated fallback until this is addressed.
 
 ---
 
@@ -981,8 +998,8 @@ each session directory, read `session.json` for core fields (`run_id`,
 `role`, `runtime`, `isolation`, `started_at`, `session_dir`) and parse
 `trace.jsonl` for completion fields (`exit_code`, `summary`,
 `duration_ms`, `ended_at` from `session_end` / `delegate_end` events).
-During runtime, session rows are created on launch and updated via SSE
-events (status transitions, exit code, summary).
+During runtime, session rows are created on launch and updated via
+WebSocket events (status transitions, exit code, summary).
 
 **CLI-launched session detection:** When using `watchfiles` for the
 real-time engine, also watch each project's `.strawpot/sessions/`
@@ -1275,10 +1292,10 @@ streaming.
 | Change | Why |
 |--------|-----|
 | `watchfiles` (backend) | OS-native file watching, ~100ms latency vs 1.5s polling |
-| Global SSE endpoint `/api/events` | Single connection for all session lifecycle notifications |
-| Agent log SSE endpoint | Stream agent `.log` files to the frontend |
-| Incremental trace SSE | Stop sending full event arrays on every update |
-| TanStack Query invalidation from SSE | Targeted cache busting instead of blind polling |
+| Global event bus (SSE → WebSocket) | Single connection for all session lifecycle notifications |
+| Agent log streaming (SSE → WebSocket) | Stream agent `.log` files to the frontend |
+| Incremental trace via WebSocket | Stop sending full event arrays on every update |
+| TanStack Query invalidation from WebSocket | Targeted cache busting instead of blind polling |
 
 **New pip dependencies:**
 ```
@@ -1287,12 +1304,14 @@ watchfiles>=1.0
 
 **Scope:**
 - Replace `asyncio.sleep` polling loops with `watchfiles.awatch()` in
-  the SSE router
-- Implement the `EventBus` class and `/api/events` global SSE endpoint
-- Implement `/api/sessions/:id/logs/:agent_id` SSE endpoint
+  the WebSocket/SSE routers
+- Implement the `EventBus` class and `/ws/events` global WebSocket
+  (SSE `/api/events` kept as deprecated fallback)
+- Implement agent log streaming via session WebSocket `subscribe_logs`
+  (SSE `/api/sessions/:id/logs/:agent_id` kept as deprecated fallback)
 - Implement `/api/sessions/:id/logs/:agent_id/full` REST endpoint
-- Add `useGlobalSSE()` hook to the frontend layout
-- Modify `useTraceSSE` for incremental snapshot+append protocol
+- Add `useGlobalWS()` hook to the frontend App
+- Use `useSessionWS` for incremental snapshot+append protocol
 - Add CLI-launched session detection via directory watching
 
 ### Phase 3 — Product UX (Done)
@@ -1311,10 +1330,10 @@ than an ops tool.
 **Scope:**
 - `ActiveAgentsPanel` + `AgentActivityCard` components on Dashboard
 - `AgentLogViewer` component with dark theme, auto-scroll, search
-- `useAgentLogSSE` hook connecting to the log SSE endpoint
+- Agent log streaming via `useSessionWS` (`subscribeLogs` / `unsubscribeLogs`)
 - Session detail page reorganized into tabs (Overview / Agent Tree /
   Logs / Trace / Artifacts)
-- Toast notification system via `sonner` + global SSE events
+- Toast notification system via `sonner` + global WebSocket events
 - Launch dialog component replacing inline form
 - Page-specific skeleton components for loading states
 
@@ -1413,7 +1432,7 @@ context injected, maintaining the feel of a continuous conversation.
 
 | Component | Description |
 |-----------|-------------|
-| `ChatPanel` | Persistent panel showing message bubbles (user tasks + agent outputs). Streams session output in real-time via existing SSE. |
+| `ChatPanel` | Persistent panel showing message bubbles (user tasks + agent outputs). Streams session output in real-time via existing WebSocket. |
 | `ConversationView` | Full-page view for an active conversation, with ChatPanel + agent tree sidebar. |
 | Project detail | "New Conversation" button alongside "Launch Session". |
 
@@ -1500,7 +1519,7 @@ Moved to dedicated design document: [designs/integration/DESIGN.md](../integrati
 | 1 | Backend: project CRUD, global config API, SQLite setup | **Done** |
 | 2 | Backend: session list/detail/launch/stop | **Done** |
 | 3 | Frontend: dashboard, project pages, session list | **Done** |
-| 4 | Backend + frontend: real-time agent tree (SSE + React Flow) | **Done** |
+| 4 | Backend + frontend: real-time agent tree (WebSocket + React Flow) | **Done** |
 | 5 | Backend + frontend: trace timeline, artifact inspector | **Done** |
 | 5.5 | Frontend: agent log viewer, launch dialog, skeleton loaders | **Done** (Phase 3) |
 | 5.6 | Frontend: dashboard activity feed, live agent output | **Done** (Phase 3) |
@@ -1520,5 +1539,5 @@ Moved to dedicated design document: [designs/integration/DESIGN.md](../integrati
 | 12 | Chat-mode sessions (conversation threading + sequential task submission) | **Done** |
 | 13 | Message queuing for conversations (pending_task, auto-submit on completion) | **Done** |
 | 14 | Chat & community service integrations — see [designs/integration/DESIGN.md](../integration/DESIGN.md) | Planned |
-| 15 | SSE → WebSocket migration (agent logs + global events) — see [SSE → WebSocket Migration](#sse--websocket-migration) | Planned |
+| 15 | SSE → WebSocket migration (agent logs + global events) — see [SSE → WebSocket Migration](#sse--websocket-migration) | **Done** |
 

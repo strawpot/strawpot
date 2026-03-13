@@ -9,6 +9,8 @@ Protocol
 Client → server (after connect):
   {"type": "init", "trace_offset": 0}          # optional; 0 = full snapshot
   {"type": "ask_user_response", "request_id": "...", "text": "..."}
+  {"type": "subscribe_logs", "agent_id": "...", "offset": 0}
+  {"type": "unsubscribe_logs", "agent_id": "..."}
 
 Server → client:
   {"type": "tree_snapshot", nodes: [...], ...}  # on connect
@@ -18,8 +20,16 @@ Server → client:
   {"type": "chat_history",   "messages": [...]}
   {"type": "ask_user",       ...AskUserPending}
   {"type": "ask_user_resolved", "request_id": "..."}
+  {"type": "agent_log_snapshot", "agent_id": "...", "lines": [...], "offset": N}
+  {"type": "agent_log_delta",    "agent_id": "...", "lines": [...], "offset": N}
+  {"type": "agent_log_done",     "agent_id": "..."}
   {"type": "stream_complete"}
   {"type": "error", "message": "..."}
+
+Global WebSocket: /ws/events
+  Server → client (receive-only):
+  {"type": "session_started|session_completed|session_failed|session_stopped",
+   "run_id": "...", "project_id": N, ...}
 """
 
 import asyncio
@@ -31,6 +41,7 @@ from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from strawpot_gui.event_bus import event_bus
+from strawpot_gui.routers.logs import read_log_delta, read_log_tail, validate_agent
 from strawpot_gui.sse import (
     TreeState,
     resolve_session_dir,
@@ -199,6 +210,70 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
     # ---- Active session: watch files + handle client messages ----
     send_queue: asyncio.Queue[dict | None] = asyncio.Queue()
     stop = asyncio.Event()
+    log_watcher_tasks: dict[str, asyncio.Task] = {}
+
+    async def agent_log_watcher(agent_id: str, initial_offset: int | None) -> None:
+        """Watch a single agent's .log file and push deltas to send_queue."""
+        log_path = os.path.join(session_dir, "agents", agent_id, ".log")
+        agent_dir = os.path.join(session_dir, "agents", agent_id)
+
+        # Send initial snapshot
+        lines, offset = read_log_tail(log_path)
+        send_queue.put_nowait({
+            "type": "agent_log_snapshot",
+            "agent_id": agent_id,
+            "lines": lines,
+            "offset": offset,
+        })
+
+        if initial_offset is not None and initial_offset > 0:
+            offset = initial_offset
+
+        # If already terminal, send done immediately
+        if status in ("completed", "failed", "stopped") or state.is_terminal:
+            send_queue.put_nowait({"type": "agent_log_done", "agent_id": agent_id})
+            return
+
+        log_stop = asyncio.Event()
+
+        def check_stop():
+            if stop.is_set():
+                log_stop.set()
+
+        try:
+            async for changed_files in watch_dir(agent_dir, log_stop):
+                check_stop()
+                if log_stop.is_set():
+                    return
+
+                if not changed_files:
+                    # Timeout — check if session ended
+                    if state.is_terminal or stop.is_set():
+                        new_lines, offset = read_log_delta(log_path, offset)
+                        if new_lines:
+                            send_queue.put_nowait({
+                                "type": "agent_log_delta",
+                                "agent_id": agent_id,
+                                "lines": new_lines,
+                                "offset": offset,
+                            })
+                        send_queue.put_nowait({"type": "agent_log_done", "agent_id": agent_id})
+                        return
+                    continue
+
+                if any(f.endswith(".log") for f in changed_files):
+                    new_lines, offset = read_log_delta(log_path, offset)
+                    if new_lines:
+                        send_queue.put_nowait({
+                            "type": "agent_log_delta",
+                            "agent_id": agent_id,
+                            "lines": new_lines,
+                            "offset": offset,
+                        })
+        except asyncio.CancelledError:
+            pass
+        finally:
+            log_stop.set()
 
     async def file_watcher() -> None:
         nonlocal trace_offset, known_pending_ids
@@ -275,7 +350,7 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
             send_queue.put_nowait(None)
 
     async def message_receiver() -> None:
-        """Handle incoming client messages (ask_user_response)."""
+        """Handle incoming client messages (ask_user_response, subscribe/unsubscribe_logs)."""
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -283,7 +358,8 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if msg.get("type") == "ask_user_response":
+                msg_type = msg.get("type")
+                if msg_type == "ask_user_response":
                     req_id = msg.get("request_id", "")
                     text = msg.get("text", "")
                     if req_id:
@@ -291,6 +367,20 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
                             _write_ask_user_response(session_dir, req_id, text)
                         except OSError:
                             pass
+                elif msg_type == "subscribe_logs":
+                    agent_id = msg.get("agent_id", "")
+                    if agent_id and agent_id not in log_watcher_tasks:
+                        if validate_agent(session_dir, agent_id):
+                            offset = msg.get("offset")
+                            task = asyncio.create_task(
+                                agent_log_watcher(agent_id, offset)
+                            )
+                            log_watcher_tasks[agent_id] = task
+                elif msg_type == "unsubscribe_logs":
+                    agent_id = msg.get("agent_id", "")
+                    task = log_watcher_tasks.pop(agent_id, None)
+                    if task:
+                        task.cancel()
         except WebSocketDisconnect:
             stop.set()
             send_queue.put_nowait(None)
@@ -321,6 +411,47 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
     finally:
         stop.set()
         send_queue.put_nowait(None)
-        for task in (watcher_task, receiver_task, sender_task):
+        all_tasks = [watcher_task, receiver_task, sender_task]
+        all_tasks.extend(log_watcher_tasks.values())
+        log_watcher_tasks.clear()
+        for task in all_tasks:
             task.cancel()
-        await asyncio.gather(watcher_task, receiver_task, sender_task, return_exceptions=True)
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+
+
+# ---------------------------------------------------------------------------
+# Global WebSocket: lifecycle events
+# ---------------------------------------------------------------------------
+
+
+@router.websocket("/ws/events")
+async def global_events_ws(websocket: WebSocket) -> None:
+    """Global WebSocket for session lifecycle notifications.
+
+    Replaces the SSE ``/api/events`` endpoint.  Receive-only — the server
+    accepts but ignores any client frames.
+    """
+    await websocket.accept()
+
+    bus = event_bus
+
+    try:
+        async for session_event in bus.subscribe():
+            if session_event is None:
+                # Periodic heartbeat — send ping to detect dead connections
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
+                continue
+            try:
+                await websocket.send_json({
+                    "type": session_event.kind,
+                    "run_id": session_event.run_id,
+                    "project_id": session_event.project_id,
+                    **session_event.data,
+                })
+            except Exception:
+                break
+    except WebSocketDisconnect:
+        pass
