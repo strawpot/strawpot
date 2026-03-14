@@ -646,6 +646,12 @@ def _build_delegatable_roles(
     Candidate slugs come from the role's own declared dependencies.
     Excludes the current role and the requester role. Only includes roles
     with resolvable directories.
+
+    Note: self-delegation is still possible — the agent can delegate to its
+    own role slug via denden even though it's not listed here. The exclusion
+    avoids showing a redundant description (identical to the agent's own role).
+    The requester role is excluded because back-delegation is handled
+    separately via the Requester section built in context.py.
     """
     if not candidate_slugs:
         return []

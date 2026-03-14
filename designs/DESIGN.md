@@ -682,9 +682,11 @@ Denden server dispatches to `Session._handle_delegate`:
    resolved = strawhub.resolver.resolve(role_slug, kind="role")
    → {slug, version, path, dependencies: [{slug, kind, path}, ...]}
    Build delegatable roles list from the role's own declared role dependencies:
-   → excludes the current role (can't self-delegate)
-   → excludes the requester role (can't delegate back to parent)
+   → excludes the current role (redundant description; self-delegation is still
+     possible via denden — the agent can use its own slug directly)
+   → excludes the requester role (back-delegation handled via Requester section in context.py)
    → only includes roles with resolvable directories
+   → max_depth guards against infinite recursion
 5. Build prompt:
    system_prompt = context.build_prompt(resolved,
      delegatable_roles=..., requester_role=parent_role)
