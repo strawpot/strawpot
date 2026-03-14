@@ -454,3 +454,23 @@ def test_start_invalid_run_id_rejected(
 
     assert result.exit_code != 0
     assert "run_" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Headless fail-fast
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.needs_onboarding", return_value=True)
+@patch("strawpot.cli.load_config")
+def test_start_headless_fails_when_not_configured(mock_load, _mock_onboarding):
+    """--headless exits 1 with clear error when onboarding is needed."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start", "--headless", "--task", "do stuff"])
+
+    assert result.exit_code != 0
+    assert "StrawPot is not configured" in result.output

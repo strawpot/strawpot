@@ -136,3 +136,9 @@ class TestDeleteProject:
     def test_delete_missing_returns_404(self, client):
         resp = client.delete("/api/projects/999")
         assert resp.status_code == 404
+
+    def test_delete_imu_project_returns_403(self, client):
+        """Bot Imu virtual project (id=0) cannot be deleted."""
+        resp = client.delete("/api/projects/0")
+        assert resp.status_code == 403
+        assert "Bot Imu" in resp.json()["detail"]

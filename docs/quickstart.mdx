@@ -7,7 +7,7 @@ description: Install StrawPot and run your first multi-agent session
 
 - Python 3.11+
 - Git
-- An AI agent CLI (e.g. [Claude Code](https://docs.anthropic.com/en/docs/claude-code))
+- npm (for installing agent CLIs) or an AI agent CLI already installed
 - tmux (recommended, for interactive sessions)
 
 ## Install
@@ -32,11 +32,29 @@ cd your-project
 strawpot start
 ```
 
-This will:
-1. Load configuration from `strawpot.toml` (if present) and `~/.strawpot/strawpot.toml`
-2. Resolve the agent runtime (default: Claude Code)
-3. Start a Denden gRPC server on `127.0.0.1:9700`
-4. Spawn the orchestrator agent in your terminal
+### First run
+
+On first run, StrawPot detects that no agent is configured and launches an
+interactive **onboarding wizard** that walks you through:
+
+1. **Agent selection** — choose from Claude Code, Gemini CLI, Codex, OpenHands, or Pi
+2. **Agent installation** — installs the wrapper and underlying CLI tool automatically
+3. **Configuration** — saves your chosen runtime to `~/.strawpot/strawpot.toml`
+
+After onboarding completes, the session starts normally.
+
+<Note>
+If you run `strawpot start --headless` before completing onboarding, the command
+exits with an error listing the manual configuration steps.
+</Note>
+
+### Normal startup
+
+On subsequent runs, `strawpot start`:
+1. Loads configuration from `strawpot.toml` (if present) and `~/.strawpot/strawpot.toml`
+2. Resolves the agent runtime (default: Claude Code)
+3. Starts a Denden gRPC server on `127.0.0.1:9700`
+4. Spawns the orchestrator agent in your terminal
 
 ### With Options
 

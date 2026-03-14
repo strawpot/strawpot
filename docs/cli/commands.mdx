@@ -23,7 +23,7 @@ strawpot start [options]
 | `--runtime RUNTIME` | Agent runtime name | From config or `strawpot-claude-code` |
 | `--isolation MODE` | Isolation strategy: `none`, `worktree`, `docker` | From config or `none` |
 | `--task TEXT` | Task for non-interactive mode (empty = interactive) | — |
-| `--headless` | Run detached with output to log file (requires `--task`) | `false` |
+| `--headless` | Run detached with output to log file (requires `--task`). Exits with error if not configured. | `false` |
 | `--system-prompt TEXT` | Custom system prompt appended to role instructions | — |
 | `--run-id ID` | Pre-assigned run ID (used by the GUI) | Auto-generated |
 | `--merge-strategy MODE` | Merge strategy: `auto`, `local`, `pr` | From config or `auto` |
@@ -52,6 +52,10 @@ strawpot start --task "Refactor the auth module"
 # Headless session with custom system prompt
 strawpot start --headless --task "Review PRs" --system-prompt "Focus on security issues"
 ```
+
+<Note>
+When run with `--headless`, StrawPot requires a configured environment (agent installed, runtime set). If first-run setup has not been completed, the command exits with an error listing the manual configuration steps. Run `strawpot start` interactively first to complete the onboarding wizard.
+</Note>
 
 ### `gui`
 
@@ -109,6 +113,7 @@ Install a skill, role, or memory provider from StrawHub.
 ```bash
 strawpot install skill <slug> [options]
 strawpot install role <slug> [options]
+strawpot install agent <slug> [options]
 strawpot install memory <slug> [options]
 ```
 

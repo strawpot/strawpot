@@ -33,15 +33,3 @@ class TestSessionLifecycle:
         active = list(running_dir.iterdir()) if running_dir.exists() else []
         assert active == [], f"Stale running symlinks: {active}"
 
-    def test_session_cleanup_unconditional(self, make_session, git_project):
-        """Session dir is created during run and archived after."""
-        session = make_session(str(git_project), task="write cleanup-test.txt")
-        session.start(str(git_project))
-
-        # File was written, proving the session actually ran
-        assert (git_project / "cleanup-test.txt").exists()
-
-        # running/ should be empty, archive/ should have the session
-        running_dir = git_project / ".strawpot" / "running"
-        active = list(running_dir.iterdir()) if running_dir.exists() else []
-        assert active == [], f"Stale running symlinks: {active}"

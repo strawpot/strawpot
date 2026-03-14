@@ -124,7 +124,7 @@ enabled = true
 |----------|-------------|---------|
 | `STRAWPOT_HOME` | Global config and data directory | `~/.strawpot` |
 
-Agent-specific environment variables (e.g. `ANTHROPIC_API_KEY`) are declared in the agent's `AGENT.md` manifest and prompted for interactively when missing.
+Agent-specific environment variables (e.g. `ANTHROPIC_API_KEY`) are declared in the agent's `AGENT.md` manifest and prompted for interactively when missing. Prompted values are automatically saved to `[agents.<name>.env]` in `strawpot.toml` for future sessions.
 
 ## Config Locations
 
@@ -172,8 +172,23 @@ GITHUB_TOKEN = "ghp_..."
 
 Saved values follow the same global/project merge hierarchy as other config — project-local values override global ones.
 
+## Agent Env Persistence
+
+Agent environment variables work the same way as skill env vars. When StrawPot prompts for a missing agent env var (e.g. `ANTHROPIC_API_KEY`), the value is automatically saved to `[agents.<name>.env]` in the global `strawpot.toml`.
+
+```toml
+[agents."strawpot-claude-code".env]
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+**Resolution order** (per variable):
+
+1. `os.environ` — An explicit shell variable always wins
+2. Saved config — Values from `[agents.<name>.env]` in `strawpot.toml`
+3. Interactive prompt — Only if neither source provides a value
+
 <Note>
-Env values are stored as plain text. Do not commit `strawpot.toml` files that contain secrets. Add `strawpot.toml` to `.gitignore` if it holds sensitive values. Future versions may support OS keychain integration.
+Both skill and agent env values are stored as plain text. Do not commit `strawpot.toml` files that contain secrets. Add `strawpot.toml` to `.gitignore` if it holds sensitive values. Future versions may support OS keychain integration.
 </Note>
 
 ## Role Overrides

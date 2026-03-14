@@ -140,3 +140,28 @@ class TestReinstallResource:
             json={"type": "roles", "name": "nonexistent"},
         )
         assert resp.status_code == 404
+
+
+class TestUninstallProtectedResources:
+    """Built-in resources cannot be uninstalled."""
+
+    @pytest.mark.parametrize("resource_type,name", [
+        ("roles", "imu"),
+        ("roles", "ai-ceo"),
+        ("roles", "ai-employee"),
+        ("skills", "denden"),
+        ("skills", "strawpot-session-recap"),
+        ("agents", "strawpot-claude-code"),
+        ("memories", "dial"),
+    ])
+    def test_protected_resource_returns_403(self, client, home, resource_type, name):
+        resp = client.delete(f"/api/registry/{resource_type}/{name}")
+        assert resp.status_code == 403
+        assert "built-in" in resp.json()["detail"]
+
+    def test_non_protected_resource_proceeds(self, client, home):
+        """Non-protected resources are not blocked by the guard."""
+        _create_role(home, "custom-role")
+        # This will fail with strawhub not on PATH, but it should NOT be 403
+        resp = client.delete("/api/registry/roles/custom-role")
+        assert resp.status_code != 403

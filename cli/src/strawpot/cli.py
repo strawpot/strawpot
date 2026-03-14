@@ -443,7 +443,17 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     working_dir = str(Path.cwd())
 
     # 0. First-run onboarding
-    if not headless and needs_onboarding(config, working_dir):
+    if needs_onboarding(config, working_dir):
+        if headless:
+            click.echo(
+                "Error: StrawPot is not configured. Run 'strawpot start' "
+                "interactively to complete first-run setup, or manually:\n"
+                f"  1. Install an agent:  strawhub install agent {config.runtime} --global\n"
+                f"  2. Set runtime:       Add 'runtime = \"{config.runtime}\"' to ~/.strawpot/strawpot.toml\n"
+                "  3. Set required env:  Add API keys to [agents.<name>.env] in strawpot.toml",
+                err=True,
+            )
+            sys.exit(1)
         agent_name = _onboarding_wizard(working_dir)
         if agent_name is None:
             sys.exit(1)
