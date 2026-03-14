@@ -32,7 +32,10 @@ export default function App() {
         />
         <Route path="imu" element={<ImuPage />} />
         <Route path="imu/:conversationId" element={<ImuPage />} />
-        <Route path="schedules" element={<ScheduledTasks />} />
+        <Route path="schedules" element={<Navigate to="/schedules/recurring" replace />} />
+        <Route path="schedules/recurring" element={<ScheduledTasks />} />
+        <Route path="schedules/one-time" element={<ScheduledTasks />} />
+        <Route path="schedules/runs" element={<ScheduledTasks />} />
         <Route
           path="resources/:resourceType"
           element={<ResourceBrowser />}

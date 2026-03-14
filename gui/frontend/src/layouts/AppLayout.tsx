@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, BotMessageSquare, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, CalendarClock, History, BotMessageSquare, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject, useProjects } from "@/hooks/queries/use-projects";
 import { useImuConversations, useProjectConversations } from "@/hooks/queries/use-conversations";
@@ -32,8 +32,13 @@ const navItems = [
   { to: "/imu", label: "Bot Imu", icon: BotMessageSquare },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/schedules", label: "Schedules", icon: Clock },
   { to: "/settings", label: "Settings", icon: Settings },
+];
+
+const scheduleItems = [
+  { to: "/schedules/recurring", label: "Recurring", icon: Clock },
+  { to: "/schedules/one-time", label: "One-Time", icon: CalendarClock },
+  { to: "/schedules/runs", label: "Run History", icon: History },
 ];
 
 const resourceItems = [
@@ -414,7 +419,18 @@ function useBreadcrumbs() {
   }
 
   if (segments[0] === "schedules") {
-    crumbs.push({ label: "Scheduled Tasks" });
+    const scheduleLabels: Record<string, string> = {
+      recurring: "Recurring Schedules",
+      "one-time": "One-Time Schedules",
+      runs: "Run History",
+    };
+    const sub = segments[1];
+    if (sub && scheduleLabels[sub]) {
+      crumbs.push({ label: "Schedules", href: "/schedules/recurring" });
+      crumbs.push({ label: scheduleLabels[sub] });
+    } else {
+      crumbs.push({ label: "Schedules" });
+    }
   }
 
   if (segments[0] === "settings") {
@@ -494,6 +510,27 @@ export default function AppLayout() {
                 {to === "/imu" && hasActiveImuSession && (
                   <span className="ml-auto h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                 )}
+              </NavLink>
+            ))}
+
+            <div className="mt-4 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Schedules
+            </div>
+            {scheduleItems.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
+                  )
+                }
+              >
+                <Icon className="h-4 w-4" />
+                {label}
               </NavLink>
             ))}
 
