@@ -172,6 +172,42 @@ def test_start_missing_env_prompts(
     os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+@patch("strawpot.cli._ensure_agent_installed")
+@patch("strawpot.cli.Session")
+@patch("strawpot.cli.resolve_isolator")
+@patch("strawpot.cli.WrapperRuntime")
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.validate_agent")
+@patch("strawpot.cli.load_config")
+@patch("strawpot.config.save_resource_config")
+def test_start_missing_env_persists_to_config(
+    mock_save, mock_load, mock_validate, mock_resolve, mock_wrapper, mock_isolator,
+    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
+):
+    """Prompted agent env vars are persisted to global config."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+    mock_validate.return_value = ValidationResult(missing_env=["ANTHROPIC_API_KEY"])
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start"], input="sk-test-key-123\n")
+
+    assert result.exit_code == 0
+    mock_save.assert_called_once_with(
+        None, "agents", "strawpot-claude-code",
+        env_values={"ANTHROPIC_API_KEY": "sk-test-key-123"},
+    )
+    assert "Saved env vars" in result.output
+
+    # Clean up
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
 # ---------------------------------------------------------------------------
 # Runtime selection
 # ---------------------------------------------------------------------------
