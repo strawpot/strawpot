@@ -359,6 +359,7 @@ def collect_skill_env(
         for dep in skill_deps:
             for var, meta in _parse_skill_env(dep["path"]).items():
                 _merge_env_entry(merged, var, meta)
+                merged[var].setdefault("_source_skill", dep["slug"])
 
         # Recurse into delegatable roles
         for child_slug in child_role_slugs:
@@ -373,6 +374,7 @@ def collect_skill_env(
         for _slug, _desc, gpath in global_skills:
             for var, meta in _parse_skill_env(gpath).items():
                 _merge_env_entry(merged, var, meta)
+                merged[var].setdefault("_source_skill", _slug)
 
     return merged
 

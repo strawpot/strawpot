@@ -2542,6 +2542,56 @@ class TestCollectSkillEnv:
         result = collect_skill_env(resolved)
         assert "TOKEN_A" in result
 
+    def test_source_skill_tracked(self, tmp_path):
+        """Each env var records the skill it came from via _source_skill."""
+        base = str(tmp_path)
+        skill_a = _write_skill(
+            base, "skill-a",
+            env={"TOKEN_A": {"required": True, "description": "A"}},
+        )
+        skill_b = _write_skill(
+            base, "skill-b",
+            env={"TOKEN_B": {"required": True, "description": "B"}},
+        )
+        role_path = _write_role(
+            base, "my-role", skill_deps=["skill-a", "skill-b"],
+        )
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "path": role_path,
+            "dependencies": [
+                {"slug": "skill-a", "kind": "skill", "path": skill_a},
+                {"slug": "skill-b", "kind": "skill", "path": skill_b},
+            ],
+        }
+        result = collect_skill_env(resolved)
+        assert result["TOKEN_A"]["_source_skill"] == "skill-a"
+        assert result["TOKEN_B"]["_source_skill"] == "skill-b"
+
+    def test_source_skill_global(self, tmp_path):
+        """Global skills also get _source_skill tracked."""
+        base = str(tmp_path)
+        global_dir = tmp_path / "global_skills" / "skill-g"
+        global_dir.mkdir(parents=True)
+        (global_dir / "SKILL.md").write_text(
+            "---\nname: skill-g\ndescription: global\n"
+            "metadata:\n  strawpot:\n    env:\n      TOKEN_G:\n"
+            "        required: true\n        description: G\n---\nbody\n"
+        )
+        role_path = _write_role(base, "my-role")
+        resolved = {
+            "slug": "my-role",
+            "kind": "role",
+            "path": role_path,
+            "dependencies": [],
+        }
+        result = collect_skill_env(
+            resolved,
+            global_skills=[("skill-g", "global", str(global_dir))],
+        )
+        assert result["TOKEN_G"]["_source_skill"] == "skill-g"
+
 
 # ---------------------------------------------------------------------------
 # validate_skill_env
