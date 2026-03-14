@@ -49,10 +49,48 @@ class ScheduleCreate(BaseModel):
         return v
 
 
+class OneTimeScheduleCreate(BaseModel):
+    name: str
+    project_id: int
+    task: str
+    run_at: str
+    role: str | None = None
+    system_prompt: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_nonempty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must be non-empty")
+        return v.strip()
+
+    @field_validator("task")
+    @classmethod
+    def task_nonempty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("task must be non-empty")
+        return v.strip()
+
+    @field_validator("run_at")
+    @classmethod
+    def run_at_valid(cls, v: str) -> str:
+        v = v.strip()
+        try:
+            dt = datetime.fromisoformat(v)
+        except ValueError:
+            raise ValueError(f"Invalid ISO datetime: {v}")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if dt <= datetime.now(timezone.utc):
+            raise ValueError("run_at must be in the future")
+        return dt.isoformat()
+
+
 class ScheduleUpdate(BaseModel):
     name: str | None = None
     task: str | None = None
     cron_expr: str | None = None
+    run_at: str | None = None
     role: str | None = None
     system_prompt: str | None = None
     skip_if_running: bool | None = None
@@ -64,6 +102,22 @@ class ScheduleUpdate(BaseModel):
             v = v.strip()
             if not croniter.is_valid(v):
                 raise ValueError(f"Invalid cron expression: {v}")
+        return v
+
+    @field_validator("run_at")
+    @classmethod
+    def run_at_valid(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            try:
+                dt = datetime.fromisoformat(v)
+            except ValueError:
+                raise ValueError(f"Invalid ISO datetime: {v}")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt <= datetime.now(timezone.utc):
+                raise ValueError("run_at must be in the future")
+            return dt.isoformat()
         return v
 
 
@@ -93,14 +147,25 @@ def _compute_next_run(cron_expr: str) -> str | None:
 
 
 @router.get("/schedules")
-def list_schedules(conn=Depends(get_db_conn)):
-    """List all scheduled tasks with project names."""
-    rows = conn.execute(
+def list_schedules(
+    type: str | None = None, conn=Depends(get_db_conn),
+):
+    """List scheduled tasks with project names, optionally filtered by type."""
+    if type and type not in ("recurring", "one_time"):
+        raise HTTPException(422, "type must be 'recurring' or 'one_time'")
+
+    query = (
         "SELECT s.*, p.display_name AS project_name "
         "FROM scheduled_tasks s "
         "LEFT JOIN projects p ON s.project_id = p.id "
-        "ORDER BY s.created_at DESC"
-    ).fetchall()
+    )
+    params: list = []
+    if type:
+        query += "WHERE s.schedule_type = ? "
+        params.append(type)
+    query += "ORDER BY s.created_at DESC"
+
+    rows = conn.execute(query, params).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
@@ -137,6 +202,58 @@ def create_schedule(body: ScheduleCreate, conn=Depends(get_db_conn)):
         (cursor.lastrowid,),
     ).fetchone()
     return _row_to_dict(row)
+
+
+@router.post("/schedules/one-time", status_code=201)
+def create_one_time_schedule(
+    body: OneTimeScheduleCreate, conn=Depends(get_db_conn),
+):
+    """Create a one-time scheduled task."""
+    project = conn.execute(
+        "SELECT id FROM projects WHERE id = ?", (body.project_id,)
+    ).fetchone()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    try:
+        cursor = conn.execute(
+            """INSERT INTO scheduled_tasks
+               (name, project_id, role, task, cron_expr, schedule_type,
+                run_at, system_prompt, skip_if_running, next_run_at)
+               VALUES (?, ?, ?, ?, NULL, 'one_time', ?, ?, 0, ?)""",
+            (body.name, body.project_id, body.role, body.task,
+             body.run_at, body.system_prompt, body.run_at),
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "A schedule with this name already exists")
+
+    row = conn.execute(
+        "SELECT s.*, p.display_name AS project_name "
+        "FROM scheduled_tasks s "
+        "LEFT JOIN projects p ON s.project_id = p.id "
+        "WHERE s.id = ?",
+        (cursor.lastrowid,),
+    ).fetchone()
+    return _row_to_dict(row)
+
+
+@router.get("/schedules/runs")
+def schedule_runs(limit: int = 100, conn=Depends(get_db_conn)):
+    """List all sessions triggered by schedules, with schedule metadata."""
+    rows = conn.execute(
+        "SELECT se.run_id, se.project_id, se.role, se.status,"
+        "       se.started_at, se.ended_at, se.duration_ms, se.exit_code,"
+        "       se.task, se.schedule_id,"
+        "       st.name AS schedule_name, st.schedule_type,"
+        "       p.display_name AS project_name"
+        "  FROM sessions se"
+        "  JOIN scheduled_tasks st ON se.schedule_id = st.id"
+        "  LEFT JOIN projects p ON se.project_id = p.id"
+        "  ORDER BY se.started_at DESC"
+        "  LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @router.get("/schedules/{schedule_id}")
@@ -188,6 +305,12 @@ def update_schedule(
             next_run = _compute_next_run(body.cron_expr)
             updates.append("next_run_at = ?")
             params.append(next_run)
+    if body.run_at is not None:
+        updates.append("run_at = ?")
+        params.append(body.run_at)
+        if existing["enabled"]:
+            updates.append("next_run_at = ?")
+            params.append(body.run_at)
     if body.skip_if_running is not None:
         updates.append("skip_if_running = ?")
         params.append(int(body.skip_if_running))
@@ -235,7 +358,22 @@ def enable_schedule(schedule_id: int, conn=Depends(get_db_conn)):
     if not row:
         raise HTTPException(404, "Schedule not found")
 
-    next_run = _compute_next_run(row["cron_expr"])
+    if row["schedule_type"] == "one_time":
+        run_at = row["run_at"]
+        if not run_at:
+            raise HTTPException(422, "One-time schedule has no run_at value")
+        try:
+            dt = datetime.fromisoformat(run_at)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(422, "Invalid run_at value")
+        if dt <= datetime.now(timezone.utc):
+            raise HTTPException(422, "Cannot re-enable: scheduled time has passed")
+        next_run = run_at
+    else:
+        next_run = _compute_next_run(row["cron_expr"])
+
     conn.execute(
         "UPDATE scheduled_tasks SET enabled = 1, next_run_at = ? WHERE id = ?",
         (next_run, schedule_id),

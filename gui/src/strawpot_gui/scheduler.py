@@ -41,12 +41,17 @@ class Scheduler:
             logger.info("Scheduler stopped")
 
     def _init_next_run_times(self) -> None:
-        """Compute next_run_at for enabled schedules that don't have one."""
+        """Compute next_run_at for enabled recurring schedules that don't have one.
+
+        One-time schedules already have next_run_at set from run_at at creation,
+        so they are excluded here.
+        """
         now = datetime.now(timezone.utc)
         with get_db(self._db_path) as conn:
             rows = conn.execute(
                 "SELECT id, cron_expr FROM scheduled_tasks "
-                "WHERE enabled = 1 AND next_run_at IS NULL"
+                "WHERE enabled = 1 AND next_run_at IS NULL "
+                "AND schedule_type = 'recurring'"
             ).fetchall()
             for row in rows:
                 next_run = _next_run(row["cron_expr"], now)
@@ -88,12 +93,15 @@ class Scheduler:
                         "Schedule '%s' skipped: session already running",
                         row["name"],
                     )
-                    next_run = _next_run(row["cron_expr"], now)
-                    conn.execute(
-                        "UPDATE scheduled_tasks SET next_run_at = ? "
-                        "WHERE id = ?",
-                        (next_run, row["id"]),
-                    )
+                    # For recurring: advance to next cron tick.
+                    # For one-time: leave next_run_at unchanged to retry next tick.
+                    if row["schedule_type"] != "one_time":
+                        next_run = _next_run(row["cron_expr"], now)
+                        conn.execute(
+                            "UPDATE scheduled_tasks SET next_run_at = ? "
+                            "WHERE id = ?",
+                            (next_run, row["id"]),
+                        )
                     continue
                 self._fire(conn, dict(row), now)
 
@@ -121,13 +129,24 @@ class Scheduler:
                 system_prompt=schedule["system_prompt"],
                 schedule_id=schedule_id,
             )
-            next_run = _next_run(schedule["cron_expr"], now)
-            conn.execute(
-                "UPDATE scheduled_tasks "
-                "SET last_run_at = ?, next_run_at = ?, last_error = NULL "
-                "WHERE id = ?",
-                (now.isoformat(), next_run, schedule_id),
-            )
+            if schedule.get("schedule_type") == "one_time":
+                # One-time: auto-disable after firing
+                conn.execute(
+                    "UPDATE scheduled_tasks "
+                    "SET last_run_at = ?, next_run_at = NULL, "
+                    "    enabled = 0, last_error = NULL "
+                    "WHERE id = ?",
+                    (now.isoformat(), schedule_id),
+                )
+                next_run = None
+            else:
+                next_run = _next_run(schedule["cron_expr"], now)
+                conn.execute(
+                    "UPDATE scheduled_tasks "
+                    "SET last_run_at = ?, next_run_at = ?, last_error = NULL "
+                    "WHERE id = ?",
+                    (now.isoformat(), next_run, schedule_id),
+                )
             logger.info(
                 "Schedule '%s' fired session %s, next run: %s",
                 name, run_id, next_run,
