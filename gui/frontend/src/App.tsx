@@ -8,6 +8,8 @@ import ConversationView from "./pages/ConversationView";
 import ImuPage from "./pages/ImuPage";
 import ResourceBrowser from "./pages/ResourceBrowser";
 import ScheduledTasks from "./pages/ScheduledTasks";
+import OneTimeSchedules from "./pages/OneTimeSchedules";
+import ScheduleRuns from "./pages/ScheduleRuns";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { useGlobalWS } from "./hooks/useGlobalWS";
@@ -32,7 +34,10 @@ export default function App() {
         />
         <Route path="imu" element={<ImuPage />} />
         <Route path="imu/:conversationId" element={<ImuPage />} />
-        <Route path="schedules" element={<ScheduledTasks />} />
+        <Route path="schedules" element={<Navigate to="/schedules/recurring" replace />} />
+        <Route path="schedules/recurring" element={<ScheduledTasks />} />
+        <Route path="schedules/one-time" element={<OneTimeSchedules />} />
+        <Route path="schedules/runs" element={<ScheduleRuns />} />
         <Route
           path="resources/:resourceType"
           element={<ResourceBrowser />}

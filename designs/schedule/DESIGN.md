@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role            TEXT,
     task            TEXT NOT NULL,
-    cron_expr       TEXT NOT NULL,
+    cron_expr       TEXT,                                    -- nullable for one-time
+    schedule_type   TEXT NOT NULL DEFAULT 'recurring',       -- 'recurring' | 'one_time'
+    run_at          TEXT,                                    -- ISO datetime for one-time
     enabled         INTEGER NOT NULL DEFAULT 1,
     system_prompt   TEXT,
     skip_if_running INTEGER NOT NULL DEFAULT 1,
@@ -50,19 +52,23 @@ Router: `gui/src/strawpot_gui/routers/schedules.py`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/schedules` | List all schedules (with project names) |
+| GET | `/api/schedules` | List schedules (with `?type=recurring\|one_time` filter) |
 | POST | `/api/schedules` | Create recurring schedule |
+| POST | `/api/schedules/one-time` | Create one-time schedule |
+| GET | `/api/schedules/runs` | List schedule-triggered sessions with metadata |
 | GET | `/api/schedules/{id}` | Get single schedule |
 | PUT | `/api/schedules/{id}` | Update schedule fields |
 | DELETE | `/api/schedules/{id}` | Delete schedule |
-| POST | `/api/schedules/{id}/enable` | Enable + compute next_run_at |
+| POST | `/api/schedules/{id}/enable` | Enable + compute next_run_at (one-time: reject past `run_at`) |
 | POST | `/api/schedules/{id}/disable` | Disable + clear next_run_at |
 | GET | `/api/schedules/{id}/history` | Sessions spawned by this schedule (max 50) |
 
 Models:
 - `ScheduleCreate`: name, project_id, task, cron_expr (validated via croniter),
   role, system_prompt, skip_if_running
-- `ScheduleUpdate`: all fields optional
+- `OneTimeScheduleCreate`: name, project_id, task, run_at (ISO datetime, must be future),
+  role, system_prompt
+- `ScheduleUpdate`: all fields optional (including `run_at`)
 
 ### Scheduler Engine
 
@@ -71,29 +77,35 @@ File: `gui/src/strawpot_gui/scheduler.py`
 - `Scheduler` class runs as asyncio background task in FastAPI lifespan
 - Checks every 30 seconds for due schedules (`enabled=1 AND next_run_at <= now`)
 - `skip_if_running` prevents concurrent sessions for the same schedule
-- After firing, computes `next_run_at` from `cron_expr` via croniter
+- Recurring: after firing, computes `next_run_at` from `cron_expr` via croniter
+- One-time: after firing, sets `enabled=0, next_run_at=NULL` (auto-disable)
+- One-time skip-if-running: leaves `next_run_at` unchanged to retry next tick
 - On launch failure, records error in `last_error`
-- On startup, `_init_next_run_times()` fills `next_run_at` for enabled schedules
+- On startup, `_init_next_run_times()` fills `next_run_at` for enabled recurring
+  schedules only (one-time schedules have `next_run_at` set at creation)
 
 ### Frontend
 
 | File | Purpose |
 |------|---------|
-| `gui/frontend/src/pages/ScheduledTasks.tsx` | Schedule list page |
-| `gui/frontend/src/components/CreateScheduleDialog.tsx` | Create/edit dialog with cron presets |
-| `gui/frontend/src/hooks/queries/use-schedules.ts` | Query hooks |
-| `gui/frontend/src/hooks/mutations/use-schedules.ts` | Mutation hooks |
-| `gui/frontend/src/api/types.ts` | `Schedule` interface |
+| `gui/frontend/src/pages/ScheduledTasks.tsx` | Recurring schedule list page |
+| `gui/frontend/src/pages/OneTimeSchedules.tsx` | One-time schedule list page |
+| `gui/frontend/src/pages/ScheduleRuns.tsx` | Aggregated run history page |
+| `gui/frontend/src/components/CreateScheduleDialog.tsx` | Create/edit recurring dialog with cron presets |
+| `gui/frontend/src/components/CreateOneTimeScheduleDialog.tsx` | Create one-time schedule dialog |
+| `gui/frontend/src/hooks/queries/use-schedules.ts` | Query hooks (`useSchedules`, `useScheduleRuns`) |
+| `gui/frontend/src/hooks/mutations/use-schedules.ts` | Mutation hooks (`useCreateSchedule`, `useCreateOneTimeSchedule`) |
+| `gui/frontend/src/api/types.ts` | `Schedule`, `ScheduleRun` interfaces |
 
-Route: `/schedules` in `App.tsx`, single "Schedules" sidebar link in
-`AppLayout.tsx`.
+Routes: `/schedules/recurring`, `/schedules/one-time`, `/schedules/runs` in
+`App.tsx`. Sidebar "Schedules" group with three sub-links in `AppLayout.tsx`.
 
 ### Tests
 
 | File | Coverage |
 |------|----------|
-| `gui/tests/test_schedules.py` | CRUD API tests (303 lines) |
-| `gui/tests/test_scheduler.py` | Scheduler engine tests (227 lines) |
+| `gui/tests/test_schedules.py` | CRUD API tests + one-time schedule + type filter + runs endpoint |
+| `gui/tests/test_scheduler.py` | Scheduler engine tests + one-time auto-disable + skip-if-running |
 
 ---
 
@@ -325,23 +337,23 @@ File: `gui/frontend/src/pages/ScheduledTasks.tsx`
 | 12 | Frontend: query and mutation hooks | Done |
 | 13 | Frontend: routing and sidebar nav | Done |
 | 14 | Backend tests (CRUD + scheduler) | Done |
-| 15 | DB migration: add `schedule_type`, `run_at`, make `cron_expr` nullable | Planned |
-| 16 | Backend: `POST /api/schedules/one-time` endpoint | Planned |
-| 17 | Backend: `?type=` filter on `GET /api/schedules` | Planned |
-| 18 | Backend: `GET /api/schedules/runs` endpoint | Planned |
-| 19 | Backend: enable endpoint handles one-time (reject past `run_at`) | Planned |
-| 20 | Scheduler: one-time auto-disable after fire | Planned |
-| 21 | Scheduler: `_init_next_run_times` filters to recurring only | Planned |
-| 22 | Scheduler: skip-if-running for one-time leaves `next_run_at` unchanged | Planned |
-| 23 | Frontend types: update `Schedule`, add `ScheduleRun` | Planned |
-| 24 | Frontend hooks: type filter, `useScheduleRuns`, `useCreateOneTimeSchedule` | Planned |
-| 25 | Frontend routing: three sub-routes under `/schedules` | Planned |
-| 26 | Frontend nav: sidebar group with Recurring / One-Time / Run History | Planned |
-| 27 | Frontend: `OneTimeSchedules.tsx` page | Planned |
-| 28 | Frontend: `CreateOneTimeScheduleDialog.tsx` | Planned |
-| 29 | Frontend: `ScheduleRuns.tsx` page | Planned |
-| 30 | Frontend: update `ScheduledTasks.tsx` to filter recurring only | Planned |
-| 31 | Backend tests for one-time schedules + runs endpoint | Planned |
+| 15 | DB migration: add `schedule_type`, `run_at`, make `cron_expr` nullable | Done (PR #272) |
+| 16 | Backend: `POST /api/schedules/one-time` endpoint | Done (PR #272) |
+| 17 | Backend: `?type=` filter on `GET /api/schedules` | Done (PR #272) |
+| 18 | Backend: `GET /api/schedules/runs` endpoint | Done (PR #272) |
+| 19 | Backend: enable endpoint handles one-time (reject past `run_at`) | Done (PR #272) |
+| 20 | Scheduler: one-time auto-disable after fire | Done (PR #272) |
+| 21 | Scheduler: `_init_next_run_times` filters to recurring only | Done (PR #272) |
+| 22 | Scheduler: skip-if-running for one-time leaves `next_run_at` unchanged | Done (PR #272) |
+| 23 | Frontend types: update `Schedule`, add `ScheduleRun` | Done (PR #273) |
+| 24 | Frontend hooks: type filter, `useScheduleRuns`, `useCreateOneTimeSchedule` | Done (PR #273) |
+| 25 | Frontend routing: three sub-routes under `/schedules` | Done (PR #274) |
+| 26 | Frontend nav: sidebar group with Recurring / One-Time / Run History | Done (PR #274) |
+| 27 | Frontend: `OneTimeSchedules.tsx` page | Done (PR #275) |
+| 28 | Frontend: `CreateOneTimeScheduleDialog.tsx` | Done (PR #275) |
+| 29 | Frontend: `ScheduleRuns.tsx` page | Done (PR #275) |
+| 30 | Frontend: update `ScheduledTasks.tsx` to filter recurring only | Done (PR #275) |
+| 31 | Backend tests for one-time schedules + runs endpoint | Done (PR #272) |
 
 ## Not in Scope
 

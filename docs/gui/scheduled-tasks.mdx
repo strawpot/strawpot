@@ -1,15 +1,24 @@
 ---
 title: Scheduled Tasks
-description: Automate recurring sessions with cron schedules
+description: Automate recurring and one-time agent sessions
 ---
 
-Scheduled tasks let you run agent sessions on a recurring basis using cron
-expressions. The scheduler runs as a background task inside the GUI server and
-fires `strawpot start --headless` when a schedule is due.
+Scheduled tasks let you run agent sessions automatically — either on a recurring
+basis using cron expressions or as a one-time task at a specific datetime. The
+scheduler runs as a background task inside the GUI server and fires
+`strawpot start --headless` when a schedule is due.
 
-## Creating a Schedule
+The sidebar has three schedule pages:
 
-1. Go to **Schedules** in the sidebar
+- **Recurring** — cron-based schedules that repeat on a regular cadence
+- **One-Time** — fire-once schedules that auto-disable after running
+- **Run History** — aggregated view of all schedule-triggered sessions
+
+## Recurring Schedules
+
+### Creating a Recurring Schedule
+
+1. Go to **Schedules > Recurring** in the sidebar
 2. Click **Create Schedule**
 3. Fill in the form:
 
@@ -20,9 +29,10 @@ fires `strawpot start --headless` when a schedule is due.
 | **Task** | Yes | The task string passed to the agent |
 | **Cron Expression** | Yes | Standard 5-field cron expression |
 | **Role** | No | Override the project's default orchestrator role |
+| **Skip if running** | No | Don't start a new session if the previous one is still active (default: on) |
 | **System Prompt** | No | Additional instructions appended to the role prompt |
 
-## Cron Expressions
+### Cron Expressions
 
 Standard 5-field format: `minute hour day-of-month month day-of-week`
 
@@ -39,19 +49,61 @@ The dialog includes a **Presets** dropdown for common expressions. As you type,
 a human-readable description is shown below the input (e.g. "Every weekday at
 9:00 AM").
 
+## One-Time Schedules
+
+One-time schedules fire a single session at a specific datetime, then
+automatically disable themselves. This is useful for tasks like "run this
+migration tonight at 2 AM" or "deploy to staging at 6 PM".
+
+### Creating a One-Time Schedule
+
+1. Go to **Schedules > One-Time** in the sidebar
+2. Click **Create One-Time Schedule**
+3. Fill in the form:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Name** | Yes | Unique identifier (e.g. `deploy-tonight`) |
+| **Project** | Yes | Which project to run the session in |
+| **Task** | Yes | The task string passed to the agent |
+| **Run At** | Yes | Date and time to fire (must be in the future) |
+| **Role** | No | Override the project's default orchestrator role |
+| **System Prompt** | No | Additional instructions appended to the role prompt |
+
+### Status
+
+One-time schedules have three states:
+
+- **Pending** — enabled, waiting to fire at the scheduled time
+- **Fired** — has been executed and auto-disabled
+- **Disabled** — manually paused before firing
+
+A fired one-time schedule cannot be re-enabled (the scheduled time has passed).
+To re-run the same task, create a new one-time schedule.
+
 ## Managing Schedules
 
-The schedules list shows all scheduled tasks with their status:
+Both recurring and one-time schedule lists show status badges:
 
-- **Active** — enabled and running on schedule
-- **Disabled** — paused, won't fire until re-enabled
+- **Active / Pending** — enabled and will fire on schedule
+- **Disabled / Fired** — paused or already executed
 - **Error** — last run failed (hover to see the error message)
 
 ### Actions
 
 - **Enable / Disable** — toggle whether the schedule fires
-- **Edit** — modify name, task, cron expression, or role
+- **Edit** — modify name, task, cron expression, or role (recurring only)
 - **Delete** — remove the schedule permanently
+
+## Run History
+
+The **Run History** page shows all sessions triggered by any schedule, with:
+
+- Schedule name and type (Recurring / One-Time badge)
+- Project name
+- Status (Completed, Running, Failed)
+- Start time and duration
+- Clickable link to the full session detail page
 
 ## How It Works
 
@@ -59,11 +111,16 @@ The scheduler is a lightweight asyncio background loop that:
 
 1. Checks every 30 seconds for schedules where `next_run_at <= now`
 2. Launches a headless session via the same path as the Launch Session button
-3. Updates `last_run_at` and computes the next `next_run_at` from the cron expression
-4. Records any errors in `last_error` on the schedule
+3. For recurring: updates `last_run_at` and computes the next `next_run_at` from the cron expression
+4. For one-time: sets `enabled = 0` and clears `next_run_at` (auto-disable)
+5. Records any errors in `last_error` on the schedule
+
+If **skip if running** is enabled and a previous session is still active:
+- Recurring schedules advance to the next cron tick (skipping this run)
+- One-time schedules leave `next_run_at` unchanged and retry on the next tick
 
 Sessions spawned by a schedule are linked back to it. Use the schedule's
-**History** endpoint to see all sessions it has triggered.
+**History** endpoint or the **Run History** page to see all triggered sessions.
 
 <Note>
 The scheduler only runs while the GUI server is running. If you stop
@@ -78,8 +135,10 @@ All schedule operations are available via the REST API:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/schedules` | List all schedules |
-| `POST` | `/api/schedules` | Create a schedule |
+| `GET` | `/api/schedules` | List schedules (optional `?type=recurring\|one_time` filter) |
+| `POST` | `/api/schedules` | Create a recurring schedule |
+| `POST` | `/api/schedules/one-time` | Create a one-time schedule |
+| `GET` | `/api/schedules/runs` | List all schedule-triggered sessions |
 | `GET` | `/api/schedules/:id` | Get schedule details |
 | `PUT` | `/api/schedules/:id` | Update a schedule |
 | `DELETE` | `/api/schedules/:id` | Delete a schedule |
@@ -87,7 +146,7 @@ All schedule operations are available via the REST API:
 | `POST` | `/api/schedules/:id/disable` | Disable a schedule |
 | `GET` | `/api/schedules/:id/history` | List sessions spawned by this schedule |
 
-### Create Example
+### Create Recurring Example
 
 ```bash
 curl -X POST http://localhost:8741/api/schedules \
@@ -98,5 +157,18 @@ curl -X POST http://localhost:8741/api/schedules \
     "task": "Review open PRs and summarize findings",
     "cron_expr": "0 9 * * 1-5",
     "role": "reviewer"
+  }'
+```
+
+### Create One-Time Example
+
+```bash
+curl -X POST http://localhost:8741/api/schedules/one-time \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "deploy-tonight",
+    "project_id": 1,
+    "task": "Deploy to staging and run smoke tests",
+    "run_at": "2026-03-15T02:00:00+00:00"
   }'
 ```
