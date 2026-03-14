@@ -937,6 +937,7 @@ class TestSpawnAndWait:
         assert kw["env"]["DENDEN_PARENT_AGENT_ID"] == "agent_p"
         assert kw["env"]["DENDEN_RUN_ID"] == "run_42"
         assert kw["env"]["PERMISSION_MODE"] == "auto"
+        assert kw["env"]["STRAWPOT_ROLE"] == "implementer"
         assert "DENDEN_AGENT_ID" in kw["env"]
 
     def test_denden_addr_override(self, tmp_path):

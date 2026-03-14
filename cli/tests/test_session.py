@@ -225,6 +225,7 @@ class TestStartFlow:
         assert "DENDEN_ADDR" in kw["env"]
         assert "DENDEN_AGENT_ID" in kw["env"]
         assert "DENDEN_RUN_ID" in kw["env"]
+        assert kw["env"]["STRAWPOT_ROLE"] == "ai-ceo"
 
     @patch("strawpot.session.DenDenServer")
     def test_writes_session_file(self, mock_server_cls, tmp_path):
@@ -509,6 +510,37 @@ class TestHandleDelegate:
 
         mock_handle.assert_called_once()
         mock_ok.assert_called_once()
+        assert result == "ok"
+
+    @patch("strawpot.session.handle_delegate")
+    @patch("strawpot.session.ok_response")
+    def test_empty_delegate_to_resolves_to_own_role(
+        self, mock_ok, mock_handle, tmp_path
+    ):
+        """Empty delegateTo resolves to the agent's own role (self-delegation)."""
+        from strawpot.delegation import DelegateResult
+
+        mock_handle.return_value = DelegateResult(
+            output="output", exit_code=0
+        )
+        mock_ok.return_value = "ok"
+
+        session = _make_session(tmp_path)
+        session._env = IsolatedEnv(path=str(tmp_path))
+        session._working_dir = str(tmp_path)
+        session._run_id = "run_test"
+        session._denden_addr = "127.0.0.1:9700"
+        session._register_agent(
+            "agent_orch", role="orchestrator", parent_id=None
+        )
+
+        # delegateTo is empty string — should resolve to "orchestrator"
+        result = session._handle_delegate(
+            self._make_denden_request(delegate_to="")
+        )
+
+        call_kwargs = mock_handle.call_args.kwargs
+        assert call_kwargs["request"].role_slug == "orchestrator"
         assert result == "ok"
 
     @patch("strawpot.session.handle_delegate")
