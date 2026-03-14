@@ -13,10 +13,20 @@ interface CreateScheduleBody {
   skip_if_running?: boolean;
 }
 
+interface CreateOneTimeScheduleBody {
+  name: string;
+  project_id: number;
+  task: string;
+  run_at: string;
+  role?: string;
+  system_prompt?: string;
+}
+
 interface UpdateScheduleBody {
   name?: string;
   task?: string;
   cron_expr?: string;
+  run_at?: string;
   role?: string;
   system_prompt?: string;
   skip_if_running?: boolean;
@@ -27,6 +37,17 @@ export function useCreateSchedule() {
   return useMutation({
     mutationFn: (body: CreateScheduleBody) =>
       api.post<Schedule>("/schedules", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.schedules.all });
+    },
+  });
+}
+
+export function useCreateOneTimeSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateOneTimeScheduleBody) =>
+      api.post<Schedule>("/schedules/one-time", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.schedules.all });
     },

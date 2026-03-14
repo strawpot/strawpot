@@ -36,6 +36,7 @@ export const queryKeys = {
     all: ["schedules"] as const,
     detail: (id: number) => ["schedules", id] as const,
     history: (id: number) => ["schedules", id, "history"] as const,
+    runs: ["schedules", "runs"] as const,
   },
   conversations: {
     all: (projectId: number) => ["conversations", projectId] as const,

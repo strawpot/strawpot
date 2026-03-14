@@ -241,7 +241,9 @@ export interface Schedule {
   project_name: string;
   role: string | null;
   task: string;
-  cron_expr: string;
+  cron_expr: string | null;
+  schedule_type: "recurring" | "one_time";
+  run_at: string | null;
   enabled: boolean;
   system_prompt: string | null;
   skip_if_running: boolean;
@@ -249,4 +251,20 @@ export interface Schedule {
   next_run_at: string | null;
   last_error: string | null;
   created_at: string;
+}
+
+export interface ScheduleRun {
+  run_id: string;
+  schedule_id: number;
+  schedule_name: string;
+  schedule_type: "recurring" | "one_time";
+  project_id: number;
+  project_name: string;
+  role: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  exit_code: number | null;
+  task: string | null;
 }
