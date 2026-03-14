@@ -82,7 +82,7 @@ export default function CreateScheduleDialog({
       setName(editing.name);
       setProjectId(String(editing.project_id));
       setTask(editing.task);
-      setCronExpr(editing.cron_expr);
+      setCronExpr(editing.cron_expr ?? "");
       setRole(editing.role ?? "");
       setSystemPrompt(editing.system_prompt ?? "");
       setSkipIfRunning(editing.skip_if_running);
