@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from strawpot.cli import (
     _SEEDED_AGENTS,
+    _authenticate_agent,
     _ensure_agent_installed,
     _ensure_memory_installed,
     _ensure_role_installed,
@@ -480,6 +481,7 @@ def test_onboarding_wizard_saves_runtime(tmp_path, monkeypatch):
 
     with patch("strawpot.cli._pick_agent", return_value="strawpot-gemini"), \
          patch("strawpot.cli._ensure_agent_installed"), \
+         patch("strawpot.cli._authenticate_agent"), \
          patch("strawpot.cli.click.echo"):
         result = _onboarding_wizard(str(tmp_path / "project"))
 
@@ -510,9 +512,131 @@ def test_onboarding_wizard_calls_ensure_agent_installed(tmp_path, monkeypatch):
 
     with patch("strawpot.cli._pick_agent", return_value="strawpot-codex"), \
          patch("strawpot.cli._ensure_agent_installed") as mock_install, \
+         patch("strawpot.cli._authenticate_agent"), \
          patch("strawpot.cli.click.echo"):
         _onboarding_wizard(str(tmp_path / "project"))
 
     mock_install.assert_called_once_with(
         "strawpot-codex", str(tmp_path / "project"), auto_setup=True,
     )
+
+
+def test_onboarding_wizard_calls_authenticate(tmp_path, monkeypatch):
+    """Wizard calls _authenticate_agent after installing the agent."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
+
+    with patch("strawpot.cli._pick_agent", return_value="strawpot-pi"), \
+         patch("strawpot.cli._ensure_agent_installed"), \
+         patch("strawpot.cli._authenticate_agent") as mock_auth, \
+         patch("strawpot.cli.click.echo"):
+        _onboarding_wizard(str(tmp_path / "project"))
+
+    mock_auth.assert_called_once_with("strawpot-pi", str(tmp_path / "project"))
+
+
+# ---------------------------------------------------------------------------
+# _authenticate_agent
+# ---------------------------------------------------------------------------
+
+
+def _make_spec(**overrides):
+    """Build a minimal AgentSpec for auth tests."""
+    from strawpot.agents.registry import AgentSpec
+
+    defaults = dict(
+        name="test-agent",
+        version="1.0.0",
+        wrapper_cmd=["/usr/bin/test-wrapper"],
+        env_schema={"TEST_API_KEY": {"required": False, "description": "Test key"}},
+    )
+    defaults.update(overrides)
+    return AgentSpec(**defaults)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.click.prompt", return_value="1")
+@patch("strawpot.cli.WrapperRuntime")
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_login_session(mock_resolve, mock_runtime_cls, mock_prompt, mock_echo):
+    """Choice 1 runs WrapperRuntime.setup() for login session."""
+    spec = _make_spec()
+    mock_resolve.return_value = spec
+    mock_runtime = MagicMock()
+    mock_runtime.setup.return_value = True
+    mock_runtime_cls.return_value = mock_runtime
+
+    _authenticate_agent("test-agent", "/tmp/project")
+
+    mock_runtime_cls.assert_called_once_with(spec)
+    mock_runtime.setup.assert_called_once()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.click.prompt")
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_api_key(mock_resolve, mock_prompt, mock_echo):
+    """Choice 2 prompts for API key and saves via save_resource_config."""
+    spec = _make_spec()
+    mock_resolve.return_value = spec
+    # First prompt: choice "2", second prompt: the API key value
+    mock_prompt.side_effect = ["2", "sk-test-key-123"]
+
+    with patch("strawpot.config.save_resource_config") as mock_save:
+        _authenticate_agent("test-agent", "/tmp/project")
+
+    mock_save.assert_called_once_with(
+        None, "agents", "test-agent", env_values={"TEST_API_KEY": "sk-test-key-123"},
+    )
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.click.prompt", return_value="3")
+@patch("strawpot.cli.WrapperRuntime")
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_skip(mock_resolve, mock_runtime_cls, mock_prompt, mock_echo):
+    """Choice 3 skips authentication entirely."""
+    spec = _make_spec()
+    mock_resolve.return_value = spec
+
+    with patch("strawpot.config.save_resource_config") as mock_save:
+        _authenticate_agent("test-agent", "/tmp/project")
+
+    mock_runtime_cls.assert_not_called()
+    mock_save.assert_not_called()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.click.prompt", return_value="1")
+@patch("strawpot.cli.WrapperRuntime")
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_login_failure(mock_resolve, mock_runtime_cls, mock_prompt, mock_echo):
+    """Failed login prints error but does not raise."""
+    spec = _make_spec()
+    mock_resolve.return_value = spec
+    mock_runtime = MagicMock()
+    mock_runtime.setup.return_value = False
+    mock_runtime_cls.return_value = mock_runtime
+
+    _authenticate_agent("test-agent", "/tmp/project")
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Login failed" in c for c in calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.click.prompt", return_value="2")
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_no_env_skip_maps_to_choice_2(mock_resolve, mock_prompt, mock_echo):
+    """When agent has no env vars, choice 2 is 'skip' (not API key)."""
+    spec = _make_spec(env_schema={})
+    mock_resolve.return_value = spec
+
+    with patch("strawpot.config.save_resource_config") as mock_save:
+        _authenticate_agent("test-agent", "/tmp/project")
+
+    # Should skip — no API key prompt, no save
+    mock_save.assert_not_called()
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Skipping" in c for c in calls)
