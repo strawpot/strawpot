@@ -137,6 +137,23 @@
   let users provide reference docs, API specs, or other context that agents
   need but that don't fit existing resource types.
 
+## GUI
+
+- [ ] **Add search to Schedule One-Time and Recurring pages**
+  Client-side filtering (not paginated, small dataset). Create a reusable
+  `SearchInput` component (debounced, with search icon and clear button).
+  Use `useMemo` to filter the already-fetched array on `name`, `task`, and
+  `project_name` (case-insensitive). Show "No schedules match" empty state
+  when search is active but yields no results.
+
+- [ ] **Add search to the Session list**
+  Server-side search (paginated, dataset grows). Add a `q` query param to
+  both `GET /api/sessions` and `GET /api/projects/{id}/sessions` that does
+  `LIKE` matching across `task`, `user_task`, `role`, and `run_id`. Update
+  `useProjectSessions` hook to accept a `search` param and include it in
+  the query key. Add `SearchInput` to the Sessions tab in `ProjectDetail`,
+  resetting page to 1 on search change.
+
 ## Housekeeping
 
 - [ ] **Archive retention policy**
