@@ -56,7 +56,9 @@ GET /api/v1/skills?limit=50&sort=updated
       "updatedAt": 1700000000000
     }
   ],
-  "count": 1
+  "totalCount": 1,
+  "continueCursor": "...",
+  "isDone": true
 }
 ```
 
@@ -93,7 +95,7 @@ Content-Type: multipart/form-data
 | `changelog` | Version changelog |
 | `dependencies` | Optional JSON: `{"skills": ["dep-a", "dep-b==1.0.0"]}` |
 | `customTags` | Optional tags |
-| `files[]` | File uploads (must include `SKILL.md`, max 20 files, 512 KB each, any file type) |
+| `files[]` | File uploads (must include `SKILL.md`, max 100 files, 10 MB each, 50 MB total) |
 
 ### Delete Skill
 
@@ -204,7 +206,7 @@ POST /api/v1/memories
 Content-Type: multipart/form-data
 ```
 
-Same payload as Publish Skill. Must include a `MEMORY.md` file. Max 50 files, 10 MB each.
+Same payload as Publish Skill. Must include a `MEMORY.md` file. Max 100 files, 10 MB each, 50 MB total.
 
 ### Delete Memory
 
