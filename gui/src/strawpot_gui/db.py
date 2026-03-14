@@ -297,27 +297,52 @@ def get_db_conn(request: Request):
 # ---------------------------------------------------------------------------
 
 
+_CANONICAL_RECAP_MARKER = "## Session Recap"
+_RECAP_MARKERS = (_CANONICAL_RECAP_MARKER, "**Session Recap**")
+
+
+def _normalize_recap_marker(content: str) -> str:
+    """Replace non-canonical recap markers with the heading format."""
+    for m in _RECAP_MARKERS:
+        if m != _CANONICAL_RECAP_MARKER and m in content:
+            content = content.replace(m, _CANONICAL_RECAP_MARKER)
+    return content
+
+
+def _find_recap(content: str) -> tuple[int, int]:
+    """Find the last occurrence of any recap marker.
+
+    Returns (start_index, marker_length) or (-1, 0) if not found.
+    """
+    best = -1
+    best_len = 0
+    for m in _RECAP_MARKERS:
+        idx = content.rfind(m)
+        if idx > best:
+            best = idx
+            best_len = len(m)
+    return best, best_len
+
+
 def _extract_recap(content: str) -> str:
-    """Extract a '## Session Recap' block from agent output.
+    """Extract a Session Recap block from agent output.
 
     If present, returns the recap section (without the heading).
     Otherwise returns the full content unchanged.
     """
-    marker = "## Session Recap"
-    idx = content.rfind(marker)
+    idx, mlen = _find_recap(content)
     if idx == -1:
         return content
-    recap = content[idx + len(marker) :].strip()
+    recap = content[idx + mlen :].strip()
     return recap if recap else content
 
 
 def _strip_recap(content: str) -> str:
-    """Return agent output with the '## Session Recap' block removed.
+    """Return agent output with the Session Recap block removed.
 
     If no recap is found, returns the full content unchanged.
     """
-    marker = "## Session Recap"
-    idx = content.rfind(marker)
+    idx, _ = _find_recap(content)
     if idx == -1:
         return content
     before = content[:idx].rstrip()
@@ -348,15 +373,15 @@ def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
                     if "duration_ms" in data:
                         result["duration_ms"] = data["duration_ms"]
                     result["exit_code"] = data.get("exit_code", 0)
-                    # session_end carries the final output ref
+                    # session_end carries the final output — always prefer it
                     output_ref = data.get("output_ref")
-                    if output_ref and session_dir and "summary" not in result:
+                    if output_ref and session_dir:
                         artifact_path = os.path.join(session_dir, "artifacts", output_ref)
                         try:
                             with open(artifact_path, encoding="utf-8") as af:
                                 content = af.read().strip()
                             if content:
-                                result["summary"] = content
+                                result["summary"] = _normalize_recap_marker(content)
                         except OSError:
                             pass
                     files_changed = data.get("files_changed")
@@ -371,7 +396,7 @@ def _parse_trace(trace_path: str, session_dir: str | None = None) -> dict:
                             with open(artifact_path, encoding="utf-8") as af:
                                 content = af.read().strip()
                             if content:
-                                result["summary"] = content
+                                result["summary"] = _normalize_recap_marker(content)
                         except OSError:
                             pass
     except OSError:
