@@ -104,6 +104,7 @@ def test_headless_no_missing_env_proceeds(
     assert "missing environment variables" not in (result.output or "")
 
 
+@patch("strawpot.cli.needs_onboarding", return_value=False)
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.recover_stale_sessions", return_value=[])
 @patch("strawpot.cli.load_config")
@@ -111,6 +112,7 @@ def test_headless_passes_auto_setup_to_bootstrap(
     mock_config,
     mock_recover,
     mock_agent_install,
+    _mock_onboarding,
 ):
     """Headless mode passes auto_setup=True to bootstrap helpers."""
     mock_config.return_value = MagicMock(
