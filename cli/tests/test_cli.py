@@ -132,7 +132,7 @@ def test_start_missing_tools_exits(
     )
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["start"])
+    result = runner.invoke(cli, ["start"], input="n\n")
 
     assert result.exit_code != 0
     assert "Missing required tools" in result.output

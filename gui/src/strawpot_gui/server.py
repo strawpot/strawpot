@@ -3,6 +3,8 @@
 import json
 import socket
 import sys
+import threading
+import time
 import urllib.request
 import webbrowser
 
@@ -52,7 +54,16 @@ def main(port: int = DEFAULT_PORT, host: str = DEFAULT_HOST) -> None:
 
     url = f"http://{host}:{port}"
     click.echo(f"Starting StrawPot GUI at {url}")
-    webbrowser.open(url)
+
+    def _open_when_ready() -> None:
+        """Poll the health endpoint, then open the browser."""
+        for _ in range(30):
+            time.sleep(0.5)
+            if _is_strawpot_gui(host, port):
+                webbrowser.open(url)
+                return
+
+    threading.Thread(target=_open_when_ready, daemon=True).start()
 
     from strawpot_gui.app import create_app
 
