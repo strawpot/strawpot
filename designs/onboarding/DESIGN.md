@@ -198,17 +198,17 @@ During onboarding, instead of just printing the install hint and exiting:
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | First-run detection (no runtime in config + no agent installed) | Planned |
-| 2 | Interactive agent picker (5 seeded agents with descriptions) | Planned |
-| 3 | Auto-install agent wrapper from StrawHub | Planned |
-| 4a | Add `npm`/`pip` as tool prerequisites in AGENT.md (5 wrapper repos) | Planned |
-| 4b | Auto-install underlying CLI tool (from AGENT.md `tools.*.install`) | Planned |
+| 1 | First-run detection (no runtime in config + no agent installed) | Done |
+| 2 | Interactive agent picker (5 seeded agents with descriptions) | Done |
+| 3 | Auto-install agent wrapper from StrawHub | Done |
+| 4a | Add `npm`/`pip` as tool prerequisites in AGENT.md (5 wrapper repos) | Done |
+| 4b | Auto-install underlying CLI tool (from AGENT.md `tools.*.install`) | Done |
 | 5 | Auth flow: API key prompt or `<wrapper> setup` login | Planned |
 | 6 | Lightweight auth probe / credential validation | Planned |
-| 7 | Save default runtime to `strawpot.toml` | Planned |
-| 8 | Persist prompted agent env vars via `save_resource_config` | Planned |
-| 9 | Persist prompted skill env vars via `save_resource_config` (same gap) | Planned |
-| 10 | Headless mode: fail fast with clear missing-config message | Planned |
+| 7 | Save default runtime to `strawpot.toml` | Done |
+| 8 | Persist prompted agent env vars via `save_resource_config` | Done |
+| 9 | Persist prompted skill env vars via `save_resource_config` (same gap) | Done |
+| 10 | Headless mode: fail fast with clear missing-config message | Done |
 
 ## Not in Scope
 
