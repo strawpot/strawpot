@@ -502,9 +502,16 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
                 err=True,
             )
             sys.exit(1)
+        agent_env_values: dict[str, str] = {}
         for var in validation.missing_env:
             value = click.prompt(f"Enter value for {var}")
             os.environ[var] = value
+            agent_env_values[var] = value
+        if agent_env_values:
+            from strawpot.config import save_resource_config
+
+            save_resource_config(None, "agents", config.runtime, env_values=agent_env_values)
+            click.echo(f"Saved env vars for {config.runtime} to global config.")
 
     # 2b. Validate skill env requirements for orchestrator role
     try:
@@ -532,6 +539,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
                     err=True,
                 )
                 sys.exit(1)
+            skill_env_to_save: dict[str, dict[str, str]] = {}  # slug -> {var: val}
             for var in skill_validation.missing_env:
                 desc = skill_env[var].get("description", "")
                 prompt_text = f"Enter value for {var}"
@@ -539,6 +547,15 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
                     prompt_text += f" ({desc})"
                 value = click.prompt(prompt_text)
                 os.environ[var] = value
+                source_skill = skill_env[var].get("_source_skill")
+                if source_skill:
+                    skill_env_to_save.setdefault(source_skill, {})[var] = value
+            if skill_env_to_save:
+                from strawpot.config import save_skill_env
+
+                for slug, env_vals in skill_env_to_save.items():
+                    save_skill_env(None, slug, env_vals)
+                click.echo("Saved skill env vars to global config.")
 
         # 2c. Check orchestrator role's default_agent (config > frontmatter)
         # Only apply when no explicit --runtime flag was given.
