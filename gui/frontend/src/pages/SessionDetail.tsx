@@ -33,6 +33,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import ViewToggle from "@/components/ViewToggle";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -141,60 +142,24 @@ export default function SessionDetail() {
 
         <TabsContent value="overview" className="space-y-4">
           {sessionData.user_task && (
-            <Collapsible defaultOpen>
-              <div className="space-y-2">
-                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
-                  User Task
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <Card>
-                    <CardContent className="pt-4">
-                      <MarkdownContent content={sessionData.user_task} className="text-sm" />
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
+            <OverviewSection label="User Task" defaultOpen>
+              <ContentView content={sessionData.user_task} />
+            </OverviewSection>
           )}
 
           {sessionData.task && (
-            <Collapsible defaultOpen={!sessionData.user_task}>
-              <div className="space-y-2">
-                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
-                  Task
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <Card>
-                    <CardContent className="pt-4">
-                      <MarkdownContent content={sessionData.task} className="text-sm" />
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
+            <OverviewSection label="Task" defaultOpen={!sessionData.user_task}>
+              <ContentView content={sessionData.task} />
+            </OverviewSection>
           )}
 
           {outputRef && (
-            <Collapsible defaultOpen>
-              <div className="space-y-2">
-                <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
-                  Output
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <Card>
-                    <CardContent className="pt-4">
-                      <ArtifactText
-                        runId={sessionData.run_id}
-                        hash={outputRef}
-                      />
-                    </CardContent>
-                  </Card>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
+            <OverviewSection label="Output" defaultOpen>
+              <ArtifactContentView
+                runId={sessionData.run_id}
+                hash={outputRef}
+              />
+            </OverviewSection>
           )}
 
           {!sessionData.user_task && !sessionData.task && !outputRef && (
@@ -425,9 +390,57 @@ interface ArtifactEntry {
   agentId?: string;
 }
 
-function ArtifactText({ runId, hash }: { runId: string; hash: string }) {
+// ---------------------------------------------------------------------------
+// Overview helpers: section wrapper + markdown/raw toggle
+// ---------------------------------------------------------------------------
+
+function OverviewSection({
+  label,
+  defaultOpen,
+  children,
+}: {
+  label: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <div className="space-y-2">
+        <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>&]:rotate-90" />
+          {label}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <Card>
+            <CardContent className="pt-4">{children}</CardContent>
+          </Card>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+
+function ContentView({ content }: { content: string }) {
+  const [view, setView] = useState<"markdown" | "raw">("markdown");
+  return (
+    <>
+      <ViewToggle view={view} onChange={setView} />
+      {view === "markdown" ? (
+        <MarkdownContent content={content} className="text-sm" />
+      ) : (
+        <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+          {content}
+        </pre>
+      )}
+    </>
+  );
+}
+
+function ArtifactContentView({ runId, hash }: { runId: string; hash: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"markdown" | "raw">("markdown");
 
   useEffect(() => {
     fetch(`/api/sessions/${runId}/artifacts/${hash}`)
@@ -442,8 +455,20 @@ function ArtifactText({ runId, hash }: { runId: string; hash: string }) {
   if (error) return <span className="text-destructive">Error: {error}</span>;
   if (content === null)
     return <span className="text-muted-foreground">Loading...</span>;
-  return <MarkdownContent content={content} className="text-sm" />;
+  return (
+    <>
+      <ViewToggle view={view} onChange={setView} />
+      {view === "markdown" ? (
+        <MarkdownContent content={content} className="text-sm" />
+      ) : (
+        <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+          {content}
+        </pre>
+      )}
+    </>
+  );
 }
+
 
 function extractOutputRef(events: TraceEvent[]): string | null {
   for (const e of events) {
@@ -759,30 +784,7 @@ function ArtifactModalContent({
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <>
-          <div className="flex gap-1">
-            <button
-              className={cn(
-                "rounded px-2 py-1 text-xs font-medium",
-                view === "markdown"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setView("markdown")}
-            >
-              Markdown
-            </button>
-            <button
-              className={cn(
-                "rounded px-2 py-1 text-xs font-medium",
-                view === "raw"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setView("raw")}
-            >
-              Raw
-            </button>
-          </div>
+          <ViewToggle view={view} onChange={setView} />
           <div ref={contentRef} className="max-h-[60vh] overflow-y-auto">
             {view === "markdown" ? (
               <div className="p-4">
