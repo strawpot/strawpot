@@ -145,8 +145,8 @@ class TestSessionWSTerminalSession:
 
 
 class TestSessionWSAskUser:
-    def test_pending_ask_user_sent_on_connect(self, client, tmp_path):
-        """ask_user messages are sent for pre-existing pending files."""
+    def test_pending_ask_user_not_sent_for_terminal_session(self, client, tmp_path):
+        """Terminal sessions do not send stale ask_user messages."""
         _register_project(client, tmp_path)
         session_dir = _write_session(tmp_path, "run_ws6", archived=True)
         pending_path = os.path.join(session_dir, "ask_user_pending_req1.json")
@@ -163,9 +163,7 @@ class TestSessionWSAskUser:
             messages = _collect_until(ws, "stream_complete")
 
         ask = next((m for m in messages if m.get("type") == "ask_user"), None)
-        assert ask is not None
-        assert ask["request_id"] == "req1"
-        assert ask["question"] == "Choose a color?"
+        assert ask is None, "Terminal sessions should not send stale ask_user messages"
 
     def test_ask_user_response_writes_file(self, tmp_path):
         """_write_ask_user_response writes the correct response file.

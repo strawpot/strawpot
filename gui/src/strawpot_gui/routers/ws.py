@@ -167,17 +167,23 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
 
     await websocket.accept()
 
-    # ---- Read optional init message for trace offset resumption ----
+    # ---- Read early messages (init + subscribe_logs) ----
     trace_offset = 0
     early_subscribes: list[dict] = []
     try:
-        raw = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
-        msg = json.loads(raw)
-        if msg.get("type") == "init":
-            trace_offset = int(msg.get("trace_offset", 0))
-        elif msg.get("type") == "subscribe_logs":
-            early_subscribes.append(msg)
-    except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, WebSocketDisconnect):
+        while True:
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+            try:
+                msg = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if msg.get("type") == "init":
+                trace_offset = int(msg.get("trace_offset", 0))
+            elif msg.get("type") == "subscribe_logs":
+                early_subscribes.append(msg)
+            else:
+                break  # unknown message type — stop reading
+    except (asyncio.TimeoutError, WebSocketDisconnect):
         pass
 
     # ---- Build and send initial state ----
@@ -199,13 +205,18 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
         await websocket.send_json({"type": "chat_history", "messages": chat_messages})
 
     known_pending_ids: set[str] = set()
-    pending_map = _scan_pending_ask_users(session_dir)
-    for req_id, ask_data in pending_map.items():
-        known_pending_ids.add(req_id)
-        await websocket.send_json({"type": "ask_user", **ask_data})
+    is_terminal = status in ("completed", "failed", "stopped") or state.is_terminal
+
+    # Only send pending ask_users for active sessions — terminal ones will
+    # never process responses.
+    if not is_terminal:
+        pending_map = _scan_pending_ask_users(session_dir)
+        for req_id, ask_data in pending_map.items():
+            known_pending_ids.add(req_id)
+            await websocket.send_json({"type": "ask_user", **ask_data})
 
     # Terminal sessions: handle pending subscribe_logs, send final state, close
-    if status in ("completed", "failed", "stopped") or state.is_terminal:
+    if is_terminal:
         async def _send_log_snapshot(agent_id: str) -> None:
             if validate_agent(session_dir, agent_id):
                 lines, offset = read_log_tail(
@@ -231,7 +242,7 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
         # Drain additional subscribe_logs from the client
         try:
             while True:
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:

@@ -38,13 +38,16 @@ export default function AgentLogViewer({
   const rootId = agentIds.find((id) => agents[id].parent === null) ?? agentIds[0] ?? "";
   const [selectedAgent, setSelectedAgent] = useState(rootId);
 
-  // Subscribe/unsubscribe to agent logs via WS
+  // Subscribe to agent logs via WS; only unsubscribe when switching agents
+  const prevAgentRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedAgent || !wsConnected) return;
+    // Unsubscribe from the previous agent when switching
+    if (prevAgentRef.current && prevAgentRef.current !== selectedAgent) {
+      unsubscribeLogs(prevAgentRef.current);
+    }
+    prevAgentRef.current = selectedAgent;
     subscribeLogs(selectedAgent);
-    return () => {
-      unsubscribeLogs(selectedAgent);
-    };
   }, [selectedAgent, wsConnected, subscribeLogs, unsubscribeLogs]);
 
   const logState = agentLogs.get(selectedAgent);
