@@ -923,6 +923,7 @@ def handle_delegate(
             "DENDEN_AGENT_ID": agent_id,
             "DENDEN_PARENT_AGENT_ID": request.parent_agent_id,
             "DENDEN_RUN_ID": request.run_id,
+            "STRAWPOT_ROLE": request.role_slug,
             "PERMISSION_MODE": "auto",
         }
 

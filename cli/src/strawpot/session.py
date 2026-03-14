@@ -458,6 +458,7 @@ class Session:
                 "DENDEN_ADDR": self._denden_addr,
                 "DENDEN_AGENT_ID": agent_id,
                 "DENDEN_RUN_ID": self._run_id,
+                "STRAWPOT_ROLE": self.config.orchestrator_role,
             }
 
             handle = self.runtime.spawn(
@@ -834,8 +835,13 @@ class Session:
 
         return_format = "JSON" if payload.task.return_format == denden_pb2.JSON else "TEXT"
 
+        # Empty delegateTo means self-delegation — resolve to the agent's own role
+        role_slug = payload.delegate_to
+        if not role_slug:
+            role_slug = self._agent_role(trace.agent_instance_id)
+
         delegate_req = DelegateRequest(
-            role_slug=payload.delegate_to,
+            role_slug=role_slug,
             task_text=payload.task.text,
             parent_agent_id=trace.agent_instance_id,
             parent_role=self._agent_role(trace.agent_instance_id),
