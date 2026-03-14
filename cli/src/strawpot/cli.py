@@ -1,6 +1,7 @@
 """StrawPot CLI — agent orchestration commands + strawhub passthrough."""
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
+
+logger = logging.getLogger(__name__)
 
 from strawpot import __version__
 from strawpot._process import is_pid_alive
@@ -261,6 +264,12 @@ def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = F
         ):
             return
 
+    logger.warning(
+        "Skill '%s' not found locally (checked %s), installing from StrawHub",
+        name,
+        [str(c) for c in candidates],
+    )
+
     cmd = shutil.which("strawhub")
     if cmd is None:
         click.echo("Error: strawhub CLI not found on PATH.", err=True)
@@ -330,6 +339,12 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
             f"Role '{name}' is not installed. Install from StrawHub?", default=True
         ):
             return
+
+    logger.warning(
+        "Role '%s' not found locally (checked %s), installing from StrawHub",
+        name,
+        [str(c) for c in candidates],
+    )
 
     cmd = shutil.which("strawhub")
     if cmd is None:
