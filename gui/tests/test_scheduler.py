@@ -37,6 +37,8 @@ def _insert_schedule(db_path, project_id, **kwargs):
         "project_id": project_id,
         "task": "run tests",
         "cron_expr": "0 0 * * *",
+        "schedule_type": "recurring",
+        "run_at": None,
         "enabled": 1,
         "skip_if_running": 1,
         "next_run_at": None,
@@ -45,14 +47,16 @@ def _insert_schedule(db_path, project_id, **kwargs):
     with get_db(db_path) as conn:
         cursor = conn.execute(
             """INSERT INTO scheduled_tasks
-               (name, project_id, task, cron_expr, enabled,
-                skip_if_running, next_run_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (name, project_id, task, cron_expr, schedule_type, run_at,
+                enabled, skip_if_running, next_run_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 defaults["name"],
                 defaults["project_id"],
                 defaults["task"],
                 defaults["cron_expr"],
+                defaults["schedule_type"],
+                defaults["run_at"],
                 defaults["enabled"],
                 defaults["skip_if_running"],
                 defaults["next_run_at"],
@@ -224,3 +228,95 @@ class TestCheckAndFire:
                 "SELECT last_error FROM scheduled_tasks WHERE id = ?", (sid,)
             ).fetchone()
         assert "launch failed" in row["last_error"]
+
+
+# ---------------------------------------------------------------------------
+# One-time schedule scheduler tests
+# ---------------------------------------------------------------------------
+
+
+class TestOneTimeScheduleFire:
+    def test_auto_disables_after_fire(self, db_path, project_id):
+        past = "2000-01-01T00:00:00+00:00"
+        sid = _insert_schedule(
+            db_path, project_id,
+            name="one-time-task",
+            cron_expr=None,
+            schedule_type="one_time",
+            run_at=past,
+            next_run_at=past,
+        )
+
+        launch_fn = MagicMock(return_value="run-ot-1")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT enabled, next_run_at, last_run_at "
+                "FROM scheduled_tasks WHERE id = ?",
+                (sid,),
+            ).fetchone()
+        assert row["enabled"] == 0
+        assert row["next_run_at"] is None
+        assert row["last_run_at"] is not None
+
+    def test_init_skips_one_time(self, db_path, project_id):
+        """_init_next_run_times should not touch one-time schedules."""
+        sid = _insert_schedule(
+            db_path, project_id,
+            name="one-time-init",
+            cron_expr=None,
+            schedule_type="one_time",
+            run_at="2099-01-01T00:00:00+00:00",
+            next_run_at=None,
+            enabled=1,
+        )
+        scheduler = Scheduler(db_path, MagicMock())
+        scheduler._init_next_run_times()
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT next_run_at FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone()
+        # Should remain None — _init_next_run_times only handles recurring
+        assert row["next_run_at"] is None
+
+    def test_skip_if_running_retains_next_run(self, db_path, project_id):
+        """When a one-time schedule is skipped due to running session,
+        next_run_at should NOT be advanced (stays unchanged for retry)."""
+        past = "2000-01-01T00:00:00+00:00"
+        sid = _insert_schedule(
+            db_path, project_id,
+            name="ot-skip",
+            cron_expr=None,
+            schedule_type="one_time",
+            run_at=past,
+            next_run_at=past,
+            skip_if_running=1,
+        )
+
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, schedule_id, status, role, runtime, "
+                " isolation, started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-block", project_id, sid, "running",
+                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+            )
+
+        launch_fn = MagicMock()
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert not launch_fn.called
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT next_run_at FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone()
+        # next_run_at should be unchanged (not cleared or advanced)
+        assert row["next_run_at"] == past

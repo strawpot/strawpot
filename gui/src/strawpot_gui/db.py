@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role          TEXT,
     task          TEXT NOT NULL,
-    cron_expr     TEXT NOT NULL,
+    cron_expr     TEXT,
+    schedule_type TEXT NOT NULL DEFAULT 'recurring',
+    run_at        TEXT,
     enabled       INTEGER NOT NULL DEFAULT 1,
     system_prompt   TEXT,
     skip_if_running INTEGER NOT NULL DEFAULT 1,
@@ -181,6 +183,63 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_sessions_conversation "
         "ON sessions(conversation_id, started_at)"
     )
+
+    # Add schedule_type and run_at columns to scheduled_tasks, and make
+    # cron_expr nullable for one-time schedules (added 2026-03-14).
+    # Existing rows get schedule_type='recurring' via DEFAULT; their
+    # cron_expr values are preserved unchanged.
+    try:
+        conn.execute(
+            "ALTER TABLE scheduled_tasks "
+            "ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'recurring'"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN run_at TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Rebuild scheduled_tasks to make cron_expr nullable.  SQLite cannot
+    # ALTER a NOT NULL column to nullable, so we must recreate the table.
+    # IMPORTANT: foreign_keys must be OFF during the swap, otherwise
+    # DROP TABLE triggers ON DELETE SET NULL on sessions.schedule_id,
+    # wiping all schedule-session links for existing users.
+    table_sql = conn.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type='table' AND name='scheduled_tasks'"
+    ).fetchone()
+    if table_sql and "NOT NULL" in table_sql[0].split("cron_expr")[1].split(",")[0]:
+        conn.executescript("""
+            PRAGMA foreign_keys=OFF;
+            CREATE TABLE scheduled_tasks_new (
+                id              INTEGER PRIMARY KEY,
+                name            TEXT NOT NULL UNIQUE,
+                project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                role            TEXT,
+                task            TEXT NOT NULL,
+                cron_expr       TEXT,
+                schedule_type   TEXT NOT NULL DEFAULT 'recurring',
+                run_at          TEXT,
+                enabled         INTEGER NOT NULL DEFAULT 1,
+                system_prompt   TEXT,
+                skip_if_running INTEGER NOT NULL DEFAULT 1,
+                last_run_at     TEXT,
+                next_run_at     TEXT,
+                last_error      TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO scheduled_tasks_new
+                SELECT id, name, project_id, role, task, cron_expr,
+                       schedule_type, run_at, enabled, system_prompt,
+                       skip_if_running, last_run_at, next_run_at,
+                       last_error, created_at
+                FROM scheduled_tasks;
+            DROP TABLE scheduled_tasks;
+            ALTER TABLE scheduled_tasks_new RENAME TO scheduled_tasks;
+            PRAGMA foreign_keys=ON;
+        """)
 
     # Migrate conversations table to AUTOINCREMENT to prevent rowid reuse
     # after deletion (added 2026-03-13).
