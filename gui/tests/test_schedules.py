@@ -518,7 +518,10 @@ class TestScheduleRuns:
     def test_empty_runs(self, client):
         resp = client.get("/api/schedules/runs")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["page"] == 1
 
     def test_returns_schedule_metadata(self, client, project_id):
         # Create a schedule
@@ -549,8 +552,11 @@ class TestScheduleRuns:
         resp = client.get("/api/schedules/runs")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["run_id"] == "run-1"
-        assert data[0]["schedule_name"] == "run-test"
-        assert data[0]["schedule_type"] == "recurring"
-        assert data[0]["project_name"] == "test-proj"
+        assert data["total"] == 1
+        assert data["page"] == 1
+        items = data["items"]
+        assert len(items) == 1
+        assert items[0]["run_id"] == "run-1"
+        assert items[0]["schedule_name"] == "run-test"
+        assert items[0]["schedule_type"] == "recurring"
+        assert items[0]["project_name"] == "test-proj"

@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from croniter import croniter
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from strawpot_gui.db import get_db_conn
@@ -238,8 +238,18 @@ def create_one_time_schedule(
 
 
 @router.get("/schedules/runs")
-def schedule_runs(limit: int = 100, conn=Depends(get_db_conn)):
+def schedule_runs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    conn=Depends(get_db_conn),
+):
     """List all sessions triggered by schedules, with schedule metadata."""
+    total = conn.execute(
+        "SELECT count(*) FROM sessions se"
+        "  JOIN scheduled_tasks st ON se.schedule_id = st.id",
+    ).fetchone()[0]
+
+    offset = (page - 1) * per_page
     rows = conn.execute(
         "SELECT se.run_id, se.project_id, se.role, se.status,"
         "       se.started_at, se.ended_at, se.duration_ms, se.exit_code,"
@@ -250,10 +260,15 @@ def schedule_runs(limit: int = 100, conn=Depends(get_db_conn)):
         "  JOIN scheduled_tasks st ON se.schedule_id = st.id"
         "  LEFT JOIN projects p ON se.project_id = p.id"
         "  ORDER BY se.started_at DESC"
-        "  LIMIT ?",
-        (limit,),
+        "  LIMIT ? OFFSET ?",
+        (per_page, offset),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return {
+        "items": [dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 @router.get("/schedules/{schedule_id}")

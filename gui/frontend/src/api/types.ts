@@ -268,3 +268,10 @@ export interface ScheduleRun {
   exit_code: number | null;
   task: string | null;
 }
+
+export interface ScheduleRunList {
+  items: ScheduleRun[];
+  total: number;
+  page: number;
+  per_page: number;
+}

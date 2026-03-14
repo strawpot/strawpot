@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import type { Schedule, ScheduleRun, Session } from "@/api/types";
+import type { Schedule, ScheduleRunList, Session } from "@/api/types";
 
 export function useSchedules(type?: "recurring" | "one_time") {
   return useQuery({
@@ -31,9 +31,12 @@ export function useScheduleHistory(id: number) {
   });
 }
 
-export function useScheduleRuns() {
+export function useScheduleRuns(page = 1, perPage = 20) {
   return useQuery({
-    queryKey: queryKeys.schedules.runs,
-    queryFn: () => api.get<ScheduleRun[]>("/schedules/runs"),
+    queryKey: [...queryKeys.schedules.runs, page, perPage],
+    queryFn: () =>
+      api.get<ScheduleRunList>(
+        `/schedules/runs?page=${page}&per_page=${perPage}`,
+      ),
   });
 }

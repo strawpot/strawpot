@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSchedules } from "@/hooks/queries/use-schedules";
 import { useDeleteSchedule, useToggleSchedule } from "@/hooks/mutations/use-schedules";
-import CreateScheduleDialog from "@/components/CreateScheduleDialog";
+import CreateOneTimeScheduleDialog from "@/components/CreateOneTimeScheduleDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,32 +19,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Pause, Play, Plus, Trash2 } from "lucide-react";
 import type { Schedule } from "@/api/types";
 
-function formatRelative(iso: string | null): string {
-  if (!iso) return "—";
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "\u2014";
   try {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = d.getTime() - now.getTime();
-    const absDiff = Math.abs(diffMs);
-    if (absDiff < 60_000) return diffMs > 0 ? "in < 1m" : "< 1m ago";
-    if (absDiff < 3_600_000) {
-      const mins = Math.round(absDiff / 60_000);
-      return diffMs > 0 ? `in ${mins}m` : `${mins}m ago`;
-    }
-    if (absDiff < 86_400_000) {
-      const hours = Math.round(absDiff / 3_600_000);
-      return diffMs > 0 ? `in ${hours}h` : `${hours}h ago`;
-    }
-    return d.toLocaleDateString();
+    return new Date(iso).toLocaleString();
   } catch {
-    return "—";
+    return "\u2014";
   }
 }
 
 function StatusBadge({ schedule }: { schedule: Schedule }) {
+  if (!schedule.enabled && schedule.last_run_at) {
+    return <Badge variant="secondary">Fired</Badge>;
+  }
   if (!schedule.enabled) {
     return <Badge variant="secondary">Disabled</Badge>;
   }
@@ -62,13 +52,12 @@ function StatusBadge({ schedule }: { schedule: Schedule }) {
       </TooltipProvider>
     );
   }
-  return <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>;
+  return <Badge className="bg-emerald-600 hover:bg-emerald-600">Pending</Badge>;
 }
 
-export default function ScheduledTasks() {
-  const { data: schedules, isLoading, error } = useSchedules("recurring");
+export default function OneTimeSchedules() {
+  const { data: schedules, isLoading, error } = useSchedules("one_time");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Schedule | null>(null);
   const deleteSchedule = useDeleteSchedule();
   const toggleSchedule = useToggleSchedule();
 
@@ -94,23 +83,23 @@ export default function ScheduledTasks() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Recurring Schedules</h1>
-        <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
+        <h1 className="text-2xl font-bold tracking-tight">One-Time Schedules</h1>
+        <Button onClick={() => setDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Create Schedule
+          Create One-Time Schedule
         </Button>
       </div>
 
       {list.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-          <p className="text-muted-foreground">No recurring schedules yet.</p>
+          <p className="text-muted-foreground">No one-time schedules yet.</p>
           <Button
             variant="outline"
             className="mt-4"
-            onClick={() => { setEditing(null); setDialogOpen(true); }}
+            onClick={() => setDialogOpen(true)}
           >
             <Plus className="mr-2 h-4 w-4" />
-            Create your first schedule
+            Create your first one-time schedule
           </Button>
         </div>
       ) : (
@@ -120,11 +109,10 @@ export default function ScheduledTasks() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Project</TableHead>
-                <TableHead>Cron</TableHead>
-                <TableHead>Next Run</TableHead>
+                <TableHead>Scheduled For</TableHead>
                 <TableHead>Last Run</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-[120px]">Actions</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -134,33 +122,17 @@ export default function ScheduledTasks() {
                   <TableCell className="text-muted-foreground">
                     {s.project_name}
                   </TableCell>
-                  <TableCell>
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                      {s.cron_expr}
-                    </code>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDateTime(s.run_at)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatRelative(s.next_run_at)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatRelative(s.last_run_at)}
+                    {formatDateTime(s.last_run_at)}
                   </TableCell>
                   <TableCell>
                     <StatusBadge schedule={s} />
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          setEditing(s);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -199,10 +171,9 @@ export default function ScheduledTasks() {
         </div>
       )}
 
-      <CreateScheduleDialog
+      <CreateOneTimeScheduleDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editing={editing}
       />
     </div>
   );
