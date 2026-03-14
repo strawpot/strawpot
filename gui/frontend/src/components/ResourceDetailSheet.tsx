@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ResourceDetail } from "@/api/types";
+import MarkdownContent from "@/components/MarkdownContent";
+import ViewToggle from "@/components/ViewToggle";
 import {
   useUninstallResource,
   useUpdateResource,
@@ -69,6 +71,7 @@ export default function ResourceDetailSheet({
   const reinstall = isProjectScoped ? projReinstall : globalReinstall;
 
   const [confirming, setConfirming] = useState(false);
+  const [bodyView, setBodyView] = useState<"markdown" | "raw">("markdown");
   const actionPending = updateResource.isPending || reinstall.isPending || uninstall.isPending;
 
   if (!resource) return null;
@@ -147,7 +150,7 @@ export default function ResourceDetailSheet({
   const metadata = resource.frontmatter?.metadata as Record<string, unknown> | undefined;
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); setConfirming(false); }}>
+    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); setConfirming(false); setBodyView("markdown"); }}>
       <SheetContent side="right" className="flex h-full flex-col sm:max-w-xl overflow-x-hidden">
         <SheetHeader className="shrink-0">
           <SheetTitle className="flex items-center gap-2">
@@ -190,8 +193,21 @@ export default function ResourceDetailSheet({
               enabled={open}
               projectId={projectId}
             />
-            <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap mt-4">
-              {resource.body || "No content."}
+            <div className="mt-4">
+              {resource.body ? (
+                <>
+                  <ViewToggle view={bodyView} onChange={setBodyView} />
+                  {bodyView === "markdown" ? (
+                    <MarkdownContent content={resource.body} className="text-sm" />
+                  ) : (
+                    <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+                      {resource.body}
+                    </pre>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No content.</p>
+              )}
             </div>
           </div>
         </ScrollArea>
