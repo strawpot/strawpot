@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from test_sessions_sync import _register_project
 
-from strawpot_gui.db import _extract_recap, _strip_recap, get_db
+from strawpot_gui.db import _extract_recap, _normalize_recap_marker, _strip_recap, get_db
 from strawpot_gui.routers.conversations import _build_conversation_context
 
 
@@ -718,6 +718,16 @@ class TestExtractRecap:
         content = "some output\n\n## Session Recap\n"
         assert _extract_recap(content) == content
 
+    def test_bold_marker(self):
+        content = (
+            "Here is the output.\n\n"
+            "**Session Recap**\n\n"
+            "### Accomplished\n- Did things"
+        )
+        result = _extract_recap(content)
+        assert result.startswith("### Accomplished")
+        assert "Here is the output" not in result
+
 
 class TestStripRecap:
     def test_strips_recap_block(self):
@@ -748,6 +758,33 @@ class TestStripRecap:
         content = "## Session Recap\n- Implemented the login page"
         result = _strip_recap(content)
         assert result == content
+
+    def test_bold_marker(self):
+        content = (
+            "Here is the output.\n\n"
+            "**Session Recap**\n\n"
+            "### Accomplished\n- Did things"
+        )
+        result = _strip_recap(content)
+        assert result == "Here is the output."
+        assert "Session Recap" not in result
+
+
+class TestNormalizeRecapMarker:
+    def test_replaces_bold_with_heading(self):
+        content = "Output\n\n**Session Recap**\n\n- Did things"
+        result = _normalize_recap_marker(content)
+        assert "**Session Recap**" not in result
+        assert "## Session Recap" in result
+
+    def test_leaves_heading_unchanged(self):
+        content = "Output\n\n## Session Recap\n\n- Did things"
+        result = _normalize_recap_marker(content)
+        assert result == content
+
+    def test_no_recap(self):
+        content = "Just output, no recap."
+        assert _normalize_recap_marker(content) == content
 
 
 class TestHistoryFileHint:
