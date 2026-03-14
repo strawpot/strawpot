@@ -83,6 +83,55 @@ def _pick_agent() -> str | None:
     return None
 
 
+def _authenticate_agent(agent_name: str, working_dir: str) -> None:
+    """Offer login-session or API-key auth for a newly installed agent."""
+    spec = resolve_agent(agent_name, working_dir)
+
+    env_vars = list(spec.env_schema.keys())
+    has_env = bool(env_vars)
+
+    click.echo("\nHow would you like to authenticate?")
+    click.echo("  1) Login session (interactive browser/CLI login)")
+    if has_env:
+        click.echo(f"  2) API key ({', '.join(env_vars)})")
+        click.echo("  3) Skip (configure later)")
+        raw = click.prompt("Enter choice", default="1")
+    else:
+        click.echo("  2) Skip (configure later)")
+        raw = click.prompt("Enter choice", default="1")
+
+    choice = raw.strip()
+
+    if choice == "1":
+        runtime = WrapperRuntime(spec)
+        if not runtime.setup():
+            click.echo(
+                "Login failed. You can retry later with: strawpot start",
+                err=True,
+            )
+    elif choice == "2" and has_env:
+        env_values: dict[str, str] = {}
+        for var, meta in spec.env_schema.items():
+            desc = meta.get("description", "")
+            prompt_text = f"Enter {var}"
+            if desc:
+                prompt_text += f" ({desc})"
+            value = click.prompt(prompt_text, hide_input=True)
+            os.environ[var] = value
+            env_values[var] = value
+        if env_values:
+            from strawpot.config import save_resource_config
+
+            save_resource_config(
+                None, "agents", agent_name, env_values=env_values
+            )
+            click.echo("Saved credentials to global config.")
+    else:
+        click.echo(
+            "Skipping authentication. Run 'strawpot start' to configure later."
+        )
+
+
 def _onboarding_wizard(working_dir: str) -> str | None:
     """Run the first-run onboarding wizard.
 
@@ -100,6 +149,9 @@ def _onboarding_wizard(working_dir: str) -> str | None:
 
     # Step 3: Install agent wrapper from StrawHub
     _ensure_agent_installed(agent_name, working_dir, auto_setup=True)
+
+    # Step 4: Authentication
+    _authenticate_agent(agent_name, working_dir)
 
     # Step 7: Save default runtime to global config
     from strawpot.config import save_resource_config
