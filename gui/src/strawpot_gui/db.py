@@ -468,7 +468,7 @@ def _upsert_session(
              task        = excluded.task,
              summary     = COALESCE(excluded.summary, sessions.summary),
              files_changed = COALESCE(excluded.files_changed, sessions.files_changed),
-             interactive = excluded.interactive
+             interactive = MAX(sessions.interactive, excluded.interactive)
              -- conversation_id intentionally omitted: preserve existing FK""",
         (
             run_id,

@@ -66,7 +66,7 @@ export default function SessionDetail() {
   const isInteractive = !!sessionData?.interactive;
   const { pendingAskUsers, chatMessages, traceEvents, treeData: wsTreeData, connected, agentLogs, respond, subscribeLogs, unsubscribeLogs } = useSessionWS(
     runId ?? "",
-    active || isInteractive,
+    true,  // always connect — terminal sessions get snapshots then close
   );
   const treeData = wsTreeData ?? sessionData?.tree ?? null;
   const restEvents = sessionData?.events ?? [];

@@ -221,6 +221,7 @@ export function useSessionWS(
 
           case "stream_complete":
             streamDoneRef.current = true;
+            setPendingAskUsers([]);
             ws.close();
             wsRef.current = null;
             setConnected(false);
