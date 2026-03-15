@@ -1713,14 +1713,21 @@ class TestGlobalSkills:
         assert "## Skills" in spawn_kwargs["role_prompt"]
         assert "**linter**" in spawn_kwargs["role_prompt"]
 
+    @patch("strawpot.delegation._append_builtins")
     @patch("strawpot.session.discover_global_skills")
     @patch("strawpot.session.DenDenServer")
     def test_orchestrator_builtins_when_no_global_skills(
-        self, mock_server_cls, mock_discover, tmp_path
+        self, mock_server_cls, mock_discover, mock_builtins, tmp_path
     ):
         """Built-in skills still appear even when global discover returns empty."""
         mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         mock_discover.return_value = []
+
+        def fake_builtins(skills, _working_dir):
+            skills.append(("denden", "Agent communication"))
+            skills.append(("strawpot-session-recap", "Session recap"))
+
+        mock_builtins.side_effect = fake_builtins
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
         runtime = _mock_runtime()
