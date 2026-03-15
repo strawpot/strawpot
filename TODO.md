@@ -24,23 +24,6 @@
   expose conversation tools to the agent). See `designs/context/DESIGN.md`
   Phase 3 for full details.
 
-- [ ] **Structured decision events in wrapper protocol**
-  Extend the wrapper protocol with a callback or sidecar mechanism for agents
-  to emit structured events during a session — decisions, corrections, blockers.
-  Currently the wrapper protocol is stateless (called once, no callbacks), so
-  StrawPot only sees the final output blob. Structured events would let the
-  context builder and memory provider use first-class decision records instead
-  of reconstructing them from raw output. Requires each wrapper (Claude Code,
-  Gemini, Codex) to implement the callback. Related to cost/token tracking
-  which also needs a wrapper protocol extension.
-
-  **Why not now:** The recap instruction already captures decisions, blockers,
-  and open items in prose. `_extract_recap()` pulls them out reliably. The
-  practical benefit of structured events is small until we need to
-  programmatically query decisions across many conversations. Depends on
-  wrapper protocol extension and optionally on the conversation history
-  service. See `designs/context/DESIGN.md` Phase 4 for full details.
-
 - [ ] **Parallel sub-agent delegation**
   Currently delegation is sequential — an agent calls `stub.Send()` which
   blocks until the sub-agent finishes. The architecture already supports
@@ -57,18 +40,67 @@
   delegation retry from the session detail view.
 
 - [ ] **Hooks**
-  Pre/post spawn, pre/post cleanup extension points. Allow users to run
-  custom scripts at key session lifecycle events.
+  Pre/post spawn, pre/post cleanup, and memory extension points. Allow
+  users to run custom scripts at key session lifecycle events.
 
-- [ ] **Cost / token tracking**
-  Requires wrapper protocol extension. The wrapper protocol is stateless
-  (called once to translate args to CLI command) — no callback to return
-  metrics. Needs a sidecar file approach: wrapper writes
-  `<workspace>/.metrics.json` after agent exits, `WrapperRuntime` reads
-  it and passes to tracer via extended `AgentResult.metrics` field.
-  Each runtime reports usage differently (Claude Code, Gemini, etc.),
-  so per-wrapper parsing is needed. GUI side is straightforward once
-  trace events carry the data.
+- [ ] **Agent CLI output streaming**
+  Hook into agent CLI native output streams so StrawPot can observe what
+  agents are doing in real time — tool calls, file edits, decisions,
+  progress — instead of waiting for the session to finish.
+
+  **Problem:** Running a session is opaque. StrawPot spawns the agent CLI
+  and blocks until it exits. The GUI shows "running…" with no visibility
+  into what the agent is actually doing. Each agent CLI already emits
+  structured streaming output, but the wrapper protocol has no channel to
+  capture it.
+
+  **Native streaming formats (already available):**
+  - **Claude Code:** `--output-format stream-json` emits JSONL with
+    `assistant`, `tool_use`, `tool_result`, `result` message types
+  - **Gemini CLI:** Streaming terminal output (token counts parseable)
+  - **Codex:** `--json` flag emits structured JSON events
+  - **OpenHands:** WebSocket event stream from the runtime
+
+  **Phase 1 — Sidecar event file**
+  StrawPot creates a JSONL event file at
+  `<session_dir>/agents/<agent_id>/.events.jsonl` and passes its path
+  via `STRAWPOT_EVENT_FILE` env var. Each wrapper monitors its agent
+  CLI's native output stream and translates events into a common format:
+  ```jsonl
+  {"event":"tool_use","data":{"tool":"Edit","file":"src/main.py"}}
+  {"event":"tool_result","data":{"tool":"Edit","status":"ok"}}
+  {"event":"progress","data":{"step":"analyzing","pct":30}}
+  {"event":"cost","data":{"input_tokens":1500,"output_tokens":800,"model":"claude-sonnet-4-20250514"}}
+  {"event":"decision","data":{"type":"architecture","summary":"Using repository pattern"}}
+  {"event":"file_changed","data":{"path":"src/main.py","action":"modified"}}
+  ```
+
+  **Per-wrapper implementation:**
+  Each wrapper (Go binary) adds a `monitor` goroutine that reads the
+  agent CLI's stdout/stderr and writes translated events to the file:
+  - **Claude Code wrapper:** Spawn with `--output-format stream-json`,
+    parse JSONL stream, emit `tool_use`/`tool_result`/`cost` events
+  - **Gemini wrapper:** Parse streaming output for token counts and
+    tool invocations
+  - **Codex wrapper:** Parse `--json` output events
+  - **OpenHands wrapper:** Connect to WebSocket event stream
+
+  **Phase 2 — StrawPot event reader**
+  `WrapperRuntime` tails the event file in a background thread using
+  `inotify`/`kqueue` and forwards events to the tracer and event bus.
+  GUI picks them up via the existing WebSocket channel. Events appear
+  as a live activity feed in the session detail view.
+
+  **Phase 3 — GUI live activity view**
+  Surface agent operations in the GUI:
+  - Real-time tool call feed (what the agent is doing now)
+  - File change list (files created/modified/deleted)
+  - Cost/token counters (running totals)
+  - Progress indicators when available
+
+  **Depends on:** Phase 1 requires per-wrapper changes (Go). Phase 2
+  requires changes to `WrapperRuntime` in StrawPot. Phase 3 requires
+  Phase 2 + GUI components.
 
 ## Self-Improvement
 
