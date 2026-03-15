@@ -10,11 +10,11 @@ from strawpot.context import (
 )
 
 
-def _write_skill(base, slug, body):
+def _write_skill(base, slug, body, description="test"):
     d = base / "skills" / slug
     d.mkdir(parents=True, exist_ok=True)
     (d / "SKILL.md").write_text(
-        f"---\nname: {slug}\ndescription: test\n---\n{body}\n"
+        f"---\nname: {slug}\ndescription: {description}\n---\n{body}\n"
     )
     return str(d)
 
@@ -28,89 +28,30 @@ def _write_role(base, slug, body):
     return str(d)
 
 
-def test_role_no_dependencies(tmp_path):
+def test_role_no_skills(tmp_path):
     path = _write_role(tmp_path, "solo", "You are a solo agent.")
 
-    resolved = {
-        "slug": "solo",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved)
+    result = build_prompt("solo", path)
     assert result == "## Role: solo\n\nYou are a solo agent."
 
 
-def test_role_with_skill_dependencies(tmp_path):
-    skill1_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
-    skill2_path = _write_skill(tmp_path, "code-review", "Review carefully.")
+def test_role_with_skills(tmp_path):
+    """Skills are listed by description."""
     role_path = _write_role(tmp_path, "implementer", "You implement things.")
 
-    resolved = {
-        "slug": "implementer",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "git-workflow",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": skill1_path,
-                "source": "local",
-            },
-            {
-                "slug": "code-review",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": skill2_path,
-                "source": "local",
-            },
+    result = build_prompt(
+        "implementer",
+        role_path,
+        skills=[
+            ("git-workflow", "Git branching workflow"),
+            ("code-review", "Code review process"),
         ],
-    }
-
-    result = build_prompt(resolved)
-    assert result == (
-        "## Role: implementer\n\nYou implement things."
-        "\n---\n\n"
-        "## Skill: git-workflow\n\nUse git flow."
-        "\n---\n\n"
-        "## Skill: code-review\n\nReview carefully."
     )
 
-
-def test_role_dependency_includes_role(tmp_path):
-    """A role can depend on another role."""
-    dep_role_path = _write_role(tmp_path, "base-reviewer", "Review basics.")
-    root_path = _write_role(tmp_path, "senior-reviewer", "Senior review.")
-
-    resolved = {
-        "slug": "senior-reviewer",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": root_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "base-reviewer",
-                "kind": "role",
-                "version": "1.0.0",
-                "path": dep_role_path,
-                "source": "local",
-            },
-        ],
-    }
-
-    result = build_prompt(resolved)
-    assert result == (
-        "## Role: senior-reviewer\n\nSenior review."
-        "\n---\n\n"
-        "## Role: base-reviewer\n\nReview basics."
-    )
+    assert "## Role: implementer\n\nYou implement things." in result
+    assert "## Skills" in result
+    assert "- **git-workflow**: Git branching workflow" in result
+    assert "- **code-review**: Code review process" in result
 
 
 def test_frontmatter_stripped(tmp_path):
@@ -131,114 +72,59 @@ def test_frontmatter_stripped(tmp_path):
         "Body content here.\n"
     )
 
-    resolved = {
-        "slug": "complex",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": str(d),
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved)
+    result = build_prompt("complex", str(d))
     assert "---\nname:" not in result
     assert "metadata:" not in result
     assert "# Complex Role" in result
     assert "Body content here." in result
 
 
-def test_body_whitespace_stripped(tmp_path):
-    """Leading/trailing whitespace in body is stripped."""
-    d = tmp_path / "skills" / "ws"
-    d.mkdir(parents=True)
-    (d / "SKILL.md").write_text(
-        "---\nname: ws\ndescription: test\n---\n\n\n  Body  \n\n\n"
-    )
+def test_no_skills_section_when_none(tmp_path):
+    """No Skills section when skills is None."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
 
-    role_path = _write_role(tmp_path, "r", "Role.")
+    result = build_prompt("worker", role_path, skills=None)
+    assert "Skills" not in result
 
-    resolved = {
-        "slug": "r",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "ws",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": str(d),
-                "source": "local",
-            },
-        ],
-    }
 
-    result = build_prompt(resolved)
-    assert result.startswith("## Role: r\n\nRole.")
+def test_no_skills_section_when_empty(tmp_path):
+    """No Skills section when skills is empty."""
+    role_path = _write_role(tmp_path, "worker", "You work.")
+
+    result = build_prompt("worker", role_path, skills=[])
+    assert "Skills" not in result
 
 
 def test_custom_prompt_before_skills(tmp_path):
-    """Custom instructions appear after role but before skill dependencies."""
-    skill_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
+    """Custom instructions appear after role but before skill listings."""
     role_path = _write_role(tmp_path, "coder", "You code.")
 
-    resolved = {
-        "slug": "coder",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "git-workflow",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": skill_path,
-                "source": "local",
-            },
-        ],
-    }
-
-    result = build_prompt(resolved, custom_prompt="Always write tests first.")
+    result = build_prompt(
+        "coder",
+        role_path,
+        skills=[("git-workflow", "Git workflow")],
+        custom_prompt="Always write tests first.",
+    )
 
     role_pos = result.index("## Role: coder")
     custom_pos = result.index("## Custom Instructions")
-    skill_pos = result.index("## Skill: git-workflow")
+    skill_pos = result.index("## Skills")
     assert role_pos < custom_pos < skill_pos
     assert "Always write tests first." in result
 
 
-def test_empty_body_dep_skipped(tmp_path):
-    """Dependency with empty body is omitted from the prompt."""
-    empty_skill_path = tmp_path / "skills" / "empty-skill"
-    empty_skill_path.mkdir(parents=True)
-    (empty_skill_path / "SKILL.md").write_text(
-        "---\nname: empty-skill\ndescription: test\n---\n"
-    )
-
+def test_skills_section_instructs_to_read(tmp_path):
+    """Skills section tells the agent to read SKILL.md for full details."""
     role_path = _write_role(tmp_path, "worker", "You work.")
 
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "empty-skill",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": str(empty_skill_path),
-                "source": "local",
-            },
-        ],
-    }
+    result = build_prompt(
+        "worker",
+        role_path,
+        skills=[("linter", "Checks code quality")],
+    )
 
-    result = build_prompt(resolved)
-    assert "## Skill: empty-skill" not in result
-    assert result == "## Role: worker\n\nYou work."
+    assert "Read the SKILL.md file for full details" in result
+    assert "- **linter**: Checks code quality" in result
 
 
 # ---------------------------------------------------------------------------
@@ -250,17 +136,9 @@ def test_delegation_section_appended(tmp_path):
     """Delegation section is appended when delegatable_roles is provided."""
     role_path = _write_role(tmp_path, "orchestrator", "You orchestrate.")
 
-    resolved = {
-        "slug": "orchestrator",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
     result = build_prompt(
-        resolved,
+        "orchestrator",
+        role_path,
         delegatable_roles=[
             ("backend-engineer", "Handles backend API implementation"),
             ("test-writer", "Writes and maintains test suites"),
@@ -275,35 +153,19 @@ def test_delegation_section_appended(tmp_path):
     assert "prefer delegating" in result
 
 
-def test_delegation_with_dependencies(tmp_path):
-    """Delegation section comes after role body, after dependencies."""
-    skill_path = _write_skill(tmp_path, "git-workflow", "Use git flow.")
+def test_delegation_with_skills(tmp_path):
+    """Delegation section comes after skills section."""
     role_path = _write_role(tmp_path, "team-lead", "You lead the team.")
 
-    resolved = {
-        "slug": "team-lead",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [
-            {
-                "slug": "git-workflow",
-                "kind": "skill",
-                "version": "1.0.0",
-                "path": skill_path,
-                "source": "local",
-            },
-        ],
-    }
-
     result = build_prompt(
-        resolved,
+        "team-lead",
+        role_path,
+        skills=[("git-workflow", "Git workflow")],
         delegatable_roles=[("implementer", "Writes code")],
     )
 
     role_pos = result.index("## Role: team-lead")
-    skill_pos = result.index("## Skill: git-workflow")
+    skill_pos = result.index("## Skills")
     delegation_pos = result.index("## Delegation")
     assert role_pos < skill_pos < delegation_pos
 
@@ -312,16 +174,7 @@ def test_no_delegation_when_none(tmp_path):
     """No delegation section when delegatable_roles is None."""
     role_path = _write_role(tmp_path, "worker", "You work.")
 
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, delegatable_roles=None)
+    result = build_prompt("worker", role_path, delegatable_roles=None)
     assert "Delegation" not in result
 
 
@@ -329,16 +182,7 @@ def test_no_delegation_when_empty_list(tmp_path):
     """No delegation section when delegatable_roles is empty."""
     role_path = _write_role(tmp_path, "worker", "You work.")
 
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, delegatable_roles=[])
+    result = build_prompt("worker", role_path, delegatable_roles=[])
     assert "Delegation" not in result
 
 
@@ -346,17 +190,9 @@ def test_delegation_single_role(tmp_path):
     """Delegation section works with a single role."""
     role_path = _write_role(tmp_path, "lead", "You lead.")
 
-    resolved = {
-        "slug": "lead",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
     result = build_prompt(
-        resolved,
+        "lead",
+        role_path,
         delegatable_roles=[("fixer", "Fixes bugs and issues")],
     )
 
@@ -368,17 +204,9 @@ def test_delegation_section_exact_format(tmp_path):
     """Delegation section matches the DESIGN.md format exactly."""
     role_path = _write_role(tmp_path, "orch", "Orchestrate.")
 
-    resolved = {
-        "slug": "orch",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
     result = build_prompt(
-        resolved,
+        "orch",
+        role_path,
         delegatable_roles=[
             ("backend-engineer", "Handles backend API implementation"),
             ("test-writer", "Writes and maintains test suites"),
@@ -416,16 +244,7 @@ def test_requester_section_appended(tmp_path):
     """Requester section is appended when requester_role is provided."""
     role_path = _write_role(tmp_path, "implementer", "You implement.")
 
-    resolved = {
-        "slug": "implementer",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, requester_role="team-lead")
+    result = build_prompt("implementer", role_path, requester_role="team-lead")
 
     assert "\n---\n\n## Requester" in result
     assert "**team-lead**" in result
@@ -436,17 +255,9 @@ def test_requester_after_delegation(tmp_path):
     """Requester section comes after delegation section."""
     role_path = _write_role(tmp_path, "lead", "You lead.")
 
-    resolved = {
-        "slug": "lead",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
     result = build_prompt(
-        resolved,
+        "lead",
+        role_path,
         delegatable_roles=[("fixer", "Fixes bugs")],
         requester_role="orchestrator",
     )
@@ -460,16 +271,7 @@ def test_no_requester_when_none(tmp_path):
     """No requester section when requester_role is None."""
     role_path = _write_role(tmp_path, "worker", "You work.")
 
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, requester_role=None)
+    result = build_prompt("worker", role_path, requester_role=None)
     assert "Requester" not in result
 
 
@@ -529,96 +331,6 @@ def test_read_skill_description_no_file(tmp_path):
     d.mkdir(parents=True)
 
     assert read_skill_description(str(d)) == ""
-
-
-# ---------------------------------------------------------------------------
-# Available Skills section
-# ---------------------------------------------------------------------------
-
-
-def test_available_skills_section_appended(tmp_path):
-    """Available Skills section is appended when global_skills is provided."""
-    role_path = _write_role(tmp_path, "worker", "You work.")
-
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(
-        resolved,
-        global_skills=[
-            ("linter", "Checks code quality"),
-            ("formatter", "Formats code"),
-        ],
-    )
-
-    assert "## Available Skills" in result
-    assert "- **linter**: Checks code quality" in result
-    assert "- **formatter**: Formats code" in result
-
-
-def test_available_skills_before_delegation(tmp_path):
-    """Available Skills section appears between role body and delegation."""
-    role_path = _write_role(tmp_path, "lead", "You lead.")
-
-    resolved = {
-        "slug": "lead",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(
-        resolved,
-        global_skills=[("linter", "Checks code")],
-        delegatable_roles=[("fixer", "Fixes bugs")],
-    )
-
-    role_pos = result.index("## Role: lead")
-    skills_pos = result.index("## Available Skills")
-    delegation_pos = result.index("## Delegation")
-    assert role_pos < skills_pos < delegation_pos
-
-
-def test_no_available_skills_when_none(tmp_path):
-    """No Available Skills section when global_skills is None."""
-    role_path = _write_role(tmp_path, "worker", "You work.")
-
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, global_skills=None)
-    assert "Available Skills" not in result
-
-
-def test_no_available_skills_when_empty(tmp_path):
-    """No Available Skills section when global_skills is empty."""
-    role_path = _write_role(tmp_path, "worker", "You work.")
-
-    resolved = {
-        "slug": "worker",
-        "kind": "role",
-        "version": "1.0.0",
-        "path": role_path,
-        "source": "local",
-        "dependencies": [],
-    }
-
-    result = build_prompt(resolved, global_skills=[])
-    assert "Available Skills" not in result
 
 
 # ---------------------------------------------------------------------------

@@ -52,51 +52,53 @@ def validate_frontmatter_slug(
 
 
 def build_prompt(
-    resolved: dict,
+    role_slug: str,
+    role_path: str,
+    skills: list[tuple[str, str]] | None = None,
     delegatable_roles: list[tuple[str, str]] | None = None,
     requester_role: str | None = None,
-    global_skills: list[tuple[str, str]] | None = None,
     custom_prompt: str | None = None,
 ) -> str:
-    """Build a system prompt from a resolved role and its dependencies.
+    """Build a system prompt from a role and its available skills.
 
     Args:
-        resolved: dict from strawhub.resolver.resolve(), with keys:
-            slug, kind, version, path, source, dependencies.
-            Dependencies are in topological order (leaves first).
+        role_slug: The role's slug identifier.
+        role_path: Path to the role's package directory (contains ROLE.md).
+        skills: optional list of (slug, description) tuples for all
+            skills available to this agent (first-order dependencies,
+            global skills, and built-ins combined).  Listed by description
+            only — the agent reads ``skills/<slug>/SKILL.md`` for details.
+            Callers are responsible for filtering to first-order deps and
+            excluding duplicates between dependency and global skills.
         delegatable_roles: optional list of (slug, description) tuples.
             When provided, a Delegation section is appended listing
             roles the agent can delegate to via denden.
         requester_role: optional slug of the role that delegated this task.
             When provided, a Requester section is appended so the agent
             can communicate back via denden.
-        global_skills: optional list of (slug, description) tuples for
-            globally installed skills.  When provided, an Available Skills
-            section is inserted after the role body.
+        custom_prompt: optional custom instructions from the user.
 
     Returns:
-        System prompt string: role first, then optional custom instructions,
-        then skills (resolver order, empty bodies skipped), then available
-        skills, delegation, and requester sections. Frontmatter stripped,
-        sections separated by ``---``.
+        System prompt string assembled in this order:
+
+        1. Role body
+        2. Custom instructions (if provided)
+        3. Skills section (description listing)
+        4. Delegation section
+        5. Requester section
+
+        Frontmatter is stripped; sections are separated by ``---``.
     """
     sections: list[str] = []
 
-    root_body = _read_body(resolved["path"], resolved["kind"])
-    sections.append(
-        f"## {resolved['kind'].capitalize()}: {resolved['slug']}\n\n{root_body}"
-    )
+    root_body = _read_body(role_path, "role")
+    sections.append(f"## Role: {role_slug}\n\n{root_body}")
 
     if custom_prompt:
         sections.append(f"## Custom Instructions\n\n{custom_prompt}")
 
-    for dep in resolved.get("dependencies", []):
-        body = _read_body(dep["path"], dep["kind"])
-        if body:
-            sections.append(f"## {dep['kind'].capitalize()}: {dep['slug']}\n\n{body}")
-
-    if global_skills:
-        sections.append(_build_available_skills_section(global_skills))
+    if skills:
+        sections.append(_build_skills_section(skills))
 
     if delegatable_roles:
         sections.append(_build_delegation_section(delegatable_roles))
@@ -107,17 +109,18 @@ def build_prompt(
     return "\n---\n\n".join(sections)
 
 
-def _build_available_skills_section(skills: list[tuple[str, str]]) -> str:
-    """Build the Available Skills section listing global skills."""
+def _build_skills_section(skills: list[tuple[str, str]]) -> str:
+    """Build the Skills section listing dependency skills with descriptions."""
     lines = [
-        "## Available Skills",
+        "## Skills",
         "",
         "The following skills are available in `skills/<name>/`. "
-        "Read the SKILL.md file for full details.",
+        "Read the SKILL.md file for full details when needed.",
     ]
     for slug, description in skills:
         lines.append(f"- **{slug}**: {description}")
     return "\n".join(lines)
+
 
 
 def _build_delegation_section(roles: list[tuple[str, str]]) -> str:
@@ -205,3 +208,5 @@ def _read_body(package_path: str, kind: str) -> str:
     text = filepath.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     return parsed.get("body", "").strip()
+
+

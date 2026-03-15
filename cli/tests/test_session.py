@@ -1708,17 +1708,17 @@ class TestGlobalSkills:
 
         # Verify discover_global_skills was called
         mock_discover.assert_called_once()
-        # Verify the prompt passed to spawn contains Available Skills
+        # Verify the prompt passed to spawn contains Skills section
         spawn_kwargs = runtime.spawn.call_args.kwargs
-        assert "## Available Skills" in spawn_kwargs["role_prompt"]
+        assert "## Skills" in spawn_kwargs["role_prompt"]
         assert "**linter**" in spawn_kwargs["role_prompt"]
 
     @patch("strawpot.session.discover_global_skills")
     @patch("strawpot.session.DenDenServer")
-    def test_orchestrator_no_global_skills_when_empty(
+    def test_orchestrator_builtins_when_no_global_skills(
         self, mock_server_cls, mock_discover, tmp_path
     ):
-        """No Available Skills section when discover returns empty."""
+        """Built-in skills still appear even when global discover returns empty."""
         mock_server_cls.return_value.bound_addr = "127.0.0.1:9700"
         mock_discover.return_value = []
         isolator = _mock_isolator()
@@ -1731,7 +1731,9 @@ class TestGlobalSkills:
         session.start(str(tmp_path))
 
         spawn_kwargs = runtime.spawn.call_args.kwargs
-        assert "Available Skills" not in spawn_kwargs["role_prompt"]
+        assert "## Skills" in spawn_kwargs["role_prompt"]
+        assert "**denden**" in spawn_kwargs["role_prompt"]
+        assert "**strawpot-session-recap**" in spawn_kwargs["role_prompt"]
 
 
 # ---------------------------------------------------------------------------
