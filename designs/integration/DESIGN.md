@@ -133,6 +133,9 @@ metadata:
   strawpot:
     entry_point: python adapter.py
     auto_start: false
+    install:
+      macos: pip install -r requirements.txt
+      linux: pip install -r requirements.txt
     config:
       bot_token:
         type: secret
@@ -167,7 +170,9 @@ replied back in the chat.
 | `metadata.strawpot.config` | No | Schema for user-facing config (type, required, secret, default, description). Values are passed as env vars at start. |
 | `metadata.strawpot.health_check` | No | Endpoint + interval for liveness checks |
 
-Unlike agents/skills/memory, integrations do **not** use `env`, `install`,
+| `metadata.strawpot.install` | No | OS-keyed install commands (same convention as agents). Run by `strawhub install` in Phase 3. |
+
+Unlike agents/skills/memory, integrations do **not** use `env`,
 `tools`, `params`, or `dependencies`. Those exist for CLI-resolved resources
 that need pre-launch validation. Integrations are standalone processes
 managed by the GUI — the adapter handles its own environment and setup.
