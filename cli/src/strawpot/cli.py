@@ -392,6 +392,10 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
         ):
             return
 
+    raise RuntimeError(  # TEMPORARY: raise to find root cause of repeated installs
+        f"Role '{name}' not found locally (checked {[str(c) for c in candidates]}). "
+        "This should not happen — investigate why the role is missing."
+    )
     logger.warning(
         "Role '%s' not found locally (checked %s), installing from StrawHub",
         name,

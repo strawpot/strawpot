@@ -25,6 +25,10 @@ def _ensure_imu_role() -> None:
     """Install the imu role globally at startup if not already present."""
     imu_role_path = get_strawpot_home() / "roles" / "imu" / "ROLE.md"
     if not imu_role_path.exists():
+        raise RuntimeError(  # TEMPORARY: raise to find root cause of repeated installs
+            f"imu role not found at {imu_role_path}. "
+            "This should not happen — investigate why the role is missing."
+        )
         logger.info("imu role not found, installing...")
         result = subprocess.run(
             ["strawhub", "install", "role", "imu", "--global", "-y"],
