@@ -116,17 +116,18 @@ def _strawpot_meta(fm: dict) -> dict:
     return strawpot
 
 
-def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
+def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool, bool]:
     """Parse ROLE.md frontmatter to extract direct skill and role dep slugs.
 
     Returns:
-        (skill_slugs, role_slugs, wildcard_roles) — slug strings with version
-        specifiers stripped. ``wildcard_roles`` is True if ``"*"`` appears in
-        the role dependencies, meaning "depend on all available roles."
+        (skill_slugs, role_slugs, wildcard_skills, wildcard_roles) — slug
+        strings with version specifiers stripped. ``wildcard_skills`` /
+        ``wildcard_roles`` is True if ``"*"`` appears in the respective
+        dependency list, meaning "depend on all available skills/roles."
     """
     role_md = Path(role_path) / "ROLE.md"
     if not role_md.exists():
-        return [], [], False
+        return [], [], False, False
     text = role_md.read_text(encoding="utf-8")
     parsed = parse_frontmatter(text)
     fm = parsed.get("frontmatter", {})
@@ -134,14 +135,15 @@ def _parse_role_deps(role_path: str) -> tuple[list[str], list[str], bool]:
         _strawpot_meta(fm).get("dependencies", {})
     )
     if not isinstance(deps, dict):
-        return [], [], False
+        return [], [], False, False
 
     skill_specs = deps.get("skills", [])
     role_specs = deps.get("roles", [])
     skill_slugs = [spec.split()[0] for spec in skill_specs if spec.split()[0] != "*"]
     role_slugs = [spec.split()[0] for spec in role_specs if spec.split()[0] != "*"]
+    wildcard_skills = any(spec.strip() == "*" for spec in skill_specs)
     wildcard_roles = any(spec.strip() == "*" for spec in role_specs)
-    return skill_slugs, role_slugs, wildcard_roles
+    return skill_slugs, role_slugs, wildcard_skills, wildcard_roles
 
 
 def _parse_skill_deps(skill_path: str) -> list[str]:
@@ -219,22 +221,25 @@ def _get_default_agent(role_path: str) -> str | None:
 
 
 def discover_global_skills(
-    resolved: dict,
+    role_path: str,
+    exclude_slugs: set[str] | None = None,
 ) -> list[tuple[str, str, str]]:
-    """Discover globally installed skills not already in resolved dependencies.
+    """Discover globally installed skills not already in the exclude set.
 
     Scans ``~/.strawpot/skills/`` for installed skill directories.
-    Skips skills whose slug already appears in the resolved dependency list.
+    Skips skills whose slug appears in *exclude_slugs* (typically the
+    role's first-order skill dependencies).
     Respects the ``inherit_global_skills`` flag in ROLE.md.
 
     Args:
-        resolved: Resolved role dict from strawhub.resolver.resolve().
+        role_path: Path to the role's package directory (contains ROLE.md).
+        exclude_slugs: Slugs to skip (e.g. first-order skill deps).
 
     Returns:
         List of (slug, description, path) tuples for global skills.
         Empty list if the role opts out or no global skills are found.
     """
-    if not _check_inherit_global_skills(resolved["path"]):
+    if not _check_inherit_global_skills(role_path):
         return []
 
     skills_dir = get_strawpot_home() / "skills"
@@ -243,11 +248,7 @@ def discover_global_skills(
 
     from strawhub.version_spec import parse_dir_name
 
-    resolved_slugs = {
-        dep["slug"]
-        for dep in resolved.get("dependencies", [])
-        if dep["kind"] == "skill"
-    }
+    skip = exclude_slugs or set()
 
     global_skills: list[tuple[str, str, str]] = []
     for entry in sorted(skills_dir.iterdir()):
@@ -258,13 +259,135 @@ def discover_global_skills(
             continue
         parsed = parse_dir_name(entry.name)
         slug = parsed[0] if parsed else entry.name
-        if slug in resolved_slugs:
+        if slug in skip:
             continue
         validate_frontmatter_slug(str(entry), slug, "skill")
         desc = read_skill_description(str(entry))
         global_skills.append((slug, desc, str(entry)))
 
     return global_skills
+
+
+def build_skill_descriptions(
+    resolved: dict,
+    global_skills: list[tuple[str, str, str]] | None = None,
+    working_dir: str | None = None,
+) -> list[tuple[str, str]]:
+    """Build the combined (slug, description) list for ``build_prompt``.
+
+    Extracts first-order skill dependencies from the role's frontmatter,
+    looks up their paths in the resolved dependency tree to read descriptions,
+    then appends global skills. If the role declares ``skills: ["*"]``,
+    all available skills (project-local + global) are included.
+
+    Args:
+        resolved: Resolved role dict from strawhub.resolver.resolve().
+        global_skills: Optional list of (slug, description, path) tuples
+            from :func:`discover_global_skills`.  Expected to already
+            exclude first-order skill dependencies (handled by passing
+            ``exclude_slugs`` to :func:`discover_global_skills`).
+        working_dir: Working directory for discovering project-local skills
+            when wildcard is used.
+
+    Returns:
+        List of (slug, description) tuples suitable for ``build_prompt(skills=...)``.
+    """
+    first_order_slugs, _, wildcard_skills, _ = _parse_role_deps(resolved["path"])
+
+    if wildcard_skills:
+        # Include all available skills (project-local + global)
+        seen: set[str] = set()
+        skills: list[tuple[str, str]] = []
+        for slug, path in _discover_all_skills(working_dir):
+            if slug not in seen:
+                seen.add(slug)
+                desc = read_skill_description(path)
+                if desc:
+                    skills.append((slug, desc))
+        # Built-ins may already be discovered; _append_builtins deduplicates
+        _append_builtins(skills, working_dir)
+        return skills
+
+    # Build a lookup from slug to path using the resolved dependency tree
+    dep_paths = {
+        dep["slug"]: dep["path"]
+        for dep in resolved.get("dependencies", [])
+        if dep["kind"] == "skill"
+    }
+
+    skills = []
+    for slug in first_order_slugs:
+        skill_path = dep_paths.get(slug)
+        if skill_path is None:
+            continue
+        desc = read_skill_description(skill_path)
+        if desc:
+            skills.append((slug, desc))
+
+    if global_skills:
+        for slug, desc, _path in global_skills:
+            skills.append((slug, desc))
+
+    # Always include built-in skills
+    _append_builtins(skills, working_dir)
+
+    return skills
+
+
+_BUILTIN_SKILLS = ("denden", "strawpot-session-recap")
+
+
+def _append_builtins(
+    skills: list[tuple[str, str]], working_dir: str | None,
+) -> None:
+    """Append built-in skill descriptions if not already present."""
+    existing = {slug for slug, _ in skills}
+    for slug in _BUILTIN_SKILLS:
+        if slug in existing:
+            continue
+        path = _find_skill(slug, working_dir)
+        if path is None:
+            continue
+        desc = read_skill_description(str(path))
+        if desc:
+            skills.append((slug, desc))
+
+
+def _discover_all_skills(working_dir: str | None = None) -> list[tuple[str, str]]:
+    """Discover all installed skills, checking project-local first then global.
+
+    Project-local skills take precedence over global ones with the same slug.
+
+    Returns:
+        List of (slug, path) tuples for each installed skill.
+    """
+    from strawhub.version_spec import parse_dir_name
+
+    seen: set[str] = set()
+    skills: list[tuple[str, str]] = []
+
+    dirs_to_scan: list[Path] = []
+    if working_dir:
+        local_skills = Path(working_dir) / ".strawpot" / "skills"
+        if local_skills.is_dir():
+            dirs_to_scan.append(local_skills)
+    global_skills_dir = get_strawpot_home() / "skills"
+    if global_skills_dir.is_dir():
+        dirs_to_scan.append(global_skills_dir)
+
+    for skills_dir in dirs_to_scan:
+        for entry in sorted(skills_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            skill_md = entry / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            parsed = parse_dir_name(entry.name)
+            slug = parsed[0] if parsed else entry.name
+            if slug not in seen:
+                seen.add(slug)
+                skills.append((slug, str(entry)))
+    return skills
 
 
 def _discover_all_roles(working_dir: str | None = None) -> list[tuple[str, str]]:
@@ -354,7 +477,7 @@ def collect_skill_env(
             return
         visited_roles.add(role_slug)
 
-        skill_slugs, child_role_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, child_role_slugs, _, _ = _parse_role_deps(role_path)
         skill_deps = _collect_transitive_skills(skill_slugs, all_deps)
         for dep in skill_deps:
             for var, meta in _parse_skill_env(dep["path"]).items():
@@ -539,7 +662,7 @@ def stage_role(
     shutil.copy2(src_role_md, dst_role_md)
 
     # Parse direct dependencies from frontmatter
-    direct_skill_slugs, direct_role_slugs, wildcard_roles = _parse_role_deps(
+    direct_skill_slugs, direct_role_slugs, _, wildcard_roles = _parse_role_deps(
         resolved["path"]
     )
 
@@ -803,8 +926,11 @@ def handle_delegate(
     # 2. Resolve role + skills
     resolved = resolve_role(request.role_slug, kind="role")
 
-    # 2b. Discover global skills
-    global_skills = discover_global_skills(resolved)
+    # 2b. Discover global skills (exclude first-order skill deps)
+    first_order_skills, _, _, _ = _parse_role_deps(resolved["path"])
+    global_skills = discover_global_skills(
+        resolved["path"], exclude_slugs=set(first_order_skills),
+    )
 
     # 2c. Validate skill env requirements (non-interactive)
     skill_env = collect_skill_env(resolved, global_skills=global_skills or None)
@@ -847,7 +973,7 @@ def handle_delegate(
 
     # 3. Build delegatable roles for the sub-agent
     #    Candidates come from the role's own declared role dependencies.
-    _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
+    _, role_dep_slugs, _, wildcard = _parse_role_deps(resolved["path"])
     if wildcard:
         role_dep_slugs = [slug for slug, _ in _discover_all_roles(working_dir)]
     delegatable = _build_delegatable_roles(
@@ -856,11 +982,15 @@ def handle_delegate(
     )
 
     # 4. Build prompt
+    skill_descs = build_skill_descriptions(
+        resolved, global_skills=global_skills or None, working_dir=working_dir,
+    )
     role_prompt = build_prompt(
-        resolved,
+        resolved["slug"],
+        resolved["path"],
+        skills=skill_descs or None,
         delegatable_roles=delegatable or None,
         requester_role=request.parent_role,
-        global_skills=[(s, d) for s, d, _ in global_skills] or None,
     )
 
     # 5. Stage role (session-level, idempotent)

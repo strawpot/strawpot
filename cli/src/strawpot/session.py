@@ -35,6 +35,7 @@ from strawpot.delegation import (
     _discover_all_roles,
     _format_memory_prompt,
     _parse_role_deps,
+    build_skill_descriptions,
     create_agent_workspace,
     discover_global_skills,
     handle_delegate,
@@ -389,10 +390,14 @@ class Session:
             resolved = self._resolve_role(
                 self.config.orchestrator_role, kind="role"
             )
-            global_skills = discover_global_skills(resolved)
+            first_order_skills, role_dep_slugs, _, wildcard = _parse_role_deps(
+                resolved["path"]
+            )
+            global_skills = discover_global_skills(
+                resolved["path"], exclude_slugs=set(first_order_skills),
+            )
 
             # Build delegatable roles so the orchestrator prompt lists them
-            _, role_dep_slugs, wildcard = _parse_role_deps(resolved["path"])
             if wildcard:
                 role_dep_slugs = [slug for slug, _ in _discover_all_roles(working_dir)]
             delegatable = _build_delegatable_roles(
@@ -401,10 +406,15 @@ class Session:
                 self._resolve_role_dirs,
             )
 
+            skill_descs = build_skill_descriptions(
+                resolved, global_skills=global_skills or None,
+                working_dir=working_dir,
+            )
             role_prompt = build_prompt(
-                resolved,
+                resolved["slug"],
+                resolved["path"],
+                skills=skill_descs or None,
                 delegatable_roles=delegatable or None,
-                global_skills=[(s, d) for s, d, _ in global_skills] or None,
                 custom_prompt=self.system_prompt or None,
             )
             self._orchestrator_role_prompt = role_prompt

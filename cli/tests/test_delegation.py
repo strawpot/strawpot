@@ -258,7 +258,7 @@ class TestParseRoleDeps:
     def test_no_deps(self, tmp_path):
         """Role without deps returns empty lists."""
         role_path = _write_role(str(tmp_path), "basic")
-        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == []
         assert role_slugs == []
 
@@ -267,7 +267,7 @@ class TestParseRoleDeps:
         role_path = _write_role(
             str(tmp_path), "impl", skill_deps=["git-workflow", "testing"]
         )
-        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["git-workflow", "testing"]
         assert role_slugs == []
 
@@ -277,7 +277,7 @@ class TestParseRoleDeps:
             str(tmp_path), "orchestrator",
             role_deps=["reviewer", "implementer"],
         )
-        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == []
         assert role_slugs == ["reviewer", "implementer"]
 
@@ -288,7 +288,7 @@ class TestParseRoleDeps:
             skill_deps=["testing"],
             role_deps=["reviewer"],
         )
-        skill_slugs, role_slugs, _ = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["testing"]
         assert role_slugs == ["reviewer"]
 
@@ -297,14 +297,14 @@ class TestParseRoleDeps:
         role_path = _write_role(
             str(tmp_path), "impl", skill_deps=["git-workflow ==1.0.0"]
         )
-        skill_slugs, _, _ = _parse_role_deps(role_path)
+        skill_slugs, _, _, _ = _parse_role_deps(role_path)
         assert skill_slugs == ["git-workflow"]
 
     def test_no_role_md(self, tmp_path):
         """Missing ROLE.md returns empty lists."""
         d = str(tmp_path / "roles" / "missing")
         os.makedirs(d, exist_ok=True)
-        skill_slugs, role_slugs, _ = _parse_role_deps(d)
+        skill_slugs, role_slugs, _, _ = _parse_role_deps(d)
         assert skill_slugs == []
         assert role_slugs == []
 
@@ -313,7 +313,7 @@ class TestParseRoleDeps:
         role_path = _write_role(
             str(tmp_path), "orchestrator", role_deps=["*"],
         )
-        skill_slugs, role_slugs, wildcard_roles = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, wildcard_roles = _parse_role_deps(role_path)
         assert skill_slugs == []
         assert role_slugs == []
         assert wildcard_roles is True
@@ -324,7 +324,7 @@ class TestParseRoleDeps:
             str(tmp_path), "orchestrator",
             role_deps=["reviewer", "*"],
         )
-        skill_slugs, role_slugs, wildcard_roles = _parse_role_deps(role_path)
+        skill_slugs, role_slugs, _, wildcard_roles = _parse_role_deps(role_path)
         assert role_slugs == ["reviewer"]
         assert wildcard_roles is True
 
@@ -334,7 +334,7 @@ class TestParseRoleDeps:
             str(tmp_path), "orchestrator",
             role_deps=["reviewer"],
         )
-        _, _, wildcard_roles = _parse_role_deps(role_path)
+        _, _, _, wildcard_roles = _parse_role_deps(role_path)
         assert wildcard_roles is False
 
 
@@ -1543,10 +1543,10 @@ class TestIntegration:
         runtime.spawn.assert_called_once()
         kw = runtime.spawn.call_args.kwargs
 
-        # Prompt includes skill + role
-        assert "## Skill: testing" in kw["role_prompt"]
+        # Prompt includes skill listing + role body
+        assert "## Skills" in kw["role_prompt"]
+        assert "**testing**" in kw["role_prompt"]
         assert "## Role: implementer" in kw["role_prompt"]
-        assert "Write tests." in kw["role_prompt"]
         assert "You implement features." in kw["role_prompt"]
 
         # Agent workspace created
@@ -1829,7 +1829,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        assert discover_global_skills(resolved) == []
+        assert discover_global_skills(role_path) == []
 
     def test_discovers_global_skills(self, tmp_path, monkeypatch):
         """Finds skills in ~/.strawpot/skills/."""
@@ -1844,13 +1844,13 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        result = discover_global_skills(resolved)
+        result = discover_global_skills(role_path)
         assert len(result) == 1
         assert result[0][0] == "linter"
         assert result[0][1] == "Checks code quality"
 
-    def test_skips_already_resolved(self, tmp_path, monkeypatch):
-        """Skills already in resolved deps are skipped."""
+    def test_skips_excluded_slugs(self, tmp_path, monkeypatch):
+        """Skills in exclude_slugs are skipped."""
         global_dir = str(tmp_path / "global")
         monkeypatch.setenv("STRAWPOT_HOME", global_dir)
         _write_global_skill(global_dir, "linter", "1.0.0")
@@ -1858,16 +1858,8 @@ class TestDiscoverGlobalSkills:
 
         role_path = _write_role(str(tmp_path), "worker",
                                inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local",
-            "dependencies": [
-                {"slug": "linter", "kind": "skill", "version": "1.0.0",
-                 "path": "/some/path", "source": "local"},
-            ],
-        }
 
-        result = discover_global_skills(resolved)
+        result = discover_global_skills(role_path, exclude_slugs={"linter"})
         assert len(result) == 1
         assert result[0][0] == "formatter"
 
@@ -1887,7 +1879,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        result = discover_global_skills(resolved)
+        result = discover_global_skills(role_path)
         assert len(result) == 1
         assert result[0][0] == "denden"
         assert result[0][1] == "Agent comms"
@@ -1902,7 +1894,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        assert discover_global_skills(resolved) == []
+        assert discover_global_skills(role_path) == []
 
     def test_respects_inherit_false(self, tmp_path, monkeypatch):
         """Returns empty when role opts out via inherit_global_skills: false."""
@@ -1918,7 +1910,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        assert discover_global_skills(resolved) == []
+        assert discover_global_skills(role_path) == []
 
     def test_invalid_dir_names_skipped(self, tmp_path, monkeypatch):
         """Directories not matching slug-version pattern are skipped."""
@@ -1941,7 +1933,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        result = discover_global_skills(resolved)
+        result = discover_global_skills(role_path)
         assert len(result) == 1
         assert result[0][0] == "linter"
 
@@ -1959,7 +1951,7 @@ class TestDiscoverGlobalSkills:
             "path": role_path, "source": "local", "dependencies": [],
         }
 
-        result = discover_global_skills(resolved)
+        result = discover_global_skills(role_path)
         assert len(result) == 2
         assert result[0][0] == "a-tool"
         assert result[1][0] == "z-tool"
@@ -1983,7 +1975,7 @@ class TestDiscoverGlobalSkills:
         }
 
         with pytest.raises(ValueError, match="does not match"):
-            discover_global_skills(resolved)
+            discover_global_skills(role_path)
 
 
 # ---------------------------------------------------------------------------
