@@ -106,10 +106,6 @@ The resolved directory structure looks like:
     └── implementer/ROLE.md
 ```
 
-## Global Skills
-
-Roles can opt in to loading global skills from `~/.strawpot/skills/` by setting `metadata.strawpot.inherit_global_skills: true` in their ROLE.md frontmatter. By default, global skills are **not** inherited. When enabled, they are included alongside the role's declared dependencies, giving agents access to user-wide skill configurations.
-
 ## Memory Context
 
 If a memory provider is configured, StrawPot retrieves context before spawning each sub-agent:

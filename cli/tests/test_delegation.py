@@ -14,7 +14,6 @@ from strawpot.delegation import (
     PolicyDenied,
     _agent_status,
     _build_delegatable_roles,
-    _check_inherit_global_skills,
     _check_policy,
     _collect_transitive_skills,
     _find_skill,
@@ -29,7 +28,6 @@ from strawpot.delegation import (
     _validate_output,
     collect_skill_env,
     create_agent_workspace,
-    discover_global_skills,
     handle_delegate,
     stage_role,
     validate_skill_env,
@@ -93,7 +91,7 @@ def _write_skill(base, slug, body="Skill body.", deps=None, env=None):
 
 def _write_role(base, slug, body="Role body.", description="test",
                 skill_deps=None, role_deps=None,
-                inherit_global_skills=None, default_agent=None):
+                default_agent=None):
     """Write a ROLE.md file.
 
     Args:
@@ -103,14 +101,12 @@ def _write_role(base, slug, body="Role body.", description="test",
         description: Role description.
         skill_deps: Optional list of skill dependency slugs.
         role_deps: Optional list of role dependency slugs.
-        inherit_global_skills: Optional bool for metadata.strawpot.inherit_global_skills.
         default_agent: Optional string for metadata.strawpot.default_agent.
     """
     d = os.path.join(base, "roles", slug)
     os.makedirs(d, exist_ok=True)
     has_strawpot = (
         skill_deps or role_deps
-        or inherit_global_skills is not None
         or default_agent is not None
     )
     if has_strawpot:
@@ -125,9 +121,6 @@ def _write_role(base, slug, body="Role body.", description="test",
                 strawpot_lines.append("      roles:")
                 for r in role_deps:
                     strawpot_lines.append(f'        - "{r}"')
-        if inherit_global_skills is not None:
-            val = "true" if inherit_global_skills else "false"
-            strawpot_lines.append(f"    inherit_global_skills: {val}")
         if default_agent is not None:
             strawpot_lines.append(f"    default_agent: {default_agent}")
         strawpot_yaml = "\n".join(strawpot_lines)
@@ -1772,301 +1765,21 @@ class TestMemoryIntegration:
 
 
 # ---------------------------------------------------------------------------
-# _check_inherit_global_skills
+# stage_role builtins
 # ---------------------------------------------------------------------------
 
 
-class TestCheckInheritGlobalSkills:
-    def test_default_false(self, tmp_path):
-        """Default is False when field is not present."""
-        d = _write_role(str(tmp_path), "basic")
-        assert _check_inherit_global_skills(d) is False
-
-    def test_explicit_true(self, tmp_path):
-        """Explicit True is respected."""
-        d = _write_role(str(tmp_path), "yes", inherit_global_skills=True)
-        assert _check_inherit_global_skills(d) is True
-
-    def test_explicit_false(self, tmp_path):
-        """Explicit False opts out of global skills."""
-        d = _write_role(str(tmp_path), "no", inherit_global_skills=False)
-        assert _check_inherit_global_skills(d) is False
-
-    def test_missing_role_md(self, tmp_path):
-        """Missing ROLE.md defaults to False."""
-        d = str(tmp_path / "roles" / "missing")
-        os.makedirs(d, exist_ok=True)
-        assert _check_inherit_global_skills(d) is False
-
-
-# ---------------------------------------------------------------------------
-# discover_global_skills
-# ---------------------------------------------------------------------------
-
-
-def _write_global_skill(global_dir, slug, version, description="test"):
-    """Create a global skill directory with SKILL.md."""
-    d = os.path.join(global_dir, "skills", f"{slug}-{version}")
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, "SKILL.md"), "w") as f:
-        f.write(
-            f"---\nname: {slug}\ndescription: {description}\n---\n"
-            f"# {slug}\n\nSkill body.\n"
-        )
-    return d
-
-
-class TestDiscoverGlobalSkills:
-    def test_default_no_global_skills(self, tmp_path, monkeypatch):
-        """Roles without inherit_global_skills do not get global skills."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        _write_global_skill(global_dir, "linter", "1.0.0")
-
-        role_path = _write_role(str(tmp_path), "worker")
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        assert discover_global_skills(role_path) == []
-
-    def test_discovers_global_skills(self, tmp_path, monkeypatch):
-        """Finds skills in ~/.strawpot/skills/."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        _write_global_skill(global_dir, "linter", "1.0.0", "Checks code quality")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        result = discover_global_skills(role_path)
-        assert len(result) == 1
-        assert result[0][0] == "linter"
-        assert result[0][1] == "Checks code quality"
-
-    def test_skips_excluded_slugs(self, tmp_path, monkeypatch):
-        """Skills in exclude_slugs are skipped."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        _write_global_skill(global_dir, "linter", "1.0.0")
-        _write_global_skill(global_dir, "formatter", "1.0.0", "Formats code")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-
-        result = discover_global_skills(role_path, exclude_slugs={"linter"})
-        assert len(result) == 1
-        assert result[0][0] == "formatter"
-
-    def test_discovers_unversioned_skills(self, tmp_path, monkeypatch):
-        """Finds skills installed as plain slug directories (no version)."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        d = os.path.join(global_dir, "skills", "denden")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "SKILL.md"), "w") as f:
-            f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        result = discover_global_skills(role_path)
-        assert len(result) == 1
-        assert result[0][0] == "denden"
-        assert result[0][1] == "Agent comms"
-
-    def test_empty_when_no_dir(self, tmp_path, monkeypatch):
-        """Returns empty when ~/.strawpot/skills/ doesn't exist."""
-        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        assert discover_global_skills(role_path) == []
-
-    def test_respects_inherit_false(self, tmp_path, monkeypatch):
-        """Returns empty when role opts out via inherit_global_skills: false."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        _write_global_skill(global_dir, "linter", "1.0.0")
-
-        role_path = _write_role(
-            str(tmp_path), "minimal", inherit_global_skills=False
-        )
-        resolved = {
-            "slug": "minimal", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        assert discover_global_skills(role_path) == []
-
-    def test_invalid_dir_names_skipped(self, tmp_path, monkeypatch):
-        """Directories not matching slug-version pattern are skipped."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        skills_dir = os.path.join(global_dir, "skills")
-        os.makedirs(skills_dir, exist_ok=True)
-
-        # Invalid names
-        os.makedirs(os.path.join(skills_dir, "not_a_skill"))
-        os.makedirs(os.path.join(skills_dir, ".DS_Store"))
-
-        # Valid name
-        _write_global_skill(global_dir, "linter", "1.0.0", "Checks code")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        result = discover_global_skills(role_path)
-        assert len(result) == 1
-        assert result[0][0] == "linter"
-
-    def test_multiple_skills_sorted(self, tmp_path, monkeypatch):
-        """Multiple global skills are returned in sorted order."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        _write_global_skill(global_dir, "z-tool", "1.0.0", "Z tool")
-        _write_global_skill(global_dir, "a-tool", "1.0.0", "A tool")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        result = discover_global_skills(role_path)
-        assert len(result) == 2
-        assert result[0][0] == "a-tool"
-        assert result[1][0] == "z-tool"
-
-    def test_raises_on_name_mismatch(self, tmp_path, monkeypatch):
-        """Raises ValueError when global skill name != directory slug."""
-        global_dir = str(tmp_path / "global")
-        monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-
-        # Create global skill with mismatched name
-        d = os.path.join(global_dir, "skills", "linter-1.0.0")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "SKILL.md"), "w") as f:
-            f.write("---\nname: wrong-name\ndescription: test\n---\nBody.\n")
-
-        role_path = _write_role(str(tmp_path), "worker",
-                               inherit_global_skills=True)
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        with pytest.raises(ValueError, match="does not match"):
-            discover_global_skills(role_path)
-
-
-# ---------------------------------------------------------------------------
-# stage_role with global_skills
-# ---------------------------------------------------------------------------
-
-
-class TestStageRoleGlobalSkills:
-    def test_stages_global_skills(self, tmp_path):
-        """Global skills are symlinked into skills_dir."""
-        registry = str(tmp_path / "registry")
-        role_path = _write_role(registry, "worker")
-        global_skill = _write_global_skill(
-            str(tmp_path / "global"), "linter", "1.0.0"
-        )
-
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        session = str(tmp_path / "session")
-        skills_dir, _ = stage_role(
-            session, resolved,
-            global_skills=[("linter", "Checks code", global_skill)],
-        )
-
-        staged = os.path.join(skills_dir, "linter")
-        assert os.path.islink(staged)
-        assert os.readlink(staged) == global_skill
-
-    def test_global_skill_skipped_if_dep_exists(self, tmp_path):
-        """Dependency-resolved skill takes precedence over global."""
-        registry = str(tmp_path / "registry")
-        dep_skill = _write_skill(registry, "linter")
-        role_path = _write_role(registry, "worker", skill_deps=["linter"])
-        global_skill = _write_global_skill(
-            str(tmp_path / "global"), "linter", "1.0.0"
-        )
-
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local",
-            "dependencies": [
-                {"slug": "linter", "kind": "skill", "version": "1.0.0",
-                 "path": dep_skill, "source": "local"},
-            ],
-        }
-
-        session = str(tmp_path / "session")
-        skills_dir, _ = stage_role(
-            session, resolved,
-            global_skills=[("linter", "Checks code", global_skill)],
-        )
-
-        staged = os.path.join(skills_dir, "linter")
-        assert os.path.islink(staged)
-        # Should point to dep path, not global
-        assert os.readlink(staged) == dep_skill
-
-    def test_no_global_skills_when_none(self, tmp_path, monkeypatch):
-        """Passing None for global_skills stages only denden."""
-        registry = str(tmp_path / "registry")
-        role_path = _write_role(registry, "worker")
-        # Ensure no denden in STRAWPOT_HOME so nothing is staged
-        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "empty_home"))
-
-        resolved = {
-            "slug": "worker", "kind": "role", "version": "1.0.0",
-            "path": role_path, "source": "local", "dependencies": [],
-        }
-
-        session = str(tmp_path / "session")
-        skills_dir, _ = stage_role(session, resolved, global_skills=None)
-
-        # skills dir exists but is empty (no denden installed globally)
-        assert os.path.isdir(skills_dir)
-        assert os.listdir(skills_dir) == []
-
+class TestStageRoleBuiltins:
     def test_denden_always_staged(self, tmp_path, monkeypatch):
-        """Denden is staged even without inherit_global_skills or explicit dep."""
+        """Denden is staged even without explicit dep."""
         global_dir = str(tmp_path / "global")
         monkeypatch.setenv("STRAWPOT_HOME", global_dir)
-        # Install denden globally (plain slug dir, no version)
         denden_path = os.path.join(global_dir, "skills", "denden")
         os.makedirs(denden_path, exist_ok=True)
         with open(os.path.join(denden_path, "SKILL.md"), "w") as f:
             f.write("---\nname: denden\ndescription: Agent comms\n---\n# denden\n")
 
         registry = str(tmp_path / "registry")
-        # Role does NOT set inherit_global_skills
         role_path = _write_role(registry, "worker")
 
         resolved = {
@@ -2075,7 +1788,7 @@ class TestStageRoleGlobalSkills:
         }
 
         session = str(tmp_path / "session")
-        skills_dir, _ = stage_role(session, resolved, global_skills=None)
+        skills_dir, _ = stage_role(session, resolved)
 
         staged = os.path.join(skills_dir, "denden")
         assert os.path.islink(staged)
@@ -2104,7 +1817,7 @@ class TestStageRoleGlobalSkills:
         }
 
         session = str(tmp_path / "session")
-        skills_dir, _ = stage_role(session, resolved, global_skills=None)
+        skills_dir, _ = stage_role(session, resolved)
 
         staged = os.path.join(skills_dir, "denden")
         assert os.path.islink(staged)
@@ -2230,7 +1943,7 @@ class TestEnsureStagedLocal:
 
         session = str(tmp_path / "session")
         skills_dir, _ = stage_role(
-            session, resolved, global_skills=None, working_dir=str(project),
+            session, resolved, working_dir=str(project),
         )
 
         staged = os.path.join(skills_dir, "denden")
@@ -2258,7 +1971,7 @@ class TestEnsureStagedLocal:
 
         session = str(tmp_path / "session")
         skills_dir, _ = stage_role(
-            session, resolved, global_skills=None, working_dir=str(project),
+            session, resolved, working_dir=str(project),
         )
 
         staged = os.path.join(skills_dir, "denden")
@@ -2289,7 +2002,7 @@ class TestEnsureStagedLocal:
 
         session = str(tmp_path / "session")
         _, roles_dir = stage_role(
-            session, resolved, global_skills=None, working_dir=str(project),
+            session, resolved, working_dir=str(project),
         )
 
         staged_slugs = os.listdir(roles_dir)
@@ -2352,22 +2065,12 @@ class TestMergeEnvEntry:
 
 
 class TestCollectSkillEnv:
-    def test_merges_deps_and_global(self, tmp_path):
+    def test_collects_from_deps(self, tmp_path):
         base = str(tmp_path)
 
-        # Skill dep with env
         skill_a = _write_skill(
             base, "skill-a",
             env={"TOKEN_A": {"required": True, "description": "A"}},
-        )
-
-        # Global skill with env
-        global_dir = tmp_path / "global_skills" / "skill-g"
-        global_dir.mkdir(parents=True)
-        (global_dir / "SKILL.md").write_text(
-            "---\nname: skill-g\ndescription: global\n"
-            "metadata:\n  strawpot:\n    env:\n      TOKEN_G:\n"
-            "        required: true\n        description: G\n---\nbody\n"
         )
 
         role_path = _write_role(base, "my-role", skill_deps=["skill-a"])
@@ -2380,12 +2083,8 @@ class TestCollectSkillEnv:
             ],
         }
 
-        result = collect_skill_env(
-            resolved,
-            global_skills=[("skill-g", "global", str(global_dir))],
-        )
+        result = collect_skill_env(resolved)
         assert "TOKEN_A" in result
-        assert "TOKEN_G" in result
 
     def test_required_wins_across_skills(self, tmp_path):
         base = str(tmp_path)
@@ -2561,28 +2260,6 @@ class TestCollectSkillEnv:
         assert result["TOKEN_A"]["_source_skill"] == "skill-a"
         assert result["TOKEN_B"]["_source_skill"] == "skill-b"
 
-    def test_source_skill_global(self, tmp_path):
-        """Global skills also get _source_skill tracked."""
-        base = str(tmp_path)
-        global_dir = tmp_path / "global_skills" / "skill-g"
-        global_dir.mkdir(parents=True)
-        (global_dir / "SKILL.md").write_text(
-            "---\nname: skill-g\ndescription: global\n"
-            "metadata:\n  strawpot:\n    env:\n      TOKEN_G:\n"
-            "        required: true\n        description: G\n---\nbody\n"
-        )
-        role_path = _write_role(base, "my-role")
-        resolved = {
-            "slug": "my-role",
-            "kind": "role",
-            "path": role_path,
-            "dependencies": [],
-        }
-        result = collect_skill_env(
-            resolved,
-            global_skills=[("skill-g", "global", str(global_dir))],
-        )
-        assert result["TOKEN_G"]["_source_skill"] == "skill-g"
 
 
 # ---------------------------------------------------------------------------
@@ -2881,15 +2558,6 @@ class TestCollectSavedEnv:
         }
         saved = _collect_saved_env(config, resolved)
         assert saved == {"TOKEN": "abc"}
-
-    def test_collects_from_global_skills(self):
-        config = StrawPotConfig(skills={"global_skill": {"KEY": "val"}})
-        resolved = {"slug": "my-role", "path": "/tmp", "dependencies": []}
-        saved = _collect_saved_env(
-            config, resolved,
-            global_skills=[("global_skill", "desc", "/tmp/g")],
-        )
-        assert saved == {"KEY": "val"}
 
     def test_ignores_unknown_slugs(self):
         config = StrawPotConfig(skills={})

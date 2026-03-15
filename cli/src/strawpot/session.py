@@ -37,7 +37,6 @@ from strawpot.delegation import (
     _parse_role_deps,
     build_skill_descriptions,
     create_agent_workspace,
-    discover_global_skills,
     handle_delegate,
     stage_role,
 )
@@ -390,11 +389,8 @@ class Session:
             resolved = self._resolve_role(
                 self.config.orchestrator_role, kind="role"
             )
-            first_order_skills, role_dep_slugs, _, wildcard = _parse_role_deps(
+            _, role_dep_slugs, _, wildcard = _parse_role_deps(
                 resolved["path"]
-            )
-            global_skills = discover_global_skills(
-                resolved["path"], exclude_slugs=set(first_order_skills),
             )
 
             # Build delegatable roles so the orchestrator prompt lists them
@@ -407,8 +403,7 @@ class Session:
             )
 
             skill_descs = build_skill_descriptions(
-                resolved, global_skills=global_skills or None,
-                working_dir=working_dir,
+                resolved, working_dir=working_dir,
             )
             role_prompt = build_prompt(
                 resolved["slug"],
@@ -423,7 +418,6 @@ class Session:
             agent_id = f"agent_{uuid.uuid4().hex[:12]}"
             skills_dir, roles_dir = stage_role(
                 self._session_dir(), resolved,
-                global_skills=global_skills or None,
                 working_dir=working_dir,
             )
             workspace = create_agent_workspace(

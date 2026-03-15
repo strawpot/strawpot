@@ -65,11 +65,9 @@ def build_prompt(
         role_slug: The role's slug identifier.
         role_path: Path to the role's package directory (contains ROLE.md).
         skills: optional list of (slug, description) tuples for all
-            skills available to this agent (first-order dependencies,
-            global skills, and built-ins combined).  Listed by description
-            only — the agent reads ``skills/<slug>/SKILL.md`` for details.
-            Callers are responsible for filtering to first-order deps and
-            excluding duplicates between dependency and global skills.
+            skills available to this agent (first-order dependencies
+            and built-ins combined).  Listed by description only — the
+            agent reads ``skills/<slug>/SKILL.md`` for details.
         delegatable_roles: optional list of (slug, description) tuples.
             When provided, a Delegation section is appended listing
             roles the agent can delegate to via denden.
