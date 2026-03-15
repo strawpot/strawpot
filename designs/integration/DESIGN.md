@@ -495,7 +495,7 @@ app.run_polling()
 
 ## Implementation Status
 
-**Phase 1 — Local integrations (no Strawhub)**
+**Phase 1 — Integration infrastructure**
 
 Manually place adapters in `~/.strawpot/integrations/<name>/`. GUI
 discovers, configures, and manages them. Full feature without registry.
@@ -511,10 +511,28 @@ discovers, configures, and manages them. Full feature without registry.
 | 7 | Reference adapter: Slack (Socket Mode + Events API) | Planned |
 | 8 | Reference adapter: Discord (bot + gateway websocket) | Planned |
 
-**Phase 2 — Strawhub distribution (when demand warrants)**
+**Phase 2 — imu project conversation support**
+
+Currently imu only has its own conversations (`project_id=0`). When a
+chat user says "fix the login bug in myapp", imu delegates a sub-agent
+but the work lives in imu's conversation space — disconnected from the
+project's conversation history.
+
+Phase 2 gives imu the ability to create or continue conversations in
+specific projects. This means:
+- Delegated work shows up in the project's conversation history
+- Context from prior project conversations is available to the agent
+- Users can see and continue the same conversation from chat or GUI
 
 | # | Item | Status |
 |---|------|--------|
-| 9 | Strawhub registry: `integrations` + `integrationVersions` tables | Planned |
-| 10 | Strawhub CLI: `strawhub publish/install integration` support | Planned |
-| 11 | Frontend: browse + install from Strawhub in Integrations page | Planned |
+| 9 | imu tool: `conversation.submit(project, task)` — submit task to a project conversation | Planned |
+| 10 | GUI: cross-link between imu conversation and project conversation it spawned | Planned |
+
+**Phase 3 — Strawhub distribution (when demand warrants)**
+
+| # | Item | Status |
+|---|------|--------|
+| 11 | Strawhub registry: `integrations` + `integrationVersions` tables | Planned |
+| 12 | Strawhub CLI: `strawhub publish/install integration` support | Planned |
+| 13 | Frontend: browse + install from Strawhub in Integrations page | Planned |
