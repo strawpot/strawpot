@@ -92,6 +92,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
         from strawpot_gui.db import mark_orphaned_sessions_stopped
         mark_orphaned_sessions_stopped(db_path)
         sync_sessions(db_path)
+        from strawpot_gui.routers.integrations import (
+            auto_start_integrations,
+            mark_orphaned_integrations_stopped,
+        )
+        mark_orphaned_integrations_stopped(db_path)
+        auto_start_integrations(db_path)
         from strawpot_gui.routers.sessions import launch_session_subprocess
         scheduler = Scheduler(db_path, launch_fn=launch_session_subprocess)
         app.state.scheduler = scheduler

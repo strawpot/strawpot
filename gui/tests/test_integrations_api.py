@@ -1,5 +1,7 @@
 """Tests for integration management API endpoints."""
 
+from unittest.mock import patch
+
 import pytest
 
 
@@ -152,3 +154,138 @@ class TestIntegrationConfig:
         resp = client.get("/api/integrations")
         item = resp.json()[0]
         assert item["config_values"]["bot_token"] == "123:ABC"
+
+
+class TestIntegrationLifecycle:
+    def test_start_integration(self, client, home):
+        """Start spawns a subprocess and updates DB state."""
+        integration_dir = _create_integration(home, "telegram")
+        # Create a dummy adapter script that sleeps
+        (integration_dir / "adapter.py").write_text(
+            "import time; time.sleep(60)"
+        )
+        client.put(
+            "/api/integrations/telegram/config",
+            json={"config_values": {"bot_token": "123:ABC"}},
+        )
+        resp = client.post("/api/integrations/telegram/start")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "running"
+        assert data["pid"] is not None
+
+        # Clean up: stop the process
+        client.post("/api/integrations/telegram/stop")
+
+    def test_start_not_found(self, client, home):
+        resp = client.post("/api/integrations/nonexistent/start")
+        assert resp.status_code == 404
+
+    def test_start_no_entry_point(self, client, home):
+        """Integration with no entry_point returns 422."""
+        integration_dir = home / "integrations" / "broken"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: broken\ndescription: No entry point\n"
+            "metadata:\n  strawpot: {}\n---\nBody."
+        )
+        resp = client.post("/api/integrations/broken/start")
+        assert resp.status_code == 422
+
+    def test_start_already_running(self, client, home):
+        """Starting an already-running integration returns 409."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text(
+            "import time; time.sleep(60)"
+        )
+        client.post("/api/integrations/telegram/start")
+        resp = client.post("/api/integrations/telegram/start")
+        assert resp.status_code == 409
+
+        client.post("/api/integrations/telegram/stop")
+
+    def test_stop_integration(self, client, home):
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text(
+            "import time; time.sleep(60)"
+        )
+        client.post("/api/integrations/telegram/start")
+        resp = client.post("/api/integrations/telegram/stop")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "stopped"
+
+    def test_stop_not_running(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post("/api/integrations/telegram/stop")
+        assert resp.status_code == 409
+
+    def test_status_stopped(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.get("/api/integrations/telegram/status")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "stopped"
+
+    def test_status_running(self, client, home):
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text(
+            "import time; time.sleep(60)"
+        )
+        client.post("/api/integrations/telegram/start")
+        resp = client.get("/api/integrations/telegram/status")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+        assert resp.json()["pid"] is not None
+
+        client.post("/api/integrations/telegram/stop")
+
+    def test_status_detects_dead_process(self, client, home):
+        """Status endpoint detects dead process and marks as error."""
+        _create_integration(home, "telegram")
+        # Manually insert a DB row with a fake PID
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, status, pid) "
+                "VALUES (?, 'running', ?)",
+                ("telegram", 999999),
+            )
+        resp = client.get("/api/integrations/telegram/status")
+        assert resp.json()["status"] == "error"
+        assert "exited unexpectedly" in resp.json()["last_error"]
+
+    def test_start_writes_log_file(self, client, home):
+        """Adapter stdout/stderr goes to .log file."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text(
+            "print('hello from adapter')"
+        )
+        client.post("/api/integrations/telegram/start")
+        import time
+        time.sleep(0.5)  # let process finish
+        log_path = integration_dir / ".log"
+        assert log_path.exists()
+        assert "hello from adapter" in log_path.read_text()
+
+
+class TestOrphanedIntegrations:
+    def test_mark_orphaned_stopped(self, client, home):
+        """Orphaned integrations (dead PID) are marked stopped at startup."""
+        from strawpot_gui.db import get_db
+        from strawpot_gui.routers.integrations import mark_orphaned_integrations_stopped
+
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO integrations (name, status, pid) VALUES (?, 'running', ?)",
+                ("telegram", 999999),
+            )
+        _create_integration(home, "telegram")
+        mark_orphaned_integrations_stopped(db_path)
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status, pid FROM integrations WHERE name = ?",
+                ("telegram",),
+            ).fetchone()
+        assert row["status"] == "stopped"
+        assert row["pid"] is None

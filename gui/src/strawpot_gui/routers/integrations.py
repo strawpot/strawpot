@@ -1,13 +1,21 @@
-"""Integration management endpoints — list, detail, config CRUD."""
+"""Integration management endpoints — list, detail, config CRUD, lifecycle."""
 
+import logging
+import os
+import shlex
+import signal
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from strawpot.config import get_strawpot_home
 from strawpot.context import parse_frontmatter
 
 from strawpot_gui.db import get_db_conn
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -204,3 +212,273 @@ def delete_integration_config(name: str, conn=Depends(get_db_conn)):
     )
     conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle endpoints
+# ---------------------------------------------------------------------------
+
+
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, OSError):
+        return False
+
+
+def _build_env(name: str, config_values: dict, request: Request) -> dict:
+    """Build environment variables for the adapter subprocess."""
+    env = os.environ.copy()
+
+    # Add common PATH entries
+    home = Path.home()
+    extra_paths = [
+        str(home / ".local" / "bin"),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+    ]
+    existing = env.get("PATH", "")
+    env["PATH"] = ":".join(extra_paths) + ":" + existing
+
+    # Derive API URL from the running server
+    server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
+    server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
+    env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+
+    # Pass config values as STRAWPOT_ prefixed env vars
+    for key, value in config_values.items():
+        env_key = f"STRAWPOT_{key.upper()}"
+        if value is not None:
+            env[env_key] = str(value)
+
+    return env
+
+
+def _resolve_manifest(name: str) -> tuple[Path, dict]:
+    """Resolve integration directory and parsed manifest. Raises HTTPException(404)."""
+    home = get_strawpot_home()
+    integration_dir = home / "integrations" / name
+    manifest_path = integration_dir / MANIFEST
+    if not manifest_path.is_file():
+        raise HTTPException(404, f"Integration not found: {name}")
+    fm, _ = parse_integration_manifest(manifest_path)
+    return integration_dir, fm
+
+
+@router.post("/{name}/start")
+def start_integration(name: str, request: Request, conn=Depends(get_db_conn)):
+    """Start an integration adapter subprocess."""
+    integration_dir, fm = _resolve_manifest(name)
+    strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
+    entry_point = strawpot_meta.get("entry_point", "")
+    if not entry_point:
+        raise HTTPException(422, f"Integration '{name}' has no entry_point")
+
+    _ensure_db_row(conn, name)
+
+    # Check if already running
+    db_state = _get_db_state(conn, name)
+    if db_state and db_state["status"] == "running" and db_state["pid"]:
+        if _is_process_alive(db_state["pid"]):
+            raise HTTPException(409, f"Integration '{name}' is already running (pid {db_state['pid']})")
+        # PID stale — clean up below
+
+    config_values = _get_db_config(conn, name)
+    env = _build_env(name, config_values, request)
+
+    # Log file for adapter output
+    log_path = integration_dir / ".log"
+
+    try:
+        log_file = open(log_path, "a", encoding="utf-8")
+        cmd = shlex.split(entry_point)
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(integration_dir),
+            start_new_session=True,
+            stdout=log_file,
+            stderr=log_file,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    except OSError as exc:
+        conn.execute(
+            "UPDATE integrations SET status = 'error', last_error = ?, pid = NULL "
+            "WHERE name = ?",
+            (str(exc), name),
+        )
+        raise HTTPException(500, f"Failed to start integration: {exc}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE integrations SET status = 'running', pid = ?, last_error = NULL, "
+        "started_at = ? WHERE name = ?",
+        (proc.pid, now, name),
+    )
+    logger.info("Started integration '%s' (pid %d)", name, proc.pid)
+    return {"name": name, "status": "running", "pid": proc.pid}
+
+
+@router.post("/{name}/stop")
+def stop_integration(name: str, conn=Depends(get_db_conn)):
+    """Stop a running integration adapter by sending SIGTERM."""
+    _resolve_manifest(name)  # verify exists
+    _ensure_db_row(conn, name)
+
+    db_state = _get_db_state(conn, name)
+    if not db_state or db_state["status"] != "running" or not db_state["pid"]:
+        raise HTTPException(409, f"Integration '{name}' is not running")
+
+    pid = db_state["pid"]
+
+    if not _is_process_alive(pid):
+        conn.execute(
+            "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+            (name,),
+        )
+        return {"name": name, "status": "stopped"}
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass  # race: died between check and kill
+
+    conn.execute(
+        "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+        (name,),
+    )
+    logger.info("Stopped integration '%s' (pid %d)", name, pid)
+    return {"name": name, "status": "stopped"}
+
+
+@router.get("/{name}/status")
+def get_integration_status(name: str, conn=Depends(get_db_conn)):
+    """Check live status of an integration (process alive + optional health check)."""
+    _resolve_manifest(name)
+    db_state = _get_db_state(conn, name)
+    if not db_state:
+        return {"name": name, "status": "stopped", "pid": None}
+
+    pid = db_state["pid"]
+    if pid and not _is_process_alive(pid):
+        # Process died — update DB
+        conn.execute(
+            "UPDATE integrations SET status = 'error', "
+            "last_error = 'Process exited unexpectedly' WHERE name = ?",
+            (name,),
+        )
+        return {
+            "name": name,
+            "status": "error",
+            "pid": pid,
+            "last_error": "Process exited unexpectedly",
+        }
+
+    return {
+        "name": name,
+        "status": db_state["status"],
+        "pid": pid,
+        "last_error": db_state["last_error"],
+        "started_at": db_state["started_at"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auto-start support
+# ---------------------------------------------------------------------------
+
+
+def mark_orphaned_integrations_stopped(db_path: str) -> None:
+    """Mark integrations whose PID is dead as stopped. Called at startup."""
+    from strawpot_gui.db import get_db
+
+    with get_db(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name, pid FROM integrations WHERE status = 'running' AND pid IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            if not _is_process_alive(row["pid"]):
+                conn.execute(
+                    "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+                    (row["name"],),
+                )
+                logger.info(
+                    "Marked orphaned integration '%s' (pid %d) as stopped",
+                    row["name"], row["pid"],
+                )
+
+
+def auto_start_integrations(db_path: str) -> None:
+    """Start all integrations with auto_start enabled. Called during app lifespan."""
+    from strawpot_gui.db import get_db
+
+    home = get_strawpot_home()
+    manifests = scan_integrations(home)
+
+    for manifest in manifests:
+        if not manifest.get("auto_start"):
+            continue
+        name = manifest["name"]
+        entry_point = manifest.get("entry_point", "")
+        if not entry_point:
+            continue
+
+        integration_dir = Path(manifest["path"])
+        with get_db(db_path) as conn:
+            _ensure_db_row(conn, name)
+            db_state = _get_db_state(conn, name)
+            if db_state and db_state["status"] == "running" and db_state["pid"]:
+                if _is_process_alive(db_state["pid"]):
+                    continue  # already running
+
+            config_values = _get_db_config(conn, name)
+
+        # Build env without request context
+        env = os.environ.copy()
+        home_dir = Path.home()
+        extra_paths = [
+            str(home_dir / ".local" / "bin"),
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+        ]
+        env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
+        server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
+        server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
+        env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+        for key, value in config_values.items():
+            if value is not None:
+                env[f"STRAWPOT_{key.upper()}"] = str(value)
+
+        log_path = integration_dir / ".log"
+        try:
+            log_file = open(log_path, "a", encoding="utf-8")
+            cmd = shlex.split(entry_point)
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(integration_dir),
+                start_new_session=True,
+                stdout=log_file,
+                stderr=log_file,
+                stdin=subprocess.DEVNULL,
+                env=env,
+            )
+        except OSError as exc:
+            logger.warning("Failed to auto-start integration '%s': %s", name, exc)
+            with get_db(db_path) as conn:
+                conn.execute(
+                    "UPDATE integrations SET status = 'error', last_error = ? "
+                    "WHERE name = ?",
+                    (str(exc), name),
+                )
+            continue
+
+        now = datetime.now(timezone.utc).isoformat()
+        with get_db(db_path) as conn:
+            conn.execute(
+                "UPDATE integrations SET status = 'running', pid = ?, "
+                "last_error = NULL, started_at = ? WHERE name = ?",
+                (proc.pid, now, name),
+            )
+        logger.info("Auto-started integration '%s' (pid %d)", name, proc.pid)
