@@ -1682,14 +1682,11 @@ alive.
     after wait in the delegation flow
 20. `config.py` — add `memory` and `memory_config` fields
 
-### Phase 4 — Global Skills (complete)
+### Phase 4 — Global Skills (removed)
 
-21. `delegation.py` + `context.py` — discover global skills from
-    `~/.strawpot/skills/`, stage alongside dependency-resolved skills,
-    add "Available Skills" summary section to prompt (slug + description;
-    agents read `skills/<name>/SKILL.md` for full body). Respect
-    `metadata.strawpot.inherit_global_skills` in ROLE.md (default `false`)
-    to allow roles to opt in to global skills.
+21. ~~Global skill discovery via `inherit_global_skills`~~ — removed.
+    Built-in skill injection (`_append_builtins`) and wildcard
+    dependencies (`skills: ["*"]`) cover the same use cases.
 
 ### Phase 5 — Web GUI (complete)
 
@@ -1961,47 +1958,11 @@ Python package itself is auto-installed by StrawPot on first use when
 
 ---
 
-## Global Skills
+## ~~Global Skills~~ (removed)
 
-When delegating, strawpot discovers globally installed skills and makes them
-available to agents alongside dependency-resolved skills. This lets users
-install utility skills once (e.g. `strawpot install skill my-linter`) and
-have them available to all roles without explicit dependency declarations.
-
-### Discovery
-
-Scan `~/.strawpot/skills/` for installed skill directories using strawhub's
-`parse_dir_name()`. Only global-scope skills are discovered — project-local
-skills (`.strawpot/skills/`) are not included (those are already handled by
-the dependency resolver).
-
-### Staging
-
-During `stage_role()`, symlink each discovered global skill into the
-role's skills directory alongside dependency-resolved skills. If a global
-skill slug already exists (added by the dependency resolver), skip it —
-dependency-resolved versions take precedence.
-
-### Prompt — "Available Skills" Section
-
-`build_prompt()` adds an **Available Skills** summary section listing each
-global skill's slug and one-line description. This appears after the role
-body and before the Delegation section. Agents can read
-`skills/<name>/SKILL.md` for the full body when they need details.
-
-### Opt-In via `inherit_global_skills`
-
-Roles can opt in to receiving global skills by setting
-`metadata.strawpot.inherit_global_skills: true` in their ROLE.md
-frontmatter. When omitted, the default is `false` (global skills are
-not inherited). This keeps roles minimal by default while allowing
-roles that need broader capabilities to inherit all globally installed
-skills.
-
-### Denden Communication
-
-Already covered: the Delegation and Requester sections in `context.py`
-include denden communication instructions when delegatable roles are
-present. No additional changes needed.
-
+The `inherit_global_skills` opt-in mechanism has been removed. Built-in
+skill injection (`_append_builtins`) ensures `denden` and
+`strawpot-session-recap` are always available. Wildcard dependencies
+(`skills: ["*"]`) cover the "include everything" use case by scanning
+both project-local and global skill directories via `_discover_all_skills()`.
 

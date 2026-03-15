@@ -597,19 +597,13 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         from strawpot.delegation import (
             _collect_saved_env,
             _get_default_agent,
-            _parse_role_deps,
             collect_skill_env,
-            discover_global_skills,
             validate_skill_env,
         )
 
         resolved = _resolve(config.orchestrator_role, kind="role")
-        first_order_skills, _, _, _ = _parse_role_deps(resolved["path"])
-        global_skills = discover_global_skills(
-            resolved["path"], exclude_slugs=set(first_order_skills),
-        )
-        skill_env = collect_skill_env(resolved, global_skills=global_skills or None)
-        saved_env = _collect_saved_env(config, resolved, global_skills=global_skills or None)
+        skill_env = collect_skill_env(resolved)
+        saved_env = _collect_saved_env(config, resolved)
         skill_validation = validate_skill_env(skill_env, saved_env=saved_env)
 
         if skill_validation.missing_env:
