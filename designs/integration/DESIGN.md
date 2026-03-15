@@ -282,7 +282,7 @@ its own `(platform_id, thread_id) → conversation_id` mapping locally.
 | PUT | `/api/integrations/:name/config` | Save config values |
 | POST | `/api/integrations/:name/start` | Start the adapter process |
 | POST | `/api/integrations/:name/stop` | Stop the adapter process |
-| GET | `/api/integrations/:name/logs` | SSE: stream adapter log output |
+| WS | `/api/integrations/:name/logs/ws` | WebSocket: stream adapter log output |
 | POST | `/api/integrations/install` | Install from Strawhub |
 | DELETE | `/api/integrations/:name` | Stop + uninstall |
 
@@ -483,6 +483,51 @@ app.run_polling()
 
 ---
 
+## ask_user Handling for Chat-Originated Sessions
+
+When a chat adapter submits a task to imu, the resulting session may
+trigger an `ask_user` event — the agent needs human input to proceed.
+In the GUI this opens a prompt dialog, but chat-originated sessions have
+no GUI user watching. Three approaches, in order of complexity:
+
+### Option 1: Route ask_user back through chat (long-term goal)
+
+The adapter subscribes to the session WebSocket. When it receives an
+`ask_user` event, it forwards the question to the chat user and relays
+their reply back via a new API endpoint (e.g.,
+`POST /api/sessions/{run_id}/reply`). This gives the best UX — the user
+stays in their chat app for the full interaction.
+
+**Requires:** A reply API endpoint, adapter awareness of ask_user events,
+and per-platform UX for prompting the user (inline message + wait for
+reply).
+
+### Option 2: GUI-only prompt
+
+ask_user events appear only in the GUI. The chat user gets a message
+like "Action needed — check the StrawPot GUI to respond." Works but
+breaks the "stay in chat" experience.
+
+### Option 3: Disable ask_user for chat sessions (initial approach)
+
+Sessions launched from chat adapters run with `ask_user` disabled —
+agents must proceed without human input or fail gracefully. This is the
+simplest starting point and avoids building reply infrastructure before
+validating the chat workflow.
+
+**How:** The adapter passes a flag (e.g., `"interactive": false`) when
+submitting a task. The session launcher propagates this to the agent
+config, which suppresses ask_user tool availability.
+
+### Phased approach
+
+Start with **Option 3** — disable ask_user for chat-originated sessions.
+This unblocks the full chat integration flow without additional API work.
+Move to **Option 1** when chat usage matures and users need interactive
+workflows from chat.
+
+---
+
 ## Not Planned
 
 | Feature | Reason |
@@ -502,10 +547,10 @@ discovers, configures, and manages them. Full feature without registry.
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Database: `integrations` + `integration_config` tables | Planned |
-| 2 | Backend: integration CRUD API (list, detail, config, uninstall) | Planned |
-| 3 | Backend: lifecycle management (start, stop, status, health check) | Planned |
-| 4 | Backend: adapter log streaming (SSE) | Planned |
+| 1 | Database: `integrations` + `integration_config` tables | Done |
+| 2 | Backend: integration CRUD API (list, detail, config, uninstall) | Done |
+| 3 | Backend: lifecycle management (start, stop, status, auto-start) | Done |
+| 4 | Backend: adapter log streaming (WebSocket) | Done |
 | 5 | Frontend: Integrations page (list, configure, start/stop, logs) | Planned |
 | 6 | Reference adapter: Telegram (bot token + long polling) | Planned |
 | 7 | Reference adapter: Slack (Socket Mode + Events API) | Planned |
