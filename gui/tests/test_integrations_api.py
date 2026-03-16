@@ -335,7 +335,30 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("update", "integration", "telegram")
+            mock.assert_called_once_with("update", "-y", "integration", "telegram")
+
+    def test_update_restarts_running_integration(self, client, home):
+        """Update stops a running integration and restarts it after success."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+
+        # Start the integration
+        client.post("/api/integrations/telegram/start")
+        status = client.get("/api/integrations/telegram/status").json()
+        assert status["status"] == "running"
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Updated", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/update",
+                json={"name": "telegram"},
+            )
+            assert resp.status_code == 200
+
+        # Should be running again after update
+        status = client.get("/api/integrations/telegram/status").json()
+        assert status["status"] == "running"
+        assert status["pid"] is not None
 
     def test_update_missing_name(self, client, home):
         resp = client.post("/api/integrations/update", json={"name": ""})
