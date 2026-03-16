@@ -233,6 +233,31 @@ def install_integration(data: dict = Body(...)):
     return run_strawhub("install", "integration", "-y", name)
 
 
+@router.post("/update")
+def update_integration(data: dict = Body(...)):
+    """Update an integration to its latest version via strawhub."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "'name' is required")
+    return run_strawhub("update", "integration", name)
+
+
+@router.post("/reinstall")
+def reinstall_integration(data: dict = Body(...)):
+    """Reinstall an integration (re-download current version) via strawhub."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "'name' is required")
+    home = get_strawpot_home()
+    version_file = home / "integrations" / name / ".version"
+    if not version_file.is_file():
+        raise HTTPException(404, f"Integration not found or has no version: {name}")
+    version = version_file.read_text(encoding="utf-8").strip()
+    if not version:
+        raise HTTPException(404, f"Empty version file for integration: {name}")
+    return run_strawhub("install", "integration", "-y", name, "--version", version, "--force")
+
+
 @router.delete("/{name}")
 def uninstall_integration(name: str, conn=Depends(get_db_conn)):
     """Stop (if running) and uninstall an integration."""
