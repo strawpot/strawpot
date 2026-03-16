@@ -1160,4 +1160,4 @@ list and header.
 | 35 | Backend: scheduler sets `source="scheduler"` when creating conversations | N/A (scheduler uses existing conversations) |
 | 36 | Frontend: platform icon badges in conversation list | Done |
 | 37 | Frontend: source badge in conversation header | Done |
-| 38 | Reference adapters: set `X-Strawpot-Source` header from `STRAWPOT_INTEGRATION_NAME` | Not started |
+| 38 | Backend: `/via/{name}` URL prefix middleware auto-injects source | Done |

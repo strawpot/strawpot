@@ -118,6 +118,28 @@ def create_app(
     app.state.db_path = db_path
     app.state.event_bus = event_bus
 
+    # Integration source middleware: rewrite /via/{name}/api/... → /api/...
+    # and inject X-Strawpot-Source header so conversations are auto-tagged.
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    class IntegrationSourceMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            path = request.scope["path"]
+            if path.startswith("/via/"):
+                # /via/{name}/api/... → extract name, rewrite path
+                parts = path.split("/", 3)  # ['', 'via', name, 'rest...']
+                if len(parts) >= 3:
+                    source_name = parts[2]
+                    remainder = "/" + parts[3] if len(parts) > 3 else "/"
+                    request.scope["path"] = remainder
+                    # Inject header for conversation create endpoints
+                    raw_headers = list(request.scope["headers"])
+                    raw_headers.append((b"x-strawpot-source", source_name.encode()))
+                    request.scope["headers"] = raw_headers
+            return await call_next(request)
+
+    app.add_middleware(IntegrationSourceMiddleware)
+
     # CORS — only enabled when developing the frontend with Vite dev server
     if os.environ.get("STRAWPOT_GUI_DEV"):
         from fastapi.middleware.cors import CORSMiddleware

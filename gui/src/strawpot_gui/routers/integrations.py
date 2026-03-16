@@ -468,8 +468,9 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
     existing = env.get("PATH", "")
     env["PATH"] = ":".join(extra_paths) + ":" + existing
 
-    # Derive API URL from the running server's actual request URL
-    env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/")
+    # Derive API URL from the running server's actual request URL.
+    # Include /via/{name} prefix so the middleware auto-tags conversations.
+    env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/") + f"/via/{name}"
     env["STRAWPOT_INTEGRATION_NAME"] = name
 
     # Persistent data directory for adapter state (survives reinstalls)
@@ -686,7 +687,7 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
             "/opt/homebrew/bin",
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
-        env["STRAWPOT_API_URL"] = f"http://{host}:{port}"
+        env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/{name}"
         env["STRAWPOT_INTEGRATION_NAME"] = name
         data_dir = home / "data" / "integrations" / name
         data_dir.mkdir(parents=True, exist_ok=True)
