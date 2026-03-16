@@ -568,7 +568,7 @@ discovers, configures, and manages them. Full feature without registry.
 | 5 | Frontend: Integrations page (list, configure, start/stop, logs) | Done |
 | 6 | Reference adapter: Telegram (bot token + long polling) | Done |
 | 7 | Reference adapter: Slack (Socket Mode + Events API) | Done |
-| 8 | Reference adapter: Discord (bot + gateway websocket) | Planned |
+| 8 | Reference adapter: Discord (bot + gateway websocket) | Done |
 
 **Phase 2 — imu project conversation support**
 
@@ -585,7 +585,7 @@ specific projects. This means:
 
 | # | Item | Status |
 |---|------|--------|
-| 9 | imu tool: `conversation.submit(project, task)` — submit task to a project conversation | Planned |
+| 9 | imu tool: `conversation.submit(project, task)` — submit task to a project conversation | Done |
 | 10 | GUI: cross-link between imu conversation and project conversation it spawned | Planned |
 
 **Phase 3 — Strawhub distribution (when demand warrants)**
