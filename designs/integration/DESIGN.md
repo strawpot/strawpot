@@ -592,6 +592,6 @@ specific projects. This means:
 
 | # | Item | Status |
 |---|------|--------|
-| 11 | Strawhub registry: `integrations` + `integrationVersions` tables | Planned |
-| 12 | Strawhub CLI: `strawhub publish/install integration` support | Planned |
+| 11 | Strawhub registry: `integrations` + `integrationVersions` tables | Done |
+| 12 | Strawhub CLI: `strawhub publish/install integration` support | Done |
 | 13 | Frontend: browse + install from Strawhub in Integrations page | Planned |
