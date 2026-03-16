@@ -275,3 +275,35 @@ export interface ScheduleRunList {
   page: number;
   per_page: number;
 }
+
+export interface Integration {
+  name: string;
+  description: string;
+  entry_point: string;
+  auto_start: boolean;
+  config_schema: Record<string, IntegrationConfigField>;
+  status: "stopped" | "running" | "error";
+  pid: number | null;
+  last_error: string | null;
+  started_at: string | null;
+  config_values: Record<string, string>;
+  path: string;
+}
+
+export interface IntegrationDetail extends Integration {
+  body: string;
+  frontmatter: Record<string, unknown>;
+  health_check: { endpoint: string; interval_seconds: number } | null;
+}
+
+export interface IntegrationConfigField {
+  type: string;
+  required?: boolean;
+  description?: string;
+  default?: string;
+}
+
+export interface IntegrationConfig {
+  config_schema: Record<string, IntegrationConfigField>;
+  config_values: Record<string, string>;
+}
