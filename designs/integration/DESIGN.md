@@ -829,85 +829,93 @@ async def notification_poller(client: httpx.AsyncClient, name: str):
 `send_to_platform()` is adapter-specific — for Telegram it calls the
 Bot API `sendMessage`, for Slack it posts via `chat.postMessage`, etc.
 
-### Skill: `notify-integration`
+### Notification Skills (`notify-<platform>`)
 
-A generic skill that teaches agents how to send notifications through
-any integration. Used in scheduled task prompts or any session where
-the agent should report results to a chat platform.
+Standalone skills that send messages directly to chat platforms via
+their native APIs. Each skill is independent — no dependency on
+StrawPot's integration system or adapters. The agent calls the
+platform API directly using a bundled helper script.
 
-**Skill prompt (conceptual):**
+**Why per-platform skills (not one generic skill):**
 
+| Approach | Problem |
+|----------|---------|
+| Generic `notify-integration` via StrawPot API | Agent needs to know integration name, chat_id format, and depends on adapter being installed and running |
+| One skill that discovers integrations at runtime | Extra API call dependency, still needs platform-specific knowledge |
+| **Per-platform skills** | Self-contained, platform-specific knowledge baked in, no dependencies |
+
+**Available skills:**
+
+| Skill | Platform API | Config (env params) |
+|-------|-------------|-------------------|
+| `notify-telegram` | Telegram Bot API `sendMessage` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_DEFAULT_CHAT_ID` (optional) |
+| `notify-slack` | Slack `chat.postMessage` | `SLACK_BOT_TOKEN`, `SLACK_DEFAULT_CHANNEL` (optional) |
+| `notify-discord` | Discord webhook | `DISCORD_WEBHOOK_URL`, `DISCORD_DEFAULT_CHANNEL_ID` (optional) |
+
+Each skill bundles a helper script (e.g., `scripts/send.py`) that
+handles auth and message chunking for platform limits. The agent
+calls the script — no need to construct auth headers manually.
+
+**Example `notify-telegram/SKILL.md` frontmatter:**
+
+```yaml
+---
+name: notify-telegram
+description: "Send messages to Telegram chats. Use when a task needs to post results, alerts, or reports to a Telegram group or DM."
+metadata:
+  strawpot:
+    env:
+      TELEGRAM_BOT_TOKEN:
+        required: true
+        description: Telegram bot API token from @BotFather
+      TELEGRAM_DEFAULT_CHAT_ID:
+        required: false
+        description: Default chat ID to send to (numeric, e.g., -100123456789 for groups)
+---
 ```
-When you need to notify a chat integration, call:
 
-  curl -X POST "$STRAWPOT_API_URL/api/integrations/{name}/notify" \
-    -H "Content-Type: application/json" \
-    -d '{"chat_id": "{target}", "message": "{your message}"}'
+**Relationship to integration notifications API (#14-#18):**
 
-Parameters:
-- name: integration slug (e.g., "telegram", "slack", "discord")
-- chat_id: platform-specific destination ID
-- message: plain text message to send
+The notify/poll/ack API endpoints remain for internal use — cron jobs,
+adapter-to-adapter push, and any workflow that needs to queue a
+notification for an adapter to pick up. The per-platform skills bypass
+this entirely and go direct to the platform API.
 
-Example — notify a Telegram group:
-  POST /api/integrations/telegram/notify
-  {"chat_id": "-100123456789", "message": "Build passed ✓"}
-```
+| Path | Use case |
+|------|----------|
+| Skills (`notify-telegram`, etc.) | Agent sends message directly to platform — simple, no dependencies |
+| Notify API (`POST /api/integrations/:name/notify`) | Internal push to adapter — queued delivery, ACK tracking, works when agent can't reach platform directly |
+
+Both mechanisms coexist. Skills are the primary agent-facing path.
+The notify API is infrastructure for adapters and internal workflows.
 
 ### Scheduler Behavior
 
-When the scheduler fires a schedule, it branches on `conversation_id`:
+When the scheduler fires a schedule, it checks `conversation_id`:
 
-```python
-def _fire(self, conn, schedule, now):
-    role = schedule["role"]
-    # Enforce imu role for project_id=0
-    if schedule["project_id"] == 0:
-        role = "imu"
+- **With `conversation_id`:** Builds conversation context from prior
+  turns and passes `conversation_id` to `launch_session_subprocess`.
+  The session runs within that conversation, and the adapter's
+  conversation poller picks up the result.
+- **Without `conversation_id`:** Standalone session (original behavior).
 
-    if schedule["conversation_id"]:
-        # Submit to conversation — gets context, adapter sees it
-        POST /api/conversations/{conv_id}/tasks
-            body: {"task": schedule["task"]}
-    else:
-        # Standalone session (current behavior)
-        launch_session_subprocess(
-            conn, schedule["project_id"], schedule["task"],
-            role=role, schedule_id=schedule["id"],
-        )
-```
-
-**Role enforcement:** Schedules targeting `project_id=0` (imu) always
-use `role=imu`, regardless of the schedule's `role` field. This
-prevents accidentally running a non-imu role in imu's project space.
-The conversations router already applies the same rule:
-`role = body.role or ("imu" if project_id == 0 else None)`.
+**Role enforcement:** Schedules targeting `project_id=0` (imu) get
+`role=imu` unless an explicit role is set. This matches the
+conversations router: `role = schedule["role"] or ("imu" if project_id == 0 else None)`.
 
 ### Schedule → Chat Flow
 
 **Example: daily report posted to a Telegram group**
 
 1. User creates a schedule in the GUI:
-   - Task: `Summarize today's sessions and notify telegram chat -100123456789`
-   - Skills: `notify-integration`
+   - Task: `Summarize today's sessions and post to Telegram`
+   - Skills: `notify-telegram`
    - Cron: `0 9 * * *` (every day at 9am)
-   - Conversation: (optionally target an existing conversation)
 
-2. Scheduler fires → launches session with the task prompt
+2. Scheduler fires → launches session with the task + skill
 
-3. Agent runs the task, generates a summary, then uses the
-   `notify-integration` skill to call:
-   ```
-   POST /api/integrations/telegram/notify
-   {"chat_id": "-100123456789", "message": "Daily report: ..."}
-   ```
-
-4. GUI stores notification in `integration_notifications`
-
-5. Telegram adapter polls, picks up the notification, calls Telegram
-   Bot API `sendMessage` to post in the group
-
-6. Adapter ACKs the notification
+3. Agent runs the task, generates a summary, then uses
+   `notify-telegram` to send directly via the Telegram Bot API
 
 **Example: scheduled task continues an existing chat thread**
 
@@ -1114,7 +1122,9 @@ posting results back to Telegram groups, Slack channels, etc.
 | 18 | Backend: `POST /api/integrations/:name/notifications/:id/ack` endpoint | Done |
 | 19 | Scheduler: submit to conversation API when `conversation_id` is set | Done |
 | 20 | Scheduler: enforce `role=imu` for `project_id=0` schedules | Done |
-| 21 | Skill: `notify-integration` for agent use | Not started |
+| 21a | Skill: `notify-telegram` — direct Telegram Bot API messaging | Done |
+| 21b | Skill: `notify-slack` — direct Slack API messaging | Done |
+| 21c | Skill: `notify-discord` — direct Discord webhook messaging | Done |
 | 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Done |
 | 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Not started |
 | 24 | Frontend: schedule UI — conversation targeting + skill selection | Not started |
