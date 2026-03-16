@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, CalendarClock, History, BotMessageSquare, Users, Wrench, Bot, Brain, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, CalendarClock, History, BotMessageSquare, Users, Wrench, Bot, Brain, Plug, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject, useProjects } from "@/hooks/queries/use-projects";
 import { useImuConversations, useProjectConversations } from "@/hooks/queries/use-conversations";
@@ -46,6 +46,7 @@ const resourceItems = [
   { to: "/resources/skills", label: "Skills", icon: Wrench },
   { to: "/resources/agents", label: "Agents", icon: Bot },
   { to: "/resources/memories", label: "Memory", icon: Brain },
+  { to: "/integrations", label: "Integrations", icon: Plug },
 ];
 
 interface ConvItem {
@@ -435,6 +436,10 @@ function useBreadcrumbs() {
 
   if (segments[0] === "settings") {
     crumbs.push({ label: "Settings" });
+  }
+
+  if (segments[0] === "integrations") {
+    crumbs.push({ label: "Integrations" });
   }
 
   if (segments[0] === "resources") {

@@ -60,7 +60,7 @@ def scan_integrations(base_dir: Path) -> list[dict]:
             "description": fm.get("description", ""),
             "entry_point": strawpot_meta.get("entry_point", ""),
             "auto_start": strawpot_meta.get("auto_start", False),
-            "config_schema": strawpot_meta.get("config", {}),
+            "env_schema": strawpot_meta.get("env", {}),
             "health_check": strawpot_meta.get("health_check"),
             "path": str(entry),
         })
@@ -148,7 +148,7 @@ def get_integration(name: str, conn=Depends(get_db_conn)):
         "description": fm.get("description", ""),
         "entry_point": strawpot_meta.get("entry_point", ""),
         "auto_start": strawpot_meta.get("auto_start", False),
-        "config_schema": strawpot_meta.get("config", {}),
+        "env_schema": strawpot_meta.get("env", {}),
         "health_check": strawpot_meta.get("health_check"),
         "path": str(integration_dir),
         "body": body,
@@ -169,11 +169,11 @@ def get_integration_config(name: str, conn=Depends(get_db_conn)):
         raise HTTPException(404, f"Integration not found: {name}")
 
     fm, _ = parse_integration_manifest(manifest_path)
-    config_schema = fm.get("metadata", {}).get("strawpot", {}).get("config", {})
+    env_schema = fm.get("metadata", {}).get("strawpot", {}).get("env", {})
     config_values = _get_db_config(conn, name)
 
     return {
-        "config_schema": config_schema,
+        "env_schema": env_schema,
         "config_values": config_values,
     }
 
@@ -251,11 +251,10 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
     server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
     env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
 
-    # Pass config values as STRAWPOT_ prefixed env vars
+    # Pass saved env values directly (keys are already env var names)
     for key, value in config_values.items():
-        env_key = f"STRAWPOT_{key.upper()}"
         if value is not None:
-            env[env_key] = str(value)
+            env[key] = str(value)
 
     return env
 
@@ -453,7 +452,7 @@ def auto_start_integrations(db_path: str) -> None:
         env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
         for key, value in config_values.items():
             if value is not None:
-                env[f"STRAWPOT_{key.upper()}"] = str(value)
+                env[key] = str(value)
 
         log_path = integration_dir / ".log"
         try:

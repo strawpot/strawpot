@@ -42,4 +42,9 @@ export const queryKeys = {
     all: (projectId: number) => ["conversations", projectId] as const,
     detail: (id: number) => ["conversations", "detail", id] as const,
   },
+  integrations: {
+    all: ["integrations"] as const,
+    detail: (name: string) => ["integrations", name] as const,
+    config: (name: string) => ["integrations", name, "config"] as const,
+  },
 };

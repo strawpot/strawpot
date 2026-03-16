@@ -136,11 +136,16 @@ metadata:
     install:
       macos: pip install -r requirements.txt
       linux: pip install -r requirements.txt
-    config:
-      bot_token:
-        type: secret
+    env:
+      STRAWPOT_BOT_TOKEN:
         required: true
         description: Telegram bot API token from @BotFather
+      STRAWPOT_API_URL:
+        required: false
+        description: StrawPot API URL (default http://127.0.0.1:52532, auto-set by GUI)
+      POLL_INTERVAL:
+        required: false
+        description: Session poll interval in seconds when WebSocket fails (default 3)
     health_check:
       endpoint: http://localhost:${port}/health
       interval_seconds: 30
@@ -167,15 +172,19 @@ replied back in the chat.
 | `description` | Yes | One-line summary |
 | `metadata.strawpot.entry_point` | Yes | Command to launch the adapter (e.g., `python adapter.py`) |
 | `metadata.strawpot.auto_start` | No | Start on GUI launch (default: `false`) |
-| `metadata.strawpot.config` | No | Schema for user-facing config (type, required, secret, default, description). Values are passed as env vars at start. |
+| `metadata.strawpot.env` | No | Required environment variables (same convention as skills/agents). Keys are env var names, fields: `required`, `description`. Values saved in GUI and passed at start. |
 | `metadata.strawpot.health_check` | No | Endpoint + interval for liveness checks |
 
 | `metadata.strawpot.install` | No | OS-keyed install commands (same convention as agents). Run by `strawhub install` in Phase 3. |
 
-Unlike agents/skills/memory, integrations do **not** use `env`,
-`tools`, `params`, or `dependencies`. Those exist for CLI-resolved resources
+Unlike agents/skills/memory, integrations do **not** use `tools`,
+`params`, or `dependencies`. Those exist for CLI-resolved resources
 that need pre-launch validation. Integrations are standalone processes
 managed by the GUI — the adapter handles its own environment and setup.
+The `env` field follows the same convention as skills/agents: keys are
+env var names, values declare `required` and `description`. The GUI
+saves values and passes them as environment variables when starting
+the adapter process.
 If a `requirements.txt` exists, the GUI runs `pip install -r requirements.txt`
 automatically on install.
 
@@ -241,7 +250,7 @@ UX plus lifecycle controls unique to integrations.
 | Action | How it works |
 |--------|-------------|
 | **Install** | `strawhub install <slug>` to `~/.strawpot/integrations/<name>/`. Same as other resource types. |
-| **Configure** | Config UI reads `config` schema from manifest frontmatter. Values saved to `gui.db` `integration_config` table. Secrets stored with masked inputs. |
+| **Configure** | Config UI reads `env` schema from manifest frontmatter. Values saved to `gui.db` `integration_config` table. All values use password inputs (typically tokens/secrets). |
 | **Start** | GUI spawns `entry_point` as a subprocess. Passes config as env vars (`STRAWPOT_API_URL`, `STRAWPOT_BOT_TOKEN`, etc.). PID tracked in `gui.db`. |
 | **Stop** | GUI sends SIGTERM to subprocess PID. Waits up to 5s, then SIGKILL. |
 | **Status** | Process alive check (PID exists) + optional health check endpoint. Status: `running`, `stopped`, `error`. |
@@ -328,7 +337,7 @@ Adapter authors need to implement:
    - Relays messages to/from the imu conversation API
    - Maintains a local mapping of platform threads to conversation IDs
    - Exposes a health check endpoint (optional)
-2. An `INTEGRATION.md` manifest with config schema
+2. An `INTEGRATION.md` manifest with `env` schema
 3. A `requirements.txt` for dependencies
 
 The adapter has no dependency on StrawPot internals — only the public
@@ -556,9 +565,9 @@ discovers, configures, and manages them. Full feature without registry.
 | 2 | Backend: integration CRUD API (list, detail, config, uninstall) | Done |
 | 3 | Backend: lifecycle management (start, stop, status, auto-start) | Done |
 | 4 | Backend: adapter log streaming (WebSocket) | Done |
-| 5 | Frontend: Integrations page (list, configure, start/stop, logs) | Planned |
-| 6 | Reference adapter: Telegram (bot token + long polling) | Planned |
-| 7 | Reference adapter: Slack (Socket Mode + Events API) | Planned |
+| 5 | Frontend: Integrations page (list, configure, start/stop, logs) | Done |
+| 6 | Reference adapter: Telegram (bot token + long polling) | Done |
+| 7 | Reference adapter: Slack (Socket Mode + Events API) | Done |
 | 8 | Reference adapter: Discord (bot + gateway websocket) | Planned |
 
 **Phase 2 — imu project conversation support**

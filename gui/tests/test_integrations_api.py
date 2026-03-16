@@ -22,9 +22,8 @@ def _create_integration(home, name, extra_meta=""):
         f"---\nname: {name}\ndescription: A test {name} adapter\n"
         f"metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
         f"    auto_start: false\n"
-        f"    config:\n"
-        f"      bot_token:\n"
-        f"        type: secret\n"
+        f"    env:\n"
+        f"      STRAWPOT_BOT_TOKEN:\n"
         f"        required: true\n"
         f"        description: Bot API token\n"
         f"{extra_meta}"
@@ -94,35 +93,35 @@ class TestIntegrationConfig:
         resp = client.get("/api/integrations/telegram/config")
         assert resp.status_code == 200
         data = resp.json()
-        assert "bot_token" in data["config_schema"]
-        assert data["config_schema"]["bot_token"]["type"] == "secret"
+        assert "STRAWPOT_BOT_TOKEN" in data["env_schema"]
+        assert data["env_schema"]["STRAWPOT_BOT_TOKEN"]["required"] is True
         assert data["config_values"] == {}
 
     def test_put_config(self, client, home):
         _create_integration(home, "telegram")
         resp = client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "123:ABC"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "123:ABC"}},
         )
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
 
         # Verify saved
         resp = client.get("/api/integrations/telegram/config")
-        assert resp.json()["config_values"]["bot_token"] == "123:ABC"
+        assert resp.json()["config_values"]["STRAWPOT_BOT_TOKEN"] == "123:ABC"
 
     def test_put_config_updates_existing(self, client, home):
         _create_integration(home, "telegram")
         client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "old"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "old"}},
         )
         client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "new"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "new"}},
         )
         resp = client.get("/api/integrations/telegram/config")
-        assert resp.json()["config_values"]["bot_token"] == "new"
+        assert resp.json()["config_values"]["STRAWPOT_BOT_TOKEN"] == "new"
 
     def test_put_config_not_found(self, client, home):
         resp = client.put(
@@ -135,7 +134,7 @@ class TestIntegrationConfig:
         _create_integration(home, "telegram")
         client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "123:ABC"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "123:ABC"}},
         )
         resp = client.delete("/api/integrations/telegram/config")
         assert resp.status_code == 200
@@ -149,11 +148,11 @@ class TestIntegrationConfig:
         _create_integration(home, "telegram")
         client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "123:ABC"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "123:ABC"}},
         )
         resp = client.get("/api/integrations")
         item = resp.json()[0]
-        assert item["config_values"]["bot_token"] == "123:ABC"
+        assert item["config_values"]["STRAWPOT_BOT_TOKEN"] == "123:ABC"
 
 
 class TestIntegrationLifecycle:
@@ -166,7 +165,7 @@ class TestIntegrationLifecycle:
         )
         client.put(
             "/api/integrations/telegram/config",
-            json={"config_values": {"bot_token": "123:ABC"}},
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "123:ABC"}},
         )
         resp = client.post("/api/integrations/telegram/start")
         assert resp.status_code == 200

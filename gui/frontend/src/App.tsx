@@ -11,6 +11,7 @@ import ScheduledTasks from "./pages/ScheduledTasks";
 import OneTimeSchedules from "./pages/OneTimeSchedules";
 import ScheduleRuns from "./pages/ScheduleRuns";
 import Settings from "./pages/Settings";
+import Integrations from "./pages/Integrations";
 import NotFound from "./pages/NotFound";
 import { useGlobalWS } from "./hooks/useGlobalWS";
 
@@ -42,6 +43,7 @@ export default function App() {
           path="resources/:resourceType"
           element={<ResourceBrowser />}
         />
+        <Route path="integrations" element={<Integrations />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Route>
