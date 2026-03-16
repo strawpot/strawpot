@@ -218,6 +218,51 @@ DELETE /api/v1/memories/:slug
 
 ---
 
+## Integrations
+
+### List Integrations
+
+```
+GET /api/v1/integrations?limit=50&sort=updated
+```
+
+Same parameters and response shape as List Skills.
+
+### Get Integration Detail
+
+```
+GET /api/v1/integrations/:slug
+```
+
+### Get Integration File
+
+```
+GET /api/v1/integrations/:slug/file?path=INTEGRATION.md
+```
+
+Returns raw file content. `path` defaults to `INTEGRATION.md`.
+
+### Publish Integration
+
+<Note>Requires authentication.</Note>
+
+```
+POST /api/v1/integrations
+Content-Type: multipart/form-data
+```
+
+Same payload as Publish Skill (without `dependencies`). Must include an `INTEGRATION.md` file. Max 100 files, 10 MB each, 50 MB total. Supports binary files.
+
+### Delete Integration
+
+<Note>Requires admin role.</Note>
+
+```
+DELETE /api/v1/integrations/:slug
+```
+
+---
+
 ## Search
 
 ```
@@ -227,7 +272,7 @@ GET /api/v1/search?q=review&kind=all&limit=20
 | Param | Description | Default |
 |-------|-------------|---------|
 | `q` | Search query (required) | — |
-| `kind` | `all`, `skill`, `role`, `agent`, or `memory` | `all` |
+| `kind` | `all`, `skill`, `role`, `agent`, `memory`, or `integration` | `all` |
 | `limit` | Results (1-100) | `20` |
 
 Uses hybrid ranking: vector similarity + lexical matching + popularity boost.
@@ -244,7 +289,7 @@ Uses hybrid ranking: vector similarity + lexical matching + popularity boost.
 POST /api/v1/stars/toggle
 Content-Type: application/json
 
-{ "slug": "git-workflow", "kind": "skill" }  // kind: skill | role | agent | memory
+{ "slug": "git-workflow", "kind": "skill" }  // kind: skill | role | agent | memory | integration
 ```
 
 Returns `{ "starred": true }` or `{ "starred": false }`.

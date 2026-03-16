@@ -35,6 +35,14 @@ strawhub install memory dial
 
 Memory providers are installed to `.strawpot/memory/` and supply agents with context from past sessions.
 
+## Install an Integration
+
+```bash
+strawhub install integration telegram
+```
+
+Integrations are always installed globally to `~/.strawpot/integrations/`. They connect StrawPot to chat platforms and are managed from the GUI.
+
 ## Search the Registry
 
 ```bash
@@ -75,7 +83,7 @@ strawhub init
 
 ## Authentication
 
-To publish skills, roles, and memories, you need an API token:
+To publish skills, roles, memories, and integrations, you need an API token:
 
 1. Sign in at [strawhub.dev](https://strawhub.dev) with GitHub
 2. Go to **Settings > API Tokens** and create a token
@@ -100,5 +108,6 @@ strawpot search "testing"
 - [Skills](/strawhub/concepts/skills) — Understand how skills work
 - [Roles](/strawhub/concepts/roles) — Understand how roles work
 - [Memories](/strawhub/concepts/memories) — Understand how memory providers work
+- [Integrations](/strawhub/concepts/integrations) — Understand how integrations work
 - [CLI Reference](/strawhub/cli/commands) — All available commands
-- [Publishing](/strawhub/publishing/guide) — Publish your own skills, roles, and memories
+- [Publishing](/strawhub/publishing/guide) — Publish your own skills, roles, memories, and integrations

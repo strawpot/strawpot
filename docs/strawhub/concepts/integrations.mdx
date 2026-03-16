@@ -1,0 +1,101 @@
+---
+title: Integrations
+description: Chat platform adapters for StrawPot
+---
+
+An integration is an adapter package that connects StrawPot to an external messaging platform (e.g., Telegram, Slack, Discord). Integrations relay messages between a chat platform and StrawPot via imu, and are managed from the GUI.
+
+## Format
+
+Every integration is a directory containing an `INTEGRATION.md` file with YAML frontmatter and a markdown body:
+
+```yaml
+---
+name: telegram
+description: "Telegram bot adapter for StrawPot"
+metadata:
+  strawpot:
+    entry_point: python adapter.py
+    auto_start: false
+    install:
+      macos: pip install -r requirements.txt
+      linux: pip install -r requirements.txt
+    env:
+      STRAWPOT_BOT_TOKEN:
+        required: true
+        description: Bot API token
+      STRAWPOT_API_URL:
+        required: false
+        description: StrawPot API URL (auto-set by GUI)
+    health_check:
+      endpoint: http://localhost:${port}/health
+      interval_seconds: 30
+---
+
+# Telegram Adapter
+
+Connects a Telegram bot to StrawPot via imu.
+```
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Integration slug (unique identifier) |
+| `description` | One-line summary |
+| `metadata.strawpot.entry_point` | Command to launch the adapter process |
+
+### Optional Fields
+
+| Field | Description |
+|-------|-------------|
+| `metadata.strawpot.auto_start` | Start on GUI launch (default: `false`) |
+| `metadata.strawpot.install` | OS-keyed install commands (run by `strawhub install`) |
+| `metadata.strawpot.env` | Required environment variables |
+| `metadata.strawpot.health_check` | Liveness probe endpoint and interval |
+
+## Scope
+
+Integrations are **always global** — they install to `~/.strawpot/integrations/` (or `$STRAWPOT_HOME/integrations/`). The `--global` flag is not needed or accepted.
+
+```
+~/.strawpot/integrations/
+└── telegram/
+    ├── INTEGRATION.md
+    ├── adapter.py
+    ├── requirements.txt
+    └── .version
+```
+
+## Lifecycle
+
+Integrations are managed through the StrawPot GUI:
+
+1. **Install** — `strawhub install integration telegram` downloads the package globally
+2. **Configure** — Set environment variables (e.g., bot token) in the GUI settings
+3. **Start/Stop** — The GUI launches the `entry_point` command and manages the process
+4. **Health Check** — If configured, the GUI periodically pings the health endpoint
+
+## Dependencies
+
+Integrations are standalone — they have no transitive dependencies on skills, roles, or other packages.
+
+## Supporting Files
+
+An integration directory can contain additional files alongside `INTEGRATION.md`:
+
+- Python scripts, config files, binaries
+- Any file type is allowed (including binaries)
+- Max 100 files, 10 MB each, 50 MB total
+
+## Skills vs Roles vs Agents vs Memories vs Integrations
+
+| | Skills | Roles | Agents | Memories | Integrations |
+|---|--------|-------|--------|----------|--------------|
+| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool | Persistent knowledge bank | Chat platform adapter |
+| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` | `INTEGRATION.md` |
+| **Can depend on** | Other skills | Skills and roles | System tools | None | None |
+| **Entry point** | None | None | `bin` (compiled) | None | `entry_point` (shell command) |
+| **Managed by** | CLI (session) | CLI (session) | CLI (session) | CLI (session) | GUI (lifecycle) |
+| **Scope** | Local or global | Local or global | Local or global | Local or global | Global only |
+| **Namespace** | Separate | Separate | Separate | Separate | Separate |

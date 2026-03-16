@@ -52,7 +52,7 @@ strawhub install role implementer --global           # global install
 strawhub install skill code-review --save            # save to project file
 strawhub install skill code-review --update          # update to latest
 strawhub install memory dial --global                # memory provider
-strawhub install integration telegram --global       # chat adapter
+strawhub install integration telegram               # chat adapter (always global)
 ```
 
 ### `uninstall`
@@ -63,7 +63,7 @@ Remove a package and clean up orphaned dependencies.
 strawhub uninstall skill <slug> [--version <ver>] [--global] [--save]
 strawhub uninstall role <slug> [--version <ver>] [--global] [--save]
 strawhub uninstall memory <slug> [--version <ver>] [--global] [--save]
-strawhub uninstall integration <slug> [--global]
+strawhub uninstall integration <slug> [--version <ver>]
 ```
 
 ### `update`
@@ -74,6 +74,7 @@ Update packages to their latest versions.
 strawhub update skill <slug> [--global] [--save] [--skip-tools] [--yes]
 strawhub update role <slug> [--global] [--save] [--skip-tools] [--yes]
 strawhub update memory <slug> [--global] [--save]
+strawhub update integration <slug>
 strawhub update --all [--global] [--save] [--skip-tools] [--yes]
 ```
 
@@ -113,6 +114,7 @@ Show package details.
 strawhub info skill <slug> [--file PATH] [--json]
 strawhub info role <slug> [--file PATH] [--json]
 strawhub info memory <slug> [--file PATH] [--json]
+strawhub info integration <slug> [--file PATH] [--json]
 ```
 
 ### `list`
