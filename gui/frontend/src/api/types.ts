@@ -281,7 +281,7 @@ export interface Integration {
   description: string;
   entry_point: string;
   auto_start: boolean;
-  config_schema: Record<string, IntegrationConfigField>;
+  env_schema: Record<string, IntegrationEnvField>;
   status: "stopped" | "running" | "error";
   pid: number | null;
   last_error: string | null;
@@ -296,14 +296,12 @@ export interface IntegrationDetail extends Integration {
   health_check: { endpoint: string; interval_seconds: number } | null;
 }
 
-export interface IntegrationConfigField {
-  type: string;
+export interface IntegrationEnvField {
   required?: boolean;
   description?: string;
-  default?: string;
 }
 
 export interface IntegrationConfig {
-  config_schema: Record<string, IntegrationConfigField>;
+  env_schema: Record<string, IntegrationEnvField>;
   config_values: Record<string, string>;
 }

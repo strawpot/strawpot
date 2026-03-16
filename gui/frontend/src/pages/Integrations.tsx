@@ -24,7 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Play, Square, Settings2, ScrollText } from "lucide-react";
 import { toast } from "sonner";
-import type { Integration, IntegrationConfigField } from "@/api/types";
+import type { Integration, IntegrationEnvField } from "@/api/types";
 import IntegrationLogSheet from "@/components/IntegrationLogSheet";
 
 function StatusBadge({ status }: { status: string }) {
@@ -195,8 +195,8 @@ function ConfigDialog({
   // Initialize form values when config loads
   if (config && !initialized) {
     const initial: Record<string, string> = {};
-    for (const key of Object.keys(config.config_schema)) {
-      initial[key] = config.config_values[key] ?? config.config_schema[key].default ?? "";
+    for (const key of Object.keys(config.env_schema)) {
+      initial[key] = config.config_values[key] ?? "";
     }
     setValues(initial);
     setInitialized(true);
@@ -225,7 +225,7 @@ function ConfigDialog({
     );
   };
 
-  const schema = config?.config_schema ?? {};
+  const schema = config?.env_schema ?? {};
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -272,7 +272,7 @@ function ConfigField({
   onChange,
 }: {
   name: string;
-  field: IntegrationConfigField;
+  field: IntegrationEnvField;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -284,7 +284,7 @@ function ConfigField({
       </Label>
       <Input
         id={`config-${name}`}
-        type={field.type === "secret" ? "password" : "text"}
+        type="password"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={field.description}
