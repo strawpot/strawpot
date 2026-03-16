@@ -470,6 +470,7 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
 
     # Derive API URL from the running server's actual request URL
     env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/")
+    env["STRAWPOT_INTEGRATION_NAME"] = name
 
     # Persistent data directory for adapter state (survives reinstalls)
     data_dir = get_strawpot_home() / "data" / "integrations" / name
@@ -686,6 +687,7 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
         env["STRAWPOT_API_URL"] = f"http://{host}:{port}"
+        env["STRAWPOT_INTEGRATION_NAME"] = name
         data_dir = home / "data" / "integrations" / name
         data_dir.mkdir(parents=True, exist_ok=True)
         env["STRAWPOT_DATA_DIR"] = str(data_dir)
