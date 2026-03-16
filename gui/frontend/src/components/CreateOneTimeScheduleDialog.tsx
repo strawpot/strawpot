@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProjects } from "@/hooks/queries/use-projects";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
+import { useProjectConversations, useImuConversations } from "@/hooks/queries/use-conversations";
+import { useCreateConversation, useCreateImuConversation } from "@/hooks/mutations/use-conversations";
 import { useCreateOneTimeSchedule } from "@/hooks/mutations/use-schedules";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,8 @@ export default function CreateOneTimeScheduleDialog({
 }: Props) {
   const { data: projects } = useProjects();
   const createSchedule = useCreateOneTimeSchedule();
+  const createConversation = useCreateConversation();
+  const createImuConversation = useCreateImuConversation();
 
   const [name, setName] = useState("");
   const [projectId, setProjectId] = useState<string>("");
@@ -44,10 +48,23 @@ export default function CreateOneTimeScheduleDialog({
   const [runAt, setRunAt] = useState("");
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [conversationId, setConversationId] = useState<string>("none");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const selectedProjectId = Number(projectId) || 0;
+  const selectedProjectId = projectId ? Number(projectId) : -1;
+  const isImu = selectedProjectId === 0;
   const { data: projectResources } = useProjectResources(selectedProjectId);
+  const { data: projectConversations } = useProjectConversations(selectedProjectId);
+  const { data: imuConversations } = useImuConversations();
+  const conversationItems = useMemo(
+    () => {
+      if (selectedProjectId === 0) {
+        return (imuConversations ?? []).map((c) => ({ id: c.id, title: c.title }));
+      }
+      return (projectConversations?.items ?? []).map((c) => ({ id: c.id, title: c.title }));
+    },
+    [selectedProjectId, projectConversations, imuConversations],
+  );
   const roles = useMemo(
     () =>
       (projectResources ?? [])
@@ -55,6 +72,10 @@ export default function CreateOneTimeScheduleDialog({
         .map((r) => r.name),
     [projectResources],
   );
+  useEffect(() => {
+    if (isImu) setRole("imu");
+    else setRole("");
+  }, [isImu]);
 
   useEffect(() => {
     if (open) {
@@ -69,21 +90,40 @@ export default function CreateOneTimeScheduleDialog({
     setRunAt("");
     setRole("");
     setSystemPrompt("");
+    setConversationId("none");
     setAdvancedOpen(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
+      const pid = Number(projectId);
+      let resolvedConvId: number | null = null;
+      if (conversationId === "new") {
+        if (pid === 0) {
+          const conv = await createImuConversation.mutateAsync();
+          resolvedConvId = conv.id;
+        } else {
+          const conv = await createConversation.mutateAsync({
+            project_id: pid,
+            title: name.trim() || undefined,
+          });
+          resolvedConvId = conv.id;
+        }
+      } else if (conversationId !== "none") {
+        resolvedConvId = Number(conversationId);
+      }
+
       // Convert local datetime-local value to ISO with timezone
       const dt = new Date(runAt);
       await createSchedule.mutateAsync({
         name: name.trim(),
-        project_id: Number(projectId),
+        project_id: pid,
         task: task.trim(),
         run_at: dt.toISOString(),
         role: role.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
+        conversation_id: resolvedConvId,
       });
       resetForm();
       onOpenChange(false);
@@ -130,6 +170,7 @@ export default function CreateOneTimeScheduleDialog({
                 <SelectValue placeholder="Select a project" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="0">Imu</SelectItem>
                 {(projects ?? []).map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     {p.display_name}
@@ -178,15 +219,41 @@ export default function CreateOneTimeScheduleDialog({
               onChange={(e) => setRole(e.target.value)}
               placeholder={roles[0] ?? "orchestrator"}
               list="ot-role-list"
+              disabled={isImu}
             />
             <datalist id="ot-role-list">
               {roles.map((r) => (
                 <option key={r} value={r} />
               ))}
             </datalist>
-            {role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
+            {!isImu && role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
               <p className="text-xs text-destructive">Role not found in installed roles</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ot-conversation">Conversation</Label>
+            <Select value={conversationId} onValueChange={setConversationId}>
+              <SelectTrigger id="ot-conversation">
+                <SelectValue placeholder="No conversation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No conversation</SelectItem>
+                <SelectItem value="new">Create new conversation</SelectItem>
+                {conversationItems.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.title || `Conversation #${c.id}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {conversationId === "none"
+                ? "Starts a standalone session."
+                : conversationId === "new"
+                  ? "A new conversation will be created for this run."
+                  : "Continues this conversation's context."}
+            </p>
           </div>
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
@@ -233,7 +300,7 @@ export default function CreateOneTimeScheduleDialog({
             </Button>
             <Button
               type="submit"
-              disabled={createSchedule.isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
+              disabled={createSchedule.isPending || createConversation.isPending || createImuConversation.isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
             >
               {createSchedule.isPending ? "Creating..." : "Create"}
             </Button>

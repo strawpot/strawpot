@@ -11,6 +11,7 @@ interface CreateScheduleBody {
   role?: string;
   system_prompt?: string;
   skip_if_running?: boolean;
+  conversation_id?: number | null;
 }
 
 interface CreateOneTimeScheduleBody {
@@ -20,6 +21,7 @@ interface CreateOneTimeScheduleBody {
   run_at: string;
   role?: string;
   system_prompt?: string;
+  conversation_id?: number | null;
 }
 
 interface UpdateScheduleBody {
@@ -30,6 +32,7 @@ interface UpdateScheduleBody {
   role?: string;
   system_prompt?: string;
   skip_if_running?: boolean;
+  conversation_id?: number | null;
 }
 
 export function useCreateSchedule() {

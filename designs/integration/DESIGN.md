@@ -1126,8 +1126,8 @@ posting results back to Telegram groups, Slack channels, etc.
 | 21b | Skill: `notify-slack` — direct Slack API messaging | Done |
 | 21c | Skill: `notify-discord` — direct Discord webhook messaging | Done |
 | 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Done |
-| 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Not started |
-| 24 | Frontend: schedule UI — conversation targeting + skill selection | Not started |
+| 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Done |
+| 24 | Frontend: schedule UI — conversation targeting + skill selection | Done |
 
 **Phase 5 — Conversation source tracking**
 
