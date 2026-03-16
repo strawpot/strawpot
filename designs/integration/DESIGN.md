@@ -250,34 +250,34 @@ installed integrations. Clicking a row opens a detail sheet with
 config fields, lifecycle controls, and an auto-start toggle.
 
 ```
-┌──────────────────────────────────────────────────────┐
-│ Integrations                          + Install      │
-├──────────────────────────────────────────────────────┤
-│ Name        │ Description               │ Status     │
-│ telegram    │ Telegram bot adapter       │ ● Running  │
-│ slack       │ Slack bot adapter          │ ○ Stopped  │
-│ discord     │ Discord bot adapter        │ ○ Stopped  │
-└──────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│ Integrations                           [+ Install]    │
+├───────────┬─────────────────────────┬─────────────────┤
+│ Name      │ Description             │ Status          │
+├───────────┼─────────────────────────┼─────────────────┤
+│ telegram  │ Telegram bot adapter    │ ● Running       │
+│ slack     │ Slack bot adapter       │ ○ Stopped       │
+│ discord   │ Discord bot adapter     │ ○ Stopped       │
+└───────────┴─────────────────────────┴─────────────────┘
 
 Detail sheet (click row):
-┌────────────────────────────────────────┐
-│ telegram   ● Running                   │
-│ Telegram bot adapter for StrawPot      │
-│                                        │
-│ Path: ~/.strawpot/integrations/telegram│
-│ Started: 2026-03-16 10:00 AM           │
-│ PID: 12345                             │
-│                                        │
-│ [✓] Start automatically when StrawPot  │
-│     launches                           │
-│                                        │
-│ Configuration                          │
-│ STRAWPOT_BOT_TOKEN*  [••••••••••]      │
-│ [Save Configuration]                   │
-│                                        │
-│ [Stop] [Logs] [Update] [Reinstall]     │
-│                              [Uninstall│
-└────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ telegram   ● Running                         │
+│ Telegram bot adapter for StrawPot            │
+│                                              │
+│ Path: ~/.strawpot/integrations/telegram      │
+│ Started: 2026-03-16 10:00 AM                 │
+│ PID: 12345                                   │
+│                                              │
+│ [✓] Start automatically when StrawPot        │
+│     launches                                 │
+│                                              │
+│ Configuration                                │
+│ STRAWPOT_BOT_TOKEN*  [••••••••••]            │
+│ [Save Configuration]                         │
+│                                              │
+│ [Stop] [Logs] [Update] [Reinstall] [Uninst.] │
+└──────────────────────────────────────────────┘
 ```
 
 **Lifecycle controls:**
