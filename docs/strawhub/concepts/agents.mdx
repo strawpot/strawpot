@@ -309,15 +309,16 @@ metadata:
 A StrawPot agent wrapper for the my-ai CLI tool.
 ```
 
-## Skills vs Roles vs Agents vs Memories
+## Skills vs Roles vs Agents vs Memories vs Integrations
 
-| | Skills | Roles | Agents | Memories |
-|---|--------|-------|--------|----------|
-| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool | Persistent knowledge bank |
-| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` |
-| **Can depend on** | Other skills | Skills and roles | System tools | None |
-| **Default agent** | No | Yes | N/A (is the agent) | No |
-| **Env vars** | Yes | No | Yes | No |
-| **Params** | No | No | Yes | No |
-| **Binary files** | No | No | Yes | Yes |
-| **Namespace** | Separate | Separate | Separate | Separate |
+| | Skills | Roles | Agents | Memories | Integrations |
+|---|--------|-------|--------|----------|--------------|
+| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool | Persistent knowledge bank | Chat platform adapter |
+| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` | `INTEGRATION.md` |
+| **Can depend on** | Other skills | Skills and roles | System tools | None | None |
+| **Default agent** | No | Yes | N/A (is the agent) | No | No |
+| **Env vars** | Yes | No | Yes | No | Yes |
+| **Params** | No | No | Yes | No | No |
+| **Binary files** | No | No | Yes | Yes | Yes |
+| **Scope** | Local or global | Local or global | Local or global | Local or global | Global only |
+| **Namespace** | Separate | Separate | Separate | Separate | Separate |

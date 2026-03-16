@@ -19,12 +19,13 @@ A memory directory can contain additional files alongside `MEMORY.md`:
 - Any file type is allowed (including binaries)
 - Max 100 files, 10 MB each, 50 MB total
 
-## Skills vs Roles vs Agents vs Memories
+## Skills vs Roles vs Agents vs Memories vs Integrations
 
-| | Skills | Roles | Agents | Memories |
-|---|--------|-------|--------|----------|
-| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool | Persistent knowledge bank |
-| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` |
-| **Can depend on** | Other skills | Skills and roles | System tools | None |
-| **Binary files** | No | No | Yes | Yes |
-| **Namespace** | Separate | Separate | Separate | Separate |
+| | Skills | Roles | Agents | Memories | Integrations |
+|---|--------|-------|--------|----------|--------------|
+| **Purpose** | Reusable instructions | Agent behavior definition | CLI wrapper for an AI tool | Persistent knowledge bank | Chat platform adapter |
+| **File** | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` | `INTEGRATION.md` |
+| **Can depend on** | Other skills | Skills and roles | System tools | None | None |
+| **Binary files** | No | No | Yes | Yes | Yes |
+| **Scope** | Local or global | Local or global | Local or global | Local or global | Global only |
+| **Namespace** | Separate | Separate | Separate | Separate | Separate |
