@@ -30,17 +30,17 @@ strawhub install memory <slug> [options]
 strawhub install integration <slug> [options]
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--global` | Install to global directory (`~/.strawpot`) |
-| `--version <ver>` | Install a specific version |
-| `--force` | Force replace existing (requires `--version`) |
-| `--update` | Update to latest if already installed |
-| `--recursive` | With `--update`, also update all dependencies |
-| `--save` | Save to `strawpot.toml` with `*` constraint |
-| `--save-exact` | Save to `strawpot.toml` with `==X.Y.Z` constraint |
-| `--skip-tools` | Skip system tool installation |
-| `--yes`, `-y` | Auto-confirm tool install prompts |
+| Option | Description | Integrations |
+|--------|-------------|:------------:|
+| `--global` | Install to global directory (`~/.strawpot`) | n/a (always global) |
+| `--version <ver>` | Install a specific version | yes |
+| `--force` | Force replace existing (requires `--version`) | yes |
+| `--update` | Update to latest if already installed | yes |
+| `--recursive` | With `--update`, also update all dependencies | — |
+| `--save` | Save to `strawpot.toml` with `*` constraint | — |
+| `--save-exact` | Save to `strawpot.toml` with `==X.Y.Z` constraint | — |
+| `--skip-tools` | Skip system tool installation | yes |
+| `--yes`, `-y` | Auto-confirm tool install prompts | yes |
 
 **Examples:**
 

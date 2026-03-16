@@ -230,7 +230,7 @@ def install_integration(data: dict = Body(...)):
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
-    return run_strawhub("install", "integration", "-y", name, "--global")
+    return run_strawhub("install", "integration", "-y", name)
 
 
 @router.delete("/{name}")
@@ -253,7 +253,7 @@ def uninstall_integration(name: str, conn=Depends(get_db_conn)):
     conn.execute("DELETE FROM integration_config WHERE integration_name = ?", (name,))
     conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
 
-    return run_strawhub("uninstall", "integration", name, "--global")
+    return run_strawhub("uninstall", "integration", name)
 
 
 # ---------------------------------------------------------------------------

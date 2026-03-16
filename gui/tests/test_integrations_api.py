@@ -278,7 +278,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+            mock.assert_called_once_with("install", "integration", "-y", "telegram")
 
     def test_install_missing_name(self, client, home):
         resp = client.post("/api/integrations/install", json={"name": ""})
@@ -288,7 +288,7 @@ class TestInstallUninstall:
         with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
             mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
             client.post("/api/integrations/install", json={"name": "  telegram  "})
-            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+            mock.assert_called_once_with("install", "integration", "-y", "telegram")
 
     def test_uninstall_calls_strawhub(self, client, home):
         """Uninstall endpoint calls strawhub with correct args."""
@@ -298,7 +298,7 @@ class TestInstallUninstall:
             resp = client.delete("/api/integrations/telegram")
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("uninstall", "integration", "telegram", "--global")
+            mock.assert_called_once_with("uninstall", "integration", "telegram")
 
     def test_uninstall_cleans_db_state(self, client, home):
         """Uninstall removes DB rows for config and status."""

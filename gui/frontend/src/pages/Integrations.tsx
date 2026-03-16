@@ -126,7 +126,6 @@ function IntegrationRow({
 }) {
   const start = useStartIntegration();
   const stop = useStopIntegration();
-  const uninstall = useUninstallIntegration();
   const isRunning = integration.status === "running";
 
   const handleStartStop = (e: React.MouseEvent) => {
@@ -142,21 +141,6 @@ function IntegrationRow({
         onError: (err) => toast.error(`Failed to start: ${err.message}`),
       });
     }
-  };
-
-  const handleUninstall = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm(`Uninstall ${integration.name}? This will stop the adapter and remove all files.`)) return;
-    uninstall.mutate(integration.name, {
-      onSuccess: (res) => {
-        if (res.exit_code === 0) {
-          toast.success(`Uninstalled ${integration.name}`);
-        } else {
-          toast.error(`Uninstall failed: ${res.stderr || res.stdout}`);
-        }
-      },
-      onError: (err) => toast.error(`Failed to uninstall: ${err.message}`),
-    });
   };
 
   return (
@@ -201,17 +185,71 @@ function IntegrationRow({
           >
             <ScrollText className="h-3.5 w-3.5" />
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleUninstall}
-            disabled={uninstall.isPending}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <UninstallButton name={integration.name} />
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+function UninstallButton({ name }: { name: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const uninstall = useUninstallIntegration();
+
+  const handleUninstall = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    uninstall.mutate(name, {
+      onSuccess: (res) => {
+        if (res.exit_code === 0) {
+          toast.success(`Uninstalled ${name}`);
+        } else {
+          toast.error(`Uninstall failed: ${res.stderr || res.stdout}`);
+        }
+        setConfirming(false);
+      },
+      onError: (err) => {
+        toast.error(`Failed to uninstall: ${err.message}`);
+        setConfirming(false);
+      },
+    });
+  };
+
+  if (confirming) {
+    return (
+      <div className="flex gap-1">
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={handleUninstall}
+          disabled={uninstall.isPending}
+        >
+          Confirm
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(false);
+          }}
+        >
+          No
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={(e) => {
+        e.stopPropagation();
+        setConfirming(true);
+      }}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </Button>
   );
 }
 
