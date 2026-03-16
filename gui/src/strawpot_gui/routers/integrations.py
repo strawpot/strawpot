@@ -230,30 +230,84 @@ def install_integration(data: dict = Body(...)):
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
-    return run_strawhub("install", "integration", "-y", name, "--global")
+    return run_strawhub("install", "integration", "-y", name)
+
+
+def _stop_if_running(conn, name: str) -> bool:
+    """Stop an integration if it is running. Returns True if it was running."""
+    db_state = _get_db_state(conn, name)
+    if not db_state or db_state["status"] != "running" or not db_state["pid"]:
+        return False
+    if _is_process_alive(db_state["pid"]):
+        try:
+            os.kill(db_state["pid"], signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+    conn.execute(
+        "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+        (name,),
+    )
+    logger.info("Stopped integration '%s' (pid %s) before mutation", name, db_state["pid"])
+    return True
+
+
+@router.post("/update")
+def update_integration(
+    data: dict = Body(...),
+    request: Request = None,
+    conn=Depends(get_db_conn),
+):
+    """Update an integration to its latest version via strawhub."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "'name' is required")
+    was_running = _stop_if_running(conn, name)
+    result = run_strawhub("update", "integration", name)
+    if was_running and result.get("exit_code") == 0:
+        try:
+            start_integration(name, request, conn)
+        except Exception as exc:
+            logger.warning("Failed to restart '%s' after update: %s", name, exc)
+    return result
+
+
+@router.post("/reinstall")
+def reinstall_integration(
+    data: dict = Body(...),
+    request: Request = None,
+    conn=Depends(get_db_conn),
+):
+    """Reinstall an integration (re-download current version) via strawhub."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "'name' is required")
+    home = get_strawpot_home()
+    version_file = home / "integrations" / name / ".version"
+    if not version_file.is_file():
+        raise HTTPException(404, f"Integration not found or has no version: {name}")
+    version = version_file.read_text(encoding="utf-8").strip()
+    if not version:
+        raise HTTPException(404, f"Empty version file for integration: {name}")
+    was_running = _stop_if_running(conn, name)
+    result = run_strawhub("install", "integration", "-y", name, "--version", version, "--force")
+    if was_running and result.get("exit_code") == 0:
+        try:
+            start_integration(name, request, conn)
+        except Exception as exc:
+            logger.warning("Failed to restart '%s' after reinstall: %s", name, exc)
+    return result
 
 
 @router.delete("/{name}")
 def uninstall_integration(name: str, conn=Depends(get_db_conn)):
     """Stop (if running) and uninstall an integration."""
-    # Stop the adapter process if it's running
-    db_state = _get_db_state(conn, name)
-    if db_state and db_state["status"] == "running" and db_state["pid"]:
-        if _is_process_alive(db_state["pid"]):
-            try:
-                os.kill(db_state["pid"], signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                pass
-        conn.execute(
-            "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-            (name,),
-        )
+    _stop_if_running(conn, name)
 
     # Remove DB state
     conn.execute("DELETE FROM integration_config WHERE integration_name = ?", (name,))
     conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
 
-    return run_strawhub("uninstall", "integration", name, "--global")
+    return run_strawhub("uninstall", "integration", name)
 
 
 # ---------------------------------------------------------------------------
@@ -284,14 +338,14 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
     existing = env.get("PATH", "")
     env["PATH"] = ":".join(extra_paths) + ":" + existing
 
-    # Derive API URL from the running server
-    server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
-    server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
-    env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+    # Derive API URL from the running server's actual request URL
+    env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/")
 
-    # Pass saved env values directly (keys are already env var names)
+    # Pass saved env values directly (keys are already env var names).
+    # Skip empty strings so they don't overwrite auto-derived values
+    # like STRAWPOT_API_URL.
     for key, value in config_values.items():
-        if value is not None:
+        if value is not None and value != "":
             env[key] = str(value)
 
     return env
@@ -451,7 +505,7 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
                 )
 
 
-def auto_start_integrations(db_path: str) -> None:
+def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int = 8741) -> None:
     """Start all integrations with auto_start enabled. Called during app lifespan."""
     from strawpot_gui.db import get_db
 
@@ -485,11 +539,9 @@ def auto_start_integrations(db_path: str) -> None:
             "/opt/homebrew/bin",
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
-        server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
-        server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
-        env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+        env["STRAWPOT_API_URL"] = f"http://{host}:{port}"
         for key, value in config_values.items():
-            if value is not None:
+            if value is not None and value != "":
                 env[key] = str(value)
 
         log_path = integration_dir / ".log"
@@ -523,6 +575,28 @@ def auto_start_integrations(db_path: str) -> None:
                 (proc.pid, now, name),
             )
         logger.info("Auto-started integration '%s' (pid %d)", name, proc.pid)
+
+
+def stop_all_integrations(db_path: str) -> None:
+    """Send SIGTERM to all running integrations. Called during app shutdown."""
+    from strawpot_gui.db import get_db
+
+    with get_db(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name, pid FROM integrations WHERE status = 'running' AND pid IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            pid = row["pid"]
+            if _is_process_alive(pid):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    logger.info("Sent SIGTERM to integration '%s' (pid %d)", row["name"], pid)
+                except (ProcessLookupError, OSError):
+                    pass
+            conn.execute(
+                "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+                (row["name"],),
+            )
 
 
 # ---------------------------------------------------------------------------

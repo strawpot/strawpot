@@ -531,7 +531,7 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
             full_task,
             user_task=body.task,
             memory_task=body.task if context else None,
-            role=body.role,
+            role=body.role or ("imu" if project_id == 0 else None),
             system_prompt=body.system_prompt or None,
             context_files=body.context_files,
             interactive=body.interactive,

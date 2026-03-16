@@ -278,7 +278,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+            mock.assert_called_once_with("install", "integration", "-y", "telegram")
 
     def test_install_missing_name(self, client, home):
         resp = client.post("/api/integrations/install", json={"name": ""})
@@ -288,7 +288,7 @@ class TestInstallUninstall:
         with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
             mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
             client.post("/api/integrations/install", json={"name": "  telegram  "})
-            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+            mock.assert_called_once_with("install", "integration", "-y", "telegram")
 
     def test_uninstall_calls_strawhub(self, client, home):
         """Uninstall endpoint calls strawhub with correct args."""
@@ -298,7 +298,7 @@ class TestInstallUninstall:
             resp = client.delete("/api/integrations/telegram")
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("uninstall", "integration", "telegram", "--global")
+            mock.assert_called_once_with("uninstall", "integration", "telegram")
 
     def test_uninstall_cleans_db_state(self, client, home):
         """Uninstall removes DB rows for config and status."""
@@ -324,6 +324,46 @@ class TestInstallUninstall:
                 "SELECT * FROM integration_config WHERE integration_name = ?", ("telegram",)
             ).fetchall()
             assert len(config) == 0
+
+    def test_update_calls_strawhub(self, client, home):
+        """Update endpoint calls strawhub with correct args."""
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Updated telegram", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/update",
+                json={"name": "telegram"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["exit_code"] == 0
+            mock.assert_called_once_with("update", "integration", "telegram")
+
+    def test_update_missing_name(self, client, home):
+        resp = client.post("/api/integrations/update", json={"name": ""})
+        assert resp.status_code == 400
+
+    def test_reinstall_calls_strawhub(self, client, home):
+        """Reinstall reads .version and calls strawhub install --version --force."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / ".version").write_text("1.2.0")
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Reinstalled telegram", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/reinstall",
+                json={"name": "telegram"},
+            )
+            assert resp.status_code == 200
+            mock.assert_called_once_with(
+                "install", "integration", "-y", "telegram", "--version", "1.2.0", "--force",
+            )
+
+    def test_reinstall_missing_version_file(self, client, home):
+        """Reinstall returns 404 when no .version file exists."""
+        _create_integration(home, "telegram")
+        resp = client.post(
+            "/api/integrations/reinstall",
+            json={"name": "telegram"},
+        )
+        assert resp.status_code == 404
 
     def test_uninstall_stops_running_process(self, client, home):
         """Uninstall stops a running adapter before removing."""

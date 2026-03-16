@@ -59,6 +59,28 @@ export function useUninstallIntegration() {
   });
 }
 
+export function useUpdateIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<InstallResult>("/integrations/update", { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
+    },
+  });
+}
+
+export function useReinstallIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<InstallResult>("/integrations/reinstall", { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
+    },
+  });
+}
+
 export function useDeleteIntegrationConfig() {
   const qc = useQueryClient();
   return useMutation({

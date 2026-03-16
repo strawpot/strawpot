@@ -73,12 +73,19 @@ def _auto_rebuild_frontend(dist_dir: Path) -> None:
         logger.warning("Frontend rebuild failed: %s", exc.stderr[:500])
 
 
-def create_app(db_path: str | None = None) -> FastAPI:
+def create_app(
+    db_path: str | None = None,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8741,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
         db_path: Override path to SQLite database.
                  Defaults to ~/.strawpot/gui.db.
+        host: Server bind address (passed to auto-start integrations).
+        port: Server bind port (passed to auto-start integrations).
     """
     if db_path is None:
         db_path = str(get_strawpot_home() / "gui.db")
@@ -95,15 +102,17 @@ def create_app(db_path: str | None = None) -> FastAPI:
         from strawpot_gui.routers.integrations import (
             auto_start_integrations,
             mark_orphaned_integrations_stopped,
+            stop_all_integrations,
         )
         mark_orphaned_integrations_stopped(db_path)
-        auto_start_integrations(db_path)
+        auto_start_integrations(db_path, host=host, port=port)
         from strawpot_gui.routers.sessions import launch_session_subprocess
         scheduler = Scheduler(db_path, launch_fn=launch_session_subprocess)
         app.state.scheduler = scheduler
         await scheduler.start()
         yield
         await scheduler.stop()
+        stop_all_integrations(db_path)
 
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
     app.state.db_path = db_path
