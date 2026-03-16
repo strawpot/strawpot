@@ -39,6 +39,17 @@ def parse_integration_manifest(manifest_path: Path) -> tuple[dict, str]:
     return parsed.get("frontmatter", {}), parsed.get("body", "")
 
 
+def _read_version(resource_dir: Path) -> str | None:
+    """Read version from .version file."""
+    version_file = resource_dir / ".version"
+    if version_file.is_file():
+        try:
+            return version_file.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            pass
+    return None
+
+
 def scan_integrations(base_dir: Path) -> list[dict]:
     """Scan ``base_dir/integrations/*/INTEGRATION.md`` for installed integrations."""
     scan_path = base_dir / "integrations"
@@ -58,6 +69,7 @@ def scan_integrations(base_dir: Path) -> list[dict]:
         strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
         items.append({
             "name": fm.get("name", entry.name),
+            "version": _read_version(entry),
             "description": fm.get("description", ""),
             "entry_point": strawpot_meta.get("entry_point", ""),
             "env_schema": strawpot_meta.get("env", {}),
@@ -257,16 +269,32 @@ def _stop_if_running(conn, name: str) -> bool:
     db_state = _get_db_state(conn, name)
     if not db_state or db_state["status"] != "running" or not db_state["pid"]:
         return False
-    if _is_process_alive(db_state["pid"]):
+    pid = db_state["pid"]
+    if _is_process_alive(pid):
         try:
-            os.kill(db_state["pid"], signal.SIGTERM)
+            os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, OSError):
             pass
+        # Wait for the process to actually exit before proceeding
+        import time
+        for _ in range(50):  # up to 5 seconds
+            if not _is_process_alive(pid):
+                break
+            time.sleep(0.1)
+        else:
+            logger.warning(
+                "Integration '%s' (pid %s) did not exit after SIGTERM, sending SIGKILL",
+                name, pid,
+            )
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, OSError):
+                pass
     conn.execute(
         "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
         (name,),
     )
-    logger.info("Stopped integration '%s' (pid %s) before mutation", name, db_state["pid"])
+    logger.info("Stopped integration '%s' (pid %s) before mutation", name, pid)
     return True
 
 

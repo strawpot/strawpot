@@ -84,6 +84,7 @@ export default function Integrations() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Version</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -99,6 +100,9 @@ export default function Integrations() {
                 }}
               >
                 <TableCell className="font-medium">{integration.name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {integration.version ? `v${integration.version}` : "\u2014"}
+                </TableCell>
                 <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
                   {integration.description || "\u2014"}
                 </TableCell>
