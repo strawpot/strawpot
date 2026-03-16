@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS integration_config (
     value            TEXT,
     PRIMARY KEY (integration_name, key)
 );
+
+CREATE TABLE IF NOT EXISTS integration_notifications (
+    id               INTEGER PRIMARY KEY,
+    integration_name TEXT NOT NULL REFERENCES integrations(name) ON DELETE CASCADE,
+    chat_id          TEXT,
+    message          TEXT NOT NULL,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    delivered_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_integration_notifications_pending
+    ON integration_notifications(integration_name, delivered_at)
+    WHERE delivered_at IS NULL;
 """
 
 
@@ -301,6 +314,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_conversations_parent ON conversations(parent_conversation_id);
             PRAGMA foreign_keys=ON;
         """)
+
+    # Add integration_notifications table (added 2026-03-16)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS integration_notifications (
+            id               INTEGER PRIMARY KEY,
+            integration_name TEXT NOT NULL REFERENCES integrations(name) ON DELETE CASCADE,
+            chat_id          TEXT,
+            message          TEXT NOT NULL,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+            delivered_at     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_integration_notifications_pending
+            ON integration_notifications(integration_name, delivered_at)
+            WHERE delivered_at IS NULL;
+    """)
 
 
 @contextmanager
