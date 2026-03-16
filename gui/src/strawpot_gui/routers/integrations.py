@@ -251,6 +251,89 @@ def delete_integration_config(name: str, conn=Depends(get_db_conn)):
 
 
 # ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{name}/notify")
+def notify_integration(
+    name: str, data: dict = Body(...), conn=Depends(get_db_conn)
+):
+    """Push a notification to an integration for delivery to the chat platform.
+
+    Body: {"message": "...", "chat_id": "optional-target"}
+    """
+    message = data.get("message", "").strip()
+    if not message:
+        raise HTTPException(400, "'message' is required")
+
+    # Verify the integration exists on disk
+    home = get_strawpot_home()
+    manifest_path = home / "integrations" / name / MANIFEST
+    if not manifest_path.is_file():
+        raise HTTPException(404, f"Integration not found: {name}")
+
+    _ensure_db_row(conn, name)
+
+    chat_id = data.get("chat_id")
+    conn.execute(
+        "INSERT INTO integration_notifications (integration_name, chat_id, message) "
+        "VALUES (?, ?, ?)",
+        (name, chat_id, message),
+    )
+    row = conn.execute("SELECT last_insert_rowid()").fetchone()
+    notification_id = row[0]
+
+    return {"id": notification_id, "integration_name": name, "status": "pending"}
+
+
+@router.get("/{name}/notifications")
+def list_notifications(name: str, conn=Depends(get_db_conn)):
+    """Return pending (undelivered) notifications for an integration.
+
+    Adapters poll this endpoint to discover messages they need to deliver.
+    """
+    home = get_strawpot_home()
+    manifest_path = home / "integrations" / name / MANIFEST
+    if not manifest_path.is_file():
+        raise HTTPException(404, f"Integration not found: {name}")
+
+    rows = conn.execute(
+        "SELECT id, chat_id, message, created_at "
+        "FROM integration_notifications "
+        "WHERE integration_name = ? AND delivered_at IS NULL "
+        "ORDER BY id",
+        (name,),
+    ).fetchall()
+
+    return [dict(r) for r in rows]
+
+
+@router.post("/{name}/notifications/{notification_id}/ack")
+def ack_notification(
+    name: str, notification_id: int, conn=Depends(get_db_conn)
+):
+    """Mark a notification as delivered.
+
+    Adapters call this after successfully sending the message to the platform.
+    """
+    row = conn.execute(
+        "SELECT id FROM integration_notifications "
+        "WHERE id = ? AND integration_name = ?",
+        (notification_id, name),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Notification not found")
+
+    conn.execute(
+        "UPDATE integration_notifications SET delivered_at = datetime('now') "
+        "WHERE id = ?",
+        (notification_id,),
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Install / Uninstall via Strawhub
 # ---------------------------------------------------------------------------
 

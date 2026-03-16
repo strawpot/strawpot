@@ -997,14 +997,14 @@ posting results back to Telegram groups, Slack channels, etc.
 
 | # | Item | Status |
 |---|------|--------|
-| 14 | Database: `integration_notifications` table | Not started |
-| 15 | Database: `conversation_id` column on `scheduled_tasks` | Not started |
-| 16 | Backend: `POST /api/integrations/:name/notify` endpoint | Not started |
-| 17 | Backend: `GET /api/integrations/:name/notifications` polling endpoint | Not started |
-| 18 | Backend: `POST /api/integrations/:name/notifications/:id/ack` endpoint | Not started |
+| 14 | Database: `integration_notifications` table | Done |
+| 15 | Database: `conversation_id` column on `scheduled_tasks` | Done |
+| 16 | Backend: `POST /api/integrations/:name/notify` endpoint | Done |
+| 17 | Backend: `GET /api/integrations/:name/notifications` polling endpoint | Done |
+| 18 | Backend: `POST /api/integrations/:name/notifications/:id/ack` endpoint | Done |
 | 19 | Scheduler: submit to conversation API when `conversation_id` is set | Not started |
 | 20 | Scheduler: enforce `role=imu` for `project_id=0` schedules | Not started |
 | 21 | Skill: `notify-integration` for agent use | Not started |
-| 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Not started |
+| 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Done |
 | 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Not started |
 | 24 | Frontend: schedule UI — conversation targeting + skill selection | Not started |
