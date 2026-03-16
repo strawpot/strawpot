@@ -151,6 +151,13 @@ const IMU_SUGGESTED_PROMPTS = [
       { label: "Register my project", text: "Register my project at ~/path/to/repo" },
     ],
   },
+  {
+    group: "Integrations",
+    prompts: [
+      { label: "How to integrate with Telegram?", text: "How to integrate with Telegram?" },
+      { label: "How to integrate with Slack or Discord?", text: "How to integrate with Slack or Discord?" },
+    ],
+  },
 ];
 
 function ImuOnboarding({ onSelectPrompt }: { onSelectPrompt: (text: string) => void }) {
