@@ -24,6 +24,7 @@ import {
 import { AlertCircle, ArrowLeft, Download, MessageSquare, Pencil, Play, Trash2 } from "lucide-react";
 import InstallDialog from "@/components/InstallDialog";
 import ProjectDetailSkeleton from "@/components/skeletons/ProjectDetailSkeleton";
+import { SourceBadge } from "@/components/SourceBadge";
 
 function EditableTitleCell({
   projectId,
@@ -371,12 +372,15 @@ export default function ProjectDetail() {
                         }
                       >
                         <td className="px-4 py-2">
-                          <EditableTitleCell
-                            projectId={pid}
-                            conversationId={conv.id}
-                            title={conv.title}
-                            fallback={`Conversation #${conv.id}`}
-                          />
+                          <div className="flex items-center gap-2">
+                            <EditableTitleCell
+                              projectId={pid}
+                              conversationId={conv.id}
+                              title={conv.title}
+                              fallback={`Conversation #${conv.id}`}
+                            />
+                            <SourceBadge source={conv.source} meta={conv.source_meta} />
+                          </div>
                         </td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {conv.session_count}

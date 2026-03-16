@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 
 from strawpot_gui.db import get_db_conn
 
@@ -18,7 +19,7 @@ def list_imu_conversations(
 ):
     """List Bot Imu conversations, newest first."""
     rows = conn.execute(
-        """SELECT c.id, c.title, c.created_at, c.updated_at,
+        """SELECT c.id, c.title, c.created_at, c.updated_at, c.source, c.source_meta,
                   COUNT(s.run_id) AS session_count,
                   COUNT(CASE WHEN s.status IN ('running', 'starting') THEN 1 END) AS active_session_count,
                   (SELECT COUNT(*) FROM conversations c2
@@ -34,17 +35,24 @@ def list_imu_conversations(
     return [dict(r) for r in rows]
 
 
+class ImuConversationCreate(BaseModel):
+    source: str | None = None
+    source_meta: str | None = None
+
+
 @router.post("/conversations", status_code=201)
-def create_imu_conversation(conn=Depends(get_db_conn)):
+def create_imu_conversation(body: ImuConversationCreate | None = None, conn=Depends(get_db_conn)):
     """Create a new Bot Imu conversation."""
     now = datetime.now(timezone.utc).isoformat()
+    source = body.source if body else None
+    source_meta = body.source_meta if body else None
     cur = conn.execute(
-        "INSERT INTO conversations (project_id, created_at) VALUES (?, ?)",
-        (_IMU_PROJECT_ID, now),
+        "INSERT INTO conversations (project_id, source, source_meta, created_at) VALUES (?, ?, ?, ?)",
+        (_IMU_PROJECT_ID, source, source_meta, now),
     )
     conv_id = cur.lastrowid
     row = conn.execute(
-        "SELECT id, title, created_at, updated_at FROM conversations WHERE id = ?",
+        "SELECT id, title, created_at, updated_at, source, source_meta FROM conversations WHERE id = ?",
         (conv_id,),
     ).fetchone()
     return dict(row)

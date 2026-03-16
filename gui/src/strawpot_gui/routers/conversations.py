@@ -24,6 +24,8 @@ class ConversationCreate(BaseModel):
     project_id: int
     title: str | None = None
     parent_conversation_id: int | None = None
+    source: str | None = None
+    source_meta: str | None = None
 
 
 class ConversationTask(BaseModel):
@@ -281,6 +283,7 @@ def list_recent_conversations(
     """List recent conversations across all projects, ordered by last activity."""
     rows = conn.execute(
         """SELECT c.id, c.project_id, c.title, c.created_at, c.updated_at,
+                  c.source, c.source_meta,
                   p.display_name AS project_name,
                   COUNT(s.run_id) AS session_count,
                   MAX(s.started_at) AS last_activity
@@ -315,12 +318,13 @@ def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
 
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
-        "INSERT INTO conversations (project_id, title, parent_conversation_id, created_at) VALUES (?, ?, ?, ?)",
-        (body.project_id, body.title, body.parent_conversation_id, now),
+        "INSERT INTO conversations (project_id, title, parent_conversation_id, source, source_meta, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (body.project_id, body.title, body.parent_conversation_id, body.source, body.source_meta, now),
     )
     conv_id = cur.lastrowid
     row = conn.execute(
-        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at "
+        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at, source, source_meta "
         "FROM conversations WHERE id = ?",
         (conv_id,),
     ).fetchone()
@@ -336,7 +340,7 @@ def get_conversation(
 ):
     """Get a conversation with its paginated sessions (newest page first)."""
     row = conn.execute(
-        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at, pending_task "
+        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at, pending_task, source, source_meta "
         "FROM conversations WHERE id = ?",
         (conversation_id,),
     ).fetchone()
@@ -448,7 +452,7 @@ def list_project_conversations(
     offset = (page - 1) * per_page
     rows = conn.execute(
         """SELECT c.id, c.project_id, c.title, c.parent_conversation_id,
-                  c.created_at, c.updated_at,
+                  c.created_at, c.updated_at, c.source, c.source_meta,
                   COUNT(s.run_id) AS session_count,
                   MAX(s.started_at) AS last_activity
            FROM conversations c
