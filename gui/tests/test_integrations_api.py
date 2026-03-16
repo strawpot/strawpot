@@ -267,6 +267,85 @@ class TestIntegrationLifecycle:
         assert "hello from adapter" in log_path.read_text()
 
 
+class TestInstallUninstall:
+    def test_install_calls_strawhub(self, client, home):
+        """Install endpoint calls strawhub with correct args."""
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Installed telegram", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/install",
+                json={"name": "telegram"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["exit_code"] == 0
+            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+
+    def test_install_missing_name(self, client, home):
+        resp = client.post("/api/integrations/install", json={"name": ""})
+        assert resp.status_code == 400
+
+    def test_install_strips_whitespace(self, client, home):
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
+            client.post("/api/integrations/install", json={"name": "  telegram  "})
+            mock.assert_called_once_with("install", "integration", "-y", "telegram", "--global")
+
+    def test_uninstall_calls_strawhub(self, client, home):
+        """Uninstall endpoint calls strawhub with correct args."""
+        _create_integration(home, "telegram")
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Removed telegram", "stderr": ""}
+            resp = client.delete("/api/integrations/telegram")
+            assert resp.status_code == 200
+            assert resp.json()["exit_code"] == 0
+            mock.assert_called_once_with("uninstall", "integration", "telegram", "--global")
+
+    def test_uninstall_cleans_db_state(self, client, home):
+        """Uninstall removes DB rows for config and status."""
+        _create_integration(home, "telegram")
+        # Save config and ensure DB row exists
+        client.put(
+            "/api/integrations/telegram/config",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "abc"}},
+        )
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
+            client.delete("/api/integrations/telegram")
+
+        # DB state should be gone
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM integrations WHERE name = ?", ("telegram",)
+            ).fetchone()
+            assert row is None
+            config = conn.execute(
+                "SELECT * FROM integration_config WHERE integration_name = ?", ("telegram",)
+            ).fetchall()
+            assert len(config) == 0
+
+    def test_uninstall_stops_running_process(self, client, home):
+        """Uninstall stops a running adapter before removing."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+        client.post("/api/integrations/telegram/start")
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
+            resp = client.delete("/api/integrations/telegram")
+            assert resp.status_code == 200
+
+        # DB should show no running state
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM integrations WHERE name = ?", ("telegram",)
+            ).fetchone()
+            assert row is None
+
+
 class TestOrphanedIntegrations:
     def test_mark_orphaned_stopped(self, client, home):
         """Orphaned integrations (dead PID) are marked stopped at startup."""

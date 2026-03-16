@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
+import type { InstallResult } from "@/api/types";
 
 export function useStartIntegration() {
   const qc = useQueryClient();
@@ -31,6 +32,28 @@ export function useSaveIntegrationConfig() {
       api.put<{ ok: boolean }>(`/integrations/${name}/config`, { config_values }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: queryKeys.integrations.config(variables.name) });
+      qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
+    },
+  });
+}
+
+export function useInstallIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<InstallResult>("/integrations/install", { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
+    },
+  });
+}
+
+export function useUninstallIntegration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.delete<InstallResult>(`/integrations/${name}`),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
     },
   });
