@@ -38,8 +38,13 @@ class TestErrorHandling:
             agent_script=STUB_AGENT_DELEGATE,
             config_overrides={"agent_timeout": 2},
         )
-        # Should not hang — timeout kills the sub-agent
-        session.start(str(git_project))
+        # Should not hang — timeout kills the sub-agent.
+        # The orchestrator may exit 0 (error handled) or non-zero
+        # (propagated failure) depending on timing; both are acceptable.
+        try:
+            session.start(str(git_project))
+        except SystemExit:
+            pass
 
         # Session should still clean up (running/ should be empty)
         running_dir = git_project / ".strawpot" / "running"
