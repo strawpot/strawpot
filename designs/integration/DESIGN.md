@@ -132,7 +132,6 @@ description: Telegram bot adapter for StrawPot conversations
 metadata:
   strawpot:
     entry_point: python adapter.py
-    auto_start: false
     install:
       macos: pip install -r requirements.txt
       linux: pip install -r requirements.txt
@@ -140,9 +139,6 @@ metadata:
       STRAWPOT_BOT_TOKEN:
         required: true
         description: Telegram bot API token from @BotFather
-      STRAWPOT_API_URL:
-        required: false
-        description: StrawPot API URL (default http://127.0.0.1:52532, auto-set by GUI)
       POLL_INTERVAL:
         required: false
         description: Session poll interval in seconds when WebSocket fails (default 3)
@@ -171,11 +167,12 @@ replied back in the chat.
 | `name` | Yes | Slug, matches directory name |
 | `description` | Yes | One-line summary |
 | `metadata.strawpot.entry_point` | Yes | Command to launch the adapter (e.g., `python adapter.py`) |
-| `metadata.strawpot.auto_start` | No | Start on GUI launch (default: `false`) |
-| `metadata.strawpot.env` | No | Required environment variables (same convention as skills/agents). Keys are env var names, fields: `required`, `description`. Values saved in GUI and passed at start. |
+| `metadata.strawpot.env` | No | User-configurable environment variables (same convention as skills/agents). Keys are env var names, fields: `required`, `description`. Values saved in GUI and passed at start. |
 | `metadata.strawpot.health_check` | No | Endpoint + interval for liveness checks |
+| `metadata.strawpot.install` | No | OS-keyed install commands (same convention as agents). Run by `strawhub install`. |
 
-| `metadata.strawpot.install` | No | OS-keyed install commands (same convention as agents). Run by `strawhub install` in Phase 3. |
+**Note:** `auto_start` is managed in the GUI database, not in the
+manifest. Users toggle it via the detail sheet in the Integrations page.
 
 Unlike agents/skills/memory, integrations do **not** use `tools`,
 `params`, or `dependencies`. Those exist for CLI-resolved resources
@@ -185,6 +182,16 @@ The `env` field follows the same convention as skills/agents: keys are
 env var names, values declare `required` and `description`. The GUI
 saves values and passes them as environment variables when starting
 the adapter process.
+
+**Auto-set environment variables:** The GUI automatically sets the
+following env vars when starting an adapter — these should **not** be
+declared in the manifest's `env` schema:
+
+| Variable | Description |
+|----------|-------------|
+| `STRAWPOT_API_URL` | Full URL of the running StrawPot API server (derived from `request.base_url`) |
+| `STRAWPOT_DATA_DIR` | Persistent data directory for the adapter (`~/.strawpot/data/integrations/<name>/`). Survives reinstalls. |
+
 If a `requirements.txt` exists, the GUI runs `pip install -r requirements.txt`
 automatically on install.
 
@@ -196,8 +203,16 @@ automatically on install.
   adapter.py          # entry point
   requirements.txt    # python-telegram-bot, httpx
   .version            # installed version (Strawhub convention, e.g., "0.1.0\n")
-  .adapter.db         # local SQLite for platform → conversation mapping (runtime)
+  .log                # stdout/stderr log (runtime, streamed to GUI)
+
+~/.strawpot/data/integrations/telegram/
+  adapter.db          # local SQLite for platform → conversation mapping (runtime)
 ```
+
+Adapter runtime data (conversation mappings, etc.) is stored in
+`STRAWPOT_DATA_DIR` (`~/.strawpot/data/integrations/<name>/`), separate
+from the integration code directory. This ensures data survives
+reinstalls (which delete and recreate the code directory).
 
 **Installation:**
 
@@ -230,19 +245,39 @@ UX plus lifecycle controls unique to integrations.
 
 **Integrations page:**
 
+The page uses the standard resource pattern — a table listing all
+installed integrations. Clicking a row opens a detail sheet with
+config fields, lifecycle controls, and an auto-start toggle.
+
 ```
-┌──────────────────────────────────────────────────────┐
-│ Integrations                          + Install      │
-├──────────────────────────────────────────────────────┤
-│ ● Telegram          Running · 2h 14m   [Stop] [Logs]│
-│   Bot: @mybot                                        │
-│                                                      │
-│ ○ Slack             Stopped             [Start] [⚙]  │
-│   Not configured                                     │
-│                                                      │
-│ ○ Discord           Stopped             [Start] [⚙]  │
-│   Not configured                                     │
-└──────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│ Integrations                           [+ Install]    │
+├───────────┬─────────────────────────┬─────────────────┤
+│ Name      │ Description             │ Status          │
+├───────────┼─────────────────────────┼─────────────────┤
+│ telegram  │ Telegram bot adapter    │ ● Running       │
+│ slack     │ Slack bot adapter       │ ○ Stopped       │
+│ discord   │ Discord bot adapter     │ ○ Stopped       │
+└───────────┴─────────────────────────┴─────────────────┘
+
+Detail sheet (click row):
+┌──────────────────────────────────────────────┐
+│ telegram   ● Running                         │
+│ Telegram bot adapter for StrawPot            │
+│                                              │
+│ Path: ~/.strawpot/integrations/telegram      │
+│ Started: 2026-03-16 10:00 AM                 │
+│ PID: 12345                                   │
+│                                              │
+│ [✓] Start automatically when StrawPot        │
+│     launches                                 │
+│                                              │
+│ Configuration                                │
+│ STRAWPOT_BOT_TOKEN*  [••••••••••]            │
+│ [Save Configuration]                         │
+│                                              │
+│ [Stop] [Logs] [Update] [Reinstall] [Uninst.] │
+└──────────────────────────────────────────────┘
 ```
 
 **Lifecycle controls:**
@@ -251,12 +286,26 @@ UX plus lifecycle controls unique to integrations.
 |--------|-------------|
 | **Install** | `strawhub install <slug>` to `~/.strawpot/integrations/<name>/`. Same as other resource types. |
 | **Configure** | Config UI reads `env` schema from manifest frontmatter. Values saved to `gui.db` `integration_config` table. All values use password inputs (typically tokens/secrets). |
-| **Start** | GUI spawns `entry_point` as a subprocess. Passes config as env vars (`STRAWPOT_API_URL`, `STRAWPOT_BOT_TOKEN`, etc.). PID tracked in `gui.db`. |
-| **Stop** | GUI sends SIGTERM to subprocess PID. Waits up to 5s, then SIGKILL. |
+| **Start** | GUI spawns `entry_point` as a subprocess. Passes config + auto-set env vars (`STRAWPOT_API_URL`, `STRAWPOT_DATA_DIR`). PID tracked in `gui.db`. |
+| **Stop** | GUI sends SIGTERM to subprocess PID. |
 | **Status** | Process alive check (PID exists) + optional health check endpoint. Status: `running`, `stopped`, `error`. |
-| **Logs** | Stream adapter stdout/stderr. Reuses existing `AgentLogViewer` component. Output written to `~/.strawpot/integrations/<name>/.log`. |
-| **Auto-start** | If `auto_start: true` in manifest (or toggled in GUI), start on GUI launch. |
-| **Uninstall** | Stop if running, then remove directory. Same as other resource types. |
+| **Logs** | Stream adapter stdout/stderr via WebSocket. Output written to `~/.strawpot/integrations/<name>/.log`. Log panel supports search, select-all, copy-all, and clear. |
+| **Auto-start** | Toggle in detail sheet. Stored in `gui.db` `integrations.auto_start`. On GUI launch, all integrations with `auto_start=1` are started automatically. |
+| **Update** | Stop if running → `strawhub update` → restart if was running. |
+| **Reinstall** | Stop if running → `strawhub reinstall` → restart if was running. Data in `STRAWPOT_DATA_DIR` is preserved. |
+| **Uninstall** | Stop if running → remove code directory. Data directory is preserved. |
+
+**Startup behavior:**
+
+On GUI startup, `mark_orphaned_integrations_stopped` sends SIGTERM to
+all processes marked as running in the DB (they may be stale from a
+previous crash pointing at the wrong API URL). Then
+`auto_start_integrations` re-launches those with `auto_start=1`.
+
+**Shutdown behavior:**
+
+On GUI shutdown, `stop_all_integrations` sends SIGTERM to all running
+adapter processes.
 
 ---
 
@@ -294,10 +343,15 @@ its own `(platform_id, thread_id) → conversation_id` mapping locally.
 | GET | `/api/integrations/:name` | Integration detail (manifest + config + status) |
 | GET | `/api/integrations/:name/config` | Config schema + saved values |
 | PUT | `/api/integrations/:name/config` | Save config values |
+| PUT | `/api/integrations/:name/auto-start` | Toggle auto-start (`{"enabled": true/false}`) |
+| DELETE | `/api/integrations/:name/config` | Clear saved config |
 | POST | `/api/integrations/:name/start` | Start the adapter process |
 | POST | `/api/integrations/:name/stop` | Stop the adapter process |
+| GET | `/api/integrations/:name/status` | Check live status (process alive + health check) |
 | WS | `/api/integrations/:name/logs/ws` | WebSocket: stream adapter log output |
 | POST | `/api/integrations/install` | Install from Strawhub |
+| POST | `/api/integrations/update` | Stop → update → restart if was running |
+| POST | `/api/integrations/reinstall` | Stop → reinstall → restart if was running |
 | DELETE | `/api/integrations/:name` | Stop + uninstall |
 
 ---
@@ -331,18 +385,29 @@ platform and imu via the StrawPot REST API.
 Adapter authors need to implement:
 
 1. A Python script (or any executable) that:
-   - Reads `STRAWPOT_API_URL` from env vars
+   - Reads `STRAWPOT_API_URL` from env (auto-set by GUI)
+   - Reads `STRAWPOT_DATA_DIR` from env for persistent state (auto-set by GUI, falls back to `Path(__file__).parent`)
    - Reads platform-specific config from env vars (e.g., `STRAWPOT_BOT_TOKEN`)
    - Connects to the chat platform
    - Relays messages to/from the imu conversation API
-   - Maintains a local mapping of platform threads to conversation IDs
+   - Maintains a local mapping of platform threads to conversation IDs (stored in `STRAWPOT_DATA_DIR`)
+   - Handles SIGTERM for graceful shutdown
    - Exposes a health check endpoint (optional)
-2. An `INTEGRATION.md` manifest with `env` schema
+2. An `INTEGRATION.md` manifest with `env` schema (only user-configurable vars — not `STRAWPOT_API_URL` or `STRAWPOT_DATA_DIR`)
 3. A `requirements.txt` for dependencies
 
 The adapter has no dependency on StrawPot internals — only the public
 REST API. This makes it possible to write adapters in any language,
 though Python is the recommended default for Strawhub distribution.
+
+**Environment variables available to adapters:**
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `STRAWPOT_API_URL` | Auto-set by GUI | Full URL of the StrawPot API server |
+| `STRAWPOT_DATA_DIR` | Auto-set by GUI | Persistent data directory (survives reinstalls) |
+| `STRAWPOT_BOT_TOKEN` | User-configured | Platform bot token (declared in `env` schema) |
+| *(other env vars)* | User-configured | Any additional vars declared in the manifest `env` schema |
 
 **Example minimal adapter (Telegram):**
 
@@ -350,6 +415,7 @@ though Python is the recommended default for Strawhub distribution.
 # adapter.py
 import os
 import sqlite3
+from pathlib import Path
 import httpx
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -357,8 +423,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 API_URL = os.environ["STRAWPOT_API_URL"]
 BOT_TOKEN = os.environ["STRAWPOT_BOT_TOKEN"]
 
+# Persistent data directory (auto-set by GUI, falls back to script directory)
+DATA_DIR = Path(os.environ.get("STRAWPOT_DATA_DIR") or str(Path(__file__).parent))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 # Local mapping: telegram chat_id → imu conversation_id
-db = sqlite3.connect(".adapter.db")
+db = sqlite3.connect(str(DATA_DIR / "adapter.db"))
 db.execute("""
     CREATE TABLE IF NOT EXISTS chat_conversations (
         chat_id TEXT PRIMARY KEY,

@@ -4,6 +4,7 @@ export interface IntegrationLogState {
   lines: string[];
   done: boolean;
   connected: boolean;
+  clearLines: () => void;
 }
 
 /**
@@ -76,5 +77,7 @@ export function useIntegrationLogWS(name: string | null): IntegrationLogState {
     };
   }, [connect]);
 
-  return { lines, done, connected };
+  const clearLines = useCallback(() => setLines([]), []);
+
+  return { lines, done, connected, clearLines };
 }

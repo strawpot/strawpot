@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowDown, Copy, Search } from "lucide-react";
+import { ArrowDown, Copy, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useIntegrationLogWS } from "@/hooks/useIntegrationLogWS";
 
@@ -28,22 +28,24 @@ export default function IntegrationLogSheet({
 }: IntegrationLogSheetProps) {
   // Only connect when sheet is open
   const activeName = open ? name : null;
-  const { lines, done, connected } = useIntegrationLogWS(activeName);
+  const { lines, done, connected, clearLines } = useIntegrationLogWS(activeName);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[700px] sm:max-w-[700px] overflow-hidden">
+      <SheetContent side="right" className="flex h-full w-[700px] flex-col sm:max-w-[700px] overflow-hidden">
         <SheetHeader>
           <SheetTitle>Logs: {name}</SheetTitle>
           <SheetDescription>
             Adapter stdout/stderr output
           </SheetDescription>
         </SheetHeader>
-        <div className="mt-4 min-w-0">
+        <div className="flex-1 min-h-0 min-w-0 px-4 pb-4">
           <LogTerminal
             lines={lines}
             done={done}
             connected={connected}
+            onClear={clearLines}
+            onClose={() => onOpenChange(false)}
           />
         </div>
       </SheetContent>
@@ -55,12 +57,17 @@ function LogTerminal({
   lines,
   done,
   connected,
+  onClear,
+  onClose,
 }: {
   lines: string[];
   done: boolean;
   connected: boolean;
+  onClear: () => void;
+  onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const lowerSearch = search.toLowerCase();
   const matchIndices = search
     ? lines.reduce<number[]>((acc, line, i) => {
@@ -116,16 +123,22 @@ function LogTerminal({
     (e: React.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "a") {
         e.preventDefault();
-        navigator.clipboard.writeText(lines.join("\n"));
-        toast.success("Copied all logs to clipboard");
+        const el = containerRef.current;
+        if (el) {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        }
       }
     },
-    [lines],
+    [],
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
+    <div className="flex h-full flex-col gap-3">
+      <div className="flex shrink-0 items-center gap-2">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -170,11 +183,11 @@ function LogTerminal({
         </span>
       </div>
 
-      <div className="relative">
+      <div className="relative min-h-0 flex-1">
         <div
           ref={containerRef}
           tabIndex={0}
-          className="h-[500px] overflow-auto rounded-md bg-[#1e1e1e] font-mono text-xs text-[#d4d4d4] select-text focus:outline-none focus:ring-1 focus:ring-ring"
+          className="absolute inset-0 overflow-auto rounded-md bg-[#1e1e1e] font-mono text-xs text-[#d4d4d4] select-text focus:outline-none focus:ring-1 focus:ring-ring"
           onScroll={handleScroll}
           onKeyDown={handleKeyDown}
         >
@@ -233,6 +246,46 @@ function LogTerminal({
           >
             <ArrowDown className="mr-1 h-3.5 w-3.5" />
             Jump to bottom
+          </Button>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 pt-1">
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+        <div className="flex-1" />
+        {confirmClear ? (
+          <>
+            <span className="text-xs text-muted-foreground">Clear all logs?</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                onClear();
+                setConfirmClear(false);
+              }}
+            >
+              Confirm
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmClear(false)}
+            >
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs"
+            disabled={lines.length === 0}
+            onClick={() => setConfirmClear(true)}
+          >
+            <Trash2 className="mr-1 h-3 w-3" />
+            Clear
           </Button>
         )}
       </div>

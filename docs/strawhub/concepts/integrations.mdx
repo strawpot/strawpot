@@ -16,7 +16,6 @@ description: "Telegram bot adapter for StrawPot"
 metadata:
   strawpot:
     entry_point: python adapter.py
-    auto_start: false
     install:
       macos: pip install -r requirements.txt
       linux: pip install -r requirements.txt
@@ -24,9 +23,6 @@ metadata:
       STRAWPOT_BOT_TOKEN:
         required: true
         description: Bot API token
-      STRAWPOT_API_URL:
-        required: false
-        description: StrawPot API URL (auto-set by GUI)
     health_check:
       endpoint: http://localhost:${port}/health
       interval_seconds: 30
@@ -49,10 +45,20 @@ Connects a Telegram bot to StrawPot via imu.
 
 | Field | Description |
 |-------|-------------|
-| `metadata.strawpot.auto_start` | Start on GUI launch (default: `false`) |
 | `metadata.strawpot.install` | OS-keyed install commands (run by `strawhub install`) |
-| `metadata.strawpot.env` | Required environment variables |
+| `metadata.strawpot.env` | User-configurable environment variables (bot tokens, etc.) |
 | `metadata.strawpot.health_check` | Liveness probe endpoint and interval |
+
+### Auto-set Environment Variables
+
+The GUI automatically provides these env vars when starting an adapter — do not declare them in the `env` schema:
+
+| Variable | Description |
+|----------|-------------|
+| `STRAWPOT_API_URL` | URL of the running StrawPot API server |
+| `STRAWPOT_DATA_DIR` | Persistent data directory (survives reinstalls) |
+
+Auto-start is managed in the GUI (toggle in the integration detail sheet), not in the manifest.
 
 ## Scope
 
@@ -64,7 +70,12 @@ Integrations are **always global** — they install to `~/.strawpot/integrations
     ├── INTEGRATION.md
     ├── adapter.py
     ├── requirements.txt
-    └── .version
+    ├── .version
+    └── .log              # runtime stdout/stderr
+
+~/.strawpot/data/integrations/
+└── telegram/
+    └── adapter.db        # persistent adapter state (survives reinstalls)
 ```
 
 ## Lifecycle
@@ -72,9 +83,11 @@ Integrations are **always global** — they install to `~/.strawpot/integrations
 Integrations are managed through the StrawPot GUI:
 
 1. **Install** — `strawhub install integration telegram` downloads the package globally
-2. **Configure** — Set environment variables (e.g., bot token) in the GUI settings
+2. **Configure** — Set environment variables (e.g., bot token) in the integration detail sheet
 3. **Start/Stop** — The GUI launches the `entry_point` command and manages the process
-4. **Health Check** — If configured, the GUI periodically pings the health endpoint
+4. **Auto-start** — Toggle in the detail sheet to start automatically when StrawPot launches
+5. **Update/Reinstall** — Stops the adapter, runs the update, restarts if it was running. Persistent data in `STRAWPOT_DATA_DIR` is preserved.
+6. **Health Check** — If configured, the GUI periodically pings the health endpoint
 
 ## Dependencies
 

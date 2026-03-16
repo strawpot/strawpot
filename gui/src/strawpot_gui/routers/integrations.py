@@ -60,7 +60,6 @@ def scan_integrations(base_dir: Path) -> list[dict]:
             "name": fm.get("name", entry.name),
             "description": fm.get("description", ""),
             "entry_point": strawpot_meta.get("entry_point", ""),
-            "auto_start": strawpot_meta.get("auto_start", False),
             "env_schema": strawpot_meta.get("env", {}),
             "health_check": strawpot_meta.get("health_check"),
             "path": str(entry),
@@ -103,11 +102,13 @@ def _merge_integration(manifest: dict, db_state: dict | None, db_config: dict) -
     if db_state:
         result["status"] = db_state["status"]
         result["pid"] = db_state["pid"]
+        result["auto_start"] = bool(db_state["auto_start"])
         result["last_error"] = db_state["last_error"]
         result["started_at"] = db_state["started_at"]
     else:
         result["status"] = "stopped"
         result["pid"] = None
+        result["auto_start"] = False
         result["last_error"] = None
         result["started_at"] = None
     result["config_values"] = db_config
@@ -148,7 +149,6 @@ def get_integration(name: str, conn=Depends(get_db_conn)):
         "name": fm.get("name", name),
         "description": fm.get("description", ""),
         "entry_point": strawpot_meta.get("entry_point", ""),
-        "auto_start": strawpot_meta.get("auto_start", False),
         "env_schema": strawpot_meta.get("env", {}),
         "health_check": strawpot_meta.get("health_check"),
         "path": str(integration_dir),
@@ -207,6 +207,25 @@ def put_integration_config(
         )
 
     return {"ok": True}
+
+
+@router.put("/{name}/auto-start")
+def put_auto_start(
+    name: str, data: dict = Body(...), conn=Depends(get_db_conn)
+):
+    """Toggle auto-start for an integration."""
+    home = get_strawpot_home()
+    manifest_path = home / "integrations" / name / MANIFEST
+    if not manifest_path.is_file():
+        raise HTTPException(404, f"Integration not found: {name}")
+
+    enabled = bool(data.get("enabled", False))
+    _ensure_db_row(conn, name)
+    conn.execute(
+        "UPDATE integrations SET auto_start = ? WHERE name = ?",
+        (1 if enabled else 0, name),
+    )
+    return {"ok": True, "auto_start": enabled}
 
 
 @router.delete("/{name}/config")
@@ -340,6 +359,11 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
 
     # Derive API URL from the running server's actual request URL
     env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/")
+
+    # Persistent data directory for adapter state (survives reinstalls)
+    data_dir = get_strawpot_home() / "data" / "integrations" / name
+    data_dir.mkdir(parents=True, exist_ok=True)
+    env["STRAWPOT_DATA_DIR"] = str(data_dir)
 
     # Pass saved env values directly (keys are already env var names).
     # Skip empty strings so they don't overwrite auto-derived values
@@ -486,7 +510,13 @@ def get_integration_status(name: str, conn=Depends(get_db_conn)):
 
 
 def mark_orphaned_integrations_stopped(db_path: str) -> None:
-    """Mark integrations whose PID is dead as stopped. Called at startup."""
+    """Stop all integrations marked as running. Called at startup.
+
+    On a clean restart the adapters were already SIGTERM'd during shutdown.
+    On a crash they may still be alive but pointing at the old server URL,
+    so we kill them and let auto_start_integrations re-launch with the
+    correct API URL.
+    """
     from strawpot_gui.db import get_db
 
     with get_db(db_path) as conn:
@@ -494,15 +524,20 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
             "SELECT name, pid FROM integrations WHERE status = 'running' AND pid IS NOT NULL"
         ).fetchall()
         for row in rows:
-            if not _is_process_alive(row["pid"]):
-                conn.execute(
-                    "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-                    (row["name"],),
-                )
-                logger.info(
-                    "Marked orphaned integration '%s' (pid %d) as stopped",
-                    row["name"], row["pid"],
-                )
+            pid = row["pid"]
+            if _is_process_alive(pid):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    logger.info(
+                        "Stopped stale integration '%s' (pid %d) from previous run",
+                        row["name"], pid,
+                    )
+                except (ProcessLookupError, OSError):
+                    pass
+            conn.execute(
+                "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+                (row["name"],),
+            )
 
 
 def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int = 8741) -> None:
@@ -513,8 +548,6 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
     manifests = scan_integrations(home)
 
     for manifest in manifests:
-        if not manifest.get("auto_start"):
-            continue
         name = manifest["name"]
         entry_point = manifest.get("entry_point", "")
         if not entry_point:
@@ -524,7 +557,9 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         with get_db(db_path) as conn:
             _ensure_db_row(conn, name)
             db_state = _get_db_state(conn, name)
-            if db_state and db_state["status"] == "running" and db_state["pid"]:
+            if not db_state or not db_state["auto_start"]:
+                continue
+            if db_state["status"] == "running" and db_state["pid"]:
                 if _is_process_alive(db_state["pid"]):
                     continue  # already running
 
@@ -540,6 +575,9 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
         env["STRAWPOT_API_URL"] = f"http://{host}:{port}"
+        data_dir = home / "data" / "integrations" / name
+        data_dir.mkdir(parents=True, exist_ok=True)
+        env["STRAWPOT_DATA_DIR"] = str(data_dir)
         for key, value in config_values.items():
             if value is not None and value != "":
                 env[key] = str(value)
