@@ -1,5 +1,6 @@
-"""Integration management endpoints — list, detail, config CRUD, lifecycle."""
+"""Integration management endpoints — list, detail, config CRUD, lifecycle, logs."""
 
+import asyncio
 import logging
 import os
 import shlex
@@ -9,11 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from strawpot.config import get_strawpot_home
 from strawpot.context import parse_frontmatter
 
 from strawpot_gui.db import get_db_conn
+from strawpot_gui.routers.logs import read_log_delta, read_log_tail
+from strawpot_gui.sse import watch_dir
 
 logger = logging.getLogger(__name__)
 
@@ -482,3 +486,125 @@ def auto_start_integrations(db_path: str) -> None:
                 (proc.pid, now, name),
             )
         logger.info("Auto-started integration '%s' (pid %d)", name, proc.pid)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket: integration log streaming
+# ---------------------------------------------------------------------------
+
+
+@router.websocket("/{name}/logs/ws")
+async def integration_logs_ws(websocket: WebSocket, name: str) -> None:
+    """Stream integration adapter logs over WebSocket.
+
+    Protocol (server → client):
+      {"type": "log_snapshot", "lines": [...], "offset": N}
+      {"type": "log_delta",    "lines": [...], "offset": N}
+      {"type": "log_done"}  — integration stopped, stream ends
+      {"type": "error", "message": "..."}
+    """
+    home = get_strawpot_home()
+    integration_dir = home / "integrations" / name
+    manifest_path = integration_dir / MANIFEST
+    if not manifest_path.is_file():
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": f"Integration not found: {name}"})
+        await websocket.close(code=4004)
+        return
+
+    log_path = str(integration_dir / ".log")
+
+    await websocket.accept()
+
+    # Send initial snapshot
+    lines, offset = read_log_tail(log_path)
+    await websocket.send_json({
+        "type": "log_snapshot",
+        "lines": lines,
+        "offset": offset,
+    })
+
+    # Check if integration is currently running
+    db_path: str = websocket.app.state.db_path
+    from strawpot_gui.db import get_db
+    with get_db(db_path) as conn:
+        db_state = _get_db_state(conn, name)
+
+    is_running = (
+        db_state is not None
+        and db_state["status"] == "running"
+        and db_state["pid"]
+        and _is_process_alive(db_state["pid"])
+    )
+
+    if not is_running:
+        await websocket.send_json({"type": "log_done"})
+        await websocket.close()
+        return
+
+    # Watch for log changes
+    stop = asyncio.Event()
+
+    async def log_watcher() -> None:
+        nonlocal offset
+        try:
+            async for changed_files in watch_dir(str(integration_dir), stop):
+                if not changed_files:
+                    # Timeout — check if still running
+                    with get_db(db_path) as conn:
+                        state = _get_db_state(conn, name)
+                    alive = (
+                        state is not None
+                        and state["status"] == "running"
+                        and state["pid"]
+                        and _is_process_alive(state["pid"])
+                    )
+                    if not alive:
+                        # Final read
+                        new_lines, offset = read_log_delta(log_path, offset)
+                        if new_lines:
+                            await websocket.send_json({
+                                "type": "log_delta",
+                                "lines": new_lines,
+                                "offset": offset,
+                            })
+                        await websocket.send_json({"type": "log_done"})
+                        return
+                    continue
+
+                if any(f.endswith(".log") for f in changed_files):
+                    new_lines, offset = read_log_delta(log_path, offset)
+                    if new_lines:
+                        await websocket.send_json({
+                            "type": "log_delta",
+                            "lines": new_lines,
+                            "offset": offset,
+                        })
+        except asyncio.CancelledError:
+            pass
+
+    async def receiver() -> None:
+        """Drain client messages (keep connection alive)."""
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            stop.set()
+
+    watcher_task = asyncio.create_task(log_watcher())
+    receiver_task = asyncio.create_task(receiver())
+
+    try:
+        await asyncio.wait(
+            {watcher_task, receiver_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    finally:
+        stop.set()
+        for task in [watcher_task, receiver_task]:
+            task.cancel()
+        await asyncio.gather(watcher_task, receiver_task, return_exceptions=True)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

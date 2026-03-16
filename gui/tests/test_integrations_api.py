@@ -289,3 +289,48 @@ class TestOrphanedIntegrations:
             ).fetchone()
         assert row["status"] == "stopped"
         assert row["pid"] is None
+
+
+class TestIntegrationLogs:
+    def test_logs_ws_not_found(self, client, home):
+        """WebSocket for nonexistent integration returns error and closes."""
+        with client.websocket_connect("/api/integrations/nonexistent/logs/ws") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "not found" in msg["message"]
+
+    def test_logs_ws_stopped_sends_done(self, client, home):
+        """Stopped integration sends snapshot then done."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / ".log").write_text("line1\nline2\n")
+        with client.websocket_connect("/api/integrations/telegram/logs/ws") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "log_snapshot"
+            assert "line1" in msg["lines"]
+            assert "line2" in msg["lines"]
+            msg = ws.receive_json()
+            assert msg["type"] == "log_done"
+
+    def test_logs_ws_empty_log(self, client, home):
+        """No log file yet — snapshot has empty lines, then done."""
+        _create_integration(home, "telegram")
+        with client.websocket_connect("/api/integrations/telegram/logs/ws") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "log_snapshot"
+            assert msg["lines"] == []
+            msg = ws.receive_json()
+            assert msg["type"] == "log_done"
+
+    def test_logs_ws_snapshot_includes_existing_content(self, client, home):
+        """Snapshot includes existing log content."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / ".log").write_text(
+            "line1\nline2\nline3\nline4\nline5\n"
+        )
+        with client.websocket_connect("/api/integrations/telegram/logs/ws") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "log_snapshot"
+            assert len(msg["lines"]) == 5
+            assert msg["lines"][0] == "line1"
+            assert msg["lines"][4] == "line5"
+            assert msg["offset"] > 0
