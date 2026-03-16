@@ -1127,7 +1127,7 @@ posting results back to Telegram groups, Slack channels, etc.
 | 21c | Skill: `notify-discord` — direct Discord webhook messaging | Done |
 | 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Done |
 | 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Done |
-| 24 | Frontend: schedule UI — conversation targeting + skill selection | Done |
+| 24 | Frontend: schedule UI — conversation targeting + Imu project support | Done |
 
 **Phase 5 — Conversation source tracking**
 
