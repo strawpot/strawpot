@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     last_run_at     TEXT,
     next_run_at     TEXT,
     last_error      TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS integrations (
@@ -259,13 +260,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 last_run_at     TEXT,
                 next_run_at     TEXT,
                 last_error      TEXT,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL
             );
             INSERT INTO scheduled_tasks_new
                 SELECT id, name, project_id, role, task, cron_expr,
                        schedule_type, run_at, enabled, system_prompt,
                        skip_if_running, last_run_at, next_run_at,
-                       last_error, created_at
+                       last_error, created_at, NULL
                 FROM scheduled_tasks;
             DROP TABLE scheduled_tasks;
             ALTER TABLE scheduled_tasks_new RENAME TO scheduled_tasks;
@@ -314,6 +316,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_conversations_parent ON conversations(parent_conversation_id);
             PRAGMA foreign_keys=ON;
         """)
+
+    # Add conversation_id column to scheduled_tasks (added 2026-03-16)
+    try:
+        conn.execute(
+            "ALTER TABLE scheduled_tasks "
+            "ADD COLUMN conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Add integration_notifications table (added 2026-03-16)
     conn.executescript("""

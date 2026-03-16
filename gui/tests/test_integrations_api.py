@@ -661,6 +661,111 @@ class TestNotify:
         assert r1.json()["id"] != r2.json()["id"]
 
 
+class TestListNotifications:
+    def test_list_pending(self, client, home):
+        _create_integration(home, "telegram")
+        client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Hello"},
+        )
+        client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "World", "chat_id": "99"},
+        )
+        resp = client.get("/api/integrations/telegram/notifications")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["message"] == "Hello"
+        assert data[0]["chat_id"] is None
+        assert data[1]["message"] == "World"
+        assert data[1]["chat_id"] == "99"
+
+    def test_list_empty(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.get("/api/integrations/telegram/notifications")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_list_excludes_delivered(self, client, home):
+        """Notifications marked as delivered are not returned."""
+        _create_integration(home, "telegram")
+        r = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Delivered one"},
+        )
+        nid = r.json()["id"]
+        # Manually mark as delivered
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "UPDATE integration_notifications SET delivered_at = datetime('now') "
+                "WHERE id = ?",
+                (nid,),
+            )
+        resp = client.get("/api/integrations/telegram/notifications")
+        assert resp.json() == []
+
+    def test_list_not_found(self, client, home):
+        resp = client.get("/api/integrations/nonexistent/notifications")
+        assert resp.status_code == 404
+
+    def test_list_ordered_by_id(self, client, home):
+        _create_integration(home, "telegram")
+        client.post("/api/integrations/telegram/notify", json={"message": "A"})
+        client.post("/api/integrations/telegram/notify", json={"message": "B"})
+        client.post("/api/integrations/telegram/notify", json={"message": "C"})
+        data = client.get("/api/integrations/telegram/notifications").json()
+        assert [n["message"] for n in data] == ["A", "B", "C"]
+        assert data[0]["id"] < data[1]["id"] < data[2]["id"]
+
+
+class TestAckNotification:
+    def test_ack_marks_delivered(self, client, home):
+        _create_integration(home, "telegram")
+        r = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "To deliver"},
+        )
+        nid = r.json()["id"]
+        resp = client.post(f"/api/integrations/telegram/notifications/{nid}/ack")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        # Should no longer appear in pending list
+        pending = client.get("/api/integrations/telegram/notifications").json()
+        assert len(pending) == 0
+
+    def test_ack_not_found(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post("/api/integrations/telegram/notifications/999/ack")
+        assert resp.status_code == 404
+
+    def test_ack_wrong_integration(self, client, home):
+        """ACK with mismatched integration name returns 404."""
+        _create_integration(home, "telegram")
+        _create_integration(home, "slack")
+        r = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "For telegram"},
+        )
+        nid = r.json()["id"]
+        resp = client.post(f"/api/integrations/slack/notifications/{nid}/ack")
+        assert resp.status_code == 404
+
+    def test_ack_idempotent(self, client, home):
+        """ACKing an already-delivered notification succeeds."""
+        _create_integration(home, "telegram")
+        r = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Double ack"},
+        )
+        nid = r.json()["id"]
+        client.post(f"/api/integrations/telegram/notifications/{nid}/ack")
+        resp = client.post(f"/api/integrations/telegram/notifications/{nid}/ack")
+        assert resp.status_code == 200
+
+
 class TestManifestParsing:
     def test_scan_skips_dir_without_manifest(self, client, home):
         """Directories without INTEGRATION.md are silently skipped."""
