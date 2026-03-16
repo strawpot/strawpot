@@ -290,6 +290,7 @@ export interface ScheduleRunList {
 
 export interface Integration {
   name: string;
+  version: string | null;
   description: string;
   entry_point: string;
   auto_start: boolean;
