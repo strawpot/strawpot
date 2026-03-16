@@ -193,21 +193,32 @@ export interface ConversationSession {
   chat_messages?: ChatMessage[];
 }
 
+export interface ConversationLink {
+  id: number;
+  project_id: number;
+  title: string | null;
+  project_name: string;
+}
+
 export interface Conversation {
   id: number;
   project_id: number;
   title: string | null;
+  parent_conversation_id: number | null;
   created_at: string;
   updated_at: string | null;
   pending_task: string | null;
   sessions: ConversationSession[];
   has_more: boolean;
+  parent: ConversationLink | null;
+  children: ConversationLink[];
 }
 
 export interface ConversationListItem {
   id: number;
   project_id: number;
   title: string | null;
+  parent_conversation_id: number | null;
   created_at: string;
   updated_at: string | null;
   session_count: number;
@@ -232,6 +243,7 @@ export interface ImuConversation {
   updated_at: string | null;
   session_count: number;
   active_session_count: number;
+  spawned_count: number;
 }
 
 export interface Schedule {

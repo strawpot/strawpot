@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     title       TEXT,
+    parent_conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
@@ -258,6 +259,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRAGMA foreign_keys=ON;
         """)
 
+    # Add parent_conversation_id column to conversations (added 2026-03-15)
+    try:
+        conn.execute(
+            "ALTER TABLE conversations "
+            "ADD COLUMN parent_conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_parent "
+        "ON conversations(parent_conversation_id)"
+    )
+
     # Migrate conversations table to AUTOINCREMENT to prevent rowid reuse
     # after deletion (added 2026-03-13).
     # IMPORTANT: foreign_keys must be OFF during the table swap, otherwise
@@ -274,14 +289,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 title       TEXT,
+                parent_conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at  TEXT,
                 pending_task TEXT
             );
-            INSERT INTO conversations_new SELECT id, project_id, title, created_at, updated_at, pending_task FROM conversations;
+            INSERT INTO conversations_new SELECT id, project_id, title, parent_conversation_id, created_at, updated_at, pending_task FROM conversations;
             DROP TABLE conversations;
             ALTER TABLE conversations_new RENAME TO conversations;
             CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversations_parent ON conversations(parent_conversation_id);
             PRAGMA foreign_keys=ON;
         """)
 

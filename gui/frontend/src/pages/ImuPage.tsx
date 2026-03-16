@@ -1053,6 +1053,11 @@ function ImuHome() {
                         </td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {conv.session_count}
+                          {conv.spawned_count > 0 && (
+                            <span className="ml-1.5 text-xs text-primary" title={`${conv.spawned_count} delegated conversation${conv.spawned_count !== 1 ? "s" : ""}`}>
+                              +{conv.spawned_count}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {conv.updated_at

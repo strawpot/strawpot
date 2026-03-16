@@ -7,6 +7,7 @@ import type { InfiniteData } from "@tanstack/react-query";
 interface CreateConversationBody {
   project_id: number;
   title?: string;
+  parent_conversation_id?: number;
 }
 
 interface SubmitTaskBody {
