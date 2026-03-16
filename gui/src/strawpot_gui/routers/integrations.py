@@ -17,6 +17,7 @@ from strawpot.context import parse_frontmatter
 
 from strawpot_gui.db import get_db_conn
 from strawpot_gui.routers.logs import read_log_delta, read_log_tail
+from strawpot_gui.routers.registry import run_strawhub
 from strawpot_gui.sse import watch_dir
 
 logger = logging.getLogger(__name__)
@@ -216,6 +217,43 @@ def delete_integration_config(name: str, conn=Depends(get_db_conn)):
     )
     conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Install / Uninstall via Strawhub
+# ---------------------------------------------------------------------------
+
+
+@router.post("/install")
+def install_integration(data: dict = Body(...)):
+    """Install an integration from Strawhub by name."""
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "'name' is required")
+    return run_strawhub("install", "integration", "-y", name, "--global")
+
+
+@router.delete("/{name}")
+def uninstall_integration(name: str, conn=Depends(get_db_conn)):
+    """Stop (if running) and uninstall an integration."""
+    # Stop the adapter process if it's running
+    db_state = _get_db_state(conn, name)
+    if db_state and db_state["status"] == "running" and db_state["pid"]:
+        if _is_process_alive(db_state["pid"]):
+            try:
+                os.kill(db_state["pid"], signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass
+        conn.execute(
+            "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
+            (name,),
+        )
+
+    # Remove DB state
+    conn.execute("DELETE FROM integration_config WHERE integration_name = ?", (name,))
+    conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
+
+    return run_strawhub("uninstall", "integration", name, "--global")
 
 
 # ---------------------------------------------------------------------------
