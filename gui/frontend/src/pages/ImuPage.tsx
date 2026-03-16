@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useConversationInfinite, useImuConversations } from "@/hooks/queries/use-conversations";
-import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask, useCancelPendingTask } from "@/hooks/mutations/use-conversations";
+import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask, useCancelPendingTask, useCancelQueuedTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
@@ -237,6 +237,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const cancelPending = useCancelPendingTask(cid);
+  const cancelTask = useCancelQueuedTask(cid);
   const rename = useRenameImuConversation();
   const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
@@ -470,33 +471,50 @@ function ImuConversationView({ cid }: { cid: number }) {
       </div>
 
       {/* Pending (queued) task indicator */}
-      {conversation?.pending_task && (() => {
-        const queuedTasks = conversation.pending_task.split("\n\n").filter(Boolean);
+      {conversation?.queued_tasks && conversation.queued_tasks.length > 0 && (() => {
+        const tasks = conversation.queued_tasks;
         return (
           <div className="flex-shrink-0 border-t border-border bg-background px-4 py-2">
             <div className="mx-auto max-w-2xl space-y-1.5">
-              {queuedTasks.map((qt, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-2">
+              {tasks.map((qt, i) => (
+                <div key={qt.id} className="flex items-center gap-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-2">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
+                  {qt.source !== "user" && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground flex-shrink-0">
+                      {qt.source}
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground flex-1 truncate">
-                    Queued{queuedTasks.length > 1 ? ` (${i + 1}/${queuedTasks.length})` : ""}:{" "}
-                    <span className="text-foreground">{qt.split("\n")[0]}</span>
+                    Queued{tasks.length > 1 ? ` (${i + 1}/${tasks.length})` : ""}:{" "}
+                    <span className="text-foreground">{qt.task.split("\n")[0]}</span>
                   </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="flex-shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => cancelTask.mutate(qt.id)}
+                    disabled={cancelTask.isPending}
+                  >
+                    <X />
+                  </Button>
                 </div>
               ))}
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => cancelPending.mutate()}
-                  disabled={cancelPending.isPending}
-                >
-                  <X className="h-3 w-3 mr-1" />
-                  Cancel all
-                </Button>
-              </div>
+              {tasks.length > 1 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => cancelPending.mutate()}
+                    disabled={cancelPending.isPending}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Cancel all
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         );

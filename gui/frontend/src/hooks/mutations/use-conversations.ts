@@ -47,18 +47,26 @@ export function useSubmitConversationTask(conversationId: number) {
       ),
     onSuccess: (data, variables) => {
       if (data.queued) {
-        // Optimistically append to pending_task in the infinite query cache
+        // Optimistically append to queued_tasks in the infinite query cache
         qc.setQueryData<InfiniteData<Conversation>>(
           queryKeys.conversations.detail(conversationId),
           (old) => {
             if (!old) return old;
             const pages = old.pages.map((page, i) => {
               if (i !== old.pages.length - 1) return page;
-              const existing = page.pending_task || "";
-              const newPending = existing
-                ? `${existing}\n\n${variables.task}`
-                : variables.task;
-              return { ...page, pending_task: newPending };
+              const newTask = {
+                id: -Date.now(), // temporary ID until refetch
+                task: variables.task,
+                source: "user",
+                source_id: null,
+                created_at: new Date().toISOString(),
+              };
+              const queued = [...(page.queued_tasks ?? []), newTask];
+              return {
+                ...page,
+                queued_tasks: queued,
+                pending_task: queued.map((q) => q.task).join("\n\n") || null,
+              };
             });
             return { ...old, pages };
           },
@@ -90,6 +98,19 @@ export function useCancelPendingTask(conversationId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.delete(`/conversations/${conversationId}/pending_task`),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: queryKeys.conversations.detail(conversationId),
+      });
+    },
+  });
+}
+
+export function useCancelQueuedTask(conversationId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) =>
+      api.delete(`/conversations/${conversationId}/queued_tasks/${taskId}`),
     onSuccess: () => {
       qc.invalidateQueries({
         queryKey: queryKeys.conversations.detail(conversationId),

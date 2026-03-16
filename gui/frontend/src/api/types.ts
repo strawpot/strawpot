@@ -200,6 +200,14 @@ export interface ConversationLink {
   project_name: string;
 }
 
+export interface QueuedTask {
+  id: number;
+  task: string;
+  source: string;
+  source_id: string | null;
+  created_at: string;
+}
+
 export interface Conversation {
   id: number;
   project_id: number;
@@ -208,6 +216,7 @@ export interface Conversation {
   created_at: string;
   updated_at: string | null;
   pending_task: string | null;
+  queued_tasks: QueuedTask[];
   sessions: ConversationSession[];
   has_more: boolean;
   parent: ConversationLink | null;

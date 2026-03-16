@@ -128,6 +128,29 @@ class Scheduler:
         task = schedule["task"]
         conversation_id = schedule.get("conversation_id")
 
+        # For conversation-bound schedules, check for active sessions first.
+        # If one is running, queue the task instead of launching directly.
+        if conversation_id:
+            active = conn.execute(
+                "SELECT 1 FROM sessions "
+                "WHERE conversation_id = ? AND status IN ('starting', 'running') LIMIT 1",
+                (conversation_id,),
+            ).fetchone()
+            if active:
+                conn.execute(
+                    """INSERT INTO conversation_task_queue
+                       (conversation_id, task, source, source_id, role, system_prompt)
+                       VALUES (?, ?, 'scheduler', ?, ?, ?)""",
+                    (conversation_id, task, str(schedule_id), role,
+                     schedule["system_prompt"]),
+                )
+                logger.info(
+                    "Schedule '%s' queued (active session on conversation %d)",
+                    name, conversation_id,
+                )
+                self._advance_schedule(conn, schedule, now)
+                return
+
         # #19 — conversation targeting: build context from prior turns
         kwargs: dict = {}
         if conversation_id:
@@ -168,27 +191,10 @@ class Scheduler:
                 schedule_id=schedule_id,
                 **kwargs,
             )
-            if schedule.get("schedule_type") == "one_time":
-                # One-time: auto-disable after firing
-                conn.execute(
-                    "UPDATE scheduled_tasks "
-                    "SET last_run_at = ?, next_run_at = NULL, "
-                    "    enabled = 0, last_error = NULL "
-                    "WHERE id = ?",
-                    (now.isoformat(), schedule_id),
-                )
-                next_run = None
-            else:
-                next_run = _next_run(schedule["cron_expr"], now)
-                conn.execute(
-                    "UPDATE scheduled_tasks "
-                    "SET last_run_at = ?, next_run_at = ?, last_error = NULL "
-                    "WHERE id = ?",
-                    (now.isoformat(), next_run, schedule_id),
-                )
+            self._advance_schedule(conn, schedule, now)
             logger.info(
-                "Schedule '%s' fired session %s, next run: %s",
-                name, run_id, next_run,
+                "Schedule '%s' fired session %s",
+                name, run_id,
             )
         except Exception as exc:
             conn.execute(
@@ -196,6 +202,27 @@ class Scheduler:
                 (str(exc), schedule_id),
             )
             logger.warning("Schedule '%s' failed: %s", name, exc)
+
+    @staticmethod
+    def _advance_schedule(conn, schedule: dict, now: datetime) -> None:
+        """Update last_run_at, next_run_at, and clear last_error."""
+        schedule_id = schedule["id"]
+        if schedule.get("schedule_type") == "one_time":
+            conn.execute(
+                "UPDATE scheduled_tasks "
+                "SET last_run_at = ?, next_run_at = NULL, "
+                "    enabled = 0, last_error = NULL "
+                "WHERE id = ?",
+                (now.isoformat(), schedule_id),
+            )
+        else:
+            next_run = _next_run(schedule["cron_expr"], now)
+            conn.execute(
+                "UPDATE scheduled_tasks "
+                "SET last_run_at = ?, next_run_at = ?, last_error = NULL "
+                "WHERE id = ?",
+                (now.isoformat(), next_run, schedule_id),
+            )
 
 
 def _next_run(cron_expr: str, after: datetime) -> str | None:

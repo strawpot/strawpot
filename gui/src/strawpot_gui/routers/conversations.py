@@ -38,6 +38,8 @@ class ConversationTask(BaseModel):
     cache_delegations: bool | None = None
     cache_max_entries: int | None = None
     cache_ttl_seconds: int | None = None
+    source: str = "user"
+    source_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +386,18 @@ def get_conversation(
         result["sessions"].append(d)
     result["has_more"] = has_more
 
+    # Queued tasks from the task queue table
+    queued_rows = conn.execute(
+        "SELECT id, task, source, source_id, created_at "
+        "FROM conversation_task_queue WHERE conversation_id = ? ORDER BY id ASC",
+        (conversation_id,),
+    ).fetchall()
+    result["queued_tasks"] = [dict(q) for q in queued_rows]
+    # Backward compat: synthesize pending_task string from queue
+    result["pending_task"] = (
+        "\n\n".join(q["task"] for q in queued_rows) or None
+    )
+
     # Parent conversation info
     if row["parent_conversation_id"]:
         parent = conn.execute(
@@ -487,13 +501,29 @@ def submit_task(
     ).fetchone()
 
     if active:
-        # Queue the task — concatenate with existing pending_task
-        existing = conv["pending_task"] or ""
-        new_pending = f"{existing}\n\n{body.task}".strip() if existing else body.task
+        # Queue the task as a separate row in conversation_task_queue
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            "UPDATE conversations SET pending_task = ?, updated_at = ? WHERE id = ?",
-            (new_pending, now, conversation_id),
+            """INSERT INTO conversation_task_queue
+               (conversation_id, task, source, source_id, role, context_files,
+                interactive, system_prompt, runtime, memory,
+                max_num_delegations, cache_delegations, cache_max_entries,
+                cache_ttl_seconds)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                conversation_id, body.task, body.source, body.source_id,
+                body.role,
+                json.dumps(body.context_files) if body.context_files else None,
+                1 if body.interactive else 0,
+                body.system_prompt, body.runtime, body.memory,
+                body.max_num_delegations,
+                1 if body.cache_delegations else None,
+                body.cache_max_entries, body.cache_ttl_seconds,
+            ),
+        )
+        conn.execute(
+            "UPDATE conversations SET updated_at = ? WHERE id = ?",
+            (now, conversation_id),
         )
         return JSONResponse(
             status_code=202,
@@ -565,12 +595,6 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
             (now, conversation_id),
         )
 
-    # Clear pending_task since we just launched
-    conn.execute(
-        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
-        (conversation_id,),
-    )
-
     return JSONResponse(
         status_code=201,
         content={"run_id": run_id, "conversation_id": conversation_id},
@@ -621,13 +645,24 @@ def delete_conversation(conversation_id: int, conn=Depends(get_db_conn)):
 
 @router.delete("/conversations/{conversation_id}/pending_task", status_code=204)
 def cancel_pending_task(conversation_id: int, conn=Depends(get_db_conn)):
-    """Cancel the queued pending task for a conversation."""
+    """Cancel all queued tasks for a conversation."""
     row = conn.execute(
         "SELECT id FROM conversations WHERE id = ?", (conversation_id,)
     ).fetchone()
     if not row:
         raise HTTPException(404, "Conversation not found")
     conn.execute(
-        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+        "DELETE FROM conversation_task_queue WHERE conversation_id = ?",
         (conversation_id,),
     )
+
+
+@router.delete("/conversations/{conversation_id}/queued_tasks/{task_id}", status_code=204)
+def cancel_queued_task(conversation_id: int, task_id: int, conn=Depends(get_db_conn)):
+    """Cancel a single queued task."""
+    deleted = conn.execute(
+        "DELETE FROM conversation_task_queue WHERE id = ? AND conversation_id = ?",
+        (task_id, conversation_id),
+    ).rowcount
+    if not deleted:
+        raise HTTPException(404, "Queued task not found")

@@ -27,32 +27,63 @@ _logger = _logging.getLogger(__name__)
 
 
 def _drain_pending_task(conn, conversation_id: int | None) -> None:
-    """If the conversation has a queued pending_task, launch it now."""
+    """If the conversation has queued tasks, launch the next one (FIFO)."""
     if not conversation_id:
         return
-    conv = conn.execute(
-        "SELECT id, project_id, title, pending_task FROM conversations WHERE id = ?",
+
+    # Only drain if no session is currently active for this conversation
+    active = conn.execute(
+        "SELECT 1 FROM sessions "
+        "WHERE conversation_id = ? AND status IN ('starting', 'running') LIMIT 1",
         (conversation_id,),
     ).fetchone()
-    if not conv or not conv["pending_task"]:
+    if active:
         return
 
-    pending = conv["pending_task"]
-    # Clear pending_task first to avoid re-entry
-    conn.execute(
-        "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+    # Pop the oldest queued task
+    queued = conn.execute(
+        "SELECT * FROM conversation_task_queue "
+        "WHERE conversation_id = ? ORDER BY id ASC LIMIT 1",
         (conversation_id,),
-    )
+    ).fetchone()
+    if not queued:
+        return
+
+    # Delete from queue before launching (prevents re-entry)
+    conn.execute("DELETE FROM conversation_task_queue WHERE id = ?", (queued["id"],))
+
+    conv = conn.execute(
+        "SELECT id, project_id, title FROM conversations WHERE id = ?",
+        (conversation_id,),
+    ).fetchone()
+    if not conv:
+        return
+
+    import json as _json
 
     from strawpot_gui.routers.conversations import ConversationTask, _launch_conversation_task
 
     try:
-        body = ConversationTask(task=pending)
+        body = ConversationTask(
+            task=queued["task"],
+            role=queued["role"],
+            context_files=_json.loads(queued["context_files"]) if queued["context_files"] else None,
+            interactive=bool(queued["interactive"]),
+            system_prompt=queued["system_prompt"],
+            runtime=queued["runtime"],
+            memory=queued["memory"],
+            max_num_delegations=queued["max_num_delegations"],
+            cache_delegations=bool(queued["cache_delegations"]) if queued["cache_delegations"] is not None else None,
+            cache_max_entries=queued["cache_max_entries"],
+            cache_ttl_seconds=queued["cache_ttl_seconds"],
+            source=queued["source"],
+            source_id=queued["source_id"],
+        )
         _launch_conversation_task(conn, conv, body)
-        _logger.info("Auto-submitted pending task for conversation %d", conversation_id)
+        _logger.info("Drained queued task %d for conversation %d", queued["id"], conversation_id)
     except Exception:
         _logger.exception(
-            "Failed to auto-submit pending task for conversation %d", conversation_id
+            "Failed to drain queued task %d for conversation %d", queued["id"], conversation_id
         )
 
 

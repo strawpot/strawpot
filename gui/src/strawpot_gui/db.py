@@ -341,6 +341,48 @@ def _migrate(conn: sqlite3.Connection) -> None:
             WHERE delivered_at IS NULL;
     """)
 
+    # Add conversation_task_queue table (added 2026-03-16)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS conversation_task_queue (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            task            TEXT NOT NULL,
+            source          TEXT NOT NULL DEFAULT 'user',
+            source_id       TEXT,
+            role            TEXT,
+            context_files   TEXT,
+            interactive     INTEGER NOT NULL DEFAULT 0,
+            system_prompt   TEXT,
+            runtime         TEXT,
+            memory          TEXT,
+            max_num_delegations  INTEGER,
+            cache_delegations    INTEGER,
+            cache_max_entries    INTEGER,
+            cache_ttl_seconds    INTEGER,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_queue_conversation
+            ON conversation_task_queue(conversation_id, id ASC);
+    """)
+
+    # Migrate existing pending_task data into conversation_task_queue
+    pending_rows = conn.execute(
+        "SELECT id, pending_task FROM conversations WHERE pending_task IS NOT NULL"
+    ).fetchall()
+    for row in pending_rows:
+        for chunk in row["pending_task"].split("\n\n"):
+            chunk = chunk.strip()
+            if chunk:
+                conn.execute(
+                    "INSERT INTO conversation_task_queue (conversation_id, task, source) "
+                    "VALUES (?, ?, 'user')",
+                    (row["id"], chunk),
+                )
+        conn.execute(
+            "UPDATE conversations SET pending_task = NULL WHERE id = ?",
+            (row["id"],),
+        )
+
 
 @contextmanager
 def get_db(db_path: str):

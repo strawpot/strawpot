@@ -1129,7 +1129,23 @@ posting results back to Telegram groups, Slack channels, etc.
 | 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Done |
 | 24 | Frontend: schedule UI — conversation targeting + Imu project support | Done |
 
-**Phase 5 — Conversation source tracking**
+**Phase 5 — Task queue with source tracking**
+
+Replace `pending_task` string concatenation with a proper task queue.
+Each submitted task is a separate record with source attribution, drained
+one at a time (FIFO). Fixes task merging, parameter loss on drain,
+scheduler concurrency, and enables per-source response routing.
+
+| # | Item | Status |
+|---|------|--------|
+| 25 | Database: `conversation_task_queue` table | Done |
+| 26 | Backend: task submission inserts into queue (atomic, no TOCTOU) | Done |
+| 27 | Backend: drain mechanism pops one task at a time (preserves all parameters) | Done |
+| 28 | Backend: scheduler queues when active session on conversation | Done |
+| 29 | Backend: individual + bulk task cancellation endpoints | Done |
+| 30 | Frontend: render `queued_tasks` with source badges + per-task cancel | Done |
+
+**Phase 6 — Conversation source tracking**
 
 Visual indicators showing where a conversation originated (Telegram,
 Slack, scheduler, etc.). Platform icons and labels in the conversation
@@ -1137,10 +1153,10 @@ list and header.
 
 | # | Item | Status |
 |---|------|--------|
-| 25 | Database: `source` + `source_meta` columns on `conversations` | Not started |
-| 26 | Backend: accept `source`/`source_meta` in `POST /api/imu/conversations` | Not started |
-| 27 | Backend: include `source`/`source_meta` in conversation list/detail responses | Not started |
-| 28 | Backend: scheduler sets `source="scheduler"` when creating conversations | Not started |
-| 29 | Frontend: platform icon badges in conversation list | Not started |
-| 30 | Frontend: "via Platform / label" subtitle in conversation header | Not started |
-| 31 | Reference adapters: pass `source`/`source_meta` when creating conversations | Not started |
+| 31 | Database: `source` + `source_meta` columns on `conversations` | Not started |
+| 32 | Backend: accept `source`/`source_meta` in `POST /api/imu/conversations` | Not started |
+| 33 | Backend: include `source`/`source_meta` in conversation list/detail responses | Not started |
+| 34 | Backend: scheduler sets `source="scheduler"` when creating conversations | Not started |
+| 35 | Frontend: platform icon badges in conversation list | Not started |
+| 36 | Frontend: "via Platform / label" subtitle in conversation header | Not started |
+| 37 | Reference adapters: pass `source`/`source_meta` when creating conversations | Not started |

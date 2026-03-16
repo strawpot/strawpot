@@ -898,7 +898,7 @@ class TestMessageQueuing:
         assert data["pending_task"] is None
 
     def test_auto_submit_drains_pending_on_completion(self, client, tmp_path, app):
-        """When a session completes and pending_task exists, a new session is launched."""
+        """When a session completes and a task is queued, a new session is launched."""
         d = tmp_path / "proj"
         d.mkdir()
         pid = _register_project(client, d)
@@ -912,12 +912,15 @@ class TestMessageQueuing:
         # Queue a second task
         _submit_task(client, cid, task="Auto-submit me")
 
-        # Verify pending_task is set
+        # Verify task is in the queue table
         with get_db(app.state.db_path) as conn:
-            row = conn.execute(
-                "SELECT pending_task FROM conversations WHERE id = ?", (cid,)
-            ).fetchone()
-        assert row["pending_task"] == "Auto-submit me"
+            queued = conn.execute(
+                "SELECT task, source FROM conversation_task_queue WHERE conversation_id = ?",
+                (cid,),
+            ).fetchall()
+        assert len(queued) == 1
+        assert queued[0]["task"] == "Auto-submit me"
+        assert queued[0]["source"] == "user"
 
         # Simulate session completion by calling _drain_pending_task
         from strawpot_gui.routers.sessions import _drain_pending_task
@@ -934,12 +937,13 @@ class TestMessageQueuing:
                 )
                 _drain_pending_task(conn, cid)
 
-        # pending_task should be cleared
+        # Queue should be empty after drain
         with get_db(app.state.db_path) as conn:
-            row = conn.execute(
-                "SELECT pending_task FROM conversations WHERE id = ?", (cid,)
-            ).fetchone()
-        assert row["pending_task"] is None
+            remaining = conn.execute(
+                "SELECT id FROM conversation_task_queue WHERE conversation_id = ?",
+                (cid,),
+            ).fetchall()
+        assert len(remaining) == 0
 
         # A new session should have been created
         with get_db(app.state.db_path) as conn:
