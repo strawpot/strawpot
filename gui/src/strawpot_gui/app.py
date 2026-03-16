@@ -102,6 +102,7 @@ def create_app(
         from strawpot_gui.routers.integrations import (
             auto_start_integrations,
             mark_orphaned_integrations_stopped,
+            stop_all_integrations,
         )
         mark_orphaned_integrations_stopped(db_path)
         auto_start_integrations(db_path, host=host, port=port)
@@ -111,6 +112,7 @@ def create_app(
         await scheduler.start()
         yield
         await scheduler.stop()
+        stop_all_integrations(db_path)
 
     app = FastAPI(title="StrawPot GUI", version="0.1.0", lifespan=lifespan)
     app.state.db_path = db_path
