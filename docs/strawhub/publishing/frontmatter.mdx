@@ -1,9 +1,9 @@
 ---
 title: Frontmatter Reference
-description: Complete YAML frontmatter schema for skills, roles, agents, and memories
+description: Complete YAML frontmatter schema for skills, roles, agents, memories, and integrations
 ---
 
-Skills, roles, agents, and memories use YAML frontmatter in their markdown files. This page documents the complete schema.
+Skills, roles, agents, memories, and integrations use YAML frontmatter in their markdown files. This page documents the complete schema.
 
 ## Skill Frontmatter (`SKILL.md`)
 
@@ -209,6 +209,48 @@ Description of what this provider does and how it stores data.
 | `metadata.strawpot.tools` | No | System tool requirements |
 | `metadata.strawpot.env` | No | Required environment variables |
 
+## Integration Frontmatter (`INTEGRATION.md`)
+
+```yaml
+---
+name: telegram                                    # Required: integration slug
+description: "Telegram bot adapter for StrawPot"  # Required: one-line summary
+metadata:
+  strawpot:
+    entry_point: python adapter.py               # Required: command to launch the adapter
+    auto_start: false                            # Optional: start on GUI launch (default: false)
+    install:                                     # Optional: OS-keyed install commands
+      macos: pip install -r requirements.txt
+      linux: pip install -r requirements.txt
+    env:                                         # Optional: required environment variables
+      STRAWPOT_BOT_TOKEN:
+        required: true
+        description: Bot API token
+      STRAWPOT_API_URL:
+        required: false
+        description: StrawPot API URL (auto-set by GUI)
+    health_check:                                # Optional: liveness probe
+      endpoint: http://localhost:${port}/health
+      interval_seconds: 30
+---
+
+# Telegram Adapter
+
+Connects a Telegram bot to StrawPot via imu.
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Integration slug (matches directory name) |
+| `description` | Yes | One-line summary |
+| `metadata.strawpot.entry_point` | Yes | Command to launch the adapter process |
+| `metadata.strawpot.auto_start` | No | Start on GUI launch (default: `false`) |
+| `metadata.strawpot.install` | No | OS-keyed install commands (run by `strawhub install`) |
+| `metadata.strawpot.env` | No | Environment variables — keys are env var names, values declare `required` and `description`. Saved in GUI and passed at start. |
+| `metadata.strawpot.health_check` | No | Liveness probe endpoint and interval |
+
 ## Parameters Schema
 
 ```yaml
@@ -225,14 +267,16 @@ metadata:
 - User values take precedence over defaults
 - The merged config is passed to the agent binary as the `--config` JSON string
 
-## Key Differences: Skills vs Roles vs Agents vs Memories
+## Key Differences: Skills vs Roles vs Agents vs Memories vs Integrations
 
-| Aspect | Skills | Roles | Agents | Memories |
-|--------|--------|-------|--------|----------|
-| File | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` |
-| Dependencies | Flat list (skills only) | Structured (`skills` + `roles`) | System tools only | None |
-| Default agent | No | `default_agent` field | N/A (is the agent) | No |
-| Env vars | Yes | No | Yes | Yes |
-| Params | No | No | Yes | Yes |
-| Pip package | No | No | No | Yes (`pip` field) |
-| Namespace | Separate | Separate | Separate | Separate |
+| Aspect | Skills | Roles | Agents | Memories | Integrations |
+|--------|--------|-------|--------|----------|--------------|
+| File | `SKILL.md` | `ROLE.md` | `AGENT.md` | `MEMORY.md` | `INTEGRATION.md` |
+| Dependencies | Flat list (skills only) | Structured (`skills` + `roles`) | System tools only | None | None |
+| Default agent | No | `default_agent` field | N/A (is the agent) | No | No |
+| Env vars | Yes | No | Yes | Yes | Yes |
+| Params | No | No | Yes | Yes | No |
+| Pip package | No | No | No | Yes (`pip` field) | No |
+| Entry point | No | No | `bin` (compiled) | No | `entry_point` (shell command) |
+| Managed by | CLI (session) | CLI (session) | CLI (session) | CLI (session) | GUI (lifecycle) |
+| Namespace | Separate | Separate | Separate | Separate | Separate |

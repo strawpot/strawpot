@@ -32,7 +32,7 @@ Opens [http://localhost:8741](http://localhost:8741) in your browser.
     Create cron-based schedules that automatically launch sessions on a recurring basis.
   </Card>
   <Card title="Resource Browser" icon="puzzle-piece">
-    Browse installed roles, skills, agents, and memory providers. Install new ones from StrawHub.
+    Browse installed roles, skills, agents, memory providers, and integrations. Install new ones from StrawHub.
   </Card>
   <Card title="Configuration" icon="gear">
     Edit project and global `strawpot.toml` settings through the UI.
@@ -69,6 +69,7 @@ All data stays local. No external services or accounts are required.
 | Session Detail | `/projects/:id/sessions/:runId` | Agent tree, trace events, logs |
 | Schedules | `/schedules` | Manage cron-based scheduled tasks |
 | Resources | `/resources/:kind` | Browse installed roles, skills, agents, memories |
+| Integrations | `/integrations` | Manage chat adapters (Telegram, Slack, Discord) — configure, start/stop, view logs |
 | Settings | `/settings` | Global configuration |
 
 ## Next Steps

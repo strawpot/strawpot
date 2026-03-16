@@ -34,13 +34,16 @@ strawpot start --role team-lead
     Sessions can run in a git worktree or directly in the project directory. All agents share the same working directory. Worktree changes are merged back via local patch or PR.
   </Card>
   <Card title="Skill & Role Registry" icon="book">
-    Agents load reusable skills and roles from StrawHub with automatic dependency resolution and version management.
+    Agents load reusable skills, roles, and integrations from StrawHub with automatic dependency resolution and version management.
   </Card>
   <Card title="Persistent Memory" icon="brain">
     Memory providers give agents context from past sessions and persist knowledge across runs. Pluggable via pip packages.
   </Card>
   <Card title="Web Dashboard" icon="browser">
     Browser-based GUI for managing projects, launching sessions, and scheduling automated tasks. Run `strawpot gui` to start.
+  </Card>
+  <Card title="Chat Integrations" icon="message-circle">
+    Connect Telegram, Slack, or Discord as conversation interfaces. Adapters relay messages through imu, managed from the GUI.
   </Card>
 </CardGroup>
 
@@ -49,7 +52,7 @@ strawpot start --role team-lead
 | Project | Description |
 |---------|-------------|
 | [StrawPot](https://strawpot.com) | CLI orchestrator (this project) |
-| [StrawHub](https://strawhub.dev) | Public registry for skills, roles, and memories |
+| [StrawHub](https://strawhub.dev) | Public registry for skills, roles, memories, and integrations |
 | [Denden](https://github.com/strawpot/denden) | gRPC transport between agents and orchestrator |
 | [strawpot-memory](https://github.com/strawpot/strawpot-memory) | Memory provider protocol and types |
 

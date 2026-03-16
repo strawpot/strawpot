@@ -1,5 +1,6 @@
 """Tests for integration management API endpoints."""
 
+import time
 from unittest.mock import patch
 
 import pytest
@@ -260,7 +261,6 @@ class TestIntegrationLifecycle:
             "print('hello from adapter')"
         )
         client.post("/api/integrations/telegram/start")
-        import time
         time.sleep(0.5)  # let process finish
         log_path = integration_dir / ".log"
         assert log_path.exists()
@@ -412,3 +412,167 @@ class TestIntegrationLogs:
             assert msg["lines"][0] == "line1"
             assert msg["lines"][4] == "line5"
             assert msg["offset"] > 0
+
+
+class TestAutoStart:
+    def test_auto_start_launches_flagged_integration(self, client, home):
+        """auto_start_integrations() starts integrations with auto_start: true."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+
+        integration_dir = home / "integrations" / "telegram"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: telegram\ndescription: Test\n"
+            "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
+            "    auto_start: true\n---\nBody."
+        )
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+
+        db_path = client.app.state.db_path
+        auto_start_integrations(db_path)
+
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status, pid FROM integrations WHERE name = ?",
+                ("telegram",),
+            ).fetchone()
+        assert row["status"] == "running"
+        assert row["pid"] is not None
+
+        # Clean up
+        import os
+        import signal
+        try:
+            os.kill(row["pid"], signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+
+    def test_auto_start_skips_non_flagged(self, client, home):
+        """auto_start_integrations() skips integrations with auto_start: false."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+
+        _create_integration(home, "telegram")  # auto_start: false by default
+
+        db_path = client.app.state.db_path
+        auto_start_integrations(db_path)
+
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM integrations WHERE name = ?",
+                ("telegram",),
+            ).fetchone()
+        assert row is None  # no DB row created for non-auto-start
+
+    def test_auto_start_skips_already_running(self, client, home):
+        """auto_start_integrations() skips if already running with live PID."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+
+        integration_dir = home / "integrations" / "telegram"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: telegram\ndescription: Test\n"
+            "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
+            "    auto_start: true\n---\nBody."
+        )
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+
+        db_path = client.app.state.db_path
+
+        # First auto-start
+        auto_start_integrations(db_path)
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT pid FROM integrations WHERE name = ?", ("telegram",)
+            ).fetchone()
+        first_pid = row["pid"]
+
+        # Second auto-start should not spawn a new process
+        auto_start_integrations(db_path)
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT pid FROM integrations WHERE name = ?", ("telegram",)
+            ).fetchone()
+        assert row["pid"] == first_pid
+
+        # Clean up
+        import os
+        import signal
+        try:
+            os.kill(first_pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+
+    def test_auto_start_handles_bad_entry_point(self, client, home):
+        """auto_start_integrations() logs error for invalid entry_point."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+
+        integration_dir = home / "integrations" / "broken"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: broken\ndescription: Test\n"
+            "metadata:\n  strawpot:\n    entry_point: /nonexistent/binary\n"
+            "    auto_start: true\n---\nBody."
+        )
+
+        db_path = client.app.state.db_path
+        auto_start_integrations(db_path)  # should not raise
+
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status, last_error FROM integrations WHERE name = ?",
+                ("broken",),
+            ).fetchone()
+        assert row["status"] == "error"
+        assert row["last_error"] is not None
+
+
+class TestManifestParsing:
+    def test_scan_skips_dir_without_manifest(self, client, home):
+        """Directories without INTEGRATION.md are silently skipped."""
+        (home / "integrations" / "empty").mkdir(parents=True)
+        resp = client.get("/api/integrations")
+        assert resp.json() == []
+
+    def test_scan_handles_malformed_frontmatter(self, client, home):
+        """Malformed YAML in manifest is handled gracefully."""
+        integration_dir = home / "integrations" / "bad"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\n  invalid:\nyaml: [unterminated\n---\nBody."
+        )
+        resp = client.get("/api/integrations")
+        data = resp.json()
+        # Should still appear with defaults rather than crashing
+        assert len(data) == 1
+        assert data[0]["name"] == "bad"
+        assert data[0]["entry_point"] == ""
+
+    def test_scan_handles_empty_manifest(self, client, home):
+        """Empty INTEGRATION.md is handled gracefully."""
+        integration_dir = home / "integrations" / "empty"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text("")
+        resp = client.get("/api/integrations")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "empty"
+        assert data[0]["description"] == ""
+
+    def test_scan_handles_no_strawpot_metadata(self, client, home):
+        """Manifest with frontmatter but no metadata.strawpot section."""
+        integration_dir = home / "integrations" / "minimal"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: minimal\ndescription: Just a name\n---\nBody."
+        )
+        resp = client.get("/api/integrations")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "minimal"
+        assert data[0]["entry_point"] == ""
+        assert data[0]["auto_start"] is False
+        assert data[0]["env_schema"] == {}

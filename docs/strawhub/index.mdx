@@ -1,9 +1,9 @@
 ---
 title: StrawHub Introduction
-description: Public registry for agent skills, roles, agents, and memories
+description: Public registry for agent skills, roles, agents, memories, and integrations
 ---
 
-StrawHub is the public registry for [StrawPot](https://strawpot.com) skills, roles, agents, and memories. Discover, publish, and install reusable agent components with automatic dependency resolution.
+StrawHub is the public registry for [StrawPot](https://strawpot.com) skills, roles, agents, memories, and integrations. Discover, publish, and install reusable agent components with automatic dependency resolution.
 
 **Live at [strawhub.dev](https://strawhub.dev)**
 
@@ -22,13 +22,16 @@ StrawHub is the public registry for [StrawPot](https://strawpot.com) skills, rol
   <Card title="Memories" icon="brain">
     Persistent knowledge banks that store context, patterns, and learned information across agent sessions.
   </Card>
+  <Card title="Integrations" icon="message-circle">
+    Chat platform adapters (Telegram, Slack, Discord) that relay messages through imu. Managed from the GUI.
+  </Card>
 </CardGroup>
 
 All use the same format: YAML frontmatter + markdown body, following the [Agent Skills](https://agentskills.io/) open spec with StrawPot-specific extensions.
 
 ## Key Features
 
-- **Browse & Search** — Discover skills, roles, agents, and memories with vector + lexical hybrid search
+- **Browse & Search** — Discover skills, roles, agents, memories, and integrations with vector + lexical hybrid search
 - **Publish** — Upload via web UI, GitHub import, or REST API
 - **Dependency Resolution** — Transitive dependencies resolved automatically on install
 - **Version Management** — Semver with latest (`*`) and exact (`==`) version constraints
@@ -39,7 +42,7 @@ All use the same format: YAML frontmatter + markdown body, following the [Agent 
 
 | Project | Description |
 |---------|-------------|
-| [StrawPot](https://strawpot.com) | CLI orchestrator — uses StrawHub to resolve roles and skills at runtime |
+| [StrawPot](https://strawpot.com) | CLI orchestrator — uses StrawHub to resolve roles, skills, and integrations at runtime |
 | [StrawHub](https://strawhub.dev) | Public registry (this project) |
 | [Denden](https://github.com/strawpot/denden) | gRPC transport between agents and orchestrator |
 
