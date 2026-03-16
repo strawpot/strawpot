@@ -55,6 +55,7 @@ StrawPot runs an AI company on your laptop.
 - **Roles** — Jobs
 - **Skills** — Abilities
 - **Memory** — Shared knowledge
+- **Integrations** — Chat adapters (Telegram, Slack, Discord)
 
 ```yaml
 # ai-ceo/ROLE.md
@@ -82,6 +83,7 @@ No Python. No orchestration code. One Markdown file.
 - **Run an entire AI workforce locally**
 - **Works with Claude, Codex, Gemini**
 - **Persistent memory across sessions**
+- **Chat integrations** — connect Telegram, Slack, or Discord as conversation interfaces
 
 ## How It Works
 
@@ -105,12 +107,39 @@ When you run `strawpot start`:
 6. Required roles and skills are resolved from StrawHub
 7. On exit, records results to memory and cleans up
 
+## Chat Integrations
+
+Connect chat platforms as conversation interfaces. Messages route through
+**imu** (StrawPot's self-operation agent) — the same agent that powers the
+GUI chat. Adapters are standalone processes managed from the GUI.
+
+```
+Telegram / Slack / Discord
+        ↓
+    Adapter (thin relay)
+        ↓
+    imu (project_id=0)
+        ↓
+    delegates to projects/roles
+```
+
+Install and manage from the GUI Integrations page, or via CLI:
+
+```bash
+strawhub install integration telegram
+strawpot gui   # → Integrations page to configure and start
+```
+
+Adapters support auto-start, config via env vars, health checks, and
+real-time log streaming. Community authors can build and publish adapters
+for any platform through StrawHub.
+
 ## Ecosystem
 
 | Project | What it does |
 |---------|------|
 | [**StrawPot**](https://strawpot.com) | Runtime — runs role-based AI agents locally |
-| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, and memories |
+| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, memories, and integrations |
 | [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the orchestrator |
 
 ## CLI Usage
@@ -120,9 +149,10 @@ When you run `strawpot start`:
 strawpot start
 strawpot start --role ai-ceo --runtime strawpot-claude-code
 
-# Install skills and roles from StrawHub
+# Install skills, roles, and integrations from StrawHub
 strawpot install skill git-workflow
 strawpot install role implementer
+strawhub install integration telegram
 
 # Search and list
 strawpot search "code review"

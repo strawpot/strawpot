@@ -1,9 +1,9 @@
 ---
 title: Publishing Guide
-description: How to publish skills, roles, and memories to StrawHub
+description: How to publish skills, roles, memories, and integrations to StrawHub
 ---
 
-You can publish skills, roles, and memory providers via the web UI, GitHub import, or the CLI.
+You can publish skills, roles, memory providers, and integrations via the web UI, GitHub import, or the CLI.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ You can publish skills, roles, and memory providers via the web UI, GitHub impor
 
 ### 1. Create your package
 
-Create a directory with a `SKILL.md`, `ROLE.md`, or `MEMORY.md`:
+Create a directory with a `SKILL.md`, `ROLE.md`, `MEMORY.md`, or `INTEGRATION.md`:
 
 ```bash
 mkdir my-skill
@@ -47,6 +47,29 @@ metadata:
 # My Memory Provider
 
 Description of how this provider stores and retrieves context.
+EOF
+```
+
+For integrations (chat adapters), create an `INTEGRATION.md` with entry point and env schema:
+
+```bash
+mkdir my-adapter
+cat > my-adapter/INTEGRATION.md << 'EOF'
+---
+name: my-adapter
+description: "My chat platform adapter"
+metadata:
+  strawpot:
+    entry_point: python adapter.py
+    env:
+      STRAWPOT_BOT_TOKEN:
+        required: true
+        description: Bot token for the platform
+---
+
+# My Adapter
+
+Connects a chat platform to StrawPot via imu.
 EOF
 ```
 
@@ -86,7 +109,7 @@ strawhub publish skill ./my-skill --tag python --tag testing
 ## Publishing via GitHub Import
 
 1. Go to [strawhub.dev/upload](https://strawhub.dev/upload)
-2. Paste a **GitHub repository URL** containing your `SKILL.md`, `ROLE.md`, or `MEMORY.md`
+2. Paste a **GitHub repository URL** containing your `SKILL.md`, `ROLE.md`, `MEMORY.md`, or `INTEGRATION.md`
 3. Files are fetched via the GitHub Contents API
 4. Review and publish
 
@@ -133,7 +156,7 @@ description: "A brief description"
 
 | Constraint | Limit |
 |------------|-------|
-| Required file | `SKILL.md` (skills), `ROLE.md` (roles), or `MEMORY.md` (memories) |
+| Required file | `SKILL.md` (skills), `ROLE.md` (roles), `MEMORY.md` (memories), or `INTEGRATION.md` (integrations) |
 | Max files per package | 100 |
 | Max file size | 10 MB |
 | Max total size | 50 MB |
