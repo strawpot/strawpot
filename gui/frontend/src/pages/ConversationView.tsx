@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation, useCancelPendingTask } from "@/hooks/mutations/use-conversations";
@@ -33,7 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import { AlertCircle, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
+import { AlertCircle, ArrowUpRight, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
@@ -392,6 +392,39 @@ export default function ConversationView() {
           </span>
         )}
       </div>
+
+      {/* Cross-link: parent conversation */}
+      {conversation?.parent && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5 mb-3">
+          <BotMessageSquare className="h-3.5 w-3.5 shrink-0" />
+          <span>Spawned from</span>
+          <Link
+            to={`/imu/${conversation.parent.id}`}
+            className="text-primary hover:underline inline-flex items-center gap-1"
+          >
+            {conversation.parent.title || `imu conversation #${conversation.parent.id}`}
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
+      )}
+
+      {/* Cross-link: child conversations spawned from this one */}
+      {conversation?.children && conversation.children.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5 mb-3">
+          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          <span>Delegated to:</span>
+          {conversation.children.map((child) => (
+            <Link
+              key={child.id}
+              to={`/projects/${child.project_id}/conversations/${child.id}`}
+              className="text-primary hover:underline inline-flex items-center gap-1"
+            >
+              {child.project_name}: {child.title || `#${child.id}`}
+              <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Message list — scrolls within this container */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">

@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api", tags=["conversations"])
 class ConversationCreate(BaseModel):
     project_id: int
     title: str | None = None
+    parent_conversation_id: int | None = None
 
 
 class ConversationTask(BaseModel):
@@ -302,14 +303,23 @@ def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
     if not project:
         raise HTTPException(404, "Project not found")
 
+    if body.parent_conversation_id is not None:
+        parent = conn.execute(
+            "SELECT id FROM conversations WHERE id = ?",
+            (body.parent_conversation_id,),
+        ).fetchone()
+        if not parent:
+            raise HTTPException(422, "Parent conversation not found")
+
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
-        "INSERT INTO conversations (project_id, title, created_at) VALUES (?, ?, ?)",
-        (body.project_id, body.title, now),
+        "INSERT INTO conversations (project_id, title, parent_conversation_id, created_at) VALUES (?, ?, ?, ?)",
+        (body.project_id, body.title, body.parent_conversation_id, now),
     )
     conv_id = cur.lastrowid
     row = conn.execute(
-        "SELECT id, project_id, title, created_at, updated_at FROM conversations WHERE id = ?",
+        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at "
+        "FROM conversations WHERE id = ?",
         (conv_id,),
     ).fetchone()
     return dict(row)
@@ -324,7 +334,7 @@ def get_conversation(
 ):
     """Get a conversation with its paginated sessions (newest page first)."""
     row = conn.execute(
-        "SELECT id, project_id, title, created_at, updated_at, pending_task "
+        "SELECT id, project_id, title, parent_conversation_id, created_at, updated_at, pending_task "
         "FROM conversations WHERE id = ?",
         (conversation_id,),
     ).fetchone()
@@ -373,6 +383,32 @@ def get_conversation(
             d["chat_messages"] = _read_chat_messages(s["session_dir"])
         result["sessions"].append(d)
     result["has_more"] = has_more
+
+    # Parent conversation info
+    if row["parent_conversation_id"]:
+        parent = conn.execute(
+            "SELECT c.id, c.project_id, c.title, p.display_name AS project_name "
+            "FROM conversations c JOIN projects p ON p.id = c.project_id "
+            "WHERE c.id = ?",
+            (row["parent_conversation_id"],),
+        ).fetchone()
+        if parent:
+            result["parent"] = dict(parent)
+        else:
+            result["parent"] = None
+    else:
+        result["parent"] = None
+
+    # Child conversations spawned from this one
+    children = conn.execute(
+        "SELECT c.id, c.project_id, c.title, p.display_name AS project_name "
+        "FROM conversations c JOIN projects p ON p.id = c.project_id "
+        "WHERE c.parent_conversation_id = ? "
+        "ORDER BY c.created_at",
+        (conversation_id,),
+    ).fetchall()
+    result["children"] = [dict(c) for c in children]
+
     return result
 
 
@@ -397,7 +433,8 @@ def list_project_conversations(
 
     offset = (page - 1) * per_page
     rows = conn.execute(
-        """SELECT c.id, c.project_id, c.title, c.created_at, c.updated_at,
+        """SELECT c.id, c.project_id, c.title, c.parent_conversation_id,
+                  c.created_at, c.updated_at,
                   COUNT(s.run_id) AS session_count,
                   MAX(s.started_at) AS last_activity
            FROM conversations c

@@ -1166,3 +1166,139 @@ class TestChatMessagePersistence:
         assert len(data["sessions"]) == 2
         assert data["sessions"][0]["chat_messages"][0]["text"] == "Question 0"
         assert data["sessions"][1]["chat_messages"][0]["text"] == "Question 1"
+
+
+class TestConversationCrossLinks:
+    """Tests for parent/child conversation linking."""
+
+    def test_create_with_parent_conversation_id(self, client, tmp_path):
+        """Create a conversation with a parent link."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        # Create parent (imu) conversation
+        parent = client.post("/api/imu/conversations").json()
+
+        # Create child with parent_conversation_id
+        resp = client.post("/api/conversations", json={
+            "project_id": pid,
+            "title": "Fix bug",
+            "parent_conversation_id": parent["id"],
+        })
+        assert resp.status_code == 201
+        assert resp.json()["parent_conversation_id"] == parent["id"]
+
+    def test_get_conversation_includes_parent(self, client, tmp_path):
+        """GET conversation returns parent info."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        parent = client.post("/api/imu/conversations").json()
+        child = client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": parent["id"],
+        }).json()
+
+        data = client.get(f"/api/conversations/{child['id']}").json()
+        assert data["parent"] is not None
+        assert data["parent"]["id"] == parent["id"]
+        assert data["parent"]["project_name"] == "Bot Imu"
+
+    def test_get_conversation_includes_children(self, client, tmp_path):
+        """GET parent conversation returns children."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        parent = client.post("/api/imu/conversations").json()
+        child = client.post("/api/conversations", json={
+            "project_id": pid,
+            "title": "Delegated work",
+            "parent_conversation_id": parent["id"],
+        }).json()
+
+        data = client.get(f"/api/conversations/{parent['id']}").json()
+        assert len(data["children"]) == 1
+        assert data["children"][0]["id"] == child["id"]
+        assert data["children"][0]["title"] == "Delegated work"
+
+    def test_no_parent_returns_null(self, client, tmp_path):
+        """Conversation without parent has parent=null and children=[]."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+
+        data = client.get(f"/api/conversations/{conv['id']}").json()
+        assert data["parent"] is None
+        assert data["children"] == []
+
+    def test_invalid_parent_returns_422(self, client, tmp_path):
+        """Creating with nonexistent parent returns 422."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        resp = client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": 99999,
+        })
+        assert resp.status_code == 422
+
+    def test_parent_deleted_sets_null(self, client, tmp_path, app):
+        """Deleting parent sets child's parent_conversation_id to NULL."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        parent = client.post("/api/imu/conversations").json()
+        child = client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": parent["id"],
+        }).json()
+
+        # Delete parent
+        client.delete(f"/api/conversations/{parent['id']}")
+
+        # Child's parent should be null
+        data = client.get(f"/api/conversations/{child['id']}").json()
+        assert data["parent_conversation_id"] is None
+        assert data["parent"] is None
+
+    def test_list_project_conversations_includes_parent_id(self, client, tmp_path):
+        """Project conversation list includes parent_conversation_id."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        parent = client.post("/api/imu/conversations").json()
+        client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": parent["id"],
+        })
+
+        items = client.get(f"/api/projects/{pid}/conversations").json()["items"]
+        assert len(items) == 1
+        assert items[0]["parent_conversation_id"] == parent["id"]
+
+    def test_imu_list_includes_spawned_count(self, client, tmp_path):
+        """Imu conversation list includes spawned_count."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        parent = client.post("/api/imu/conversations").json()
+        client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": parent["id"],
+        })
+        client.post("/api/conversations", json={
+            "project_id": pid,
+            "parent_conversation_id": parent["id"],
+        })
+
+        items = client.get("/api/imu/conversations").json()
+        conv = next(c for c in items if c["id"] == parent["id"])
+        assert conv["spawned_count"] == 2
