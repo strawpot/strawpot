@@ -309,14 +309,14 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
     existing = env.get("PATH", "")
     env["PATH"] = ":".join(extra_paths) + ":" + existing
 
-    # Derive API URL from the running server
-    server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
-    server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
-    env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+    # Derive API URL from the running server's actual request URL
+    env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/")
 
-    # Pass saved env values directly (keys are already env var names)
+    # Pass saved env values directly (keys are already env var names).
+    # Skip empty strings so they don't overwrite auto-derived values
+    # like STRAWPOT_API_URL.
     for key, value in config_values.items():
-        if value is not None:
+        if value is not None and value != "":
             env[key] = str(value)
 
     return env
@@ -476,7 +476,7 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
                 )
 
 
-def auto_start_integrations(db_path: str) -> None:
+def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int = 8741) -> None:
     """Start all integrations with auto_start enabled. Called during app lifespan."""
     from strawpot_gui.db import get_db
 
@@ -510,11 +510,9 @@ def auto_start_integrations(db_path: str) -> None:
             "/opt/homebrew/bin",
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
-        server_host = os.environ.get("STRAWPOT_GUI_HOST", "127.0.0.1")
-        server_port = os.environ.get("STRAWPOT_GUI_PORT", "52532")
-        env["STRAWPOT_API_URL"] = f"http://{server_host}:{server_port}"
+        env["STRAWPOT_API_URL"] = f"http://{host}:{port}"
         for key, value in config_values.items():
-            if value is not None:
+            if value is not None and value != "":
                 env[key] = str(value)
 
         log_path = integration_dir / ".log"

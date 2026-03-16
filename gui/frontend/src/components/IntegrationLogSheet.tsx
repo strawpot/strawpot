@@ -8,7 +8,8 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowDown, Search } from "lucide-react";
+import { ArrowDown, Copy, Search } from "lucide-react";
+import { toast } from "sonner";
 import { useIntegrationLogWS } from "@/hooks/useIntegrationLogWS";
 
 const LINE_HEIGHT = 18;
@@ -31,14 +32,14 @@ export default function IntegrationLogSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[700px] sm:max-w-[700px]">
+      <SheetContent side="right" className="w-[700px] sm:max-w-[700px] overflow-hidden">
         <SheetHeader>
           <SheetTitle>Logs: {name}</SheetTitle>
           <SheetDescription>
             Adapter stdout/stderr output
           </SheetDescription>
         </SheetHeader>
-        <div className="mt-4">
+        <div className="mt-4 min-w-0">
           <LogTerminal
             lines={lines}
             done={done}
@@ -111,6 +112,17 @@ function LogTerminal({
     }
   };
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+        e.preventDefault();
+        navigator.clipboard.writeText(lines.join("\n"));
+        toast.success("Copied all logs to clipboard");
+      }
+    },
+    [lines],
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -127,6 +139,20 @@ function LogTerminal({
           <span className="text-xs text-muted-foreground">
             {matchIndices.length} match{matchIndices.length !== 1 ? "es" : ""}
           </span>
+        )}
+        {lines.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              navigator.clipboard.writeText(lines.join("\n"));
+              toast.success("Copied all logs to clipboard");
+            }}
+          >
+            <Copy className="mr-1 h-3 w-3" />
+            Copy all
+          </Button>
         )}
         <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
           {done ? (
@@ -147,21 +173,22 @@ function LogTerminal({
       <div className="relative">
         <div
           ref={containerRef}
-          className="h-[500px] overflow-auto rounded-md bg-[#1e1e1e] font-mono text-xs text-[#d4d4d4]"
+          tabIndex={0}
+          className="h-[500px] overflow-auto rounded-md bg-[#1e1e1e] font-mono text-xs text-[#d4d4d4] select-text focus:outline-none focus:ring-1 focus:ring-ring"
           onScroll={handleScroll}
+          onKeyDown={handleKeyDown}
         >
           {lines.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[#666]">
               {!done ? "Waiting for log output..." : "No log output."}
             </div>
           ) : (
-            <div style={{ height: totalHeight, position: "relative" }}>
+            <div style={{ height: totalHeight, position: "relative", minWidth: "fit-content" }}>
               <div
                 style={{
                   position: "absolute",
                   top: startIndex * LINE_HEIGHT,
                   left: 0,
-                  right: 0,
                 }}
               >
                 {visibleLines.map((line, i) => {
@@ -188,7 +215,7 @@ function LogTerminal({
                       >
                         {lineNum + 1}
                       </span>
-                      <span>{line}</span>
+                      <span className="pr-4">{line}</span>
                     </div>
                   );
                 })}
