@@ -1,6 +1,9 @@
 """Tests for Bot Imu endpoints and virtual project initialization."""
 
 from pathlib import Path
+from unittest.mock import patch
+
+from test_sessions_sync import _register_project
 
 from strawpot_gui.db import ensure_imu_project, get_db
 
@@ -118,3 +121,114 @@ class TestCreateImuConversation:
                 "SELECT project_id FROM conversations WHERE id = ?", (conv_id,)
             ).fetchone()
         assert row["project_id"] == 0
+
+
+def _submit_task(client, conversation_id, task="Do something", **kwargs):
+    """Submit a task using a mocked subprocess."""
+    body = {"task": task, **kwargs}
+    with patch("strawpot_gui.routers.sessions.shutil.which", return_value="/usr/bin/strawpot"), \
+         patch("strawpot_gui.routers.sessions.subprocess.Popen"), \
+         patch("strawpot_gui.routers.sessions.load_config") as mock_config:
+        from strawpot.config import StrawPotConfig
+        mock_config.return_value = StrawPotConfig()
+        return client.post(f"/api/conversations/{conversation_id}/tasks", json=body)
+
+
+class TestCrossProjectDelegation:
+    """Test the imu → project conversation delegation flow.
+
+    Simulates the real flow: imu receives a user request, creates a
+    conversation on the target project, and submits a task to it.
+    """
+
+    def test_imu_creates_project_conversation_and_submits_task(self, client, tmp_path):
+        """Full delegation: imu creates a project conversation and submits work."""
+        # 1. Register a real project
+        d = tmp_path / "myproject"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        # 2. imu creates a conversation on the project (not on project 0)
+        conv = client.post("/api/conversations", json={
+            "project_id": pid,
+            "title": "Fix login bug",
+        })
+        assert conv.status_code == 201
+        conv_id = conv.json()["id"]
+
+        # 3. imu submits a task to that project conversation
+        resp = _submit_task(client, conv_id, task="Fix the login validation in auth.py")
+        assert resp.status_code == 201
+        assert "run_id" in resp.json()
+
+        # 4. The conversation belongs to the project, not to imu
+        proj_convs = client.get(f"/api/projects/{pid}/conversations")
+        assert proj_convs.status_code == 200
+        conv_ids = [c["id"] for c in proj_convs.json()["items"]]
+        assert conv_id in conv_ids
+
+        # 5. imu's own conversations don't include the project conversation
+        imu_convs = client.get("/api/imu/conversations").json()
+        imu_conv_ids = [c["id"] for c in imu_convs]
+        assert conv_id not in imu_conv_ids
+
+    def test_imu_continues_existing_project_conversation(self, client, tmp_path):
+        """imu submits multiple tasks to the same project conversation."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        conv = client.post("/api/conversations", json={"project_id": pid}).json()
+        conv_id = conv["id"]
+
+        # First task starts a session
+        resp1 = _submit_task(client, conv_id, task="Implement feature X")
+        assert resp1.status_code == 201
+
+        # Second task is queued (session already running)
+        resp2 = _submit_task(client, conv_id, task="Add tests for feature X")
+        assert resp2.status_code == 202
+        assert resp2.json()["queued"] is True
+
+    def test_imu_delegates_to_multiple_projects(self, client, tmp_path):
+        """imu can delegate to conversations on different projects."""
+        d1 = tmp_path / "proj1"
+        d1.mkdir()
+        d2 = tmp_path / "proj2"
+        d2.mkdir()
+        pid1 = _register_project(client, d1)
+        pid2 = _register_project(client, d2)
+
+        conv1 = client.post("/api/conversations", json={"project_id": pid1}).json()
+        conv2 = client.post("/api/conversations", json={"project_id": pid2}).json()
+
+        resp1 = _submit_task(client, conv1["id"], task="Fix bug in project 1")
+        resp2 = _submit_task(client, conv2["id"], task="Add feature to project 2")
+
+        assert resp1.status_code == 201
+        assert resp2.status_code == 201
+        assert resp1.json()["run_id"] != resp2.json()["run_id"]
+
+    def test_imu_conversation_isolated_from_project_delegation(self, client, tmp_path):
+        """imu's own conversation and project conversations are fully separate."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+
+        # imu creates its own conversation
+        imu_conv = client.post("/api/imu/conversations").json()
+
+        # imu also creates a project conversation for delegation
+        proj_conv = client.post("/api/conversations", json={"project_id": pid}).json()
+
+        # They are different conversations
+        assert imu_conv["id"] != proj_conv["id"]
+
+        # Each appears in the right listing
+        imu_list = [c["id"] for c in client.get("/api/imu/conversations").json()]
+        proj_list = [c["id"] for c in client.get(f"/api/projects/{pid}/conversations").json()["items"]]
+
+        assert imu_conv["id"] in imu_list
+        assert imu_conv["id"] not in proj_list
+        assert proj_conv["id"] in proj_list
+        assert proj_conv["id"] not in imu_list
