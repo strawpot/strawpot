@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import cronstrue from "cronstrue";
 import { useProjects } from "@/hooks/queries/use-projects";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
+import { useProjectConversations, useImuConversations } from "@/hooks/queries/use-conversations";
+import { useCreateConversation, useCreateImuConversation } from "@/hooks/mutations/use-conversations";
 import { useCreateSchedule, useUpdateSchedule } from "@/hooks/mutations/use-schedules";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +59,8 @@ export default function CreateScheduleDialog({
   const { data: projects } = useProjects();
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const createConversation = useCreateConversation();
+  const createImuConversation = useCreateImuConversation();
 
   const [name, setName] = useState("");
   const [projectId, setProjectId] = useState<string>("");
@@ -65,10 +69,20 @@ export default function CreateScheduleDialog({
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [skipIfRunning, setSkipIfRunning] = useState(true);
+  const [conversationId, setConversationId] = useState<string>("none");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const selectedProjectId = editing ? editing.project_id : Number(projectId) || 0;
+  const selectedProjectId = editing ? editing.project_id : (projectId ? Number(projectId) : -1);
+  const isImu = selectedProjectId === 0;
   const { data: projectResources } = useProjectResources(selectedProjectId);
+  const { data: projectConversations } = useProjectConversations(selectedProjectId);
+  const { data: imuConversations } = useImuConversations();
+  const conversationItems = useMemo(() => {
+    if (selectedProjectId === 0) {
+      return (imuConversations ?? []).map((c) => ({ id: c.id, title: c.title }));
+    }
+    return (projectConversations?.items ?? []).map((c) => ({ id: c.id, title: c.title }));
+  }, [selectedProjectId, projectConversations, imuConversations]);
   const roles = useMemo(
     () =>
       (projectResources ?? [])
@@ -76,6 +90,10 @@ export default function CreateScheduleDialog({
         .map((r) => r.name),
     [projectResources],
   );
+  useEffect(() => {
+    if (isImu) setRole("imu");
+    else setRole("");
+  }, [isImu]);
 
   useEffect(() => {
     if (open && editing) {
@@ -86,6 +104,7 @@ export default function CreateScheduleDialog({
       setRole(editing.role ?? "");
       setSystemPrompt(editing.system_prompt ?? "");
       setSkipIfRunning(editing.skip_if_running);
+      setConversationId(editing.conversation_id ? String(editing.conversation_id) : "none");
     } else if (open && !editing) {
       resetForm();
     }
@@ -99,12 +118,30 @@ export default function CreateScheduleDialog({
     setRole("");
     setSystemPrompt("");
     setSkipIfRunning(true);
+    setConversationId("none");
     setAdvancedOpen(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
+      let resolvedConvId: number | null = null;
+      const pid = editing ? editing.project_id : Number(projectId);
+      if (conversationId === "new") {
+        if (pid === 0) {
+          const conv = await createImuConversation.mutateAsync();
+          resolvedConvId = conv.id;
+        } else {
+          const conv = await createConversation.mutateAsync({
+            project_id: pid,
+            title: name.trim() || undefined,
+          });
+          resolvedConvId = conv.id;
+        }
+      } else if (conversationId !== "none") {
+        resolvedConvId = Number(conversationId);
+      }
+
       const body = {
         name: name.trim(),
         task: task.trim(),
@@ -112,13 +149,14 @@ export default function CreateScheduleDialog({
         role: role.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
         skip_if_running: skipIfRunning,
+        conversation_id: resolvedConvId,
       };
       if (editing) {
         await updateSchedule.mutateAsync({ id: editing.id, ...body });
       } else {
         await createSchedule.mutateAsync({
           ...body,
-          project_id: Number(projectId),
+          project_id: pid,
         });
       }
       resetForm();
@@ -137,7 +175,7 @@ export default function CreateScheduleDialog({
     }
   }, [cronExpr]);
 
-  const isPending = createSchedule.isPending || updateSchedule.isPending;
+  const isPending = createSchedule.isPending || updateSchedule.isPending || createConversation.isPending || createImuConversation.isPending;
   const mutationError = createSchedule.error || updateSchedule.error;
 
   return (
@@ -174,6 +212,7 @@ export default function CreateScheduleDialog({
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="0">Imu</SelectItem>
                   {(projects ?? []).map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
                       {p.display_name}
@@ -246,13 +285,14 @@ export default function CreateScheduleDialog({
               onChange={(e) => setRole(e.target.value)}
               placeholder={roles[0] ?? "orchestrator"}
               list="sched-role-list"
+              disabled={isImu}
             />
             <datalist id="sched-role-list">
               {roles.map((r) => (
                 <option key={r} value={r} />
               ))}
             </datalist>
-            {role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
+            {!isImu && role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
               <p className="text-xs text-destructive">Role not found in installed roles</p>
             )}
           </div>
@@ -271,6 +311,31 @@ export default function CreateScheduleDialog({
               — don't start a new session while a previous one is still active
             </span>
           </label>
+
+          <div className="space-y-2">
+            <Label htmlFor="sched-conversation">Conversation</Label>
+            <Select value={conversationId} onValueChange={setConversationId}>
+              <SelectTrigger id="sched-conversation">
+                <SelectValue placeholder="No conversation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No conversation</SelectItem>
+                <SelectItem value="new">Create new conversation</SelectItem>
+                {conversationItems.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.title || `Conversation #${c.id}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {conversationId === "none"
+                ? "Each run starts a standalone session."
+                : conversationId === "new"
+                  ? "A new conversation will be created — all runs share it."
+                  : "All runs continue this conversation's context."}
+            </p>
+          </div>
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger asChild>

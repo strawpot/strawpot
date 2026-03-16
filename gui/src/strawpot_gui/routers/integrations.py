@@ -392,7 +392,7 @@ def update_integration(
     if not name:
         raise HTTPException(400, "'name' is required")
     was_running = _stop_if_running(conn, name)
-    result = run_strawhub("update", "integration", name)
+    result = run_strawhub("update", "-y", "integration", name)
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn)

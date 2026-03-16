@@ -263,6 +263,7 @@ export interface Schedule {
   next_run_at: string | null;
   last_error: string | null;
   created_at: string;
+  conversation_id: number | null;
 }
 
 export interface ScheduleRun {

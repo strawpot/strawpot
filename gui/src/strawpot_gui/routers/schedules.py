@@ -25,6 +25,7 @@ class ScheduleCreate(BaseModel):
     role: str | None = None
     system_prompt: str | None = None
     skip_if_running: bool = True
+    conversation_id: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -56,6 +57,7 @@ class OneTimeScheduleCreate(BaseModel):
     run_at: str
     role: str | None = None
     system_prompt: str | None = None
+    conversation_id: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -94,6 +96,7 @@ class ScheduleUpdate(BaseModel):
     role: str | None = None
     system_prompt: str | None = None
     skip_if_running: bool | None = None
+    conversation_id: int | None = None
 
     @field_validator("cron_expr")
     @classmethod
@@ -185,11 +188,11 @@ def create_schedule(body: ScheduleCreate, conn=Depends(get_db_conn)):
         cursor = conn.execute(
             """INSERT INTO scheduled_tasks
                (name, project_id, role, task, cron_expr, system_prompt,
-                skip_if_running, next_run_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                skip_if_running, next_run_at, conversation_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.name, body.project_id, body.role, body.task,
              body.cron_expr, body.system_prompt,
-             int(body.skip_if_running), next_run),
+             int(body.skip_if_running), next_run, body.conversation_id),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A schedule with this name already exists")
@@ -219,10 +222,12 @@ def create_one_time_schedule(
         cursor = conn.execute(
             """INSERT INTO scheduled_tasks
                (name, project_id, role, task, cron_expr, schedule_type,
-                run_at, system_prompt, skip_if_running, next_run_at)
-               VALUES (?, ?, ?, ?, NULL, 'one_time', ?, ?, 0, ?)""",
+                run_at, system_prompt, skip_if_running, next_run_at,
+                conversation_id)
+               VALUES (?, ?, ?, ?, NULL, 'one_time', ?, ?, 0, ?, ?)""",
             (body.name, body.project_id, body.role, body.task,
-             body.run_at, body.system_prompt, body.run_at),
+             body.run_at, body.system_prompt, body.run_at,
+             body.conversation_id),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A schedule with this name already exists")
@@ -329,6 +334,9 @@ def update_schedule(
     if body.skip_if_running is not None:
         updates.append("skip_if_running = ?")
         params.append(int(body.skip_if_running))
+    if "conversation_id" in body.model_fields_set:
+        updates.append("conversation_id = ?")
+        params.append(body.conversation_id)
 
     if not updates:
         raise HTTPException(422, "No fields to update")
