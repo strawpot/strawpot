@@ -42,14 +42,15 @@ def _insert_schedule(db_path, project_id, **kwargs):
         "enabled": 1,
         "skip_if_running": 1,
         "next_run_at": None,
+        "conversation_id": None,
     }
     defaults.update(kwargs)
     with get_db(db_path) as conn:
         cursor = conn.execute(
             """INSERT INTO scheduled_tasks
                (name, project_id, task, cron_expr, schedule_type, run_at,
-                enabled, skip_if_running, next_run_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                enabled, skip_if_running, next_run_at, conversation_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 defaults["name"],
                 defaults["project_id"],
@@ -60,6 +61,7 @@ def _insert_schedule(db_path, project_id, **kwargs):
                 defaults["enabled"],
                 defaults["skip_if_running"],
                 defaults["next_run_at"],
+                defaults["conversation_id"],
             ),
         )
         return cursor.lastrowid
@@ -320,3 +322,140 @@ class TestOneTimeScheduleFire:
             ).fetchone()
         # next_run_at should be unchanged (not cleared or advanced)
         assert row["next_run_at"] == past
+
+
+# ---------------------------------------------------------------------------
+# #20 — imu role enforcement for project_id == 0
+# ---------------------------------------------------------------------------
+
+
+class TestImuRoleEnforcement:
+    def test_imu_role_for_project_zero(self, db_path):
+        """Schedules with project_id=0 and no explicit role get role='imu'."""
+        # Insert project 0 (strawpot-internal)
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) "
+                "VALUES (0, 'strawpot', '/tmp/strawpot')"
+            )
+        sid = _insert_schedule(db_path, 0, next_run_at="2000-01-01T00:00:00+00:00")
+
+        launch_fn = MagicMock(return_value="run-imu")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        assert launch_fn.call_args[1]["role"] == "imu"
+
+    def test_explicit_role_preserved_for_project_zero(self, db_path):
+        """An explicit role on a project-0 schedule is kept (not overridden)."""
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) "
+                "VALUES (0, 'strawpot', '/tmp/strawpot')"
+            )
+        # Manually set role via direct SQL since _insert_schedule doesn't set role
+        sid = _insert_schedule(db_path, 0, next_run_at="2000-01-01T00:00:00+00:00")
+        with get_db(db_path) as conn:
+            conn.execute(
+                "UPDATE scheduled_tasks SET role = 'custom' WHERE id = ?", (sid,)
+            )
+
+        launch_fn = MagicMock(return_value="run-custom")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        assert launch_fn.call_args[1]["role"] == "custom"
+
+    def test_no_imu_for_regular_project(self, db_path, project_id):
+        """Non-zero project_id without explicit role keeps role=None."""
+        past = "2000-01-01T00:00:00+00:00"
+        _insert_schedule(db_path, project_id, next_run_at=past)
+
+        launch_fn = MagicMock(return_value="run-123")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        assert launch_fn.call_args[1]["role"] is None
+
+
+# ---------------------------------------------------------------------------
+# #19 — conversation targeting
+# ---------------------------------------------------------------------------
+
+
+class TestConversationTargeting:
+    def _setup_conversation(self, db_path, project_id):
+        """Create a conversation and return its id."""
+        with get_db(db_path) as conn:
+            cursor = conn.execute(
+                "INSERT INTO conversations (project_id) VALUES (?)",
+                (project_id,),
+            )
+            return cursor.lastrowid
+
+    def test_passes_conversation_id_to_launch(self, db_path, project_id):
+        """When conversation_id is set, it's forwarded to launch_fn."""
+        conv_id = self._setup_conversation(db_path, project_id)
+        past = "2000-01-01T00:00:00+00:00"
+        _insert_schedule(
+            db_path, project_id,
+            next_run_at=past,
+            conversation_id=conv_id,
+        )
+
+        launch_fn = MagicMock(return_value="run-conv")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        assert launch_fn.call_args[1]["conversation_id"] == conv_id
+
+    def test_no_conversation_id_by_default(self, db_path, project_id):
+        """Without conversation_id, launch_fn is called without it."""
+        past = "2000-01-01T00:00:00+00:00"
+        _insert_schedule(db_path, project_id, next_run_at=past)
+
+        launch_fn = MagicMock(return_value="run-plain")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        assert "conversation_id" not in launch_fn.call_args[1]
+
+    def test_conversation_context_prepended(self, db_path, project_id):
+        """When conversation has prior sessions, context is prepended to task."""
+        conv_id = self._setup_conversation(db_path, project_id)
+        past = "2000-01-01T00:00:00+00:00"
+
+        # Add a completed session to the conversation
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, conversation_id, status, role, runtime, "
+                " isolation, started_at, session_dir, task, summary, exit_code) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-prior", project_id, conv_id, "completed",
+                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "earlier task", "did stuff", 0),
+            )
+
+        _insert_schedule(
+            db_path, project_id,
+            next_run_at=past,
+            conversation_id=conv_id,
+        )
+
+        launch_fn = MagicMock(return_value="run-ctx")
+        scheduler = Scheduler(db_path, launch_fn)
+        scheduler._check_and_fire()
+
+        assert launch_fn.called
+        # Task should have context prepended
+        task_arg = launch_fn.call_args[0][2]
+        assert "Prior Conversation" in task_arg
+        assert "run tests" in task_arg
+        # user_task should be the original task
+        assert launch_fn.call_args[1]["user_task"] == "run tests"

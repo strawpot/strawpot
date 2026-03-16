@@ -936,6 +936,116 @@ runtime behavior, not a declared capability.
 
 ---
 
+## Conversation Source Tracking
+
+Conversations created by adapters, the scheduler, or the GUI are
+visually indistinguishable. Adding a `source` column to conversations
+lets the GUI show platform icons and labels so users can see where a
+conversation originated.
+
+### Database Changes
+
+```sql
+ALTER TABLE conversations ADD COLUMN source TEXT;       -- NULL=gui, "telegram", "slack", "scheduler", etc.
+ALTER TABLE conversations ADD COLUMN source_meta TEXT;   -- JSON, platform-specific context
+```
+
+`source` is a short slug used for icon selection. `source_meta` is
+freeform JSON carrying platform-specific details the GUI can display.
+
+| source | source_meta example | GUI display |
+|--------|-------------------|-------------|
+| `NULL` | — | (no badge — default GUI conversation) |
+| `"telegram"` | `{"chat_id": "-100123", "chat_title": "Engineering"}` | Telegram icon + "Engineering" |
+| `"slack"` | `{"channel_id": "C0123", "channel_name": "#ops", "thread_ts": "1234.5678"}` | Slack icon + "#ops" |
+| `"discord"` | `{"channel_id": "98765", "guild_name": "My Server"}` | Discord icon + "My Server" |
+| `"scheduler"` | `{"schedule_id": 7, "schedule_name": "daily-report"}` | Clock icon + "daily-report" |
+
+### Who Sets It
+
+- **Adapters** pass `source` and `source_meta` when creating
+  conversations via `POST /api/imu/conversations`. The adapter knows
+  its own name and the platform context (chat title, channel name).
+- **Scheduler** sets `source: "scheduler"` when creating a new
+  conversation for a schedule (conversation targeting).
+- **GUI** leaves `source` as NULL (the default).
+
+### API Changes
+
+`POST /api/imu/conversations` accepts two new optional fields:
+
+```json
+{
+  "source": "telegram",
+  "source_meta": {"chat_id": "-100123", "chat_title": "Engineering"}
+}
+```
+
+`GET /api/conversations/:id` and list endpoints include `source` and
+`source_meta` in their response.
+
+### Frontend Display
+
+- **Conversation list:** Small platform icon next to the title.
+  Telegram paper plane, Slack hash, Discord controller, clock for
+  scheduler. No icon when `source` is NULL.
+- **Conversation header:** Subtitle line: "via Telegram / Engineering"
+  or "via Slack / #ops". Derived from `source` + `source_meta`.
+- **imu conversations page:** Source badge in the table row, making it
+  easy to see which conversations came from which platform.
+
+### Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Two columns (`source` + `source_meta`) instead of one | `source` is a fixed enum for icon/badge logic. `source_meta` is freeform JSON for display labels. Keeps queries simple while allowing platform-specific detail. |
+| `source_meta` is JSON TEXT, not separate columns | Each platform has different context. A rigid schema would require migrations for every new platform. JSON is read-only display data — never queried. |
+| Set at conversation creation, immutable | A conversation's origin doesn't change. Even if multiple sources submit tasks to it later, it was *started* from one place. |
+| NULL means GUI | Most conversations are GUI-originated. NULL as default avoids backfilling existing data. |
+
+### Lifecycle: Deletion and Orphaning
+
+`source` is a display hint, not a foreign key. No cascade behavior
+is needed — conversations and integrations are independent resources
+that reference each other loosely.
+
+**Conversation deleted, adapter still running:**
+
+The adapter's local mapping (`chat_id → conversation_id`) now points
+to a stale ID. When the adapter next submits a task, the API returns
+404. The adapter handles this by creating a new conversation and
+updating its local mapping. This is adapter-side logic — no GUI
+changes needed. Adapters should treat 404 on task submission as
+"conversation gone, create a new one."
+
+**Adapter uninstalled, conversations remain:**
+
+Conversations with `source="telegram"` are preserved as historical
+records. The GUI shows a dimmed or generic icon when the referenced
+integration is not installed. Conversations remain fully functional —
+browsable, searchable, and can receive tasks from the GUI or other
+sources. `source_meta` retains its value (chat title, channel name)
+for display context even after the adapter is gone.
+
+**Adapter reinstalled:**
+
+The adapter creates new conversations by default. However, its
+persistent mapping in `STRAWPOT_DATA_DIR` (which survives reinstalls)
+may still reference old conversation IDs. If those conversations
+exist, the adapter reconnects to them naturally. If they were deleted,
+the adapter gets 404 and creates new ones (see above).
+
+**Summary:**
+
+| Scenario | Conversation | Adapter |
+|----------|-------------|---------|
+| Conversation deleted | Gone | Gets 404, creates new conversation |
+| Adapter uninstalled | Preserved, dimmed icon | Gone |
+| Adapter reinstalled | Old ones preserved | Reconnects via persisted mapping or creates new |
+| Both deleted | Nothing to clean up | Nothing to clean up |
+
+---
+
 ## Not Planned
 
 | Feature | Reason |
@@ -1002,9 +1112,25 @@ posting results back to Telegram groups, Slack channels, etc.
 | 16 | Backend: `POST /api/integrations/:name/notify` endpoint | Done |
 | 17 | Backend: `GET /api/integrations/:name/notifications` polling endpoint | Done |
 | 18 | Backend: `POST /api/integrations/:name/notifications/:id/ack` endpoint | Done |
-| 19 | Scheduler: submit to conversation API when `conversation_id` is set | Not started |
-| 20 | Scheduler: enforce `role=imu` for `project_id=0` schedules | Not started |
+| 19 | Scheduler: submit to conversation API when `conversation_id` is set | Done |
+| 20 | Scheduler: enforce `role=imu` for `project_id=0` schedules | Done |
 | 21 | Skill: `notify-integration` for agent use | Not started |
 | 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Done |
 | 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Not started |
 | 24 | Frontend: schedule UI — conversation targeting + skill selection | Not started |
+
+**Phase 5 — Conversation source tracking**
+
+Visual indicators showing where a conversation originated (Telegram,
+Slack, scheduler, etc.). Platform icons and labels in the conversation
+list and header.
+
+| # | Item | Status |
+|---|------|--------|
+| 25 | Database: `source` + `source_meta` columns on `conversations` | Not started |
+| 26 | Backend: accept `source`/`source_meta` in `POST /api/imu/conversations` | Not started |
+| 27 | Backend: include `source`/`source_meta` in conversation list/detail responses | Not started |
+| 28 | Backend: scheduler sets `source="scheduler"` when creating conversations | Not started |
+| 29 | Frontend: platform icon badges in conversation list | Not started |
+| 30 | Frontend: "via Platform / label" subtitle in conversation header | Not started |
+| 31 | Reference adapters: pass `source`/`source_meta` when creating conversations | Not started |

@@ -120,14 +120,53 @@ class Scheduler:
         """Fire a single scheduled task."""
         schedule_id = schedule["id"]
         name = schedule["name"]
+        project_id = schedule["project_id"]
+
+        # #20 — enforce imu role for project 0 (strawpot-internal)
+        role = schedule["role"] or ("imu" if project_id == 0 else None)
+
+        task = schedule["task"]
+        conversation_id = schedule.get("conversation_id")
+
+        # #19 — conversation targeting: build context from prior turns
+        kwargs: dict = {}
+        if conversation_id:
+            from strawpot_gui.routers.conversations import (
+                _build_conversation_context,
+                _write_conversation_history,
+            )
+
+            conv = conn.execute(
+                "SELECT id, project_id FROM conversations WHERE id = ?",
+                (conversation_id,),
+            ).fetchone()
+            if conv:
+                project_row = conn.execute(
+                    "SELECT working_dir FROM projects WHERE id = ?",
+                    (project_id,),
+                ).fetchone()
+                hist_path = None
+                if project_row and project_row["working_dir"]:
+                    hist_path = _write_conversation_history(
+                        conn, conversation_id, project_row["working_dir"]
+                    )
+                context = _build_conversation_context(
+                    conn, conversation_id, history_path=hist_path
+                )
+                if context:
+                    kwargs["user_task"] = task
+                    task = f"{context}\n\n---\n\n{task}"
+                kwargs["conversation_id"] = conversation_id
+
         try:
             run_id = self._launch_fn(
                 conn,
-                schedule["project_id"],
-                schedule["task"],
-                role=schedule["role"],
+                project_id,
+                task,
+                role=role,
                 system_prompt=schedule["system_prompt"],
                 schedule_id=schedule_id,
+                **kwargs,
             )
             if schedule.get("schedule_type") == "one_time":
                 # One-time: auto-disable after firing
