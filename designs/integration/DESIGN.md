@@ -586,7 +586,7 @@ specific projects. This means:
 | # | Item | Status |
 |---|------|--------|
 | 9 | imu tool: `conversation.submit(project, task)` — submit task to a project conversation | Done |
-| 10 | GUI: cross-link between imu conversation and project conversation it spawned | Planned |
+| 10 | GUI: cross-link between imu conversation and project conversation it spawned | Done |
 
 **Phase 3 — Strawhub distribution (when demand warrants)**
 
