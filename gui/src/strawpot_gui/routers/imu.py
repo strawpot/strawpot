@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel
 
 from strawpot_gui.db import get_db_conn
@@ -41,10 +41,14 @@ class ImuConversationCreate(BaseModel):
 
 
 @router.post("/conversations", status_code=201)
-def create_imu_conversation(body: ImuConversationCreate | None = None, conn=Depends(get_db_conn)):
+def create_imu_conversation(
+    body: ImuConversationCreate | None = None,
+    x_strawpot_source: str | None = Header(None),
+    conn=Depends(get_db_conn),
+):
     """Create a new Bot Imu conversation."""
     now = datetime.now(timezone.utc).isoformat()
-    source = body.source if body else None
+    source = (body.source if body else None) or x_strawpot_source
     source_meta = body.source_meta if body else None
     cur = conn.execute(
         "INSERT INTO conversations (project_id, source, source_meta, created_at) VALUES (?, ?, ?, ?)",

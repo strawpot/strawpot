@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from strawpot_gui.db import _extract_recap, _strip_recap, get_db_conn
@@ -300,7 +300,11 @@ def list_recent_conversations(
 
 
 @router.post("/conversations", status_code=201)
-def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
+def create_conversation(
+    body: ConversationCreate,
+    x_strawpot_source: str | None = Header(None),
+    conn=Depends(get_db_conn),
+):
     """Create a new conversation for a project."""
     project = conn.execute(
         "SELECT id FROM projects WHERE id = ?", (body.project_id,)
@@ -316,11 +320,12 @@ def create_conversation(body: ConversationCreate, conn=Depends(get_db_conn)):
         if not parent:
             raise HTTPException(422, "Parent conversation not found")
 
+    source = body.source or x_strawpot_source
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         "INSERT INTO conversations (project_id, title, parent_conversation_id, source, source_meta, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (body.project_id, body.title, body.parent_conversation_id, body.source, body.source_meta, now),
+        (body.project_id, body.title, body.parent_conversation_id, source, body.source_meta, now),
     )
     conv_id = cur.lastrowid
     row = conn.execute(
