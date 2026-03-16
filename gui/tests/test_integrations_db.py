@@ -46,3 +46,28 @@ class TestIntegrationTables:
                 ("telegram",),
             ).fetchone()
         assert count["cnt"] == 0
+
+    def test_notifications_cascade_delete(self, tmp_path):
+        """Deleting an integration cascades to its notification rows."""
+        db_path = str(tmp_path / "test.db")
+        init_db(db_path)
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO integrations (name) VALUES (?)",
+                ("telegram",),
+            )
+            conn.execute(
+                "INSERT INTO integration_notifications "
+                "(integration_name, message) VALUES (?, ?)",
+                ("telegram", "Hello"),
+            )
+            conn.execute(
+                "DELETE FROM integrations WHERE name = ?",
+                ("telegram",),
+            )
+            count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM integration_notifications "
+                "WHERE integration_name = ?",
+                ("telegram",),
+            ).fetchone()
+        assert count["cnt"] == 0

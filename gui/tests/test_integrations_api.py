@@ -592,6 +592,75 @@ class TestAutoStart:
         assert row["last_error"] is not None
 
 
+class TestNotify:
+    def test_notify_creates_notification(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Hello from agent"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] is not None
+        assert data["integration_name"] == "telegram"
+        assert data["status"] == "pending"
+
+    def test_notify_with_chat_id(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Targeted msg", "chat_id": "12345"},
+        )
+        assert resp.status_code == 200
+        # Verify DB row has the chat_id
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT chat_id, message, delivered_at FROM integration_notifications "
+                "WHERE id = ?",
+                (resp.json()["id"],),
+            ).fetchone()
+        assert row["chat_id"] == "12345"
+        assert row["message"] == "Targeted msg"
+        assert row["delivered_at"] is None
+
+    def test_notify_empty_message(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": ""},
+        )
+        assert resp.status_code == 400
+
+    def test_notify_whitespace_only_message(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "   "},
+        )
+        assert resp.status_code == 400
+
+    def test_notify_not_found(self, client, home):
+        resp = client.post(
+            "/api/integrations/nonexistent/notify",
+            json={"message": "Hello"},
+        )
+        assert resp.status_code == 404
+
+    def test_notify_multiple_creates_separate_rows(self, client, home):
+        _create_integration(home, "telegram")
+        r1 = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "First"},
+        )
+        r2 = client.post(
+            "/api/integrations/telegram/notify",
+            json={"message": "Second"},
+        )
+        assert r1.json()["id"] != r2.json()["id"]
+
+
 class TestManifestParsing:
     def test_scan_skips_dir_without_manifest(self, client, home):
         """Directories without INTEGRATION.md are silently skipped."""
