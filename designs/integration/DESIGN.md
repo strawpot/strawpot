@@ -86,12 +86,16 @@ POST /api/conversations/{conv_id}/tasks
   ↓
 Response: 201 (session launched) or 202 (queued)
   ↓
-Adapter: connect /ws/sessions/{run_id} for real-time updates
+Adapter: conversation poller detects new session → watches for completion
   ↓
 Session completes → adapter reads summary from conversation
   ↓
 Bot replies: "Done. Fixed the login validation in auth.py — ..."
 ```
+
+The conversation poller also picks up sessions started by other sources
+(GUI, scheduler, another adapter). Any session that completes in a
+conversation the adapter is watching gets relayed back to the platform.
 
 **Example flow (Slack):**
 
@@ -353,6 +357,9 @@ its own `(platform_id, thread_id) → conversation_id` mapping locally.
 | POST | `/api/integrations/update` | Stop → update → restart if was running |
 | POST | `/api/integrations/reinstall` | Stop → reinstall → restart if was running |
 | DELETE | `/api/integrations/:name` | Stop + uninstall |
+| POST | `/api/integrations/:name/notify` | Queue a notification for the adapter |
+| GET | `/api/integrations/:name/notifications` | Poll pending notifications (adapter use) |
+| POST | `/api/integrations/:name/notifications/:id/ack` | Mark notification as delivered |
 
 ---
 
@@ -366,11 +373,12 @@ platform and imu via the StrawPot REST API.
 | Responsibility | Description |
 |----------------|-------------|
 | **Inbound** | Platform message → `POST /api/imu/conversations` (new) or `POST /api/conversations/{id}/tasks` (existing) |
-| **Outbound** | Subscribe to `/ws/sessions/{run_id}` for real-time updates. On session completion, read summary and reply in platform thread. |
+| **Outbound** | Poll conversations for new sessions (from any source — chat, GUI, scheduler). On session completion, read summary and reply in platform thread. |
 | **Mapping** | Maintain `(platform_id, thread_id) → conversation_id` in local SQLite. |
 | **Output formatting** | Chunk long output for platform limits (Telegram: 4096 chars, Discord: 2000, Slack: 40K blocks). Send recap as reply, full output as file attachment if needed. |
 | **Conversation reset** | Handle `/new` command to create a fresh imu conversation for the chat/thread. |
 | **Health check** | Expose `GET /health` endpoint for GUI status monitoring (optional). |
+| **Notifications** | Poll `GET /api/integrations/{name}/notifications` and deliver to platform (optional). |
 
 **What adapters do NOT do:**
 - No project/role selection — imu handles routing
@@ -391,8 +399,10 @@ Adapter authors need to implement:
    - Connects to the chat platform
    - Relays messages to/from the imu conversation API
    - Maintains a local mapping of platform threads to conversation IDs (stored in `STRAWPOT_DATA_DIR`)
+   - Polls watched conversations for new/completed sessions (from any source — chat, GUI, scheduler)
    - Handles SIGTERM for graceful shutdown
    - Exposes a health check endpoint (optional)
+   - Polls for direct notifications (optional — see Integration Notifications)
 2. An `INTEGRATION.md` manifest with `env` schema (only user-configurable vars — not `STRAWPOT_API_URL` or `STRAWPOT_DATA_DIR`)
 3. A `requirements.txt` for dependencies
 
@@ -413,15 +423,17 @@ though Python is the recommended default for Strawhub distribution.
 
 ```python
 # adapter.py
+import asyncio
 import os
 import sqlite3
 from pathlib import Path
 import httpx
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 API_URL = os.environ["STRAWPOT_API_URL"]
 BOT_TOKEN = os.environ["STRAWPOT_BOT_TOKEN"]
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "3"))
 
 # Persistent data directory (auto-set by GUI, falls back to script directory)
 DATA_DIR = Path(os.environ.get("STRAWPOT_DATA_DIR") or str(Path(__file__).parent))
@@ -431,8 +443,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 db = sqlite3.connect(str(DATA_DIR / "adapter.db"))
 db.execute("""
     CREATE TABLE IF NOT EXISTS chat_conversations (
-        chat_id TEXT PRIMARY KEY,
-        conversation_id INTEGER NOT NULL
+        chat_id          TEXT PRIMARY KEY,
+        conversation_id  INTEGER NOT NULL,
+        last_session_id  TEXT    -- last session run_id the adapter has seen
     )
 """)
 
@@ -489,43 +502,66 @@ async def handle_message(update: Update, context) -> None:
             await update.message.reply_text("Queued — will run after current session.")
             return
 
-        run_id = resp.json().get("run_id")
-        if not run_id:
-            return
-
-        # Wait for session completion and reply with summary
-        summary = await wait_for_completion(client, conv_id, run_id)
-        await reply_with_summary(update, summary)
+        # Session launched — the conversation poller will pick up
+        # the result and reply when it completes. No need to block here.
 
 
-async def wait_for_completion(client: httpx.AsyncClient, conv_id: int, run_id: str) -> str:
-    """Poll conversation until session completes. Returns summary."""
-    import asyncio
+# ── Conversation poller ─────────────────────────────────────────
+# Background task: polls all watched conversations for new completed
+# sessions. Picks up results from ANY source — chat, GUI, scheduler.
+
+async def conversation_poller(bot: Bot, client: httpx.AsyncClient):
+    """Poll watched conversations and relay completed sessions to Telegram."""
     while True:
-        await asyncio.sleep(3)
-        resp = await client.get(f"{API_URL}/api/conversations/{conv_id}")
-        resp.raise_for_status()
-        conv = resp.json()
-        for session in conv["sessions"]:
-            if session["run_id"] == run_id:
-                if session["status"] in ("completed", "failed", "stopped"):
-                    return session.get("summary") or f"Session {session['status']}."
-        # Session still running — keep polling
+        try:
+            rows = db.execute(
+                "SELECT chat_id, conversation_id, last_session_id "
+                "FROM chat_conversations"
+            ).fetchall()
+            for chat_id, conv_id, last_seen in rows:
+                resp = await client.get(f"{API_URL}/api/conversations/{conv_id}")
+                if resp.status_code != 200:
+                    continue
+                conv = resp.json()
+                for session in conv.get("sessions", []):
+                    run_id = session["run_id"]
+                    if run_id == last_seen:
+                        break  # Already seen this and older sessions
+                    if session["status"] in ("completed", "failed", "stopped"):
+                        summary = session.get("summary") or f"Session {session['status']}."
+                        await send_summary(bot, chat_id, summary)
+                        db.execute(
+                            "UPDATE chat_conversations SET last_session_id = ? "
+                            "WHERE chat_id = ?",
+                            (run_id, chat_id),
+                        )
+                        db.commit()
+                        break  # Process one session at a time
+        except Exception:
+            pass  # Log in real adapter
+        await asyncio.sleep(POLL_INTERVAL)
 
 
-async def reply_with_summary(update: Update, summary: str) -> None:
-    """Reply with summary, chunking for Telegram's 4096 char limit."""
-    max_len = 4000  # Leave room for formatting
+async def send_summary(bot: Bot, chat_id: str, summary: str) -> None:
+    """Send summary to Telegram, chunking for 4096 char limit."""
+    max_len = 4000
     if len(summary) <= max_len:
-        await update.message.reply_text(summary)
+        await bot.send_message(chat_id=chat_id, text=summary)
     else:
         for i in range(0, len(summary), max_len):
-            await update.message.reply_text(summary[i : i + max_len])
+            await bot.send_message(chat_id=chat_id, text=summary[i : i + max_len])
 
 
 app = Application.builder().token(BOT_TOKEN).build()
 app.add_handler(CommandHandler("new", handle_new))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# Start conversation poller alongside Telegram polling
+async def post_init(application: Application) -> None:
+    client = httpx.AsyncClient()
+    asyncio.create_task(conversation_poller(application.bot, client))
+
+app.post_init = post_init
 app.run_polling()
 ```
 
@@ -612,6 +648,294 @@ workflows from chat.
 
 ---
 
+## Integration Notifications
+
+Scheduled tasks and agent sessions can notify chat integrations — posting
+results back to a Telegram group, Slack channel, or Discord thread. This
+enables async workflows: "run this report every morning and post to
+#engineering."
+
+### Architecture
+
+```
+Conversation targeting:
+
+  Schedule fires (scheduler.py)
+    ↓
+  POST /api/conversations/{conv_id}/tasks   ← if conversation_id set
+    ↓
+  Session runs in target conversation
+    ↓
+  Adapter conversation poller detects completed session
+    ↓
+  Adapter replies in platform chat/thread
+
+
+Direct notification:
+
+  Session runs (any source — schedule, GUI, chat)
+    ↓
+  Agent calls POST /api/integrations/{name}/notify   ← via skill
+    ↓
+  GUI stores notification in integration_notifications table
+    ↓
+  Adapter polls GET /api/integrations/{name}/notifications
+    ↓
+  Adapter delivers message to platform (Telegram, Slack, etc.)
+```
+
+Two mechanisms work together:
+
+1. **Conversation targeting** — schedules submit tasks to a specific
+   conversation. The adapter's conversation poller (see Adapter Contract)
+   detects the new completed session and relays the result back to the
+   platform. No additional adapter code needed — this works because
+   adapters already poll all their watched conversations.
+
+2. **Direct notification** — a `POST /api/integrations/{name}/notify`
+   endpoint lets agents explicitly send messages to a chat platform. A
+   `notify-integration` skill teaches agents how to use it. This covers
+   cases where there's no existing conversation to target (e.g., "post
+   to the #alerts channel").
+
+### Why two mechanisms
+
+| Mechanism | Use case |
+|-----------|----------|
+| Conversation targeting | Continue an existing chat thread (adapter already watches it) |
+| Direct notification | Post to a new or specific chat destination (no existing conversation) |
+
+Conversation targeting is implicit — no adapter code change needed, since
+adapters already watch their conversations. Direct notification requires
+the adapter to implement a notification handler (optional contract
+extension).
+
+### Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Notify endpoint on GUI, not direct to adapter | Bot tokens stay contained in the adapter. Agents never see platform credentials. |
+| Adapter polls for notifications | Reuses existing REST infrastructure. No need for adapters to expose HTTP endpoints. Simple for custom integration authors. |
+| Notification handler is optional | Adapters that don't implement it still work — they just can't receive direct notifications. Conversation targeting works without it. |
+| One generic `notify-integration` skill | Works for all platforms. Agent doesn't need to know Telegram vs Slack API. |
+| Notifications persist in DB | If adapter is temporarily down, notifications are delivered when it restarts. |
+| imu role is enforced for `project_id=0` | Schedules and conversations targeting imu (`project_id=0`) must use `role=imu`. The scheduler enforces this — if `project_id=0`, the role is forced to `"imu"` regardless of the schedule's `role` field. Same applies when submitting to an imu conversation via the conversation API. |
+
+### Database Changes
+
+Add `conversation_id` to scheduled tasks (enables conversation targeting):
+
+```sql
+ALTER TABLE scheduled_tasks
+  ADD COLUMN conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL;
+```
+
+Add notification queue table:
+
+```sql
+CREATE TABLE IF NOT EXISTS integration_notifications (
+    id              INTEGER PRIMARY KEY,
+    integration_name TEXT NOT NULL REFERENCES integrations(name) ON DELETE CASCADE,
+    chat_id         TEXT,              -- platform-specific destination (chat ID, channel, etc.)
+    message         TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    delivered_at    TEXT               -- NULL = pending, set when adapter ACKs
+);
+
+CREATE INDEX IF NOT EXISTS idx_integration_notifications_pending
+    ON integration_notifications(integration_name, delivered_at)
+    WHERE delivered_at IS NULL;
+```
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/integrations/:name/notify` | Queue a notification for the adapter |
+| GET | `/api/integrations/:name/notifications` | Poll pending notifications (adapter use) |
+| POST | `/api/integrations/:name/notifications/:id/ack` | Mark notification as delivered |
+
+**POST /api/integrations/:name/notify**
+
+Called by agents (via skill) or any API consumer. Queues a message for
+the adapter to deliver.
+
+```json
+{
+  "chat_id": "12345",
+  "message": "Daily report: 3 sessions completed, 0 failures."
+}
+```
+
+`chat_id` is platform-specific — a Telegram chat ID, Slack channel ID,
+Discord channel/thread ID, etc. The agent learns the target from the
+skill prompt or schedule configuration.
+
+**GET /api/integrations/:name/notifications**
+
+Returns pending (undelivered) notifications. Adapter polls this
+periodically.
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "chat_id": "12345",
+      "message": "Daily report: ...",
+      "created_at": "2026-03-16T10:00:00Z"
+    }
+  ]
+}
+```
+
+**POST /api/integrations/:name/notifications/:id/ack**
+
+Adapter calls this after successfully delivering the message. Sets
+`delivered_at` timestamp. Acknowledged notifications are excluded from
+future polls.
+
+### Adapter Contract Extension
+
+Supporting notifications is **optional**. Adapters that want to receive
+direct notifications add a background poller:
+
+| Responsibility | Required | Description |
+|----------------|----------|-------------|
+| **Poll notifications** | Optional | Periodically `GET /api/integrations/{name}/notifications`, deliver each to the platform, then ACK. |
+| **Deliver to platform** | Optional | Use the platform's send API to post `message` to `chat_id`. |
+
+**Example notification poller (Python):**
+
+```python
+async def notification_poller(client: httpx.AsyncClient, name: str):
+    """Background task: poll for pending notifications and deliver them."""
+    while True:
+        try:
+            resp = await client.get(
+                f"{API_URL}/api/integrations/{name}/notifications"
+            )
+            for item in resp.json().get("items", []):
+                await send_to_platform(item["chat_id"], item["message"])
+                await client.post(
+                    f"{API_URL}/api/integrations/{name}/notifications"
+                    f"/{item['id']}/ack"
+                )
+        except Exception:
+            logger.exception("Notification poll failed")
+        await asyncio.sleep(5)
+```
+
+`send_to_platform()` is adapter-specific — for Telegram it calls the
+Bot API `sendMessage`, for Slack it posts via `chat.postMessage`, etc.
+
+### Skill: `notify-integration`
+
+A generic skill that teaches agents how to send notifications through
+any integration. Used in scheduled task prompts or any session where
+the agent should report results to a chat platform.
+
+**Skill prompt (conceptual):**
+
+```
+When you need to notify a chat integration, call:
+
+  curl -X POST "$STRAWPOT_API_URL/api/integrations/{name}/notify" \
+    -H "Content-Type: application/json" \
+    -d '{"chat_id": "{target}", "message": "{your message}"}'
+
+Parameters:
+- name: integration slug (e.g., "telegram", "slack", "discord")
+- chat_id: platform-specific destination ID
+- message: plain text message to send
+
+Example — notify a Telegram group:
+  POST /api/integrations/telegram/notify
+  {"chat_id": "-100123456789", "message": "Build passed ✓"}
+```
+
+### Scheduler Behavior
+
+When the scheduler fires a schedule, it branches on `conversation_id`:
+
+```python
+def _fire(self, conn, schedule, now):
+    role = schedule["role"]
+    # Enforce imu role for project_id=0
+    if schedule["project_id"] == 0:
+        role = "imu"
+
+    if schedule["conversation_id"]:
+        # Submit to conversation — gets context, adapter sees it
+        POST /api/conversations/{conv_id}/tasks
+            body: {"task": schedule["task"]}
+    else:
+        # Standalone session (current behavior)
+        launch_session_subprocess(
+            conn, schedule["project_id"], schedule["task"],
+            role=role, schedule_id=schedule["id"],
+        )
+```
+
+**Role enforcement:** Schedules targeting `project_id=0` (imu) always
+use `role=imu`, regardless of the schedule's `role` field. This
+prevents accidentally running a non-imu role in imu's project space.
+The conversations router already applies the same rule:
+`role = body.role or ("imu" if project_id == 0 else None)`.
+
+### Schedule → Chat Flow
+
+**Example: daily report posted to a Telegram group**
+
+1. User creates a schedule in the GUI:
+   - Task: `Summarize today's sessions and notify telegram chat -100123456789`
+   - Skills: `notify-integration`
+   - Cron: `0 9 * * *` (every day at 9am)
+   - Conversation: (optionally target an existing conversation)
+
+2. Scheduler fires → launches session with the task prompt
+
+3. Agent runs the task, generates a summary, then uses the
+   `notify-integration` skill to call:
+   ```
+   POST /api/integrations/telegram/notify
+   {"chat_id": "-100123456789", "message": "Daily report: ..."}
+   ```
+
+4. GUI stores notification in `integration_notifications`
+
+5. Telegram adapter polls, picks up the notification, calls Telegram
+   Bot API `sendMessage` to post in the group
+
+6. Adapter ACKs the notification
+
+**Example: scheduled task continues an existing chat thread**
+
+1. User in Telegram sends: "set up a daily code review for myapp"
+2. imu creates a schedule with `conversation_id` pointing to this
+   Telegram-linked conversation
+3. Every day, scheduler fires the task into that conversation
+4. Telegram adapter is already watching the conversation → picks up the
+   session result → replies in the original chat
+
+### Custom Integration Guide
+
+For custom integration authors who want notification support:
+
+1. **Add a notification poller** — background async task that polls
+   `GET /api/integrations/{your_name}/notifications` every few seconds
+2. **Implement `send_to_platform(chat_id, message)`** — use your
+   platform's API to deliver the message
+3. **ACK after delivery** — call
+   `POST /api/integrations/{your_name}/notifications/{id}/ack`
+4. **Document `chat_id` format** — tell users what to put in the
+   `chat_id` field (e.g., Telegram numeric chat ID, Slack channel ID)
+
+That's it. No manifest changes needed — notification support is a
+runtime behavior, not a declared capability.
+
+---
+
 ## Not Planned
 
 | Feature | Reason |
@@ -665,3 +989,22 @@ specific projects. This means:
 | 11 | Strawhub registry: `integrations` + `integrationVersions` tables | Done |
 | 12 | Strawhub CLI: `strawhub publish/install integration` support | Done |
 | 13 | Frontend: browse + install from Strawhub in Integrations page | Done |
+
+**Phase 4 — Integration notifications**
+
+Scheduled tasks and agent sessions can notify chat integrations —
+posting results back to Telegram groups, Slack channels, etc.
+
+| # | Item | Status |
+|---|------|--------|
+| 14 | Database: `integration_notifications` table | Not started |
+| 15 | Database: `conversation_id` column on `scheduled_tasks` | Not started |
+| 16 | Backend: `POST /api/integrations/:name/notify` endpoint | Not started |
+| 17 | Backend: `GET /api/integrations/:name/notifications` polling endpoint | Not started |
+| 18 | Backend: `POST /api/integrations/:name/notifications/:id/ack` endpoint | Not started |
+| 19 | Scheduler: submit to conversation API when `conversation_id` is set | Not started |
+| 20 | Scheduler: enforce `role=imu` for `project_id=0` schedules | Not started |
+| 21 | Skill: `notify-integration` for agent use | Not started |
+| 22 | Reference adapters: add conversation poller to Telegram/Slack/Discord | Not started |
+| 23 | Reference adapters: add notification poller to Telegram/Slack/Discord | Not started |
+| 24 | Frontend: schedule UI — conversation targeting + skill selection | Not started |
