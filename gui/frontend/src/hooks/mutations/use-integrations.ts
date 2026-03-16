@@ -81,6 +81,17 @@ export function useReinstallIntegration() {
   });
 }
 
+export function useSetAutoStart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
+      api.put<{ ok: boolean; auto_start: boolean }>(`/integrations/${name}/auto-start`, { enabled }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.integrations.all });
+    },
+  });
+}
+
 export function useDeleteIntegrationConfig() {
   const qc = useQueryClient();
   return useMutation({

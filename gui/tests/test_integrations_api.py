@@ -392,13 +392,13 @@ class TestOrphanedIntegrations:
         from strawpot_gui.db import get_db
         from strawpot_gui.routers.integrations import mark_orphaned_integrations_stopped
 
+        _create_integration(home, "telegram")
         db_path = client.app.state.db_path
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT INTO integrations (name, status, pid) VALUES (?, 'running', ?)",
+                "INSERT OR REPLACE INTO integrations (name, status, pid) VALUES (?, 'running', ?)",
                 ("telegram", 999999),
             )
-        _create_integration(home, "telegram")
         mark_orphaned_integrations_stopped(db_path)
         with get_db(db_path) as conn:
             row = conn.execute(
@@ -456,7 +456,7 @@ class TestIntegrationLogs:
 
 class TestAutoStart:
     def test_auto_start_launches_flagged_integration(self, client, home):
-        """auto_start_integrations() starts integrations with auto_start: true."""
+        """auto_start_integrations() starts integrations with auto_start enabled in DB."""
         from strawpot_gui.routers.integrations import auto_start_integrations
 
         integration_dir = home / "integrations" / "telegram"
@@ -464,11 +464,18 @@ class TestAutoStart:
         (integration_dir / "INTEGRATION.md").write_text(
             "---\nname: telegram\ndescription: Test\n"
             "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
-            "    auto_start: true\n---\nBody."
+            "---\nBody."
         )
         (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
 
         db_path = client.app.state.db_path
+        # Enable auto_start in DB
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                ("telegram",),
+            )
         auto_start_integrations(db_path)
 
         from strawpot_gui.db import get_db
@@ -489,10 +496,10 @@ class TestAutoStart:
             pass
 
     def test_auto_start_skips_non_flagged(self, client, home):
-        """auto_start_integrations() skips integrations with auto_start: false."""
+        """auto_start_integrations() skips integrations with auto_start disabled in DB."""
         from strawpot_gui.routers.integrations import auto_start_integrations
 
-        _create_integration(home, "telegram")  # auto_start: false by default
+        _create_integration(home, "telegram")  # auto_start: 0 by default in DB
 
         db_path = client.app.state.db_path
         auto_start_integrations(db_path)
@@ -500,10 +507,11 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT * FROM integrations WHERE name = ?",
+                "SELECT status, pid FROM integrations WHERE name = ?",
                 ("telegram",),
             ).fetchone()
-        assert row is None  # no DB row created for non-auto-start
+        assert row["status"] == "stopped"
+        assert row["pid"] is None
 
     def test_auto_start_skips_already_running(self, client, home):
         """auto_start_integrations() skips if already running with live PID."""
@@ -514,11 +522,18 @@ class TestAutoStart:
         (integration_dir / "INTEGRATION.md").write_text(
             "---\nname: telegram\ndescription: Test\n"
             "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
-            "    auto_start: true\n---\nBody."
+            "---\nBody."
         )
         (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
 
         db_path = client.app.state.db_path
+        # Enable auto_start in DB
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                ("telegram",),
+            )
 
         # First auto-start
         auto_start_integrations(db_path)
@@ -554,10 +569,17 @@ class TestAutoStart:
         (integration_dir / "INTEGRATION.md").write_text(
             "---\nname: broken\ndescription: Test\n"
             "metadata:\n  strawpot:\n    entry_point: /nonexistent/binary\n"
-            "    auto_start: true\n---\nBody."
+            "---\nBody."
         )
 
         db_path = client.app.state.db_path
+        # Enable auto_start in DB
+        from strawpot_gui.db import get_db
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                ("broken",),
+            )
         auto_start_integrations(db_path)  # should not raise
 
         from strawpot_gui.db import get_db

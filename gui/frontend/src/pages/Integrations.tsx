@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useIntegrations, useIntegrationConfig } from "@/hooks/queries/use-integrations";
-import { useStartIntegration, useStopIntegration, useSaveIntegrationConfig, useInstallIntegration, useUninstallIntegration, useUpdateIntegration, useReinstallIntegration } from "@/hooks/mutations/use-integrations";
+import { useIntegrations } from "@/hooks/queries/use-integrations";
+import { useInstallIntegration } from "@/hooks/mutations/use-integrations";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,16 +23,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { CheckCircle2, Download, MoreHorizontal, Play, RefreshCw, Square, Settings2, ScrollText, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Download, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import type { Integration, IntegrationEnvField } from "@/api/types";
+import type { Integration } from "@/api/types";
+import IntegrationDetailSheet from "@/components/IntegrationDetailSheet";
 import IntegrationLogSheet from "@/components/IntegrationLogSheet";
 
 function StatusBadge({ status }: { status: string }) {
@@ -47,9 +41,15 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function Integrations() {
   const { data: integrations, isLoading } = useIntegrations();
-  const [configName, setConfigName] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Integration | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [logName, setLogName] = useState<string | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
+
+  // Keep selected integration up-to-date from the list query
+  const currentSelected = selected
+    ? integrations?.find((i) => i.name === selected.name) ?? selected
+    : null;
 
   return (
     <div className="space-y-6">
@@ -60,8 +60,8 @@ export default function Integrations() {
             Chat and community platform adapters
           </p>
         </div>
-        <Button onClick={() => setInstallOpen(true)}>
-          <Download className="mr-1.5 h-4 w-4" />
+        <Button onClick={() => setInstallOpen(true)} size="sm">
+          <Download className="mr-2 h-4 w-4" />
           Install
         </Button>
       </div>
@@ -86,31 +86,41 @@ export default function Integrations() {
               <TableHead>Name</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-56" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {integrations.map((integration) => (
-              <IntegrationRow
+              <TableRow
                 key={integration.name}
-                integration={integration}
-                onConfigure={() => setConfigName(integration.name)}
-                onLogs={() => setLogName(integration.name)}
-              />
+                className="cursor-pointer"
+                onClick={() => {
+                  setSelected(integration);
+                  setSheetOpen(true);
+                }}
+              >
+                <TableCell className="font-medium">{integration.name}</TableCell>
+                <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
+                  {integration.description || "\u2014"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={integration.status} />
+                    {integration.status === "running" && (
+                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
 
-      <InstallIntegrationDialog
-        open={installOpen}
-        onOpenChange={setInstallOpen}
-      />
-
-      <ConfigDialog
-        name={configName}
-        open={!!configName}
-        onOpenChange={(open) => { if (!open) setConfigName(null); }}
+      <IntegrationDetailSheet
+        integration={currentSelected}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        onLogs={(name) => setLogName(name)}
       />
 
       <IntegrationLogSheet
@@ -118,171 +128,12 @@ export default function Integrations() {
         open={!!logName}
         onOpenChange={(open) => { if (!open) setLogName(null); }}
       />
+
+      <InstallIntegrationDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+      />
     </div>
-  );
-}
-
-function IntegrationRow({
-  integration,
-  onConfigure,
-  onLogs,
-}: {
-  integration: Integration;
-  onConfigure: () => void;
-  onLogs: () => void;
-}) {
-  const start = useStartIntegration();
-  const stop = useStopIntegration();
-  const update = useUpdateIntegration();
-  const reinstall = useReinstallIntegration();
-  const uninstall = useUninstallIntegration();
-  const [confirmingUninstall, setConfirmingUninstall] = useState(false);
-  const isRunning = integration.status === "running";
-  const actionPending = update.isPending || reinstall.isPending || uninstall.isPending;
-
-  const handleStartStop = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isRunning) {
-      stop.mutate(integration.name, {
-        onSuccess: () => toast.success(`Stopped ${integration.name}`),
-        onError: (err) => toast.error(`Failed to stop: ${err.message}`),
-      });
-    } else {
-      start.mutate(integration.name, {
-        onSuccess: () => toast.success(`Started ${integration.name}`),
-        onError: (err) => toast.error(`Failed to start: ${err.message}`),
-      });
-    }
-  };
-
-  const handleUpdate = () => {
-    update.mutate(integration.name, {
-      onSuccess: (res) => {
-        if (res.exit_code === 0) toast.success(`Updated ${integration.name}`);
-        else toast.error(`Update failed: ${res.stderr || res.stdout}`);
-      },
-      onError: (err) => toast.error(`Failed to update: ${err.message}`),
-    });
-  };
-
-  const handleReinstall = () => {
-    reinstall.mutate(integration.name, {
-      onSuccess: (res) => {
-        if (res.exit_code === 0) toast.success(`Reinstalled ${integration.name}`);
-        else toast.error(`Reinstall failed: ${res.stderr || res.stdout}`);
-      },
-      onError: (err) => toast.error(`Failed to reinstall: ${err.message}`),
-    });
-  };
-
-  const handleUninstall = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    uninstall.mutate(integration.name, {
-      onSuccess: (res) => {
-        if (res.exit_code === 0) toast.success(`Uninstalled ${integration.name}`);
-        else toast.error(`Uninstall failed: ${res.stderr || res.stdout}`);
-        setConfirmingUninstall(false);
-      },
-      onError: (err) => {
-        toast.error(`Failed to uninstall: ${err.message}`);
-        setConfirmingUninstall(false);
-      },
-    });
-  };
-
-  return (
-    <TableRow>
-      <TableCell className="font-medium">{integration.name}</TableCell>
-      <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
-        {integration.description || "\u2014"}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <StatusBadge status={integration.status} />
-          {isRunning && (
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-          )}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant={isRunning ? "destructive" : "default"}
-            onClick={handleStartStop}
-            disabled={start.isPending || stop.isPending}
-          >
-            {isRunning ? (
-              <><Square className="mr-1 h-3.5 w-3.5" /> Stop</>
-            ) : (
-              <><Play className="mr-1 h-3.5 w-3.5" /> Start</>
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => { e.stopPropagation(); onConfigure(); }}
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => { e.stopPropagation(); onLogs(); }}
-          >
-            <ScrollText className="h-3.5 w-3.5" />
-          </Button>
-          {confirmingUninstall ? (
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={handleUninstall}
-                disabled={uninstall.isPending}
-              >
-                Confirm
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmingUninstall(false);
-                }}
-              >
-                No
-              </Button>
-            </div>
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline" disabled={actionPending}>
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleUpdate} disabled={actionPending}>
-                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                  {update.isPending ? "Updating..." : "Update"}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleReinstall} disabled={actionPending}>
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  {reinstall.isPending ? "Reinstalling..." : "Reinstall"}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={(e) => { e.stopPropagation(); setConfirmingUninstall(true); }}
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Uninstall
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </TableCell>
-    </TableRow>
   );
 }
 
@@ -392,123 +243,5 @@ function InstallIntegrationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ConfigDialog({
-  name,
-  open,
-  onOpenChange,
-}: {
-  name: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { data: config } = useIntegrationConfig(name ?? "", { enabled: open && !!name });
-  const save = useSaveIntegrationConfig();
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [initialized, setInitialized] = useState(false);
-
-  // Initialize form values when config loads
-  if (config && !initialized) {
-    const initial: Record<string, string> = {};
-    for (const key of Object.keys(config.env_schema)) {
-      initial[key] = config.config_values[key] ?? "";
-    }
-    setValues(initial);
-    setInitialized(true);
-  }
-
-  // Reset when dialog closes
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      setInitialized(false);
-      setValues({});
-    }
-    onOpenChange(open);
-  };
-
-  const handleSave = () => {
-    if (!name) return;
-    save.mutate(
-      { name, config_values: values },
-      {
-        onSuccess: () => {
-          toast.success("Configuration saved");
-          handleOpenChange(false);
-        },
-        onError: (err) => toast.error(`Failed to save: ${err.message}`),
-      },
-    );
-  };
-
-  const schema = config?.env_schema ?? {};
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Configure {name}</DialogTitle>
-          <DialogDescription>
-            Set configuration values for this integration.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          {Object.entries(schema).map(([key, field]) => (
-            <ConfigField
-              key={key}
-              name={key}
-              field={field}
-              value={values[key] ?? ""}
-              onChange={(val) => setValues((prev) => ({ ...prev, [key]: val }))}
-            />
-          ))}
-          {Object.keys(schema).length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              This integration has no configuration options.
-            </p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={save.isPending}>
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfigField({
-  name,
-  field,
-  value,
-  onChange,
-}: {
-  name: string;
-  field: IntegrationEnvField;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={`config-${name}`}>
-        {name}
-        {field.required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      <Input
-        id={`config-${name}`}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={field.description}
-      />
-      {field.description && (
-        <p className="text-xs text-muted-foreground">{field.description}</p>
-      )}
-    </div>
   );
 }
