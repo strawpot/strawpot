@@ -1155,8 +1155,9 @@ list and header.
 |---|------|--------|
 | 31 | Database: `source` + `source_meta` columns on `conversations` | Done |
 | 32 | Backend: accept `source`/`source_meta` in conversation create endpoints | Done |
-| 33 | Backend: include `source`/`source_meta` in conversation list/detail responses | Done |
-| 34 | Backend: scheduler sets `source="scheduler"` when creating conversations | N/A (scheduler uses existing conversations) |
-| 35 | Frontend: platform icon badges in conversation list | Done |
-| 36 | Frontend: source badge in conversation header | Done |
-| 37 | Reference adapters: pass `source`/`source_meta` when creating conversations | Not started |
+| 33 | Backend: auto-detect source from `X-Strawpot-Source` header (fallback) | Done |
+| 34 | Backend: include `source`/`source_meta` in conversation list/detail responses | Done |
+| 35 | Backend: scheduler sets `source="scheduler"` when creating conversations | N/A (scheduler uses existing conversations) |
+| 36 | Frontend: platform icon badges in conversation list | Done |
+| 37 | Frontend: source badge in conversation header | Done |
+| 38 | Reference adapters: set `X-Strawpot-Source` header from `STRAWPOT_INTEGRATION_NAME` | Not started |
