@@ -375,6 +375,8 @@ platform and imu via the StrawPot REST API.
 | **Inbound** | Platform message → `POST /api/imu/conversations` (new) or `POST /api/conversations/{id}/tasks` (existing) |
 | **Outbound** | Poll conversations for new sessions (from any source — chat, GUI, scheduler). On session completion, read summary and reply in platform thread. |
 | **Mapping** | Maintain `(platform_id, thread_id) → conversation_id` in local SQLite. |
+| **Session marker** | Update `last_session_id` immediately after session completes, *before* fetching/sending the summary. This prevents the conversation poller from sending a duplicate message for the same session. |
+| **404 recovery** | When task submission returns 404 (conversation deleted), clear the stale mapping, create a new conversation, and retry. |
 | **Output formatting** | Chunk long output for platform limits (Telegram: 4096 chars, Discord: 2000, Slack: 40K blocks). Send recap as reply, full output as file attachment if needed. |
 | **Conversation reset** | Handle `/new` command to create a fresh imu conversation for the chat/thread. |
 | **Health check** | Expose `GET /health` endpoint for GUI status monitoring (optional). |
@@ -399,6 +401,8 @@ Adapter authors need to implement:
    - Connects to the chat platform
    - Relays messages to/from the imu conversation API
    - Maintains a local mapping of platform threads to conversation IDs (stored in `STRAWPOT_DATA_DIR`)
+   - Handles 404 on task submission by clearing stale mapping, creating a new conversation, and retrying
+   - Updates `last_session_id` marker immediately after session completes (before sending reply) to prevent duplicate messages from the conversation poller
    - Polls watched conversations for new/completed sessions (from any source — chat, GUI, scheduler)
    - Handles SIGTERM for graceful shutdown
    - Exposes a health check endpoint (optional)
