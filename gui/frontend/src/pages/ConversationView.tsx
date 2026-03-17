@@ -156,7 +156,7 @@ export default function ConversationView() {
   const [advCacheDelegations, setAdvCacheDelegations] = useState("");
   const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
   const [advCacheTtl, setAdvCacheTtl] = useState("");
-  const [interactive, setInteractive] = useState(true);
+  const [interactive, setInteractive] = useState(false);
   const [askUserResponse, setAskUserResponse] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
