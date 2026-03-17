@@ -41,8 +41,6 @@ _SEEDED_AGENTS = [
     ("strawpot-claude-code", "Anthropic Claude Code — requires Anthropic account or API key"),
     ("strawpot-gemini", "Google Gemini CLI — requires Google account or API key"),
     ("strawpot-codex", "OpenAI Codex CLI — requires OpenAI API key"),
-    ("strawpot-openhands", "OpenHands — open-source, configurable LLM backend"),
-    ("strawpot-pi", "Pi coding-agent — requires Anthropic account or API key"),
 ]
 
 
@@ -72,7 +70,7 @@ def _pick_agent() -> str | None:
     for i, (name, desc) in enumerate(_SEEDED_AGENTS, 1):
         click.echo(f"  {i}) {name} — {desc}")
 
-    raw = click.prompt("Enter number (1-5)", default="1")
+    raw = click.prompt(f"Enter number (1-{len(_SEEDED_AGENTS)})", default="1")
     try:
         idx = int(raw)
         if 1 <= idx <= len(_SEEDED_AGENTS):
