@@ -383,6 +383,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
             (row["id"],),
         )
 
+    # Add source + source_meta columns to conversations (added 2026-03-16)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
+    if "source" not in cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN source TEXT")
+        conn.execute("ALTER TABLE conversations ADD COLUMN source_meta TEXT")
+
 
 @contextmanager
 def get_db(db_path: str):

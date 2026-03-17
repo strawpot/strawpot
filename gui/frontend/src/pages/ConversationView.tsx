@@ -36,6 +36,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, ArrowUpRight, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
+import { SourceBadge } from "@/components/SourceBadge";
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "";
@@ -386,6 +387,7 @@ export default function ConversationView() {
               {title}
             </h1>
           )}
+          <SourceBadge source={conversation?.source} meta={conversation?.source_meta} />
         </div>
         {allSessions.length > 0 && (
           <span className="text-xs text-muted-foreground">

@@ -221,6 +221,8 @@ export interface Conversation {
   has_more: boolean;
   parent: ConversationLink | null;
   children: ConversationLink[];
+  source: string | null;
+  source_meta: string | null;
 }
 
 export interface ConversationListItem {
@@ -232,6 +234,8 @@ export interface ConversationListItem {
   updated_at: string | null;
   session_count: number;
   last_activity: string | null;
+  source: string | null;
+  source_meta: string | null;
 }
 
 export interface RecentConversation extends ConversationListItem {
@@ -253,6 +257,8 @@ export interface ImuConversation {
   session_count: number;
   active_session_count: number;
   spawned_count: number;
+  source: string | null;
+  source_meta: string | null;
 }
 
 export interface Schedule {

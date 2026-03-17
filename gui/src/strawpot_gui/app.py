@@ -118,6 +118,31 @@ def create_app(
     app.state.db_path = db_path
     app.state.event_bus = event_bus
 
+    # Integration source middleware: rewrite /via/{name}/... → /...
+    # and inject X-Strawpot-Source header so conversations are auto-tagged.
+    # Uses raw ASGI middleware to handle both HTTP and WebSocket connections.
+    inner = app.router
+
+    class IntegrationSourceMiddleware:
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] in ("http", "websocket"):
+                path = scope.get("path", "")
+                if path.startswith("/via/"):
+                    parts = path.split("/", 3)  # ['', 'via', name, 'rest...']
+                    if len(parts) >= 3:
+                        source_name = parts[2]
+                        scope["path"] = "/" + parts[3] if len(parts) > 3 else "/"
+                        if scope["type"] == "http":
+                            raw_headers = list(scope.get("headers", []))
+                            raw_headers.append((b"x-strawpot-source", source_name.encode()))
+                            scope["headers"] = raw_headers
+            return await self.app(scope, receive, send)
+
+    app.add_middleware(IntegrationSourceMiddleware)
+
     # CORS — only enabled when developing the frontend with Vite dev server
     if os.environ.get("STRAWPOT_GUI_DEV"):
         from fastapi.middleware.cors import CORSMiddleware

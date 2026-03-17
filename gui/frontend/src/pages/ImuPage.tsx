@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useConversationInfinite, useImuConversations } from "@/hooks/queries/use-conversations";
 import { useCreateImuConversation, useDeleteImuConversation, useRenameImuConversation, useSubmitConversationTask, useCancelPendingTask, useCancelQueuedTask } from "@/hooks/mutations/use-conversations";
+import { SourceBadge } from "@/components/SourceBadge";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
@@ -421,6 +422,7 @@ function ImuConversationView({ cid }: { cid: number }) {
               {title}
             </h1>
           )}
+          <SourceBadge source={conversation?.source} meta={conversation?.source_meta} />
         </div>
         {allSessions.length > 0 && (
           <span className="text-xs text-muted-foreground">
@@ -1074,7 +1076,10 @@ function ImuHome() {
                         onClick={() => navigate(`/imu/${conv.id}`)}
                       >
                         <td className="px-4 py-2">
-                          <ImuEditableTitleCell conv={conv} />
+                          <div className="flex items-center gap-2">
+                            <ImuEditableTitleCell conv={conv} />
+                            <SourceBadge source={conv.source} meta={conv.source_meta} />
+                          </div>
                         </td>
                         <td className="px-4 py-2 text-muted-foreground">
                           {conv.session_count}
