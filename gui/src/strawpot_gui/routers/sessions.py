@@ -247,8 +247,13 @@ def launch_session_subprocess(
     resolved_role = role or config.orchestrator_role
     isolation = config.isolation
 
-    # Resolve runtime: explicit override > role default_agent > config default
+    # Resolve runtime: explicit override > explicit config > role default_agent > config default
     runtime = runtime_override
+    if not runtime:
+        from strawpot.config import has_explicit_runtime
+
+        if has_explicit_runtime(Path(working_dir)):
+            runtime = config.runtime
     if not runtime:
         role_cfg = config.roles.get(resolved_role, {})
         runtime = role_cfg.get("default_agent")
@@ -314,8 +319,8 @@ def launch_session_subprocess(
     ]
     if role:
         cmd.extend(["--role", role])
-    if runtime_override:
-        cmd.extend(["--runtime", runtime_override])
+    # Always pass the resolved runtime so DB record and CLI agree.
+    cmd.extend(["--runtime", runtime])
     if memory_override:
         cmd.extend(["--memory", memory_override])
     if system_prompt:

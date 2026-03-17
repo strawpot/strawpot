@@ -1053,9 +1053,26 @@ function ImuHome() {
 
         <TabsContent value="conversations" className="mt-4 space-y-3">
           {(conversations.data ?? []).length === 0 ? (
-            <p className="text-sm italic text-muted-foreground">
-              No conversations yet. Click "New Conversation" to start one.
-            </p>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-sm text-muted-foreground mb-4">
+                No conversations yet.
+              </p>
+              <Button
+                onClick={() =>
+                  createConversation.mutate(undefined, {
+                    onSuccess: (conv) => navigate(`/imu/${conv.id}`),
+                  })
+                }
+                disabled={createConversation.isPending}
+              >
+                {createConversation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                )}
+                New Conversation
+              </Button>
+            </div>
           ) : (
             <Card>
               <CardContent className="p-0">
