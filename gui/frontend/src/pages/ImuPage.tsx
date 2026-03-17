@@ -196,7 +196,7 @@ function ImuOnboarding({ onSelectPrompt }: { onSelectPrompt: (text: string) => v
 
 function ImuConversationView({ cid }: { cid: number }) {
   const [task, setTask] = useState("");
-  const [interactive, setInteractive] = useState(true);
+  const [interactive, setInteractive] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
