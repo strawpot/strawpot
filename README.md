@@ -2,7 +2,7 @@
 
 One engineer. One laptop. One AI company.
 
-Run an AI company locally — CEO, engineer, QA, and reviewer — collaborating to ship your product.
+An open runtime for role-based AI agents. Agents are defined as roles that orchestrate reusable skills — no Python, no orchestration code, just Markdown files.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -12,12 +12,8 @@ Run an AI company locally — CEO, engineer, QA, and reviewer — collaborating 
 
 <!-- TODO: Replace with actual demo GIF/video — this is the #1 factor for GitHub star conversion -->
 <p align="center">
-  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — AI workforce running locally" width="720">
+  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — role-based AI agents running locally" width="720">
 </p>
-
-Run an AI company on your laptop.
-
-StrawPot launches a CEO agent that delegates tasks to engineers, reviewers, and testers automatically.
 
 ## Quick Start
 
@@ -48,13 +44,24 @@ $ strawpot start "Build a landing page"
 You: Approve deployment? (y/n)
 ```
 
-## What Is StrawPot?
+## Architecture
 
-StrawPot runs an AI company on your laptop.
+```
+StrawPot (runtime)              StrawHub (ecosystem)
+ ├─ Role engine                  ├─ Roles
+ ├─ Skill executor               ├─ Skills
+ ├─ Memory providers             ├─ Agents
+ ├─ Agent adapters               ├─ Integrations
+ └─ Web dashboard                └─ Memory providers
+```
 
-- **Roles** — Jobs
-- **Skills** — Abilities
-- **Memory** — Shared knowledge
+**StrawPot** is the local runtime that executes agents. **StrawHub** is the registry that distributes reusable roles, skills, and integrations.
+
+## Concepts
+
+- **Roles** — Agent definitions (a Markdown file with instructions and dependencies)
+- **Skills** — Reusable capabilities attached to roles (code review, git workflow, etc.)
+- **Memory** — Persistent knowledge shared across sessions
 - **Integrations** — Chat adapters (Telegram, Slack, Discord)
 
 ```yaml
@@ -74,16 +81,7 @@ You are a routing layer with judgment. The user brings you a task —
 you figure out which role on your team should handle it and delegate.
 ```
 
-No Python. No orchestration code. One Markdown file.
-
-## Features
-
-- **Define an AI CEO in one Markdown file**
-- **Install new roles from StrawHub**
-- **Run an entire AI workforce locally**
-- **Works with Claude, Codex, Gemini**
-- **Persistent memory across sessions**
-- **Chat integrations** — connect Telegram, Slack, or Discord as conversation interfaces
+One Markdown file defines a role. No Python. No orchestration code.
 
 ## How It Works
 
@@ -102,10 +100,19 @@ When you run `strawpot start`:
 1. Creates an isolated environment (worktree or project dir)
 2. Starts the Denden gRPC server for agent communication
 3. Retrieves memory context from past sessions
-4. Launches the orchestrator agent (e.g. ai-ceo)
-5. Agents delegate tasks to sub-roles automatically
+4. Launches the orchestrator role (e.g. ai-ceo)
+5. Roles delegate tasks to sub-roles automatically
 6. Required roles and skills are resolved from StrawHub
 7. On exit, records results to memory and cleans up
+
+## Features
+
+- **Define roles in Markdown** — no code required
+- **Multi-agent orchestration** — roles delegate to sub-roles automatically
+- **Multiple LLM backends** — Claude, Codex, Gemini
+- **Persistent memory** — context carries across sessions
+- **Chat integrations** — Telegram, Slack, Discord as conversation interfaces
+- **Web dashboard** — manage projects, sessions, and schedules from the browser
 
 ## Chat Integrations
 
@@ -138,9 +145,16 @@ for any platform through StrawHub.
 
 | Project | What it does |
 |---------|------|
-| [**StrawPot**](https://strawpot.com) | Runtime — runs role-based AI agents locally |
-| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, memories, and integrations |
-| [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the orchestrator |
+| [**StrawPot**](https://strawpot.com) | Runtime — executes role-based AI agents locally |
+| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, and integrations |
+| [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the runtime |
+
+Install from StrawHub, run with StrawPot:
+
+```bash
+strawpot install role implementer        # from StrawHub registry
+strawpot start --role implementer        # runs locally
+```
 
 ## CLI Usage
 
@@ -188,7 +202,5 @@ provider = "dial"             # default; "" to disable
 ---
 
 <p align="center">
-The future company may look different.<br>
-One human. Hundreds of AI workers.<br>
-<strong>StrawPot is an operating system for that future.</strong>
+<strong>StrawPot</strong> — runtime &nbsp;·&nbsp; <strong>StrawHub</strong> — ecosystem &nbsp;·&nbsp; <strong>Denden</strong> — transport
 </p>
