@@ -72,7 +72,7 @@ A registry for AI worker behaviors:
 - **Reuse workflows** — skills compose automatically through dependency resolution
 - **Evolve behaviors** — roles improve through community iteration, not just prompt engineering
 
-The system improves as roles are shared and refined. That's the compounding mechanism.
+Without shared roles, agent systems reset every time. StrawHub prevents that. The system improves as roles are shared and refined.
 
 [strawhub.dev](https://strawhub.dev)
 
