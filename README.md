@@ -32,6 +32,14 @@ pip install strawpot
 strawpot gui
 ```
 
+## Why this exists
+
+Most AI agent systems stop at orchestration. They run prompts. They don't evolve behavior, share reusable roles, or build on each other.
+
+StrawPot is designed to make AI workers composable, reusable, and evolvable — and to distribute what works through StrawHub.
+
+The infrastructure is ready. The next problem is how agent behaviors evolve and improve. That's what we're building toward.
+
 ## What StrawPot does
 
 An orchestration system where AI agents take roles, delegate sub-tasks, and coordinate in a shared workspace.
@@ -55,17 +63,16 @@ Roles and skills are Markdown files. No Python, no orchestration code.
 
 The orchestration, isolation, tracing, and memory systems are solid. The AI output quality improves through better roles, skills, and community iteration.
 
-## Why StrawHub matters
+## StrawHub — why this project matters
 
-StrawHub is the registry that makes StrawPot an ecosystem, not just a tool.
+StrawPot without StrawHub is just another orchestration tool. StrawHub is what makes it an ecosystem.
 
-- **Roles are reusable** — install a role once, use it across projects
-- **Skills are composable** — roles pull in the skills they need automatically
-- **Behaviors can be shared** — what works for one team benefits everyone
-- **Dependency resolution** — topological sort, cycle detection, semver constraints
-- **The ecosystem grows** through shared role definitions and community iteration
+A registry for AI worker behaviors:
+- **Share roles** that work — install them across projects with one command
+- **Reuse workflows** — skills compose automatically through dependency resolution
+- **Evolve behaviors** — roles improve through community iteration, not just prompt engineering
 
-Without shared roles, you're writing prompts from scratch every time. StrawHub is the compounding mechanism.
+The system improves as roles are shared and refined. That's the compounding mechanism.
 
 [strawhub.dev](https://strawhub.dev)
 
@@ -100,16 +107,16 @@ StrawPot provides production-grade orchestration for role-based AI workers.
 
 AI-generated outputs are still evolving and may vary depending on model and task.
 
-## Contributing
+## Why contribute?
 
-Looking for:
-- New roles and skills
-- Improved agent behaviors and role definitions
-- Real workflow examples
-- Agent wrapper implementations for new runtimes
-- Bug reports and feedback
+- Define new roles that other teams can install
+- Improve agent behaviors through iteration
+- Build reusable workflows for real problems
+- Add support for new AI runtimes
 
-This project is designed to be extended. See [CONTRIBUTING.md](CONTRIBUTING.md).
+This system is designed to grow through shared contributions. Every role you publish to StrawHub makes the ecosystem stronger.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community
 
