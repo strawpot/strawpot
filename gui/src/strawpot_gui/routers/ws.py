@@ -253,8 +253,11 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
                         await _send_log_snapshot(aid)
         except (asyncio.TimeoutError, WebSocketDisconnect):
             pass
-        await websocket.send_json({"type": "stream_complete"})
-        await websocket.close()
+        try:
+            await websocket.send_json({"type": "stream_complete"})
+            await websocket.close()
+        except (RuntimeError, WebSocketDisconnect):
+            pass
         return
 
     # ---- Active session: watch files + handle client messages ----
