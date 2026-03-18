@@ -54,7 +54,7 @@ a specific project conversation instead of imu. Not needed initially.
 | Adapters consume the public REST API | No internal module imports. Stable contract. No version coupling beyond API compatibility. |
 | GUI manages adapter lifecycle | Start/stop/status/logs through the Integrations page. Users don't need terminal access. |
 | Distributed via Strawhub | `strawhub install telegram-adapter`. Community can contribute adapters for LINE, WeChat, Teams, etc. |
-| One bot per platform, many conversations | Each platform's natural grouping (Telegram chat, Slack thread) maps to a separate imu conversation. No need for multiple bot instances. |
+| One bot per platform, many conversations | Each platform's natural grouping (Telegram chat, Slack thread) maps to a separate imu conversation. Multiple bot instances supported via project-scoped integrations (Phase 7). |
 | Task queuing handles async messages | `POST /api/conversations/{id}/tasks` already returns 202 when a session is active. Chat messages during active sessions are automatically queued. |
 
 ---
@@ -121,9 +121,12 @@ POST /api/conversations/{conv_id}/tasks (queues if previous still running)
 
 ## Integration Resource Type
 
-**Storage:** `~/.strawpot/integrations/<name>/` (global only — integrations
-are not project-scoped since they bridge external platforms to the GUI).
-No project-local variant (unlike roles/skills which support both).
+**Storage:** `~/.strawpot/integrations/<name>/` (shared binary, installed
+globally). Project-scoped instances share the global binary but have
+independent config, data directories, and process lifecycle (Phase 7).
+Config is stored in the GUI database per `(name, project_id)` pair.
+Data directories: `~/.strawpot/data/integrations/<name>/` (global) or
+`{project_dir}/.strawpot/data/integrations/<name>/` (project-scoped).
 
 **Manifest:** `INTEGRATION.md` with YAML frontmatter. Uses `metadata.strawpot`
 nesting for consistency with the Strawhub publish/install pipeline, but only
@@ -1063,7 +1066,7 @@ the adapter gets 404 and creates new ones (see above).
 | Feature | Reason |
 |---------|--------|
 | Multi-user / auth | StrawPot is local-first, single-user. Chat messages from anyone in a channel are treated as the StrawPot owner's tasks. |
-| Direct project binding | Start with imu-only. If latency becomes an issue, the conversation API already supports targeting specific projects. |
+| Direct project binding | Start with imu-only. Project-scoped integrations (Phase 7) allow per-project bot instances with independent config. Direct conversation routing (bypassing imu) is a future option. |
 | Rich interactive controls | No inline buttons, forms, or approval flows in chat. Use the GUI for complex interactions. |
 
 ---
@@ -1165,3 +1168,28 @@ list and header.
 | 36 | Frontend: platform icon badges in conversation list | Done |
 | 37 | Frontend: source badge in conversation header | Done |
 | 38 | Backend: `/via/{name}` URL prefix middleware auto-injects source | Done |
+
+**Phase 7 — Project-scoped integrations**
+
+Same integration (e.g., Discord) can be installed per-project with different
+bot tokens/channels. Each project gets its own running instance. Integration
+code is installed once globally (shared binary); config, data, and process
+lifecycle are per-instance.
+
+| # | Item | Status |
+|---|------|--------|
+| 39 | Strawhub CLI: add `--global` flag to `install/uninstall/update integration` (default True, opt-in local) | |
+| 40 | Strawhub CLI: shared binary model — project-scoped install records in local lockfile, downloads to global | |
+| 41 | Strawhub CLI: `[integrations]` section in `strawpot.toml` (`ProjectFile`) | |
+| 42 | Database: `project_id` column on `integrations`, `integration_config`, `integration_notifications` tables | |
+| 43 | Database: migration — rebuild tables with composite PK `(name, project_id)`, default 0 for existing rows | |
+| 44 | Backend: thread `project_id` through all integration endpoints and helper functions | |
+| 45 | Backend: `_build_env()` — project-scoped `STRAWPOT_API_URL`, `STRAWPOT_DATA_DIR`, `STRAWPOT_PROJECT_ID` | |
+| 46 | Backend: `/via/p/{project_id}/{name}/...` middleware URL pattern + `X-Strawpot-Project-Id` header | |
+| 47 | Backend: lifecycle functions (orphan cleanup, auto-start, stop-all) query across all project_ids | |
+| 48 | Backend: `POST /api/integrations/add-to-project` — create per-project instance from global install | |
+| 49 | Frontend: `project_id` + `project_name` on `Integration` type | |
+| 50 | Frontend: Integrations page — project filter dropdown, project column in table | |
+| 51 | Frontend: IntegrationDetailSheet — pass `project_id` to all mutations | |
+| 52 | Frontend: ProjectDetail — Integrations tab with per-project configure/start/stop | |
+| 53 | Frontend: query/mutation hooks — pass `project_id` to all API calls | |
