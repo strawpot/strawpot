@@ -6,6 +6,7 @@ import os
 import shlex
 import signal
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -359,7 +360,6 @@ def _stop_if_running(conn, name: str) -> bool:
         except (ProcessLookupError, OSError):
             pass
         # Wait for the process to actually exit before proceeding
-        import time
         for _ in range(50):  # up to 5 seconds
             if not _is_process_alive(pid):
                 break
@@ -647,6 +647,18 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
                     )
                 except (ProcessLookupError, OSError):
                     pass
+                # Wait for the process to exit before proceeding — without
+                # this, auto_start_integrations can spawn a replacement while
+                # the old process is still alive, leaking zombie adapters.
+                for _ in range(50):  # up to 5 seconds
+                    if not _is_process_alive(pid):
+                        break
+                    time.sleep(0.1)
+                else:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except (ProcessLookupError, OSError):
+                        pass
             conn.execute(
                 "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
                 (row["name"],),
