@@ -14,19 +14,15 @@ Give it one goal. It plans, executes, and delivers.
   <img src="docs/demo.png" alt="StrawPot demo — role-based AI agents running locally" width="1280">
 </p>
 
-**Input:** "Launch AI bug triage feature"
+**Input:** "Add dark mode to the app"
 
 **Output:**
 - ✓ Launch plan with rollout timeline
-- ✓ Twitter/X announcement post
-- ✓ Engineering tasks with sub-issues
-- ✓ Code review and QA — all automated
+- ✓ X post: "Dark mode shipped. Built with AI agents."
+- ✓ Engineering tasks: update UI theme, add toggle, test contrast
+- ✓ Code reviewed and approved
 
-## Why
-
-Engineers hate PM, ops, and marketing overhead.
-
-StrawPot replaces those roles with AI agents — defined in Markdown, orchestrated automatically, running locally on your machine.
+You give one task. It produces the plan, content, and execution.
 
 ## Quick Start
 
@@ -34,6 +30,12 @@ StrawPot replaces those roles with AI agents — defined in Markdown, orchestrat
 pip install strawpot
 strawpot gui
 ```
+
+## Why
+
+Engineers hate PM, ops, and marketing overhead.
+
+StrawPot replaces those roles with AI agents — defined in Markdown, orchestrated automatically, running locally on your machine.
 
 ## What makes it different
 
