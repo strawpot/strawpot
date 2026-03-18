@@ -1,6 +1,8 @@
 # StrawPot
 
-An open system for role-based AI agents that coordinate, delegate, and evolve.
+Role-based orchestration for AI workers.
+
+Run teams of agents locally, resolve skills automatically, and share roles through StrawHub.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -48,13 +50,16 @@ Roles and skills are Markdown files. No Python, no orchestration code.
 - Not production-ready — this is an early preview
 - Not a replacement for a team — it's a tool that amplifies what one engineer can do
 
-## StrawHub
+## Why StrawHub matters
 
-A registry for sharing and installing roles, skills, and integrations.
+StrawHub is the registry that makes StrawPot an ecosystem, not just a tool.
 
-- Browse and install with one click from the GUI
-- Share roles that work and improve them collaboratively
-- Build an ecosystem of reusable AI worker behaviors
+- **Roles are reusable** — install a role once, use it across projects
+- **Skills are composable** — roles pull in the skills they need automatically
+- **Behaviors can be shared** — what works for one team benefits everyone
+- **The ecosystem grows** through shared role definitions and community iteration
+
+Without shared roles, you're writing prompts from scratch every time. StrawHub is the compounding mechanism.
 
 [strawhub.dev](https://strawhub.dev)
 
