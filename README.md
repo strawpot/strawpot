@@ -2,7 +2,7 @@
 
 Run an AI company on your laptop.
 
-One task. Six AI agents. Zero coordination.
+What used to require a team can now be done by one engineer.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
