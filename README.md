@@ -1,8 +1,6 @@
 # StrawPot
 
-Run an AI company on your laptop.
-
-What used to require a team can now be done by one engineer.
+An open system for role-based AI agents that coordinate, delegate, and evolve.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -14,15 +12,17 @@ What used to require a team can now be done by one engineer.
   <img src="docs/demo.png" alt="StrawPot demo — one task, six AI agents, zero coordination" width="1280">
 </p>
 
-**Input:** "Add dark mode to the app"
+## Example
 
-**Output:**
-- ✓ Launch plan with rollout timeline
-- ✓ X post: "Dark mode shipped. Built with AI agents."
-- ✓ Engineering tasks: update UI theme, add toggle, test contrast
-- ✓ Code reviewed and approved
+Input: "Add dark mode to the app"
 
-You give one task. It produces the plan, content, and execution.
+Agents produce structured outputs such as:
+- A launch plan with rollout timeline
+- A draft announcement post
+- Engineering tasks with sub-issues
+- Code review and QA
+
+Outputs are improving but not yet fully reliable.
 
 ## Quick Start
 
@@ -31,19 +31,32 @@ pip install strawpot
 strawpot gui
 ```
 
-## Why
+## What is StrawPot?
 
-Engineers hate PM, ops, and marketing overhead.
+An orchestration system for role-based AI agents.
 
-StrawPot replaces those roles with AI agents — defined in Markdown, orchestrated automatically, running locally on your machine.
+- **Roles** define what each agent does — CEO plans, engineer builds, reviewer checks
+- **Skills** are reusable knowledge modules — git-workflow, code-review, github-issues
+- **Agents** execute roles using any runtime — Claude Code, Codex, Gemini
+- **Memory** persists context across sessions
 
-## What makes it different
+Roles and skills are Markdown files. No Python, no orchestration code.
 
-- **Role-based agents** — CEO, engineer, reviewer, marketer — each with defined responsibilities
-- **Local-first** — runs on your laptop, no cloud, no accounts, SQLite on disk
-- **Markdown-defined** — roles and skills are just Markdown files, not Python code
-- **StrawHub ecosystem** — install roles and skills with one click from the registry
-- **Multi-agent delegation** — agents spawn sub-agents and coordinate automatically
+## What this is not
+
+- Not a fully autonomous system — agents need well-defined roles to be effective
+- Not production-ready — this is an early preview
+- Not a replacement for a team — it's a tool that amplifies what one engineer can do
+
+## StrawHub
+
+A registry for sharing and installing roles, skills, and integrations.
+
+- Browse and install with one click from the GUI
+- Share roles that work and improve them collaboratively
+- Build an ecosystem of reusable AI worker behaviors
+
+[strawhub.dev](https://strawhub.dev)
 
 ## Architecture
 
@@ -66,22 +79,35 @@ User task → StrawPot → Role (ai-ceo)
                              └─ Agent (gemini)
 ```
 
-## Ecosystem
+## Status
 
-| Project | What it does |
-|---------|------|
-| [**StrawPot**](https://strawpot.com) | Runtime — executes role-based AI agents locally |
-| [**StrawHub**](https://strawhub.dev) | Registry — distributes roles, skills, agents, and integrations |
-| [**Denden**](https://github.com/strawpot/denden) | Transport — gRPC bridge between agents and the runtime |
+Early preview. The orchestration works. The GUI is functional. Outputs are improving through iteration and community contributions.
+
+What works well:
+- Multi-agent delegation and coordination
+- Session management with traces and artifacts
+- Role and skill installation from StrawHub
+- Chat interface (Bot Imu) across Slack, Discord, Telegram
+
+What's still evolving:
+- Output consistency across different tasks
+- Complex multi-step workflows
+- Role behavior refinement
+
+## Contributing
+
+Looking for:
+- New roles and skills
+- Improved agent behaviors
+- Real workflow examples
+- Bug reports and feedback
+
+This project is designed to be extended. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community
 
 - [Discord](https://discord.gg/6RMpzuKrRd) — questions, feedback, and discussion
 - [GitHub Issues](https://github.com/strawpot/strawpot/issues) — bug reports and feature requests
-
-## Contributing
-
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
