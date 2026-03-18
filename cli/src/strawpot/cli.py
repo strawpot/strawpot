@@ -68,7 +68,8 @@ def _pick_agent() -> str | None:
     """
     click.echo("Choose your default agent:")
     for i, (name, desc) in enumerate(_SEEDED_AGENTS, 1):
-        click.echo(f"  {i}) {name} — {desc}")
+        rec = " (recommended)" if i == 1 else ""
+        click.echo(f"  {i}) {name}{rec} — {desc}")
 
     raw = click.prompt(f"Enter number (1-{len(_SEEDED_AGENTS)})", default="1")
     try:
