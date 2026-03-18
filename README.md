@@ -18,11 +18,10 @@ Run teams of agents locally, resolve skills automatically, and share roles throu
 
 Input: "Add dark mode to the app"
 
-Agents produce structured outputs such as:
+Agents may produce structured outputs such as:
 - A launch plan with rollout timeline
 - A draft announcement post
 - Engineering tasks with sub-issues
-- Code review and QA
 
 Outputs are improving but not yet fully reliable.
 
@@ -121,6 +120,6 @@ This project is designed to be extended. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ---
 
 <p align="center">
-<em>One engineer. One laptop. One AI company.</em><br/>
+<em>Open system for role-based AI agents.</em><br/>
 <strong>StrawPot</strong> — runtime &nbsp;·&nbsp; <strong>StrawHub</strong> — ecosystem &nbsp;·&nbsp; <strong>Denden</strong> — transport
 </p>
