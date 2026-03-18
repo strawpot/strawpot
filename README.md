@@ -2,7 +2,7 @@
 
 Run an AI company on your laptop.
 
-Give it one goal. It plans, executes, and delivers.
+One task. Six AI agents. Zero coordination.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -11,7 +11,7 @@ Give it one goal. It plans, executes, and delivers.
 </p>
 
 <p align="center">
-  <img src="docs/demo.png" alt="StrawPot demo — role-based AI agents running locally" width="1280">
+  <img src="docs/demo.apng" alt="StrawPot demo — one task, six AI agents, zero coordination" width="1280">
 </p>
 
 **Input:** "Add dark mode to the app"
