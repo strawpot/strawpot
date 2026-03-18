@@ -42,6 +42,7 @@ export function useDeleteSession() {
     mutationFn: (runId: string) => api.delete(`/sessions/${runId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
 }

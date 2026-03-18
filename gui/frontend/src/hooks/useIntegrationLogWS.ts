@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/api/client";
 
 export interface IntegrationLogState {
   lines: string[];
@@ -77,7 +78,12 @@ export function useIntegrationLogWS(name: string | null): IntegrationLogState {
     };
   }, [connect]);
 
-  const clearLines = useCallback(() => setLines([]), []);
+  const clearLines = useCallback(() => {
+    if (name) {
+      api.delete(`/integrations/${name}/logs`).catch(() => {});
+    }
+    setLines([]);
+  }, [name]);
 
   return { lines, done, connected, clearLines };
 }
