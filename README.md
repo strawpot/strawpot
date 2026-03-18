@@ -10,9 +10,8 @@ An open runtime for role-based AI agents. Agents are defined as roles that orche
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-<!-- TODO: Replace with actual demo GIF/video — this is the #1 factor for GitHub star conversion -->
 <p align="center">
-  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — role-based AI agents running locally" width="720">
+  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — role-based AI agents running locally" width="960">
 </p>
 
 ## Quick Start
