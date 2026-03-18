@@ -14,16 +14,16 @@ Run teams of agents locally, resolve skills automatically, and share roles throu
   <img src="docs/demo.png" alt="StrawPot demo" width="1280">
 </p>
 
-## Example
+## Example: how agents coordinate
 
 Input: "Add dark mode to the app"
 
-Agents may produce structured outputs such as:
-- A launch plan with rollout timeline
-- A draft announcement post
-- Engineering tasks with sub-issues
+Agents break down the task, assign roles, and coordinate:
+- **ai-ceo** plans the rollout and delegates
+- **implementer** writes code in an isolated worktree
+- **reviewer** checks the changes and approves
 
-AI output quality is still evolving. The orchestration infrastructure is robust.
+Structured artifacts land in your workspace — a plan, draft post, and engineering tasks. Outputs vary depending on model and task.
 
 ## Quick Start
 
