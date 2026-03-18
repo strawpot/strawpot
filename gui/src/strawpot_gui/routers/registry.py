@@ -277,16 +277,32 @@ def put_resource_config(resource_type: str, name: str, data: dict = Body(...)):
     return {"ok": True}
 
 
+def _strawhub_cmd() -> list[str] | None:
+    """Locate the strawhub CLI, falling back to python -m for pipx installs."""
+    path = shutil.which("strawhub")
+    if path:
+        return [path]
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "strawhub", "--version"],
+            capture_output=True,
+            check=True,
+        )
+        return [sys.executable, "-m", "strawhub"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
 def run_strawhub(*args: str) -> dict:
     """Run a strawhub CLI command and return result."""
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
         raise HTTPException(
             503,
-            "strawhub CLI not found on PATH. Install it with: pip install strawhub",
+            "strawhub CLI not found. Install it with: pip install strawhub",
         )
     result = subprocess.run(
-        [cmd, *args],
+        [*cmd, *args],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
