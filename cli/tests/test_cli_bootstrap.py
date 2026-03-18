@@ -449,9 +449,8 @@ def test_pick_agent_selects_third(mock_prompt):
 
 @patch("strawpot.cli.click.prompt", return_value="5")
 def test_pick_agent_selects_fifth(mock_prompt):
-    """Selecting 5 returns the fifth seeded agent."""
-    result = _pick_agent()
-    assert result == _SEEDED_AGENTS[4][0]
+    """Selecting 5 is out of range (only 3 agents), returns None."""
+    assert _pick_agent() is None
 
 
 @patch("strawpot.cli.click.prompt", return_value="0")
