@@ -11,7 +11,7 @@ Run teams of agents locally, resolve skills automatically, and share roles throu
 </p>
 
 <p align="center">
-  <img src="docs/demo.png" alt="StrawPot demo — one task, six AI agents, zero coordination" width="1280">
+  <img src="docs/demo.png" alt="StrawPot demo" width="1280">
 </p>
 
 ## Example
@@ -23,7 +23,7 @@ Agents may produce structured outputs such as:
 - A draft announcement post
 - Engineering tasks with sub-issues
 
-Outputs are improving but not yet fully reliable.
+AI output quality is still evolving. The orchestration infrastructure is robust.
 
 ## Quick Start
 
@@ -32,22 +32,28 @@ pip install strawpot
 strawpot gui
 ```
 
-## What is StrawPot?
+## What StrawPot does
 
-An orchestration system for role-based AI agents.
+An orchestration system where AI agents take roles, delegate sub-tasks, and coordinate in a shared workspace.
 
-- **Roles** define what each agent does — CEO plans, engineer builds, reviewer checks
-- **Skills** are reusable knowledge modules — git-workflow, code-review, github-issues
-- **Agents** execute roles using any runtime — Claude Code, Codex, Gemini
-- **Memory** persists context across sessions
+- **Concurrent delegation** — agents spawn sub-agents in parallel, not sequential task queues
+- **Agent-agnostic** — one wrapper protocol, any runtime (Claude Code, Codex, Gemini, custom)
+- **Git worktree isolation** — each session gets its own branch, concurrent sessions safe, crash recovery automatic
+- **Persistent memory** — 3-tier context cards (semantic, retrieval, event) that agents read and write across sessions
+- **Structured tracing** — every delegation, spawn, and memory access recorded to JSONL with full call tree reconstruction
+- **Policy enforcement** — depth limits, timeouts, delegation caching, role-based access control
+- **Conversation context** — automatic condensed summaries of prior turns, tiered detail, recap extraction
+- **Scheduled tasks** — cron-based recurring and one-time, REST API, skip-if-running
 
 Roles and skills are Markdown files. No Python, no orchestration code.
 
-## What this is not
+## What the AI outputs are not (yet)
 
-- Not a fully autonomous system — agents need well-defined roles to be effective
-- Not production-ready — this is an early preview
-- Not a replacement for a team — it's a tool that amplifies what one engineer can do
+- Not fully reliable — output quality varies across tasks and models
+- Not deterministic — same input may produce different artifacts
+- Not autonomous — agents need well-defined roles to be effective
+
+The orchestration, isolation, tracing, and memory systems are solid. The AI output quality improves through better roles, skills, and community iteration.
 
 ## Why StrawHub matters
 
@@ -56,6 +62,7 @@ StrawHub is the registry that makes StrawPot an ecosystem, not just a tool.
 - **Roles are reusable** — install a role once, use it across projects
 - **Skills are composable** — roles pull in the skills they need automatically
 - **Behaviors can be shared** — what works for one team benefits everyone
+- **Dependency resolution** — topological sort, cycle detection, semver constraints
 - **The ecosystem grows** through shared role definitions and community iteration
 
 Without shared roles, you're writing prompts from scratch every time. StrawHub is the compounding mechanism.
@@ -85,25 +92,30 @@ User task → StrawPot → Role (ai-ceo)
 
 ## Status
 
-Early preview. The orchestration works. The GUI is functional. Outputs are improving through iteration and community contributions.
+Early preview. The infrastructure is production-grade. The AI outputs are still maturing.
 
-What works well:
-- Multi-agent delegation and coordination
-- Session management with traces and artifacts
-- Role and skill installation from StrawHub
-- Chat interface (Bot Imu) across Slack, Discord, Telegram
+What works:
+- Multi-agent delegation with recursive sub-spawning and traceability
+- Git worktree isolation with crash recovery and merge strategies (local, PR, auto)
+- Persistent memory across sessions with pluggable providers
+- Session management with structured traces and content-addressed artifacts
+- Role and skill installation from StrawHub with automatic dependency resolution
+- Web dashboard with conversations, scheduling, and interactive agent sessions
+- Chat integration across Slack, Discord, and Telegram
+- Agent-agnostic runtime — add new AI tools without modifying the core
 
 What's still evolving:
-- Output consistency across different tasks
-- Complex multi-step workflows
-- Role behavior refinement
+- AI output consistency across different tasks
+- Complex multi-step workflow reliability
+- Role behavior refinement through community iteration
 
 ## Contributing
 
 Looking for:
 - New roles and skills
-- Improved agent behaviors
+- Improved agent behaviors and role definitions
 - Real workflow examples
+- Agent wrapper implementations for new runtimes
 - Bug reports and feedback
 
 This project is designed to be extended. See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -120,6 +132,6 @@ This project is designed to be extended. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ---
 
 <p align="center">
-<em>Open system for role-based AI agents.</em><br/>
+<em>One engineer. One laptop. One AI company.</em><br/>
 <strong>StrawPot</strong> — runtime &nbsp;·&nbsp; <strong>StrawHub</strong> — ecosystem &nbsp;·&nbsp; <strong>Denden</strong> — transport
 </p>
