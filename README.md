@@ -11,7 +11,7 @@ One task. Six AI agents. Zero coordination.
 </p>
 
 <p align="center">
-  <img src="docs/demo.apng" alt="StrawPot demo — one task, six AI agents, zero coordination" width="1280">
+  <img src="docs/demo.png" alt="StrawPot demo — one task, six AI agents, zero coordination" width="1280">
 </p>
 
 **Input:** "Add dark mode to the app"
