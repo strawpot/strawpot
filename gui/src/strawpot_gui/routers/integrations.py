@@ -752,6 +752,21 @@ def stop_all_integrations(db_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Log management
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{name}/logs")
+def clear_integration_logs(name: str):
+    """Truncate the integration adapter log file."""
+    home = get_strawpot_home()
+    log_path = home / "integrations" / name / ".log"
+    if log_path.is_file():
+        log_path.write_text("")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # WebSocket: integration log streaming
 # ---------------------------------------------------------------------------
 
