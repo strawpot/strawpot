@@ -92,22 +92,13 @@ User task → StrawPot → Role (ai-ceo)
 
 ## Status
 
-Early preview. The infrastructure is production-grade. The AI outputs are still maturing.
+StrawPot provides production-grade orchestration for role-based AI workers.
 
-What works:
-- Multi-agent delegation with recursive sub-spawning and traceability
-- Git worktree isolation with crash recovery and merge strategies (local, PR, auto)
-- Persistent memory across sessions with pluggable providers
-- Session management with structured traces and content-addressed artifacts
-- Role and skill installation from StrawHub with automatic dependency resolution
-- Web dashboard with conversations, scheduling, and interactive agent sessions
-- Chat integration across Slack, Discord, and Telegram
-- Agent-agnostic runtime — add new AI tools without modifying the core
+- Agent coordination, memory, and execution are stable
+- Roles and workflows are extensible
+- The infrastructure is ready
 
-What's still evolving:
-- AI output consistency across different tasks
-- Complex multi-step workflow reliability
-- Role behavior refinement through community iteration
+AI-generated outputs are still evolving and may vary depending on model and task.
 
 ## Contributing
 
