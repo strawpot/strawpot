@@ -11,7 +11,7 @@ An open runtime for role-based AI agents. Agents are defined as roles that orche
 </p>
 
 <p align="center">
-  <img src="https://strawpot.com/demo.gif" alt="StrawPot demo — role-based AI agents running locally" width="960">
+  <img src="docs/demo.gif" alt="StrawPot demo — role-based AI agents running locally" width="1280">
 </p>
 
 ## Quick Start
