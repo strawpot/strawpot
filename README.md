@@ -90,5 +90,6 @@ PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ---
 
 <p align="center">
+<em>One engineer. One laptop. One AI company.</em><br/>
 <strong>StrawPot</strong> — runtime &nbsp;·&nbsp; <strong>StrawHub</strong> — ecosystem &nbsp;·&nbsp; <strong>Denden</strong> — transport
 </p>
