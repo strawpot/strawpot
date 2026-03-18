@@ -13,6 +13,25 @@ import click
 
 logger = logging.getLogger(__name__)
 
+
+def _strawhub_cmd() -> list[str] | None:
+    """Locate the strawhub CLI. Returns the command prefix list, or None."""
+    path = shutil.which("strawhub")
+    if path:
+        return [path]
+    # pipx only exposes the main package's entry points on PATH, so strawhub
+    # (a dependency) won't be found by shutil.which even though it's installed
+    # in the same venv.  Fall back to running it as a Python module.
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "strawhub", "--version"],
+            capture_output=True,
+            check=True,
+        )
+        return [sys.executable, "-m", "strawhub"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
 from strawpot import __version__
 from strawpot._process import is_pid_alive
 from strawpot.agents.interactive import (
@@ -249,13 +268,13 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
         ):
             return
 
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
-        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Error: strawhub CLI not found.", err=True)
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
-    install_cmd = [cmd, "install", "agent", name, "--global"]
+    install_cmd = [*cmd, "install", "agent", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
     result = subprocess.run(
@@ -321,13 +340,13 @@ def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = F
         [str(c) for c in candidates],
     )
 
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
-        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Error: strawhub CLI not found.", err=True)
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
-    install_cmd = [cmd, "install", "skill", name, "--global"]
+    install_cmd = [*cmd, "install", "skill", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
     result = subprocess.run(
@@ -356,13 +375,13 @@ def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = 
         ):
             return
 
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
-        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Error: strawhub CLI not found.", err=True)
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
-    install_cmd = [cmd, "install", "memory", name, "--global"]
+    install_cmd = [*cmd, "install", "memory", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
     result = subprocess.run(
@@ -397,13 +416,13 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
         [str(c) for c in candidates],
     )
 
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
-        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Error: strawhub CLI not found.", err=True)
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
-    install_cmd = [cmd, "install", "role", name, "--global"]
+    install_cmd = [*cmd, "install", "role", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
     result = subprocess.run(
@@ -873,13 +892,13 @@ def gui(port):
 
 def _strawhub(*args: str) -> None:
     """Run a strawhub CLI command, passing through stdout/stderr."""
-    cmd = shutil.which("strawhub")
+    cmd = _strawhub_cmd()
     if cmd is None:
-        click.echo("Error: strawhub CLI not found on PATH.", err=True)
+        click.echo("Error: strawhub CLI not found.", err=True)
         click.echo("Install it with: pip install strawhub", err=True)
         sys.exit(1)
     result = subprocess.run(
-        [cmd, *args],
+        [*cmd, *args],
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
