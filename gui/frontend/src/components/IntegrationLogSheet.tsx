@@ -17,18 +17,20 @@ const OVERSCAN = 10;
 
 interface IntegrationLogSheetProps {
   name: string | null;
+  projectId?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export default function IntegrationLogSheet({
   name,
+  projectId,
   open,
   onOpenChange,
 }: IntegrationLogSheetProps) {
   // Only connect when sheet is open
   const activeName = open ? name : null;
-  const { lines, done, connected, clearLines } = useIntegrationLogWS(activeName);
+  const { lines, done, connected, clearLines } = useIntegrationLogWS(activeName, projectId);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

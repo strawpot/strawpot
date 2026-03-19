@@ -312,14 +312,14 @@ class TestIntegrationLifecycle:
         assert "exited unexpectedly" in resp.json()["last_error"]
 
     def test_start_writes_log_file(self, client, home):
-        """Adapter stdout/stderr goes to .log file."""
+        """Adapter stdout/stderr goes to data-dir log file."""
         integration_dir = _create_integration(home, "telegram")
         (integration_dir / "adapter.py").write_text(
             "print('hello from adapter')"
         )
         client.post("/api/integrations/telegram/start")
         time.sleep(0.5)  # let process finish
-        log_path = integration_dir / ".log"
+        log_path = home / "data" / "integrations" / "telegram" / "adapter.log"
         assert log_path.exists()
         assert "hello from adapter" in log_path.read_text()
 
@@ -335,7 +335,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("install", "integration", "-y", "telegram")
+            mock.assert_called_once_with("install", "integration", "--global", "-y", "telegram")
 
     def test_install_missing_name(self, client, home):
         resp = client.post("/api/integrations/install", json={"name": ""})
@@ -345,7 +345,7 @@ class TestInstallUninstall:
         with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
             mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
             client.post("/api/integrations/install", json={"name": "  telegram  "})
-            mock.assert_called_once_with("install", "integration", "-y", "telegram")
+            mock.assert_called_once_with("install", "integration", "--global", "-y", "telegram")
 
     def test_uninstall_calls_strawhub(self, client, home):
         """Uninstall endpoint calls strawhub with correct args."""
@@ -355,7 +355,7 @@ class TestInstallUninstall:
             resp = client.delete("/api/integrations/telegram")
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("uninstall", "integration", "telegram")
+            mock.assert_called_once_with("uninstall", "integration", "--global", "telegram")
 
     def test_uninstall_cleans_db_state(self, client, home):
         """Uninstall removes DB rows for config and status."""
@@ -409,7 +409,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("update", "-y", "integration", "telegram")
+            mock.assert_called_once_with("update", "integration", "--global", "-y", "telegram")
 
     def test_update_restarts_running_integration(self, client, home):
         """Update stops a running integration and restarts it after success."""
@@ -450,7 +450,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             mock.assert_called_once_with(
-                "install", "integration", "-y", "telegram", "--version", "1.2.0", "--force",
+                "install", "integration", "--global", "-y", "telegram", "--version", "1.2.0", "--force",
             )
 
     def test_reinstall_missing_version_file(self, client, home):
@@ -518,8 +518,10 @@ class TestIntegrationLogs:
 
     def test_logs_ws_stopped_sends_done(self, client, home):
         """Stopped integration sends snapshot then done."""
-        integration_dir = _create_integration(home, "telegram")
-        (integration_dir / ".log").write_text("line1\nline2\n")
+        _create_integration(home, "telegram")
+        log_dir = home / "data" / "integrations" / "telegram"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "adapter.log").write_text("line1\nline2\n")
         with client.websocket_connect("/api/integrations/telegram/logs/ws") as ws:
             msg = ws.receive_json()
             assert msg["type"] == "log_snapshot"
@@ -540,8 +542,10 @@ class TestIntegrationLogs:
 
     def test_logs_ws_snapshot_includes_existing_content(self, client, home):
         """Snapshot includes existing log content."""
-        integration_dir = _create_integration(home, "telegram")
-        (integration_dir / ".log").write_text(
+        _create_integration(home, "telegram")
+        log_dir = home / "data" / "integrations" / "telegram"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "adapter.log").write_text(
             "line1\nline2\nline3\nline4\nline5\n"
         )
         with client.websocket_connect("/api/integrations/telegram/logs/ws") as ws:

@@ -365,7 +365,7 @@ def install_integration(data: dict = Body(...)):
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
-    return run_strawhub("install", "integration", "-y", name)
+    return run_strawhub("install", "integration", "--global", "-y", name)
 
 
 def _stop_if_running(conn, name: str, project_id: int = 0) -> bool:
@@ -414,7 +414,7 @@ def update_integration(
         raise HTTPException(400, "'name' is required")
     project_id = int(data.get("project_id", 0))
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("update", "-y", "integration", name)
+    result = run_strawhub("update", "integration", "--global", "-y", name)
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)
@@ -442,7 +442,7 @@ def reinstall_integration(
     if not version:
         raise HTTPException(404, f"Empty version file for integration: {name}")
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("install", "integration", "-y", name, "--version", version, "--force")
+    result = run_strawhub("install", "integration", "--global", "-y", name, "--version", version, "--force")
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)
@@ -473,7 +473,7 @@ def uninstall_integration(name: str, project_id: int = 0, conn=Depends(get_db_co
         if working_dir:
             return run_strawhub("uninstall", "integration", name, "--root", working_dir)
         return {"ok": True}
-    return run_strawhub("uninstall", "integration", name)
+    return run_strawhub("uninstall", "integration", "--global", name)
 
 
 
@@ -519,6 +519,24 @@ def _resolve_integration_dir(
     raise HTTPException(404, f"Integration not found: {name}")
 
 
+def _data_dir(name: str, conn, *, project_id: int = 0) -> Path:
+    """Return the data directory for an integration instance.
+
+    Project-scoped instances store data under the project's working dir;
+    global instances use the strawpot home directory.
+    """
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if working_dir:
+            return Path(working_dir) / ".strawpot" / "data" / "integrations" / name
+    return get_strawpot_home() / "data" / "integrations" / name
+
+
+def _log_path(name: str, conn, *, project_id: int = 0) -> Path:
+    """Return the log file path for an integration instance."""
+    return _data_dir(name, conn, project_id=project_id) / "adapter.log"
+
+
 def _build_env(
     name: str, config_values: dict, request: Request, conn, *, project_id: int = 0
 ) -> dict:
@@ -545,18 +563,11 @@ def _build_env(
         env["STRAWPOT_API_URL"] = f"{base}/via/{name}"
     env["STRAWPOT_INTEGRATION_NAME"] = name
 
-    # Persistent data directory for adapter state (survives reinstalls).
-    # Project-scoped instances store data under the project's working dir;
-    # global instances use the strawpot home directory.
+    data_dir = _data_dir(name, conn, project_id=project_id)
     if project_id > 0:
         working_dir = _get_project_working_dir(conn, project_id)
         if working_dir:
-            data_dir = Path(working_dir) / ".strawpot" / "data" / "integrations" / name
             env["STRAWPOT_PROJECT_DIR"] = working_dir
-        else:
-            data_dir = get_strawpot_home() / "data" / "integrations" / name
-    else:
-        data_dir = get_strawpot_home() / "data" / "integrations" / name
     data_dir.mkdir(parents=True, exist_ok=True)
     env["STRAWPOT_DATA_DIR"] = str(data_dir)
 
@@ -594,8 +605,10 @@ def start_integration(
     config_values = _get_db_config(conn, name, project_id)
     env = _build_env(name, config_values, request, conn, project_id=project_id)
 
-    # Log file for adapter output
-    log_path = integration_dir / ".log"
+    # Log file for adapter output — stored in the data dir so each
+    # (name, project_id) instance gets its own log.
+    log_path = _log_path(name, conn, project_id=project_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         log_file = open(log_path, "a", encoding="utf-8")
@@ -797,23 +810,20 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         env["STRAWPOT_INTEGRATION_NAME"] = name
 
         # Project-scoped data dir mirrors _build_env logic
-        if project_id > 0:
-            with get_db(db_path) as conn2:
+        with get_db(db_path) as conn2:
+            data_dir = _data_dir(name, conn2, project_id=project_id)
+            if project_id > 0:
                 working_dir = _get_project_working_dir(conn2, project_id)
-            if working_dir:
-                data_dir = Path(working_dir) / ".strawpot" / "data" / "integrations" / name
-                env["STRAWPOT_PROJECT_DIR"] = working_dir
-            else:
-                data_dir = home / "data" / "integrations" / name
-        else:
-            data_dir = home / "data" / "integrations" / name
+                if working_dir:
+                    env["STRAWPOT_PROJECT_DIR"] = working_dir
+            log_path = _log_path(name, conn2, project_id=project_id)
         data_dir.mkdir(parents=True, exist_ok=True)
         env["STRAWPOT_DATA_DIR"] = str(data_dir)
         for key, value in config_values.items():
             if value is not None and value != "":
                 env[key] = str(value)
 
-        log_path = integration_dir / ".log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             log_file = open(log_path, "a", encoding="utf-8")
             cmd = shlex.split(entry_point)
@@ -878,10 +888,9 @@ def stop_all_integrations(db_path: str) -> None:
 @router.delete("/{name}/logs")
 def clear_integration_logs(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Truncate the integration adapter log file."""
-    integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
-    log_path = integration_dir / ".log"
-    if log_path.is_file():
-        log_path.write_text("")
+    log = _log_path(name, conn, project_id=project_id)
+    if log.is_file():
+        log.write_text("")
     return {"ok": True}
 
 
@@ -900,19 +909,21 @@ async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int =
       {"type": "log_done"}  — integration stopped, stream ends
       {"type": "error", "message": "..."}
     """
-    # Resolve integration dir — need DB connection for project-local lookup
+    # Resolve integration — need DB connection for project-local lookup
     db_path: str = websocket.app.state.db_path
     from strawpot_gui.db import get_db
     try:
         with get_db(db_path) as conn:
-            integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+            _resolve_integration_dir(name, conn, project_id)
+            log_file = _log_path(name, conn, project_id=project_id)
+            db_state = _get_db_state(conn, name, project_id)
     except HTTPException:
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": f"Integration not found: {name}"})
         await websocket.close(code=4004)
         return
 
-    log_path = str(integration_dir / ".log")
+    log_path = str(log_file)
 
     await websocket.accept()
 
@@ -923,10 +934,6 @@ async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int =
         "lines": lines,
         "offset": offset,
     })
-
-    # Check if integration is currently running
-    with get_db(db_path) as conn:
-        db_state = _get_db_state(conn, name, project_id)
 
     is_running = (
         db_state is not None
@@ -946,7 +953,7 @@ async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int =
     async def log_watcher() -> None:
         nonlocal offset
         try:
-            async for changed_files in watch_dir(str(integration_dir), stop):
+            async for changed_files in watch_dir(str(log_file.parent), stop):
                 if not changed_files:
                     # Timeout — check if still running
                     with get_db(db_path) as conn:

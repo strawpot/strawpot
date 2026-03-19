@@ -30,7 +30,7 @@ interface Props {
   integration: Integration | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onLogs: (name: string) => void;
+  onLogs: (name: string, projectId: number) => void;
 }
 
 export default function IntegrationDetailSheet({
@@ -217,7 +217,7 @@ export default function IntegrationDetailSheet({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onLogs(integration.name)}
+            onClick={() => onLogs(integration.name, integration.project_id)}
           >
             Logs
           </Button>
