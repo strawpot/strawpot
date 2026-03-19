@@ -24,7 +24,7 @@
   expose conversation tools to the agent). See `designs/context/DESIGN.md`
   Phase 3 for full details.
 
-- [ ] **Parallel sub-agent delegation**
+- [x] **Parallel sub-agent delegation**
   Currently delegation is sequential — an agent calls `stub.Send()` which
   blocks until the sub-agent finishes. The architecture already supports
   parallelism in the gRPC server thread pool, `handle_delegate()`, agent
@@ -104,11 +104,11 @@
 
 ## Self-Improvement
 
-- [ ] **Support self-improvement**
+- [x] **Support self-improvement**
   Allow agents to improve themselves across sessions through three mechanisms:
   - ~~**Memory** — persistent knowledge that agents accumulate and reference~~ (done)
-  - **System Prompt** — self-authored or refined system prompts tuned to the project
-  - **Skill** — agent-created skills that automate recurring patterns
+  - ~~**System Prompt** — self-authored or refined system prompts tuned to the project~~ (done — evaluator delegation loop)
+  - ~~**Skill** — agent-created skills that automate recurring patterns~~ (done — evaluator delegation loop)
 
 ## Security
 
