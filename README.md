@@ -1,8 +1,8 @@
 # StrawPot
 
-AI agents that form teams, delegate recursively, and improve their own roles.
+Agents that dynamically compose other agents to solve tasks.
 
-Run hierarchies of agents locally. Roles define behavior. Skills compose automatically. StrawHub distributes what works.
+Roles define behavior. Agents select, delegate, and refine workflows automatically. Roles are portable and defined as simple Markdown files.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -64,8 +64,11 @@ The infrastructure is ready. The next problem is how agent behaviors evolve and 
 
 ## What StrawPot does
 
-Agents form hierarchies, delegate recursively, and coordinate in a shared workspace — not just run prompts in sequence.
+A system where agents dynamically compose roles to complete tasks.
 
+- Agents choose which roles to delegate to
+- Roles define behavior and can be reused
+- Workflows emerge from role composition, not hardcoded pipelines
 **Hierarchical multi-agent delegation**
 A CEO role delegates to PM, PM delegates to implementer, implementer delegates to code-reviewer — recursively, concurrently, with full traceability. Each delegation is policy-controlled (depth limits, timeouts, caching) and traced to JSONL with span IDs for complete call tree reconstruction.
 
