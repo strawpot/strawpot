@@ -1052,3 +1052,96 @@ class TestBuildEnv:
         assert env["STRAWPOT_BOT_TOKEN"] == "123:ABC"
         # Empty values should not be set
         assert "EMPTY_VAL" not in env
+
+
+class TestLocalFirstResolution:
+    """Tests for project-local-first integration resolution."""
+
+    def _create_project(self, client, project_id, working_dir):
+        """Insert a project row directly."""
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (project_id, "Test Project", str(working_dir)),
+            )
+
+    def _create_project_integration(self, working_dir, name):
+        """Create an integration manifest in a project's .strawpot dir."""
+        integration_dir = working_dir / ".strawpot" / "integrations" / name
+        integration_dir.mkdir(parents=True)
+        content = (
+            f"---\nname: {name}\ndescription: Project-local {name}\n"
+            f"metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
+            f"    env:\n"
+            f"      STRAWPOT_BOT_TOKEN:\n"
+            f"        required: true\n"
+            f"        description: Bot token\n"
+            f"---\n# {name.title()} Adapter\n"
+        )
+        (integration_dir / "INTEGRATION.md").write_text(content)
+        return integration_dir
+
+    def test_project_local_takes_precedence(self, client, home, tmp_path):
+        """Project-local integration shadows global one with same name."""
+        _create_integration(home, "telegram")  # global
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        self._create_project(client, 5, project_dir)
+        self._create_project_integration(project_dir, "telegram")  # local
+
+        resp = client.get("/api/integrations/telegram?project_id=5")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source"] == "project"
+        assert "myproject" in data["path"]
+
+    def test_falls_back_to_global(self, client, home, tmp_path):
+        """Falls back to global when not installed locally."""
+        _create_integration(home, "telegram")  # global only
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        self._create_project(client, 5, project_dir)
+
+        resp = client.get("/api/integrations/telegram?project_id=5")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source"] == "global"
+
+    def test_list_merges_local_and_global(self, client, home, tmp_path):
+        """List shows project-local + unshadowed global integrations."""
+        _create_integration(home, "telegram")
+        _create_integration(home, "discord")
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        self._create_project(client, 5, project_dir)
+        self._create_project_integration(project_dir, "telegram")  # shadows global
+
+        resp = client.get("/api/integrations?project_id=5")
+        assert resp.status_code == 200
+        items = resp.json()
+        names = {i["name"]: i["source"] for i in items}
+        assert names["telegram"] == "project"
+        assert names["discord"] == "global"
+
+    def test_list_global_only(self, client, home):
+        """Without project_id, only global integrations are returned."""
+        _create_integration(home, "telegram")
+        resp = client.get("/api/integrations")
+        assert resp.status_code == 200
+        items = resp.json()
+        assert len(items) == 1
+        assert items[0]["source"] == "global"
+
+    def test_config_resolves_project_local(self, client, home, tmp_path):
+        """Config endpoint uses project-local manifest for env schema."""
+        _create_integration(home, "telegram")
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        self._create_project(client, 5, project_dir)
+        self._create_project_integration(project_dir, "telegram")
+
+        resp = client.get("/api/integrations/telegram/config?project_id=5")
+        assert resp.status_code == 200
+        assert "STRAWPOT_BOT_TOKEN" in resp.json()["env_schema"]
