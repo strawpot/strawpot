@@ -924,3 +924,131 @@ class TestManifestParsing:
         assert data[0]["entry_point"] == ""
         assert data[0]["auto_start"] is False
         assert data[0]["env_schema"] == {}
+
+
+class TestBuildEnv:
+    """Tests for _build_env environment variable construction."""
+
+    def test_global_data_dir(self, client, home):
+        """Global instance uses strawpot home for data dir."""
+        from starlette.testclient import TestClient as _TC
+        from strawpot_gui.routers.integrations import _build_env
+        from strawpot_gui.db import get_db
+
+        _create_integration(home, "telegram")
+        db_path = client.app.state.db_path
+
+        # Use a real request object via the test client
+        with _TC(client.app) as tc:
+            # Build a mock-ish request from the app
+            from starlette.requests import Request
+            from starlette.datastructures import URL
+
+            scope = {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [],
+                "query_string": b"",
+                "root_path": "",
+                "server": ("testserver", 80),
+            }
+            request = Request(scope)
+
+            with get_db(db_path) as conn:
+                env = _build_env("telegram", {}, request, conn, project_id=0)
+
+        assert env["STRAWPOT_INTEGRATION_NAME"] == "telegram"
+        assert env["STRAWPOT_API_URL"].endswith("/via/telegram")
+        assert env["STRAWPOT_DATA_DIR"] == str(home / "data" / "integrations" / "telegram")
+        assert "STRAWPOT_PROJECT_ID" not in env
+        assert "STRAWPOT_PROJECT_DIR" not in env
+
+    def test_project_scoped_data_dir(self, client, home, tmp_path):
+        """Project-scoped instance uses project working dir for data dir."""
+        from strawpot_gui.routers.integrations import _build_env
+        from strawpot_gui.db import get_db
+        from starlette.requests import Request
+
+        _create_integration(home, "discord")
+        db_path = client.app.state.db_path
+        project_dir = str(tmp_path / "my_project")
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "root_path": "",
+            "server": ("testserver", 80),
+        }
+        request = Request(scope)
+
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (5, "My Project", project_dir),
+            )
+            env = _build_env("discord", {}, request, conn, project_id=5)
+
+        expected_data = str(tmp_path / "my_project" / ".strawpot" / "data" / "integrations" / "discord")
+        assert env["STRAWPOT_DATA_DIR"] == expected_data
+        assert env["STRAWPOT_PROJECT_DIR"] == project_dir
+        assert env["STRAWPOT_PROJECT_ID"] == "5"
+        assert env["STRAWPOT_API_URL"].endswith("/via/p/5/discord")
+
+    def test_project_scoped_fallback_when_project_missing(self, client, home):
+        """Project-scoped instance falls back to global data dir if project not found."""
+        from strawpot_gui.routers.integrations import _build_env
+        from strawpot_gui.db import get_db
+        from starlette.requests import Request
+
+        _create_integration(home, "slack")
+        db_path = client.app.state.db_path
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "root_path": "",
+            "server": ("testserver", 80),
+        }
+        request = Request(scope)
+
+        with get_db(db_path) as conn:
+            # No project with id=99 exists
+            env = _build_env("slack", {}, request, conn, project_id=99)
+
+        assert env["STRAWPOT_DATA_DIR"] == str(home / "data" / "integrations" / "slack")
+        assert "STRAWPOT_PROJECT_DIR" not in env
+
+    def test_config_values_passed_through(self, client, home):
+        """Config values are set as env vars."""
+        from strawpot_gui.routers.integrations import _build_env
+        from strawpot_gui.db import get_db
+        from starlette.requests import Request
+
+        _create_integration(home, "telegram")
+        db_path = client.app.state.db_path
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "root_path": "",
+            "server": ("testserver", 80),
+        }
+        request = Request(scope)
+
+        config = {"STRAWPOT_BOT_TOKEN": "123:ABC", "EMPTY_VAL": ""}
+        with get_db(db_path) as conn:
+            env = _build_env("telegram", config, request, conn)
+
+        assert env["STRAWPOT_BOT_TOKEN"] == "123:ABC"
+        # Empty values should not be set
+        assert "EMPTY_VAL" not in env
