@@ -486,7 +486,17 @@ def _is_process_alive(pid: int) -> bool:
         return False
 
 
-def _build_env(name: str, config_values: dict, request: Request, *, project_id: int = 0) -> dict:
+def _get_project_working_dir(conn, project_id: int) -> str | None:
+    """Look up a project's working_dir from the projects table."""
+    row = conn.execute(
+        "SELECT working_dir FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    return row["working_dir"] if row else None
+
+
+def _build_env(
+    name: str, config_values: dict, request: Request, conn, *, project_id: int = 0
+) -> dict:
     """Build environment variables for the adapter subprocess."""
     env = os.environ.copy()
 
@@ -510,8 +520,18 @@ def _build_env(name: str, config_values: dict, request: Request, *, project_id: 
         env["STRAWPOT_API_URL"] = f"{base}/via/{name}"
     env["STRAWPOT_INTEGRATION_NAME"] = name
 
-    # Persistent data directory for adapter state (survives reinstalls)
-    data_dir = get_strawpot_home() / "data" / "integrations" / name
+    # Persistent data directory for adapter state (survives reinstalls).
+    # Project-scoped instances store data under the project's working dir;
+    # global instances use the strawpot home directory.
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if working_dir:
+            data_dir = Path(working_dir) / ".strawpot" / "data" / "integrations" / name
+            env["STRAWPOT_PROJECT_DIR"] = working_dir
+        else:
+            data_dir = get_strawpot_home() / "data" / "integrations" / name
+    else:
+        data_dir = get_strawpot_home() / "data" / "integrations" / name
     data_dir.mkdir(parents=True, exist_ok=True)
     env["STRAWPOT_DATA_DIR"] = str(data_dir)
 
@@ -557,7 +577,7 @@ def start_integration(
         # PID stale — clean up below
 
     config_values = _get_db_config(conn, name, project_id)
-    env = _build_env(name, config_values, request, project_id=project_id)
+    env = _build_env(name, config_values, request, conn, project_id=project_id)
 
     # Log file for adapter output
     log_path = integration_dir / ".log"
@@ -754,10 +774,22 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
         if project_id > 0:
             env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/p/{project_id}/{name}"
+            env["STRAWPOT_PROJECT_ID"] = str(project_id)
         else:
             env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/{name}"
         env["STRAWPOT_INTEGRATION_NAME"] = name
-        data_dir = home / "data" / "integrations" / name
+
+        # Project-scoped data dir mirrors _build_env logic
+        if project_id > 0:
+            with get_db(db_path) as conn2:
+                working_dir = _get_project_working_dir(conn2, project_id)
+            if working_dir:
+                data_dir = Path(working_dir) / ".strawpot" / "data" / "integrations" / name
+                env["STRAWPOT_PROJECT_DIR"] = working_dir
+            else:
+                data_dir = home / "data" / "integrations" / name
+        else:
+            data_dir = home / "data" / "integrations" / name
         data_dir.mkdir(parents=True, exist_ok=True)
         env["STRAWPOT_DATA_DIR"] = str(data_dir)
         for key, value in config_values.items():
