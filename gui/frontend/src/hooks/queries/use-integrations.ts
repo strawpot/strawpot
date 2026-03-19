@@ -3,26 +3,40 @@ import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { Integration, IntegrationDetail, IntegrationConfig } from "@/api/types";
 
-export function useIntegrations() {
+function pidParam(projectId?: number) {
+  return projectId != null ? `?project_id=${projectId}` : "";
+}
+
+export function useIntegrations(projectId?: number) {
   return useQuery({
-    queryKey: queryKeys.integrations.all,
-    queryFn: () => api.get<Integration[]>("/integrations"),
+    queryKey: queryKeys.integrations.all(projectId),
+    queryFn: () => api.get<Integration[]>(`/integrations${pidParam(projectId)}`),
     refetchInterval: 10_000,
   });
 }
 
-export function useIntegrationDetail(name: string, options?: { enabled?: boolean }) {
+export function useIntegrationDetail(
+  name: string,
+  options?: { enabled?: boolean; projectId?: number },
+) {
+  const projectId = options?.projectId;
   return useQuery({
-    queryKey: queryKeys.integrations.detail(name),
-    queryFn: () => api.get<IntegrationDetail>(`/integrations/${name}`),
+    queryKey: queryKeys.integrations.detail(name, projectId),
+    queryFn: () =>
+      api.get<IntegrationDetail>(`/integrations/${name}${pidParam(projectId)}`),
     enabled: options?.enabled ?? !!name,
   });
 }
 
-export function useIntegrationConfig(name: string, options?: { enabled?: boolean }) {
+export function useIntegrationConfig(
+  name: string,
+  options?: { enabled?: boolean; projectId?: number },
+) {
+  const projectId = options?.projectId;
   return useQuery({
-    queryKey: queryKeys.integrations.config(name),
-    queryFn: () => api.get<IntegrationConfig>(`/integrations/${name}/config`),
+    queryKey: queryKeys.integrations.config(name, projectId),
+    queryFn: () =>
+      api.get<IntegrationConfig>(`/integrations/${name}/config${pidParam(projectId)}`),
     enabled: options?.enabled ?? !!name,
   });
 }

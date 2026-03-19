@@ -317,6 +317,8 @@ export interface Integration {
   started_at: string | null;
   config_values: Record<string, string>;
   path: string;
+  project_id: number;
+  source: "project" | "global";
 }
 
 export interface IntegrationDetail extends Integration {

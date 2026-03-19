@@ -53,14 +53,16 @@ export default function IntegrationDetailSheet({
   const actionPending =
     update.isPending || reinstall.isPending || uninstall.isPending;
 
+  const ref = { name: integration.name, projectId: integration.project_id };
+
   const handleStartStop = () => {
     if (isRunning) {
-      stop.mutate(integration.name, {
+      stop.mutate(ref, {
         onSuccess: () => toast.success(`Stopped ${integration.name}`),
         onError: (err) => toast.error(`Failed to stop: ${err.message}`),
       });
     } else {
-      start.mutate(integration.name, {
+      start.mutate(ref, {
         onSuccess: () => toast.success(`Started ${integration.name}`),
         onError: (err) => toast.error(`Failed to start: ${err.message}`),
       });
@@ -68,7 +70,7 @@ export default function IntegrationDetailSheet({
   };
 
   const handleUpdate = () => {
-    update.mutate(integration.name, {
+    update.mutate(ref, {
       onSuccess: (res) => {
         if (res.exit_code === 0) toast.success(`Updated ${integration.name}`);
         else toast.error(`Update failed: ${res.stderr || res.stdout}`);
@@ -78,7 +80,7 @@ export default function IntegrationDetailSheet({
   };
 
   const handleReinstall = () => {
-    reinstall.mutate(integration.name, {
+    reinstall.mutate(ref, {
       onSuccess: (res) => {
         if (res.exit_code === 0)
           toast.success(`Reinstalled ${integration.name}`);
@@ -93,7 +95,7 @@ export default function IntegrationDetailSheet({
       setConfirming(true);
       return;
     }
-    uninstall.mutate(integration.name, {
+    uninstall.mutate(ref, {
       onSuccess: (res) => {
         if (res.exit_code === 0) {
           toast.success(`Uninstalled ${integration.name}`);
@@ -161,7 +163,7 @@ export default function IntegrationDetailSheet({
               checked={integration.auto_start}
               onCheckedChange={(checked) => {
                 setAutoStart.mutate(
-                  { name: integration.name, enabled: checked },
+                  { ...ref, enabled: checked },
                   {
                     onSuccess: () =>
                       toast.success(
@@ -189,6 +191,7 @@ export default function IntegrationDetailSheet({
           <div className="px-4 space-y-6">
             <ConfigSection
               name={integration.name}
+              projectId={integration.project_id}
               enabled={open}
             />
           </div>
@@ -270,12 +273,14 @@ function StatusBadge({ status }: { status: string }) {
 
 function ConfigSection({
   name,
+  projectId,
   enabled,
 }: {
   name: string;
+  projectId?: number;
   enabled: boolean;
 }) {
-  const { data: config } = useIntegrationConfig(name, { enabled });
+  const { data: config } = useIntegrationConfig(name, { enabled, projectId });
   const save = useSaveIntegrationConfig();
   const [values, setValues] = useState<Record<string, string>>({});
   const [initialized, setInitialized] = useState(false);
@@ -294,7 +299,7 @@ function ConfigSection({
 
   const handleSave = () => {
     save.mutate(
-      { name, config_values: values },
+      { name, projectId, config_values: values },
       {
         onSuccess: () => toast.success("Configuration saved"),
         onError: (err) => toast.error(`Failed to save: ${err.message}`),

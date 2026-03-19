@@ -48,7 +48,9 @@ export default function Integrations() {
 
   // Keep selected integration up-to-date from the list query
   const currentSelected = selected
-    ? integrations?.find((i) => i.name === selected.name) ?? selected
+    ? integrations?.find(
+        (i) => i.name === selected.name && i.project_id === selected.project_id,
+      ) ?? selected
     : null;
 
   return (
@@ -92,7 +94,7 @@ export default function Integrations() {
           <TableBody>
             {integrations.map((integration) => (
               <TableRow
-                key={integration.name}
+                key={`${integration.name}:${integration.project_id}`}
                 className="cursor-pointer"
                 onClick={() => {
                   setSelected(integration);
@@ -158,7 +160,7 @@ function InstallIntegrationDialog({
     if (!name.trim()) return;
     setResult(null);
     setOutput(null);
-    install.mutate(name.trim(), {
+    install.mutate({ name: name.trim() }, {
       onSuccess: (res) => {
         if (res.exit_code === 0) {
           toast.success(`Installed ${name.trim()}`);

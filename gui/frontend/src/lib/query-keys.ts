@@ -43,8 +43,10 @@ export const queryKeys = {
     detail: (id: number) => ["conversations", "detail", id] as const,
   },
   integrations: {
-    all: ["integrations"] as const,
-    detail: (name: string) => ["integrations", name] as const,
-    config: (name: string) => ["integrations", name, "config"] as const,
+    all: (projectId?: number) => ["integrations", projectId] as const,
+    detail: (name: string, projectId?: number) =>
+      ["integrations", name, projectId] as const,
+    config: (name: string, projectId?: number) =>
+      ["integrations", name, "config", projectId] as const,
   },
 };
