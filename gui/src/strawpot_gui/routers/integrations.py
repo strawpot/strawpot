@@ -360,11 +360,21 @@ def ack_notification(
 
 
 @router.post("/install")
-def install_integration(data: dict = Body(...)):
-    """Install an integration from Strawhub by name."""
+def install_integration(data: dict = Body(...), conn=Depends(get_db_conn)):
+    """Install an integration from Strawhub by name.
+
+    When ``project_id`` is provided (> 0), the integration is installed into
+    the project's ``.strawpot/`` directory instead of the global home.
+    """
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
+    project_id = int(data.get("project_id", 0))
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if not working_dir:
+            raise HTTPException(404, f"Project not found: {project_id}")
+        return run_strawhub("--root", working_dir, "install", "integration", "-y", name)
     return run_strawhub("install", "integration", "--global", "-y", name)
 
 
@@ -414,7 +424,13 @@ def update_integration(
         raise HTTPException(400, "'name' is required")
     project_id = int(data.get("project_id", 0))
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("update", "integration", "--global", "-y", name)
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if not working_dir:
+            raise HTTPException(404, f"Project not found: {project_id}")
+        result = run_strawhub("--root", working_dir, "update", "integration", "-y", name)
+    else:
+        result = run_strawhub("update", "integration", "--global", "-y", name)
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)
@@ -442,7 +458,16 @@ def reinstall_integration(
     if not version:
         raise HTTPException(404, f"Empty version file for integration: {name}")
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("install", "integration", "--global", "-y", name, "--version", version, "--force")
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if not working_dir:
+            raise HTTPException(404, f"Project not found: {project_id}")
+        result = run_strawhub(
+            "--root", working_dir, "install", "integration", "-y", name,
+            "--version", version, "--force",
+        )
+    else:
+        result = run_strawhub("install", "integration", "--global", "-y", name, "--version", version, "--force")
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)
@@ -471,7 +496,7 @@ def uninstall_integration(name: str, project_id: int = 0, conn=Depends(get_db_co
     if project_id > 0:
         working_dir = _get_project_working_dir(conn, project_id)
         if working_dir:
-            return run_strawhub("uninstall", "integration", name, "--root", working_dir)
+            return run_strawhub("--root", working_dir, "uninstall", "integration", name)
         return {"ok": True}
     return run_strawhub("uninstall", "integration", "--global", name)
 

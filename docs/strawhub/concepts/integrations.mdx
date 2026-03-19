@@ -55,36 +55,53 @@ The GUI automatically provides these env vars when starting an adapter — do no
 
 | Variable | Description |
 |----------|-------------|
-| `STRAWPOT_API_URL` | URL of the running StrawPot API server |
+| `STRAWPOT_API_URL` | URL of the running StrawPot API server (includes `/via/` prefix for source tracking) |
 | `STRAWPOT_DATA_DIR` | Persistent data directory (survives reinstalls) |
+| `STRAWPOT_INTEGRATION_NAME` | Integration name (e.g., `telegram`) |
+| `STRAWPOT_PROJECT_ID` | Project ID (only set for project-scoped instances) |
+| `STRAWPOT_PROJECT_DIR` | Project working directory (only set for project-scoped instances) |
 
 Auto-start is managed in the GUI (toggle in the integration detail sheet), not in the manifest.
 
 ## Scope
 
-Integrations are **always global** — they install to `~/.strawpot/integrations/` (or `$STRAWPOT_HOME/integrations/`). The `--global` flag is not needed or accepted.
+Integration **code** is always installed globally at `~/.strawpot/integrations/`. However, integrations can run as either **global** or **project-scoped** instances:
 
-```
+- **Global** (default): One instance shared across all projects, conversations route through imu.
+- **Project-scoped**: A separate instance per project with independent config, data, and process lifecycle. Conversations are created directly in the target project.
+
+```bash
+# Install globally (required first)
+strawhub install integration telegram --global
+
+# The binary is always at the global path:
 ~/.strawpot/integrations/
 └── telegram/
     ├── INTEGRATION.md
     ├── adapter.py
     ├── requirements.txt
-    ├── .version
-    └── .log              # runtime stdout/stderr
+    └── .version
 
+# Global instance data + logs:
 ~/.strawpot/data/integrations/
 └── telegram/
-    └── adapter.db        # persistent adapter state (survives reinstalls)
+    ├── adapter.db        # persistent adapter state (survives reinstalls)
+    └── adapter.log       # runtime stdout/stderr
+
+# Project-scoped instance data + logs (isolated per project):
+{project_dir}/.strawpot/data/integrations/
+└── telegram/
+    ├── adapter.db
+    └── adapter.log
 ```
 
 ## Lifecycle
 
 Integrations are managed through the StrawPot GUI:
 
-1. **Install** — `strawhub install integration telegram` downloads the package globally
-2. **Configure** — Set environment variables (e.g., bot token) in the integration detail sheet
-3. **Start/Stop** — The GUI launches the `entry_point` command and manages the process
+1. **Install** — `strawhub install integration telegram --global` downloads the package globally
+2. **Configure** — Set environment variables (e.g., bot token) in the integration detail sheet. Each `(name, project_id)` instance has independent config.
+3. **Start/Stop** — The GUI launches the `entry_point` command and manages the process. Global and project-scoped instances run as separate processes.
 4. **Auto-start** — Toggle in the detail sheet to start automatically when StrawPot launches
 5. **Update/Reinstall** — Stops the adapter, runs the update, restarts if it was running. Persistent data in `STRAWPOT_DATA_DIR` is preserved.
 6. **Health Check** — If configured, the GUI periodically pings the health endpoint
@@ -110,5 +127,5 @@ An integration directory can contain additional files alongside `INTEGRATION.md`
 | **Can depend on** | Other skills | Skills and roles | System tools | None | None |
 | **Entry point** | None | None | `bin` (compiled) | None | `entry_point` (shell command) |
 | **Managed by** | CLI (session) | CLI (session) | CLI (session) | CLI (session) | GUI (lifecycle) |
-| **Scope** | Local or global | Local or global | Local or global | Local or global | Global only |
+| **Scope** | Local or global | Local or global | Local or global | Local or global | Local or global |
 | **Namespace** | Separate | Separate | Separate | Separate | Separate |

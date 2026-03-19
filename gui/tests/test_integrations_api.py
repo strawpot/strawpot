@@ -1149,3 +1149,360 @@ class TestLocalFirstResolution:
         resp = client.get("/api/integrations/telegram/config?project_id=5")
         assert resp.status_code == 200
         assert "STRAWPOT_BOT_TOKEN" in resp.json()["env_schema"]
+
+
+class TestAutoStartEndpoint:
+    """Tests for PUT /{name}/auto-start endpoint."""
+
+    def test_toggle_auto_start_on(self, client, home):
+        _create_integration(home, "telegram")
+        resp = client.put(
+            "/api/integrations/telegram/auto-start",
+            json={"enabled": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "auto_start": True}
+        # Verify persisted in DB
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT auto_start FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
+            ).fetchone()
+        assert row["auto_start"] == 1
+
+    def test_toggle_auto_start_off(self, client, home):
+        _create_integration(home, "telegram")
+        client.put("/api/integrations/telegram/auto-start", json={"enabled": True})
+        resp = client.put(
+            "/api/integrations/telegram/auto-start",
+            json={"enabled": False},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "auto_start": False}
+
+    def test_auto_start_not_found(self, client, home):
+        resp = client.put(
+            "/api/integrations/nonexistent/auto-start",
+            json={"enabled": True},
+        )
+        assert resp.status_code == 404
+
+    def test_auto_start_project_scoped(self, client, home):
+        """Auto-start can be set per project instance."""
+        _create_integration(home, "telegram")
+        resp = client.put(
+            "/api/integrations/telegram/auto-start?project_id=1",
+            json={"enabled": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["auto_start"] is True
+        # Global should still be off
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            global_row = conn.execute(
+                "SELECT auto_start FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
+            ).fetchone()
+        # Global row may not exist or should have auto_start=0
+        assert global_row is None or global_row["auto_start"] == 0
+
+
+class TestIntegrationSourceMiddleware:
+    """Tests for /via/ URL rewriting middleware."""
+
+    def test_global_via_rewrites_path(self, client, home):
+        """/via/{name}/api/health → /api/health with X-Strawpot-Source header."""
+        resp = client.get("/via/telegram/api/health")
+        assert resp.status_code == 200
+        # The health endpoint should be reachable through the middleware
+        assert resp.json()["status"] == "ok"
+
+    def test_global_via_injects_source_header(self, client, home):
+        """/via/{name}/ injects X-Strawpot-Source header into request."""
+        # Use imu conversations endpoint which reads X-Strawpot-Source
+        _create_integration(home, "telegram")
+        resp = client.post("/via/telegram/api/imu/conversations")
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source"] == "telegram"
+
+    def test_project_scoped_via_rewrites_path(self, client, home):
+        """/via/p/{project_id}/{name}/api/health → /api/health."""
+        resp = client.get("/via/p/5/telegram/api/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+    def test_project_scoped_via_injects_headers(self, client, home):
+        """/via/p/{project_id}/{name}/ injects both source and project-id headers."""
+        _create_integration(home, "telegram")
+        resp = client.post("/via/p/5/telegram/api/imu/conversations")
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source"] == "telegram"
+
+    def test_via_root_path(self, client, home):
+        """/via/{name}/ (no trailing path) rewrites to /."""
+        resp = client.get("/via/telegram/api/health")
+        assert resp.status_code == 200
+
+    def test_non_via_path_unaffected(self, client, home):
+        """Regular paths are not rewritten."""
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+
+
+class TestProjectScopedAutoStart:
+    """Tests for auto_start_integrations with project-scoped instances."""
+
+    def test_auto_start_project_scoped_instance(self, client, home, tmp_path):
+        """auto_start_integrations() starts project-scoped instances."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+        from strawpot_gui.db import get_db
+
+        integration_dir = home / "integrations" / "telegram"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: telegram\ndescription: Test\n"
+            "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
+            "---\nBody."
+        )
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+
+        db_path = client.app.state.db_path
+        project_dir = str(tmp_path / "my_project")
+
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (5, "My Project", project_dir),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, ?, 1)",
+                ("telegram", 5),
+            )
+
+        auto_start_integrations(db_path)
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = ?",
+                ("telegram", 5),
+            ).fetchone()
+        assert row["status"] == "running"
+        assert row["pid"] is not None
+
+        # Clean up
+        import os, signal
+        try:
+            os.kill(row["pid"], signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+
+    def test_auto_start_both_global_and_project(self, client, home, tmp_path):
+        """Both global and project-scoped instances auto-start independently."""
+        from strawpot_gui.routers.integrations import auto_start_integrations
+        from strawpot_gui.db import get_db
+
+        integration_dir = home / "integrations" / "telegram"
+        integration_dir.mkdir(parents=True)
+        (integration_dir / "INTEGRATION.md").write_text(
+            "---\nname: telegram\ndescription: Test\n"
+            "metadata:\n  strawpot:\n    entry_point: python adapter.py\n"
+            "---\nBody."
+        )
+        (integration_dir / "adapter.py").write_text("import time; time.sleep(60)")
+
+        db_path = client.app.state.db_path
+        project_dir = str(tmp_path / "my_project")
+
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (5, "My Project", project_dir),
+            )
+            # Enable auto_start for both global and project
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 0, 1)",
+                ("telegram",),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 5, 1)",
+                ("telegram",),
+            )
+
+        auto_start_integrations(db_path)
+
+        with get_db(db_path) as conn:
+            global_row = conn.execute(
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
+            ).fetchone()
+            project_row = conn.execute(
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = 5",
+                ("telegram",),
+            ).fetchone()
+
+        assert global_row["status"] == "running"
+        assert project_row["status"] == "running"
+        assert global_row["pid"] != project_row["pid"]
+
+        # Clean up
+        import os, signal
+        for pid in [global_row["pid"], project_row["pid"]]:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass
+
+
+class TestUninstallProjectScopedWithRoot:
+    """Test uninstall with --root for project-scoped instances."""
+
+    def test_uninstall_project_scoped_with_working_dir(self, client, home, tmp_path):
+        """Uninstalling project-scoped instance with known project calls --root."""
+        _create_integration(home, "telegram")
+        project_dir = str(tmp_path / "my_project")
+
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (5, "My Project", project_dir),
+            )
+
+        # Save config to create DB row
+        client.put(
+            "/api/integrations/telegram/config?project_id=5",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "proj"}},
+        )
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
+            resp = client.delete("/api/integrations/telegram?project_id=5")
+            assert resp.status_code == 200
+            mock.assert_called_once_with(
+                "--root", project_dir, "uninstall", "integration", "telegram",
+            )
+
+
+class TestProjectScopedInstallUpdateReinstall:
+    """Test install/update/reinstall with --root for project-scoped instances."""
+
+    def _insert_project(self, client, project_id, working_dir):
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO projects (id, display_name, working_dir) VALUES (?, ?, ?)",
+                (project_id, "My Project", working_dir),
+            )
+
+    def test_install_project_scoped(self, client, home, tmp_path):
+        """Install with project_id > 0 uses --root instead of --global."""
+        project_dir = str(tmp_path / "my_project")
+        self._insert_project(client, 5, project_dir)
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Installed", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/install",
+                json={"name": "telegram", "project_id": 5},
+            )
+            assert resp.status_code == 200
+            mock.assert_called_once_with(
+                "--root", project_dir, "install", "integration", "-y", "telegram",
+            )
+
+    def test_install_project_not_found(self, client, home):
+        """Install with unknown project_id returns 404."""
+        with patch("strawpot_gui.routers.integrations.run_strawhub"):
+            resp = client.post(
+                "/api/integrations/install",
+                json={"name": "telegram", "project_id": 999},
+            )
+            assert resp.status_code == 404
+
+    def test_update_project_scoped(self, client, home, tmp_path):
+        """Update with project_id > 0 uses --root instead of --global."""
+        project_dir = str(tmp_path / "my_project")
+        self._insert_project(client, 5, project_dir)
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Updated", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/update",
+                json={"name": "telegram", "project_id": 5},
+            )
+            assert resp.status_code == 200
+            mock.assert_called_once_with(
+                "--root", project_dir, "update", "integration", "-y", "telegram",
+            )
+
+    def test_update_project_not_found(self, client, home):
+        """Update with unknown project_id returns 404."""
+        with patch("strawpot_gui.routers.integrations.run_strawhub"):
+            resp = client.post(
+                "/api/integrations/update",
+                json={"name": "telegram", "project_id": 999},
+            )
+            assert resp.status_code == 404
+
+    def test_reinstall_project_scoped(self, client, home, tmp_path):
+        """Reinstall with project_id > 0 uses --root instead of --global."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / ".version").write_text("1.2.0")
+        project_dir = str(tmp_path / "my_project")
+        self._insert_project(client, 5, project_dir)
+
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            mock.return_value = {"exit_code": 0, "stdout": "Reinstalled", "stderr": ""}
+            resp = client.post(
+                "/api/integrations/reinstall",
+                json={"name": "telegram", "project_id": 5},
+            )
+            assert resp.status_code == 200
+            mock.assert_called_once_with(
+                "--root", project_dir, "install", "integration", "-y", "telegram",
+                "--version", "1.2.0", "--force",
+            )
+
+    def test_reinstall_project_not_found(self, client, home):
+        """Reinstall with unknown project_id returns 404."""
+        integration_dir = _create_integration(home, "telegram")
+        (integration_dir / ".version").write_text("1.2.0")
+        with patch("strawpot_gui.routers.integrations.run_strawhub"):
+            resp = client.post(
+                "/api/integrations/reinstall",
+                json={"name": "telegram", "project_id": 999},
+            )
+            assert resp.status_code == 404
+
+
+class TestClearLogs:
+    """Tests for DELETE /{name}/logs endpoint."""
+
+    def test_clear_logs(self, client, home):
+        _create_integration(home, "telegram")
+        log_dir = home / "data" / "integrations" / "telegram"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "adapter.log"
+        log_file.write_text("some log output\n")
+
+        resp = client.delete("/api/integrations/telegram/logs")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        assert log_file.read_text() == ""
+
+    def test_clear_logs_no_file(self, client, home):
+        """Clearing logs when no log file exists is a no-op."""
+        _create_integration(home, "telegram")
+        resp = client.delete("/api/integrations/telegram/logs")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
