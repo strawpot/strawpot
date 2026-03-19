@@ -32,11 +32,11 @@ Structured artifacts land in your workspace — a plan, draft post, and engineer
 **Automatically triage and plan GitHub issues**
 Agents prioritize based on project direction, break approved issues into ordered sub-tasks, and delegate implementation — using role-based coordination.
 
-**Ship a feature from idea to PR**
-One task triggers a full product cycle: ideation, approval, implementation in an isolated worktree, code review, and QA — across 5+ roles.
+**Turn an idea into a PR**
+Automatically go from idea to shipped code — ideation, approval, implementation in an isolated worktree, code review, and QA.
 
-**Evolve the system's own capabilities**
-Agents create new roles, test them against quality standards using parallel evaluators, and iterate until they pass. The system improves itself.
+**Create and refine roles automatically**
+Define new roles, test them through evaluation and iteration, and publish to StrawHub for reuse.
 
 Workflows improve over time as roles are reused and refined.
 
