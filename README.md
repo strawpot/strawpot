@@ -2,7 +2,9 @@
 
 A production-grade multi-agent execution system.
 
-Most AI agents follow predefined workflows. StrawPot lets agents figure out how to solve the task.
+Most AI agents follow predefined workflows.
+
+StrawPot lets agents figure out how to solve the task.
 
 Agents decide how to solve tasks by composing other agents. No fixed pipelines. No hardcoded flows.
 
