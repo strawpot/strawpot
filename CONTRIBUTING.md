@@ -1,110 +1,64 @@
 # Contributing to StrawPot
 
-Thank you for your interest in contributing to StrawPot! This guide covers
-both human developers and AI agents working on the codebase.
+StrawPot is built by AI agents. Humans contribute by describing what they
+want — features, bug fixes, improvements — and agents handle the code.
 
-## Project Structure
+## How to Contribute
 
-```
-strawpot/
-  cli/          Python CLI — agent orchestration, sessions, delegation
-  gui/          FastAPI backend + React frontend (dashboard)
-  designs/      Design documents and decision tracking
-  docs/         Additional documentation
-  scripts/      Utility scripts
-```
+### Report a Bug
 
-**Related repositories:**
+Open a [GitHub Issue](https://github.com/strawpot/strawpot/issues) with:
 
-| Repo | Purpose |
-|------|---------|
-| [strawhub](https://github.com/strawpot/strawhub) | Registry CLI + server (strawhub.dev) |
-| [denden](https://github.com/strawpot/denden) | gRPC transport for agent communication |
-| [integrations](https://github.com/strawpot/integrations) | Chat platform adapters (Telegram, Slack, Discord) |
+- **What happened** — the error, unexpected behavior, or crash
+- **What you expected** — the correct behavior
+- **Steps to reproduce** — commands, config, or sequence of actions
+- **Environment** — OS, Python version, StrawPot version (`strawpot --version`)
 
-## Development Setup
+Paste logs or tracebacks if available. Screenshots of the GUI help too.
 
-**Requirements:** Python 3.11+, Node.js 18+
+### Request a Feature
 
-### Backend (CLI + GUI)
+Open a [GitHub Issue](https://github.com/strawpot/strawpot/issues) with:
 
-```bash
-# CLI
-cd cli
-pip install -e ".[dev]"
+- **What you want** — describe the outcome, not the implementation
+- **Why it matters** — what workflow it enables or what problem it solves
+- **Example** — a concrete scenario showing how you'd use it
 
-# GUI (depends on CLI)
-cd gui
-pip install -e ../cli
-pip install -e ".[dev]"
-```
+Good: "I want to run the same schedule in multiple projects with different configs."
+Less helpful: "Add a `project_id` column to the `scheduled_tasks` table."
 
-### Frontend
+### Share an Idea or Ask a Question
 
-```bash
-cd gui/frontend
-npm install
-npm run dev       # Vite dev server
-npm run build     # Production build
-```
+Join the [Discord](https://discord.gg/6RMpzuKrRd) for discussion, feedback,
+and help getting started.
 
-## Running Tests
+## What Happens Next
 
-```bash
-# CLI unit tests
-cd cli
-pytest tests/ --ignore=tests/e2e --cov=strawpot --cov-report=term-missing
+1. You submit an issue describing a bug or feature
+2. An AI agent picks it up, reads the codebase, and creates a PR
+3. The maintainer reviews and merges
 
-# CLI E2E tests (slower, requires git)
-pytest tests/e2e -v --timeout=30
+You don't need to write code, set up a dev environment, or understand the
+internals. A clear description of the problem is the most valuable contribution.
 
-# GUI tests
-cd gui
-pytest tests/ -v --timeout=30
-```
+## Writing Good Prompts
 
-CI runs on Python 3.11, 3.12, and 3.13 across Ubuntu and macOS.
+The better you describe the problem, the better the result. Tips:
 
-## Git Workflow
+- **Be specific** — "the Telegram adapter crashes when the bot token is
+  empty" beats "integration doesn't work"
+- **Include context** — what were you doing, what config do you have
+- **One issue per issue** — don't bundle unrelated requests
+- **Show examples** — paste terminal output, screenshots, or sample config
 
-1. **Never push directly to `main`.** Always create a branch and open a PR.
-2. Branch naming: `claude/<description>` for AI agents, `<username>/<description>` for humans.
-3. Keep PRs focused — one logical change per PR.
-4. Rebase from `main` before opening a PR:
-   ```bash
-   git fetch origin && git rebase origin/main
-   ```
-5. Once a PR is merged, create a fresh branch for the next change. Don't reuse merged branches.
+## Other Ways to Contribute
 
-## Design Documents
-
-Major features start with a design document in `designs/`. Each design
-includes an **Implementation Status** table tracking individual items.
-Check the relevant design doc before working on a feature area:
-
-| Area | Design doc |
-|------|-----------|
-| Core architecture | `designs/DESIGN.md` |
-| GUI | `designs/gui/DESIGN.md` |
-| Integrations | `designs/integration/DESIGN.md` |
-| Context & history | `designs/context/DESIGN.md` |
-| Scheduling | `designs/schedule/DESIGN.md` |
-| Onboarding | `designs/onboarding/DESIGN.md` |
-| imu (self-operation) | `designs/imu/DESIGN.md` |
-
-## For AI Agents
-
-- Read `CLAUDE.md` for git workflow rules and conventions.
-- Read the relevant design doc before making changes to a feature area.
-- Show the full `git diff` for review before committing.
-- Wait for explicit approval before committing or pushing.
-- Don't over-engineer — make the minimum change needed for the task.
-
-## For Human Contributors
-
-- Check `TODO.md` for open work items.
-- For questions or discussion, join the [Discord](https://discord.gg/6RMpzuKrRd).
-- If you're unsure where to start, look at design docs with items that aren't marked "Done".
+- **Design feedback** — review design docs in `designs/` and comment on
+  open issues about upcoming features
+- **Testing** — try new releases, report what breaks
+- **Documentation** — suggest improvements to README or user-facing docs
+- **Community adapters** — build and publish integration adapters for new
+  platforms via [StrawHub](https://strawhub.dev)
 
 ## License
 
