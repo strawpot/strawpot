@@ -19,28 +19,44 @@ see results."
               Web GUI    Telegram     Slack/Discord
              (built-in)  (adapter)   (adapter)
                     \        |          /
-                     +--> imu (project_id=0) <--+
+                     +--> imu (project_id=0) <--+   ← global instances
                           |
                      delegates to projects/roles
+
+              Project-scoped instances bypass imu:
+
+              Telegram (project_id=5)
+                    |
+              POST /api/conversations {project_id: 5}
+                    |
+              project conversation (project_id=5)
 ```
 
-All chat messages route through **imu** — the same self-operation agent
-that powers the Bot Imu chat in the GUI. Adapters are thin message
-relays between the chat platform and imu's conversation API. imu handles
-project/role routing, delegation, and context — the adapter doesn't need
-to know about StrawPot internals.
+**Global instances** (project_id=0) route all chat messages through
+**imu** — the same self-operation agent that powers the Bot Imu chat
+in the GUI. Adapters are thin message relays between the chat platform
+and imu's conversation API. imu handles project/role routing,
+delegation, and context — the adapter doesn't need to know about
+StrawPot internals.
 
-**Why imu as sole entry point:**
+**Project-scoped instances** (project_id>0) bypass imu and create
+conversations directly in the target project. The adapter reads
+`STRAWPOT_PROJECT_ID` from its environment and uses
+`POST /api/conversations` with the project_id in the body.
+This gives each project its own bot instance with independent config
+(e.g., different bot tokens), data directory, and process lifecycle.
+
+**Why imu as default entry point:**
 - Consistent UX — chat and GUI work the same way
 - Adapter stays simple — just a message relay, no routing logic
 - imu already handles project/role routing and delegation
 - Natural language routing ("fix the login bug in myapp") is better
   than slash commands (`/strawpot bind project=myapp role=developer`)
 
-**Future option:** Direct project binding (bypass imu) for latency-
-sensitive or automated workflows (CI/CD bots, alert channels). The
-conversation API already supports `project_id` — adapters could target
-a specific project conversation instead of imu. Not needed initially.
+**Why project-scoped instances bypass imu:**
+- Direct project binding for dedicated bots (e.g., a Discord bot per team project)
+- Lower latency — no imu routing overhead
+- Independent config — different bot tokens per project
 
 ---
 
@@ -54,7 +70,7 @@ a specific project conversation instead of imu. Not needed initially.
 | Adapters consume the public REST API | No internal module imports. Stable contract. No version coupling beyond API compatibility. |
 | GUI manages adapter lifecycle | Start/stop/status/logs through the Integrations page. Users don't need terminal access. |
 | Distributed via Strawhub | `strawhub install telegram-adapter`. Community can contribute adapters for LINE, WeChat, Teams, etc. |
-| One bot per platform, many conversations | Each platform's natural grouping (Telegram chat, Slack thread) maps to a separate imu conversation. Multiple bot instances supported via project-scoped integrations (Phase 7). |
+| One bot per platform, many conversations | Each platform's natural grouping (Telegram chat, Slack thread) maps to a separate conversation. Global instances route through imu; project-scoped instances (Phase 7) create conversations directly in the target project with independent config and process lifecycle. |
 | Task queuing handles async messages | `POST /api/conversations/{id}/tasks` already returns 202 when a session is active. Chat messages during active sessions are automatically queued. |
 
 ---
@@ -62,7 +78,8 @@ a specific project conversation instead of imu. Not needed initially.
 ## Conversation Mapping
 
 Each platform's natural threading model determines conversation
-boundaries. All conversations route to imu (`project_id=0`).
+boundaries. Global instances route to imu (`project_id=0`);
+project-scoped instances create conversations in their target project.
 
 | Platform | Conversation boundary | How it works |
 |----------|----------------------|-------------|
@@ -1066,7 +1083,7 @@ the adapter gets 404 and creates new ones (see above).
 | Feature | Reason |
 |---------|--------|
 | Multi-user / auth | StrawPot is local-first, single-user. Chat messages from anyone in a channel are treated as the StrawPot owner's tasks. |
-| Direct project binding | Start with imu-only. Project-scoped integrations (Phase 7) allow per-project bot instances with independent config. Direct conversation routing (bypassing imu) is a future option. |
+| Direct project binding (global instances) | Global instances always route through imu. Project-scoped instances (Phase 7, done) bypass imu and create conversations directly in the target project. |
 | Rich interactive controls | No inline buttons, forms, or approval flows in chat. Use the GUI for complex interactions. |
 
 ---
@@ -1178,18 +1195,22 @@ lifecycle are per-instance.
 
 | # | Item | Status |
 |---|------|--------|
-| 39 | Strawhub CLI: add `--global` flag to `install/uninstall/update integration` (default True, opt-in local) | |
-| 40 | Strawhub CLI: shared binary model — project-scoped install records in local lockfile, downloads to global | |
-| 41 | Strawhub CLI: `[integrations]` section in `strawpot.toml` (`ProjectFile`) | |
+| 39 | Strawhub CLI: add `--global` flag to `install/uninstall/update integration` (default False, opt-in global) | Done |
+| 40 | Strawhub CLI: shared binary model — project-scoped install records in local lockfile, downloads to global | Done |
+| 41 | Strawhub CLI: `[integrations]` section in `strawpot.toml` (`ProjectFile`) | Done |
 | 42 | Database: `project_id` column on `integrations`, `integration_config`, `integration_notifications` tables | Done |
 | 43 | Database: migration — rebuild tables with composite PK `(name, project_id)`, default 0 for existing rows | Done |
-| 44 | Backend: thread `project_id` through all integration endpoints and helper functions | |
-| 45 | Backend: `_build_env()` — project-scoped `STRAWPOT_API_URL`, `STRAWPOT_DATA_DIR`, `STRAWPOT_PROJECT_ID` | |
-| 46 | Backend: `/via/p/{project_id}/{name}/...` middleware URL pattern + `X-Strawpot-Project-Id` header | |
-| 47 | Backend: lifecycle functions (orphan cleanup, auto-start, stop-all) query across all project_ids | |
+| 44 | Backend: thread `project_id` through all integration endpoints and helper functions | Done |
+| 45 | Backend: `_build_env()` — project-scoped `STRAWPOT_API_URL`, `STRAWPOT_DATA_DIR`, `STRAWPOT_PROJECT_ID` | Done |
+| 46 | Backend: `/via/p/{project_id}/{name}/...` middleware URL pattern + `X-Strawpot-Project-Id` header | Done |
+| 47 | Backend: lifecycle functions (orphan cleanup, auto-start, stop-all) query across all project_ids | Done |
 | 48 | Backend: `POST /api/integrations/add-to-project` — create per-project instance from global install | |
-| 49 | Frontend: `project_id` + `project_name` on `Integration` type | |
+| 49 | Frontend: `project_id` + `project_name` on `Integration` type | Done |
 | 50 | Frontend: Integrations page — project filter dropdown, project column in table | |
-| 51 | Frontend: IntegrationDetailSheet — pass `project_id` to all mutations | |
-| 52 | Frontend: ProjectDetail — Integrations tab with per-project configure/start/stop | |
-| 53 | Frontend: query/mutation hooks — pass `project_id` to all API calls | |
+| 51 | Frontend: IntegrationDetailSheet — pass `project_id` to all mutations | Done |
+| 52 | Frontend: ProjectDetail — Integrations tab (under Resources) with per-project configure/start/stop | Done |
+| 53 | Frontend: query/mutation hooks — pass `project_id` to all API calls | Done |
+| 54 | Backend: per-instance log isolation — logs at `{data_dir}/adapter.log` instead of `{integration_dir}/.log` | Done |
+| 55 | Backend: GUI passes `--global` flag to strawhub CLI for global integration operations | Done |
+| 56 | Backend: log WebSocket accepts `project_id` query param for project-scoped log streaming | Done |
+| 57 | Adapters: read `STRAWPOT_PROJECT_ID` env var, route conversations to correct project via `POST /api/conversations` | Done |
