@@ -1,8 +1,10 @@
 # StrawPot
 
-Agents that decide how to solve tasks by composing other agents.
+A production-grade multi-agent execution system.
 
-Concurrent multi-agent execution with isolation, memory, and full traceability. Outputs vary. Infrastructure does not.
+Agents that decide how to solve tasks by composing other agents. Multi-agent orchestration is not the bottleneck anymore.
+
+Concurrent execution with isolation, memory, and full traceability. Outputs vary. Infrastructure does not.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
