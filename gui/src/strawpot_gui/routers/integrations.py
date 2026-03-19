@@ -365,7 +365,7 @@ def install_integration(data: dict = Body(...)):
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
-    return run_strawhub("install", "integration", "-y", "--global", name)
+    return run_strawhub("install", "integration", "--global", "-y", name)
 
 
 def _stop_if_running(conn, name: str, project_id: int = 0) -> bool:
@@ -414,7 +414,7 @@ def update_integration(
         raise HTTPException(400, "'name' is required")
     project_id = int(data.get("project_id", 0))
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("update", "-y", "--global", "integration", name)
+    result = run_strawhub("update", "integration", "--global", "-y", name)
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)
@@ -442,7 +442,7 @@ def reinstall_integration(
     if not version:
         raise HTTPException(404, f"Empty version file for integration: {name}")
     was_running = _stop_if_running(conn, name, project_id)
-    result = run_strawhub("install", "integration", "-y", "--global", name, "--version", version, "--force")
+    result = run_strawhub("install", "integration", "--global", "-y", name, "--version", version, "--force")
     if was_running and result.get("exit_code") == 0:
         try:
             start_integration(name, request, conn, project_id=project_id)

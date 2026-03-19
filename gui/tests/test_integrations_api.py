@@ -335,7 +335,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("install", "integration", "-y", "--global", "telegram")
+            mock.assert_called_once_with("install", "integration", "--global", "-y", "telegram")
 
     def test_install_missing_name(self, client, home):
         resp = client.post("/api/integrations/install", json={"name": ""})
@@ -345,7 +345,7 @@ class TestInstallUninstall:
         with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
             mock.return_value = {"exit_code": 0, "stdout": "", "stderr": ""}
             client.post("/api/integrations/install", json={"name": "  telegram  "})
-            mock.assert_called_once_with("install", "integration", "-y", "--global", "telegram")
+            mock.assert_called_once_with("install", "integration", "--global", "-y", "telegram")
 
     def test_uninstall_calls_strawhub(self, client, home):
         """Uninstall endpoint calls strawhub with correct args."""
@@ -409,7 +409,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             assert resp.json()["exit_code"] == 0
-            mock.assert_called_once_with("update", "-y", "--global", "integration", "telegram")
+            mock.assert_called_once_with("update", "integration", "--global", "-y", "telegram")
 
     def test_update_restarts_running_integration(self, client, home):
         """Update stops a running integration and restarts it after success."""
@@ -450,7 +450,7 @@ class TestInstallUninstall:
             )
             assert resp.status_code == 200
             mock.assert_called_once_with(
-                "install", "integration", "-y", "--global", "telegram", "--version", "1.2.0", "--force",
+                "install", "integration", "--global", "-y", "telegram", "--version", "1.2.0", "--force",
             )
 
     def test_reinstall_missing_version_file(self, client, home):
