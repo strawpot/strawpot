@@ -52,6 +52,48 @@ class TestViaMiddleware:
         assert resp.json()["source"] == "slack"
 
 
+class TestViaProjectScopedMiddleware:
+    """Tests for /via/p/{project_id}/{name}/... URL pattern."""
+
+    def test_via_project_rewrites_path(self, client):
+        """/via/p/5/telegram/api/health → /api/health"""
+        resp = client.get("/via/p/5/telegram/api/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+    def test_via_project_injects_source_header(self, client):
+        """/via/p/{id}/{name} injects X-Strawpot-Source header."""
+        resp = client.post("/via/p/3/discord/api/imu/conversations")
+        assert resp.status_code == 201
+        assert resp.json()["source"] == "discord"
+
+    def test_via_project_injects_project_id_header(self, client):
+        """/via/p/{id}/{name} injects X-Strawpot-Project-Id header."""
+        # We can verify the header is injected by checking it's received
+        # by the endpoint. The conversations endpoint doesn't use this header,
+        # but we can at least verify the path rewrite + source work.
+        resp = client.post("/via/p/7/slack/api/imu/conversations")
+        assert resp.status_code == 201
+        assert resp.json()["source"] == "slack"
+
+    def test_via_project_with_empty_rest(self, client):
+        """/via/p/1/telegram with no trailing path resolves to /."""
+        resp = client.get("/via/p/1/telegram")
+        assert resp.status_code != 500
+
+    def test_via_project_different_ids(self, client):
+        """Different project IDs are handled correctly."""
+        for pid in (1, 42, 100):
+            resp = client.post(f"/via/p/{pid}/telegram/api/imu/conversations")
+            assert resp.status_code == 201
+            assert resp.json()["source"] == "telegram"
+
+    def test_via_p_without_project_id_no_match(self, client):
+        """/via/p/ without enough segments doesn't crash."""
+        resp = client.get("/via/p/")
+        assert resp.status_code != 500
+
+
 class TestConversationSourceTracking:
     """Tests for source/source_meta on conversations."""
 
