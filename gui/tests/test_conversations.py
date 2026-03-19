@@ -1056,6 +1056,46 @@ class TestWriteConversationHistory:
         assert "task-14" in content
 
 
+    def test_history_file_scoped_to_conversation_id(self, client, tmp_path, app):
+        """Each conversation writes to its own history file."""
+        from strawpot_gui.routers.conversations import _write_conversation_history
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv_a = _create_conversation(client, pid)
+        conv_b = _create_conversation(client, pid)
+        cid_a = conv_a["id"]
+        cid_b = conv_b["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid_a,
+                task="auth work", user_task="auth work",
+                summary="Built auth.",
+            )
+            _insert_completed_session(
+                conn, pid, cid_b,
+                task="css fix", user_task="css fix",
+                summary="Fixed CSS.",
+            )
+            path_a = _write_conversation_history(conn, cid_a, str(d))
+            path_b = _write_conversation_history(conn, cid_b, str(d))
+
+        # Different files
+        assert path_a != path_b
+        assert f"conversation_{cid_a}_history.md" in path_a
+        assert f"conversation_{cid_b}_history.md" in path_b
+
+        # Each file contains only its own conversation's content
+        content_a = open(path_a).read()
+        content_b = open(path_b).read()
+        assert "auth work" in content_a
+        assert "css fix" not in content_a
+        assert "css fix" in content_b
+        assert "auth work" not in content_b
+
+
 class TestChatMessagePersistence:
     """Tests for chat message persistence in conversation responses."""
 
