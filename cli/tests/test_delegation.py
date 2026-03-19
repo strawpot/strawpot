@@ -1592,10 +1592,17 @@ class TestIntegration:
             ),
         )
 
-        assert len(registered) == 1
+        # register_agent is called twice: once before spawn (pid=None)
+        # and once after spawn (pid set) to avoid a race where the
+        # child issues a delegation before registration completes.
+        assert len(registered) == 2
         agent_id, role, parent_id, pid = registered[0]
         assert role == "worker"
         assert parent_id == "agent_parent"
+        assert pid is None
+        # Second call has the actual PID
+        assert registered[1][0] == agent_id
+        assert registered[1][3] is not None
 
 
 # ---------------------------------------------------------------------------

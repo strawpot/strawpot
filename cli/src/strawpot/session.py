@@ -465,6 +465,16 @@ class Session:
                 "STRAWPOT_ROLE": self.config.orchestrator_role,
             }
 
+            # Register the agent BEFORE spawning so that if the
+            # orchestrator immediately issues a delegation via denden,
+            # _agent_role() can already resolve its role (avoids
+            # "unknown" requester).
+            self._register_agent(
+                agent_id,
+                role=self.config.orchestrator_role,
+                parent_id=None,
+            )
+
             handle = self.runtime.spawn(
                 agent_id=agent_id,
                 working_dir=self._env.path,
@@ -478,6 +488,7 @@ class Session:
                 env=env,
             )
             self._orchestrator_handle = handle
+            self._agent_info[agent_id]["pid"] = handle.pid
             if self._tracer is not None:
                 agent_context = role_prompt
                 if memory_prompt:
@@ -497,12 +508,6 @@ class Session:
                     context=agent_context,
                 )
                 self._agent_spans[agent_id] = self._session_span_id
-            self._register_agent(
-                agent_id,
-                role=self.config.orchestrator_role,
-                parent_id=None,
-                pid=handle.pid,
-            )
 
             # 6. Write session state file
             self._write_session_file()

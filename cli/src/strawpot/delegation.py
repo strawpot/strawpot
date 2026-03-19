@@ -939,7 +939,12 @@ def handle_delegate(
                     parent_agent_id=request.parent_agent_id,
                 )
 
-        # 7b. Spawn
+        # 7b. Register agent BEFORE spawning so that if the child
+        # immediately issues a delegation via denden, _agent_role()
+        # can already resolve its role (avoids "unknown" requester).
+        if register_agent is not None:
+            register_agent(agent_id, request.role_slug, request.parent_agent_id, None)
+
         env = {
             "DENDEN_ADDR": denden_addr or config.denden_addr,
             "DENDEN_AGENT_ID": agent_id,
@@ -962,6 +967,11 @@ def handle_delegate(
             task=task_text,
             env=env,
         )
+        # Update the registered entry with the actual PID now that
+        # the process has been spawned.
+        if register_agent is not None:
+            register_agent(agent_id, request.role_slug, request.parent_agent_id, handle.pid)
+
         if tracer is not None and delegate_span_id is not None:
             agent_context = role_prompt
             if memory_prompt:
@@ -983,10 +993,6 @@ def handle_delegate(
             )
             if agent_spans is not None:
                 agent_spans[agent_id] = delegate_span_id
-
-        # 7c. Register agent in session state for depth tracking
-        if register_agent is not None:
-            register_agent(agent_id, request.role_slug, request.parent_agent_id, handle.pid)
 
         # 8. Wait
         result = runtime.wait(handle, timeout=config.agent_timeout)
