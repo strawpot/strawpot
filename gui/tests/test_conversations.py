@@ -303,6 +303,28 @@ class TestSubmitTask:
         assert "Prior Conversation" in row["task"]
         assert "Second task" in row["task"]
 
+    def test_passes_group_id_to_cli(self, client, tmp_path):
+        """The subprocess command includes --group-id with the conversation ID."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        body = {"task": "Build it"}
+        with patch("strawpot_gui.routers.sessions.shutil.which", return_value="/usr/bin/strawpot"), \
+             patch("strawpot_gui.routers.sessions.subprocess.Popen") as mock_popen, \
+             patch("strawpot_gui.routers.sessions.load_config") as mock_config:
+            from strawpot.config import StrawPotConfig
+            mock_config.return_value = StrawPotConfig()
+            resp = client.post(f"/api/conversations/{cid}/tasks", json=body)
+
+        assert resp.status_code == 201
+        cmd = mock_popen.call_args[0][0]
+        assert "--group-id" in cmd
+        idx = cmd.index("--group-id")
+        assert cmd[idx + 1] == str(cid)
+
 
 class TestUpdateConversation:
     def test_update_title(self, client, tmp_path):
