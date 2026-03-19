@@ -73,33 +73,39 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 );
 
 CREATE TABLE IF NOT EXISTS integrations (
-    name        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    project_id  INTEGER NOT NULL DEFAULT 0,
     status      TEXT NOT NULL DEFAULT 'stopped',
     pid         INTEGER,
     auto_start  INTEGER NOT NULL DEFAULT 0,
     last_error  TEXT,
     started_at  TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (name, project_id)
 );
 
 CREATE TABLE IF NOT EXISTS integration_config (
-    integration_name TEXT NOT NULL REFERENCES integrations(name) ON DELETE CASCADE,
+    integration_name TEXT NOT NULL,
+    project_id       INTEGER NOT NULL DEFAULT 0,
     key              TEXT NOT NULL,
     value            TEXT,
-    PRIMARY KEY (integration_name, key)
+    PRIMARY KEY (integration_name, project_id, key),
+    FOREIGN KEY (integration_name, project_id) REFERENCES integrations(name, project_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS integration_notifications (
     id               INTEGER PRIMARY KEY,
-    integration_name TEXT NOT NULL REFERENCES integrations(name) ON DELETE CASCADE,
+    integration_name TEXT NOT NULL,
+    project_id       INTEGER NOT NULL DEFAULT 0,
     chat_id          TEXT,
     message          TEXT NOT NULL,
     created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    delivered_at     TEXT
+    delivered_at     TEXT,
+    FOREIGN KEY (integration_name, project_id) REFERENCES integrations(name, project_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_integration_notifications_pending
-    ON integration_notifications(integration_name, delivered_at)
+    ON integration_notifications(integration_name, project_id, delivered_at)
     WHERE delivered_at IS NULL;
 """
 
@@ -388,6 +394,67 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "source" not in cols:
         conn.execute("ALTER TABLE conversations ADD COLUMN source TEXT")
         conn.execute("ALTER TABLE conversations ADD COLUMN source_meta TEXT")
+
+    # Add project_id to integration tables for project-scoped integrations
+    # (added 2026-03-18).  Existing rows get project_id=0 (global/imu).
+    int_cols = {r[1] for r in conn.execute("PRAGMA table_info(integrations)").fetchall()}
+    if "project_id" not in int_cols:
+        conn.executescript("""
+            PRAGMA foreign_keys=OFF;
+
+            CREATE TABLE integrations_new (
+                name        TEXT NOT NULL,
+                project_id  INTEGER NOT NULL DEFAULT 0,
+                status      TEXT NOT NULL DEFAULT 'stopped',
+                pid         INTEGER,
+                auto_start  INTEGER NOT NULL DEFAULT 0,
+                last_error  TEXT,
+                started_at  TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (name, project_id)
+            );
+            INSERT INTO integrations_new (name, status, pid, auto_start, last_error, started_at, created_at)
+                SELECT name, status, pid, auto_start, last_error, started_at, created_at
+                FROM integrations;
+            DROP TABLE integrations;
+            ALTER TABLE integrations_new RENAME TO integrations;
+
+            CREATE TABLE integration_config_new (
+                integration_name TEXT NOT NULL,
+                project_id       INTEGER NOT NULL DEFAULT 0,
+                key              TEXT NOT NULL,
+                value            TEXT,
+                PRIMARY KEY (integration_name, project_id, key),
+                FOREIGN KEY (integration_name, project_id) REFERENCES integrations(name, project_id) ON DELETE CASCADE
+            );
+            INSERT INTO integration_config_new (integration_name, key, value)
+                SELECT integration_name, key, value
+                FROM integration_config;
+            DROP TABLE integration_config;
+            ALTER TABLE integration_config_new RENAME TO integration_config;
+
+            CREATE TABLE integration_notifications_new (
+                id               INTEGER PRIMARY KEY,
+                integration_name TEXT NOT NULL,
+                project_id       INTEGER NOT NULL DEFAULT 0,
+                chat_id          TEXT,
+                message          TEXT NOT NULL,
+                created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                delivered_at     TEXT,
+                FOREIGN KEY (integration_name, project_id) REFERENCES integrations(name, project_id) ON DELETE CASCADE
+            );
+            INSERT INTO integration_notifications_new (id, integration_name, chat_id, message, created_at, delivered_at)
+                SELECT id, integration_name, chat_id, message, created_at, delivered_at
+                FROM integration_notifications;
+            DROP TABLE integration_notifications;
+            ALTER TABLE integration_notifications_new RENAME TO integration_notifications;
+
+            CREATE INDEX IF NOT EXISTS idx_integration_notifications_pending
+                ON integration_notifications(integration_name, project_id, delivered_at)
+                WHERE delivered_at IS NULL;
+
+            PRAGMA foreign_keys=ON;
+        """)
 
 
 @contextmanager

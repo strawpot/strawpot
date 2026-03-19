@@ -1181,8 +1181,8 @@ lifecycle are per-instance.
 | 39 | Strawhub CLI: add `--global` flag to `install/uninstall/update integration` (default True, opt-in local) | |
 | 40 | Strawhub CLI: shared binary model — project-scoped install records in local lockfile, downloads to global | |
 | 41 | Strawhub CLI: `[integrations]` section in `strawpot.toml` (`ProjectFile`) | |
-| 42 | Database: `project_id` column on `integrations`, `integration_config`, `integration_notifications` tables | |
-| 43 | Database: migration — rebuild tables with composite PK `(name, project_id)`, default 0 for existing rows | |
+| 42 | Database: `project_id` column on `integrations`, `integration_config`, `integration_notifications` tables | Done |
+| 43 | Database: migration — rebuild tables with composite PK `(name, project_id)`, default 0 for existing rows | Done |
 | 44 | Backend: thread `project_id` through all integration endpoints and helper functions | |
 | 45 | Backend: `_build_env()` — project-scoped `STRAWPOT_API_URL`, `STRAWPOT_DATA_DIR`, `STRAWPOT_PROJECT_ID` | |
 | 46 | Backend: `/via/p/{project_id}/{name}/...` middleware URL pattern + `X-Strawpot-Project-Id` header | |
