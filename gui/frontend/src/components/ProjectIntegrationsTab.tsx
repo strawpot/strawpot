@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useIntegrations } from "@/hooks/queries/use-integrations";
 import { useInstallIntegration } from "@/hooks/mutations/use-integrations";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, Download, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -39,30 +40,32 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export default function Integrations() {
-  const { data: integrations, isLoading } = useIntegrations();
+interface Props {
+  projectId: number;
+}
+
+export default function ProjectIntegrationsTab({ projectId }: Props) {
+  const { data: integrations, isLoading } = useIntegrations(projectId);
   const [selected, setSelected] = useState<Integration | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [logName, setLogName] = useState<string | null>(null);
   const [logProjectId, setLogProjectId] = useState<number | undefined>(undefined);
   const [installOpen, setInstallOpen] = useState(false);
 
-  // Keep selected integration up-to-date from the list query
+  const integrationList = integrations ?? [];
+
   const currentSelected = selected
-    ? integrations?.find(
+    ? integrationList.find(
         (i) => i.name === selected.name && i.project_id === selected.project_id,
       ) ?? selected
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Integrations</h1>
-          <p className="text-sm text-muted-foreground">
-            Chat and community platform adapters
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Integrations installed in this project
+        </p>
         <Button onClick={() => setInstallOpen(true)} size="sm">
           <Download className="mr-2 h-4 w-4" />
           Install
@@ -75,59 +78,63 @@ export default function Integrations() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : !integrations || integrations.length === 0 ? (
+      ) : integrationList.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
           <p>No integrations installed yet.</p>
           <p className="mt-1 text-xs">
-            Install from Strawhub or place adapter directories in <code className="rounded bg-muted px-1">~/.strawpot/integrations/</code>
+            Install an integration from Strawhub to get started.
           </p>
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {integrations.map((integration) => (
-              <TableRow
-                key={`${integration.name}:${integration.project_id}`}
-                className="cursor-pointer"
-                onClick={() => {
-                  setSelected(integration);
-                  setSheetOpen(true);
-                }}
-              >
-                <TableCell className="font-medium">{integration.name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {integration.version ? `v${integration.version}` : "\u2014"}
-                </TableCell>
-                <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
-                  {integration.description || "\u2014"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={integration.status} />
-                    {integration.status === "running" && (
-                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {integrationList.map((integration) => (
+                  <TableRow
+                    key={integration.name}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setSelected(integration);
+                      setSheetOpen(true);
+                    }}
+                  >
+                    <TableCell className="font-medium">{integration.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {integration.version ? `v${integration.version}` : "\u2014"}
+                    </TableCell>
+                    <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
+                      {integration.description || "\u2014"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={integration.status} />
+                        {integration.status === "running" && (
+                          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
 
       <IntegrationDetailSheet
         integration={currentSelected}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-        onLogs={(name, projectId) => { setLogName(name); setLogProjectId(projectId); }}
+        onLogs={(name, pid) => { setLogName(name); setLogProjectId(pid); }}
       />
 
       <IntegrationLogSheet
@@ -137,20 +144,23 @@ export default function Integrations() {
         onOpenChange={(open) => { if (!open) setLogName(null); }}
       />
 
-      <InstallIntegrationDialog
+      <InstallProjectIntegrationDialog
         open={installOpen}
         onOpenChange={setInstallOpen}
+        projectId={projectId}
       />
     </div>
   );
 }
 
-function InstallIntegrationDialog({
+function InstallProjectIntegrationDialog({
   open,
   onOpenChange,
+  projectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectId: number;
 }) {
   const install = useInstallIntegration();
   const [name, setName] = useState("");
@@ -162,7 +172,7 @@ function InstallIntegrationDialog({
     if (!name.trim()) return;
     setResult(null);
     setOutput(null);
-    install.mutate({ name: name.trim() }, {
+    install.mutate({ name: name.trim(), projectId }, {
       onSuccess: (res) => {
         if (res.exit_code === 0) {
           toast.success(`Installed ${name.trim()}`);
@@ -195,7 +205,7 @@ function InstallIntegrationDialog({
         <DialogHeader>
           <DialogTitle>Install Integration</DialogTitle>
           <DialogDescription>
-            Install a chat adapter from Strawhub by name.
+            Install a chat adapter for this project from Strawhub by name.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
@@ -211,9 +221,9 @@ function InstallIntegrationDialog({
             </Alert>
           )}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="install-integration-name">Package Name</Label>
+            <Label htmlFor="install-project-integration-name">Package Name</Label>
             <Input
-              id="install-integration-name"
+              id="install-project-integration-name"
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}

@@ -15,7 +15,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ResourceDetailSheet from "@/components/ResourceDetailSheet";
 import InstallDialog from "@/components/InstallDialog";
+import ProjectIntegrationsTab from "@/components/ProjectIntegrationsTab";
 import { useUninstallProjectResource } from "@/hooks/mutations/use-project-resources";
+import { useIntegrations } from "@/hooks/queries/use-integrations";
 import { Download, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectResource } from "@/api/types";
@@ -41,6 +43,8 @@ export default function ProjectResourcesTab({
   onInstallOpenChange: externalOnInstallOpenChange,
 }: Props) {
   const { data: resources, isLoading } = useProjectResources(projectId);
+  const { data: integrations } = useIntegrations(projectId);
+  const integrationCount = (integrations ?? []).length;
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>("");
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -80,12 +84,12 @@ export default function ProjectResourcesTab({
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : !resources || resources.length === 0 ? (
+      ) : !resources || (resources.length === 0 && integrationCount === 0) ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
           No resources available yet.
         </div>
       ) : (
-        <Tabs defaultValue="all">
+        <Tabs defaultValue={resources.length > 0 ? "all" : "integrations"}>
           <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
             {RESOURCE_TYPES.map((t) => {
@@ -96,6 +100,9 @@ export default function ProjectResourcesTab({
                 </TabsTrigger>
               );
             })}
+            <TabsTrigger value="integrations">
+              Integrations ({integrationCount})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="all">
@@ -115,6 +122,9 @@ export default function ProjectResourcesTab({
               />
             </TabsContent>
           ))}
+          <TabsContent value="integrations">
+            <ProjectIntegrationsTab projectId={projectId} />
+          </TabsContent>
         </Tabs>
       )}
 

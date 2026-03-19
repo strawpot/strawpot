@@ -14,7 +14,10 @@ export interface IntegrationLogState {
  * Connects to `/api/integrations/{name}/logs/ws` and handles
  * the log_snapshot → log_delta → log_done protocol.
  */
-export function useIntegrationLogWS(name: string | null): IntegrationLogState {
+export function useIntegrationLogWS(
+  name: string | null,
+  projectId?: number,
+): IntegrationLogState {
   const [lines, setLines] = useState<string[]>([]);
   const [done, setDone] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -24,7 +27,8 @@ export function useIntegrationLogWS(name: string | null): IntegrationLogState {
     if (!name) return;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/integrations/${name}/logs/ws`;
+    const pidQuery = projectId != null ? `?project_id=${projectId}` : "";
+    const url = `${protocol}//${window.location.host}/api/integrations/${name}/logs/ws${pidQuery}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -62,7 +66,7 @@ export function useIntegrationLogWS(name: string | null): IntegrationLogState {
     };
 
     return ws;
-  }, [name]);
+  }, [name, projectId]);
 
   useEffect(() => {
     // Reset state on name change
@@ -80,10 +84,11 @@ export function useIntegrationLogWS(name: string | null): IntegrationLogState {
 
   const clearLines = useCallback(() => {
     if (name) {
-      api.delete(`/integrations/${name}/logs`).catch(() => {});
+      const pidQuery = projectId != null ? `?project_id=${projectId}` : "";
+      api.delete(`/integrations/${name}/logs${pidQuery}`).catch(() => {});
     }
     setLines([]);
-  }, [name]);
+  }, [name, projectId]);
 
   return { lines, done, connected, clearLines };
 }
