@@ -73,7 +73,7 @@ Each new session in a conversation receives a **Prior Conversation** prefix cont
 - **History** — A condensed summary of each prior turn (what was asked, what was done). Recent turns retain more detail than older ones. Only the most recent 10 turns are included.
 - **File changes** — Which files were modified in recent turns, so the agent knows where to look.
 - **Pending Follow-up** — For the last turn, includes both the structured recap (up to 1500 chars) and a tail of the raw agent output (last 1500 chars). The recap tells the next agent *what to know*; the raw output shows *what actually happened*.
-- **Conversation history file** — Full session outputs are written to `.strawpot/conversation_history.md` in the project directory before each session. The agent can read this file on demand for more detail than the condensed summaries provide. Recent turns (last 5) include full output; older turns include recap only.
+- **Conversation history file** — Full session outputs are written to `.strawpot/conversation_{id}_history.md` in the project directory before each session (one file per conversation). The agent can read this file on demand for more detail than the condensed summaries provide. Recent turns (last 5) include full output; older turns include recap only.
 - **Recap instruction** — Asks the agent to end its response with a structured `## Session Recap` section covering what was accomplished, files changed, key decisions, and open items. The recap is extracted for use in subsequent turn summaries.
 
 This is separate from [memory](/concepts/memory), which operates across conversations. Both work together: conversation context provides the sequential narrative, while memory provides long-lived knowledge.

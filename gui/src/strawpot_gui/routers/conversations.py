@@ -261,7 +261,7 @@ def _write_conversation_history(conn, conversation_id: int, working_dir: str) ->
 
     history_dir = Path(working_dir) / ".strawpot"
     history_dir.mkdir(parents=True, exist_ok=True)
-    history_path = history_dir / "conversation_history.md"
+    history_path = history_dir / f"conversation_{conversation_id}_history.md"
     try:
         history_path.write_text("\n".join(parts), encoding="utf-8")
         return str(history_path)

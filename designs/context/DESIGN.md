@@ -306,6 +306,225 @@ Events are stored in the trace and queryable by the conversation history service
 
 **Depends on:** Wrapper protocol extension (see TODO.md), conversation history service (Phase 3).
 
+### Phase 5: Conversation-scoped memory isolation
+
+StrawPot was originally designed for short-lived sessions. The memory system (dial) stores agent experiences (EM events) and knowledge (SM/RM) at project scope. Now that StrawPot supports conversations — multi-turn sequences of sessions — context from one conversation leaks into others through shared memory.
+
+#### The problem
+
+Multiple conversations can run simultaneously within the same project. All share the same memory storage:
+
+```
+Conversation A (auth feature)         Conversation B (CSS fix)
+├─ session run_abc                    ├─ session run_xyz
+│  └─ dump → EM event                │  └─ memory.get() sees:
+│  └─ remember("use JWT")            │       EM: "Implement auth" ← LEAK
+├─ session run_def                    │       RM: "use JWT"        ← LEAK
+│  └─ dump → EM event                │       EM: "Fix CSS bug"    ✓
+└─ ...                                └─ ...
+```
+
+#### Leak vectors
+
+| # | Vector | Severity | Mechanism |
+|---|--------|----------|-----------|
+| 1 | **conversation_history.md** | Critical | All conversations write to same file — last writer wins, agents read wrong conversation's full output |
+| 2 | **EM events** (project scope) | Critical | `_collect_em()` reads ALL `em/*.jsonl` files merged by timestamp — task summaries from unrelated conversations injected into agent context |
+| 3 | **RM entries** (remember/recall) | Moderate | `remember(scope="project")` stores at project level — agents in other conversations recall unrelated knowledge |
+| 4 | **SM entries** | Not a leak | Foundational project knowledge — intentionally shared |
+
+#### Design: what to scope vs share
+
+Not everything should be conversation-scoped. Learned facts should be shared; execution history should not.
+
+```
+SHARED (project-level, cross-conversation):
+├── SM (semantic memory)     — foundational project facts, always included
+├── RM (retrieval memory)    — keyword-matched knowledge (default scope)
+└── Global knowledge         — ~/.strawpot/ level
+
+ISOLATED (conversation-scoped):
+├── EM (event memory)        — task history, success/failure, recaps
+├── conversation_history.md  — turn-by-turn history file
+└── remember(scope="conversation") — conversation-specific notes
+```
+
+**Why SM/RM stay shared:** "Always use async/await" or "tokens use JWT format" are project facts useful to all conversations. RM entries from `remember()` default to project scope because most are durable knowledge.
+
+**Why EM must be scoped:** "Implemented auth middleware (success)" from conversation A is noise in conversation B about CSS. EM captures *what happened*, not *what's true*. It's execution context, not knowledge.
+
+#### 5a. Thread conversation_id through CLI
+
+The CLI currently has no awareness of conversation_id. The GUI creates the DB row but only passes `--run-id`.
+
+**Change:** Add `--conversation-id` CLI argument (consistent with `--run-id` pattern).
+
+```python
+# cli/src/strawpot/cli.py — start command
+@click.option("--conversation-id", default=None, help="Conversation this session belongs to")
+
+# gui/src/strawpot_gui/routers/sessions.py — launch_session_subprocess()
+if conversation_id is not None:
+    cmd.extend(["--conversation-id", str(conversation_id)])
+```
+
+```python
+# cli/src/strawpot/session.py — Session.__init__()
+self._conversation_id: str | None = conversation_id
+```
+
+Thread into all memory calls (get, dump, remember, recall) in both `session.py` and `delegation.py`.
+
+#### 5b. Extend MemoryProvider protocol
+
+Add optional `conversation_id` parameter to all four methods. Optional with `None` default for backward compatibility — existing providers that don't accept it continue to work.
+
+```python
+# strawpot_memory/memory_protocol.py
+class MemoryProvider(Protocol):
+    def get(self, *, session_id, agent_id, role, behavior_ref, task,
+            budget=None, parent_agent_id=None,
+            conversation_id: str | None = None,          # NEW
+    ) -> GetResult: ...
+
+    def dump(self, *, session_id, agent_id, role, behavior_ref, task,
+             status, output, tool_trace="", parent_agent_id=None, artifacts=None,
+             conversation_id: str | None = None,         # NEW
+    ) -> DumpReceipt: ...
+
+    def remember(self, *, session_id, agent_id, role, content,
+                 keywords=None, scope="project",
+                 conversation_id: str | None = None,     # NEW
+    ) -> RememberResult: ...
+
+    def recall(self, *, session_id, agent_id, role, query,
+               keywords=None, scope="", max_results=10,
+               conversation_id: str | None = None,       # NEW
+    ) -> RecallResult: ...
+```
+
+#### 5c. Conversation-scoped EM storage in Dial
+
+**Storage layout:**
+
+```
+.strawpot/memory/dial-data/
+├── em/
+│   ├── run_abc.jsonl                   # standalone session (no conversation)
+│   └── conversations/
+│       ├── 123/
+│       │   ├── run_def.jsonl           # conversation 123, session def
+│       │   └── run_ghi.jsonl           # conversation 123, session ghi
+│       └── 456/
+│           └── run_xyz.jsonl           # conversation 456
+└── knowledge/
+    └── ... (unchanged — project-scoped)
+```
+
+**New storage helpers:**
+
+```python
+# dial_memory/storage.py
+def em_conversation_dir(storage_dir: Path, conversation_id: str) -> Path:
+    return storage_dir / "em" / "conversations" / conversation_id
+```
+
+**New em_scope value:** `"auto"` (new default). Selects scope based on whether conversation_id is provided:
+
+| em_scope | conversation_id | Behavior |
+|----------|----------------|----------|
+| `"session"` | any | Current session only (unchanged) |
+| `"conversation"` | set | All sessions in this conversation's directory |
+| `"conversation"` | None | Falls back to session scope |
+| `"project"` | any | All sessions in project `em/` (unchanged — opt-in for cross-conversation) |
+| `"global"` | any | Project + global (unchanged) |
+| `"auto"` | set | → `"conversation"` |
+| `"auto"` | None | → `"project"` |
+
+**EM write (dump):** When `conversation_id` is set, write to `em/conversations/{conversation_id}/{session_id}.jsonl` instead of `em/{session_id}.jsonl`.
+
+**EM read (_collect_em):** When scope resolves to `"conversation"`, read only from `em/conversations/{conversation_id}/`.
+
+**EM event metadata:** Add `conversation_id` field to the event record for traceability:
+
+```json
+{
+  "event_id": "evt_xxx",
+  "ts": "...",
+  "session_id": "run_abc",
+  "conversation_id": "123",
+  "agent_id": "agent_xxx",
+  "role": "researcher",
+  "event_type": "AGENT_RESULT",
+  "data": {"task": "...", "status": "success", "summary": "..."}
+}
+```
+
+#### 5d. Conversation-scoped history file
+
+Change `_write_conversation_history()` to include conversation_id in the filename:
+
+```python
+# Before:
+history_path = history_dir / "conversation_history.md"
+
+# After:
+history_path = history_dir / f"conversation_{conversation_id}_history.md"
+```
+
+The data written is already filtered by conversation_id (SQL WHERE clause). The fix prevents concurrent conversations from overwriting each other's history.
+
+The hint in `_build_conversation_context()` already uses the returned path, so it will automatically reference the correct file.
+
+#### 5e. Conversation scope for remember/recall
+
+Add `"conversation"` as a valid scope for `remember()` and `recall()`:
+
+```python
+# dial_memory/storage.py
+def knowledge_conversation_path(storage_dir: Path, conversation_id: str) -> Path:
+    return storage_dir / "knowledge" / "conversations" / conversation_id / "knowledge.jsonl"
+```
+
+**remember(scope="conversation"):** Store in `knowledge/conversations/{conversation_id}/knowledge.jsonl`. Requires conversation_id — falls back to project if None.
+
+**recall(scope=""):** When conversation_id is set, search conversation scope in addition to project/role/global. Conversation entries get higher priority.
+
+**Default scope stays "project"** — most `remember()` calls store durable knowledge that should be shared.
+
+#### Scope hierarchy
+
+```
+global          ~/.strawpot/memory/dial-data/
+  └─ project    .strawpot/memory/dial-data/
+      └─ conversation   .../conversations/{id}/    (EM + knowledge)
+          └─ session     .../em/{run_id}.jsonl
+```
+
+`get()` walks UP the hierarchy and merges. Inner scopes ranked higher in scoring.
+
+#### Migration / backward compatibility
+
+1. **Protocol:** All new params are `Optional[str] = None` — existing providers work unchanged
+2. **Storage:** Existing EM files stay in `em/` (no conversation dir). Provider reads both layouts
+3. **Default scope:** `"auto"` detects conversation vs standalone. Existing `em_scope="project"` config still honored
+4. **CLI:** `--conversation-id` is optional. Standalone `strawpot start` works as before
+5. **Existing events:** Old EM events without `conversation_id` are treated as standalone — visible in project scope but excluded from conversation scope
+6. **History file:** Old `conversation_history.md` (no ID) is not read — each conversation writes its own file
+
+#### Files to modify
+
+| Repo | File | Change |
+|------|------|--------|
+| strawpot_memory | `memory_protocol.py` | Add `conversation_id` param to all 4 methods |
+| dial | `dial_memory/provider.py` | Conversation-scoped EM write/read, `"auto"` em_scope, conversation knowledge |
+| dial | `dial_memory/storage.py` | Add `em_conversation_dir()`, `knowledge_conversation_path()` helpers |
+| strawpot | `cli/src/strawpot/cli.py` | Add `--conversation-id` option to `start` command |
+| strawpot | `cli/src/strawpot/session.py` | Accept conversation_id, pass to all memory calls |
+| strawpot | `cli/src/strawpot/delegation.py` | Pass conversation_id to child agent memory calls |
+| strawpot | `gui/src/strawpot_gui/routers/sessions.py` | Pass `--conversation-id` in subprocess cmd |
+| strawpot | `gui/src/strawpot_gui/routers/conversations.py` | Scope history file to `conversation_{id}_history.md` |
+
 ## Implementation status
 
 | # | Item | Status |
@@ -325,14 +544,27 @@ Events are stored in the trace and queryable by the conversation history service
 | 13 | Conversation history file (Phase 2) | Done |
 | 14 | Conversation history service (Phase 3) | Deferred (see TODO.md) |
 | 15 | Structured decision events (Phase 4) | Deferred (see TODO.md) |
+| 16 | Scope `conversation_history.md` to include conversation_id (Phase 5d) | Done |
+| 17 | Add `--conversation-id` CLI argument (Phase 5a) | TODO |
+| 18 | Add `conversation_id` to MemoryProvider protocol (Phase 5b) | TODO |
+| 19 | Thread `conversation_id` through session.py and delegation.py (Phase 5a) | TODO |
+| 20 | Pass `--conversation-id` from GUI to CLI subprocess (Phase 5a) | TODO |
+| 21 | Conversation-scoped EM storage in Dial (Phase 5c) | TODO |
+| 22 | `"auto"` em_scope default with conversation detection (Phase 5c) | TODO |
+| 23 | `"conversation"` scope for remember/recall (Phase 5e) | TODO |
 
 ## Key files
 
 | File | Role |
 |------|------|
-| `gui/src/strawpot_gui/routers/conversations.py` | Conversation context builder + task submission endpoint |
+| `gui/src/strawpot_gui/routers/conversations.py` | Conversation context builder + task submission endpoint + history file |
+| `gui/src/strawpot_gui/routers/sessions.py` | Session launch subprocess (passes --conversation-id) |
 | `gui/src/strawpot_gui/db.py` | Sessions table schema, `_parse_trace()`, `_extract_recap()` |
-| `cli/src/strawpot/session.py` | Memory get/dump at session level |
+| `cli/src/strawpot/cli.py` | CLI entry point (--conversation-id option) |
+| `cli/src/strawpot/session.py` | Memory get/dump at session level, conversation_id threading |
 | `cli/src/strawpot/delegation.py` | Memory get/dump at delegation level, `_format_memory_prompt()` |
 | `cli/src/strawpot/trace.py` | Trace event definitions and artifact storage |
+| `strawpot_memory/memory_protocol.py` | MemoryProvider protocol (conversation_id param) |
+| `dial_memory/provider.py` | Dial provider — EM scoping, knowledge scoping |
+| `dial_memory/storage.py` | File path helpers for conversation-scoped storage |
 | `gui/tests/test_conversations.py` | Tests for conversation context |
