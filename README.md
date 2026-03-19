@@ -1,8 +1,8 @@
 # StrawPot
 
-Role-based orchestration for AI workers.
+AI agents that form teams, delegate recursively, and improve their own roles.
 
-Run teams of agents locally, resolve skills automatically, and share roles through StrawHub.
+Run hierarchies of agents locally. Roles define behavior. Skills compose automatically. StrawHub distributes what works.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -64,16 +64,25 @@ The infrastructure is ready. The next problem is how agent behaviors evolve and 
 
 ## What StrawPot does
 
-An orchestration system where AI agents take roles, delegate sub-tasks, and coordinate in a shared workspace.
+Agents form hierarchies, delegate recursively, and coordinate in a shared workspace — not just run prompts in sequence.
 
-- **Concurrent delegation** — agents spawn sub-agents in parallel, not sequential task queues
-- **Agent-agnostic** — one wrapper protocol, any runtime (Claude Code, Codex, Gemini, custom)
-- **Git worktree isolation** — each session gets its own branch, concurrent sessions safe, crash recovery automatic
-- **Persistent memory** — 3-tier context cards (semantic, retrieval, event) that agents read and write across sessions
-- **Structured tracing** — every delegation, spawn, and memory access recorded to JSONL with full call tree reconstruction
-- **Policy enforcement** — depth limits, timeouts, delegation caching, role-based access control
-- **Conversation context** — automatic condensed summaries of prior turns, tiered detail, recap extraction
-- **Scheduled tasks** — cron-based recurring and one-time, REST API, skip-if-running
+**Hierarchical multi-agent delegation**
+A CEO role delegates to PM, PM delegates to implementer, implementer delegates to code-reviewer — recursively, concurrently, with full traceability. Each delegation is policy-controlled (depth limits, timeouts, caching) and traced to JSONL with span IDs for complete call tree reconstruction.
+
+**Agent-agnostic runtime**
+One wrapper protocol, any AI tool. Claude Code, Codex, Gemini, or your own — assigned per role, mixed in the same session. Adding a new runtime means implementing two commands: `setup` and `build`.
+
+**Git worktree isolation**
+Every session gets its own git branch in an isolated worktree. Multiple sessions run concurrently without conflicts. Crash recovery is automatic. Changes merge back via configurable strategies (local patch, PR, or auto-detect).
+
+**Persistent memory across sessions**
+Three-tier context cards — semantic (always included), retrieval (matched by task keywords), and event (append-only log). Agents read and write memory dynamically. Persists across sessions and projects through pluggable providers.
+
+**Conversation context handover**
+Multi-turn conversations carry condensed summaries of prior turns, file change tracking, and structured recaps. Agents pick up where the last one left off.
+
+**Scheduled automation**
+Cron-based recurring and one-time sessions with skip-if-running, REST API, and run history. Agents work on your projects while you sleep.
 
 Roles and skills are Markdown files. No Python, no orchestration code.
 
