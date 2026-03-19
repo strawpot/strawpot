@@ -118,8 +118,11 @@ def create_app(
     app.state.db_path = db_path
     app.state.event_bus = event_bus
 
-    # Integration source middleware: rewrite /via/{name}/... → /...
+    # Integration source middleware: rewrite /via/... URLs → /...
     # and inject X-Strawpot-Source header so conversations are auto-tagged.
+    # Handles two patterns:
+    #   /via/{name}/...              → global (backward compat)
+    #   /via/p/{project_id}/{name}/... → project-scoped (also injects X-Strawpot-Project-Id)
     # Uses raw ASGI middleware to handle both HTTP and WebSocket connections.
     inner = app.router
 
@@ -131,13 +134,29 @@ def create_app(
             if scope["type"] in ("http", "websocket"):
                 path = scope.get("path", "")
                 if path.startswith("/via/"):
-                    parts = path.split("/", 3)  # ['', 'via', name, 'rest...']
-                    if len(parts) >= 3:
+                    source_name = None
+                    project_id = None
+                    rest = "/"
+
+                    parts = path.split("/")  # ['', 'via', ...]
+                    if len(parts) >= 4 and parts[2] == "p":
+                        # /via/p/{project_id}/{name}/...
+                        project_id = parts[3]
+                        if len(parts) >= 5:
+                            source_name = parts[4]
+                            rest = "/" + "/".join(parts[5:]) if len(parts) > 5 else "/"
+                    elif len(parts) >= 3:
+                        # /via/{name}/...
                         source_name = parts[2]
-                        scope["path"] = "/" + parts[3] if len(parts) > 3 else "/"
+                        rest = "/" + "/".join(parts[3:]) if len(parts) > 3 else "/"
+
+                    if source_name:
+                        scope["path"] = rest
                         if scope["type"] == "http":
                             raw_headers = list(scope.get("headers", []))
                             raw_headers.append((b"x-strawpot-source", source_name.encode()))
+                            if project_id is not None:
+                                raw_headers.append((b"x-strawpot-project-id", project_id.encode()))
                             scope["headers"] = raw_headers
             return await self.app(scope, receive, send)
 
