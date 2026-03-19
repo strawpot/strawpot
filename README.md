@@ -4,9 +4,11 @@ A production-grade multi-agent execution system.
 
 Most AI agents follow predefined workflows. StrawPot lets agents figure out how to solve the task.
 
-Agents decide how to solve tasks by composing other agents. No fixed pipelines. No hardcoded flows.
+Agents decide how to solve tasks by composing other agents. 
+No fixed pipelines. No hardcoded flows.
 
-Concurrent execution with isolation, memory, and full traceability. Outputs vary. Infrastructure does not.
+Concurrent execution with isolation, memory, and full traceability. 
+Outputs vary. Infrastructure does not.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
