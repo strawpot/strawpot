@@ -1,8 +1,8 @@
 # StrawPot
 
-Agents that dynamically compose other agents to solve tasks.
+Agents that decide how to solve tasks by composing other agents.
 
-Roles define behavior. Agents select, delegate, and refine workflows automatically. Roles are portable and defined as simple Markdown files.
+Concurrent multi-agent execution with isolation, memory, and full traceability. Outputs vary. Infrastructure does not.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
@@ -27,25 +27,16 @@ Structured artifacts land in your workspace — a plan, draft post, and engineer
 
 ## What you can do with StrawPot today
 
-**Autonomous triage and prioritization**
-- AI CEO reviews incoming GitHub issues
-- Prioritizes based on project direction and brand
-- Delegates approved issues to implementation-planner
-- Planner breaks them into ordered sub-issues with dependency ordering
+**Automatically triage and plan GitHub issues**
+Agents prioritize based on project direction, break approved issues into ordered sub-tasks, and delegate implementation — using role-based coordination.
 
-**Feature ideation to delivery**
-- PM analyzes the codebase and proposes a new feature
-- AI CEO evaluates against project direction — approves or rejects
-- Implementer builds in an isolated worktree, reviewer checks, QA validates
-- One task triggers a full product cycle across 5+ roles
+**Ship a feature from idea to PR**
+One task triggers a full product cycle: ideation, approval, implementation in an isolated worktree, code review, and QA — across 5+ roles.
 
-**Self-improving roles**
-- role-creator defines a new role, then delegates to 6 evaluators in parallel
-- Evaluators test the role against quality standards
-- Creator iterates based on feedback until the role passes
-- The system literally improves its own capabilities
+**Evolve the system's own capabilities**
+Agents create new roles, test them against quality standards using parallel evaluators, and iterate until they pass. The system improves itself.
 
-Structure is consistent. Output quality depends on model and role definitions.
+Workflows improve over time as roles are reused and refined.
 
 ## Quick Start
 
