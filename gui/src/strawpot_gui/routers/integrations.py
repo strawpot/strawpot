@@ -139,14 +139,37 @@ def list_integrations(project_id: int | None = None, conn=Depends(get_db_conn)):
     """List all installed integrations with their runtime state.
 
     When ``project_id`` is given, return instances for that project only.
-    When omitted, return global (project_id=0) instances (backward compat).
+    Project-local integrations take precedence over global ones with the
+    same name.  When omitted, return global (project_id=0) instances
+    (backward compat).
     """
-    home = get_strawpot_home()
-    manifests = scan_integrations(home)
     pid = project_id if project_id is not None else 0
+    home = get_strawpot_home()
+
     results = []
-    for manifest in manifests:
+    seen: set[str] = set()
+
+    # For project-scoped requests, scan project-local integrations first
+    if pid > 0:
+        working_dir = _get_project_working_dir(conn, pid)
+        if working_dir:
+            project_base = Path(working_dir) / ".strawpot"
+            for manifest in scan_integrations(project_base):
+                name = manifest["name"]
+                manifest["source"] = "project"
+                db_state = _get_db_state(conn, name, pid)
+                db_config = _get_db_config(conn, name, pid)
+                merged = _merge_integration(manifest, db_state, db_config)
+                merged["project_id"] = pid
+                results.append(merged)
+                seen.add(name)
+
+    # Add global integrations (skip any shadowed by project-local)
+    for manifest in scan_integrations(home):
         name = manifest["name"]
+        if name in seen:
+            continue
+        manifest["source"] = "global"
         db_state = _get_db_state(conn, name, pid)
         db_config = _get_db_config(conn, name, pid)
         merged = _merge_integration(manifest, db_state, db_config)
@@ -158,13 +181,8 @@ def list_integrations(project_id: int | None = None, conn=Depends(get_db_conn)):
 @router.get("/{name}")
 def get_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Get detail for a single integration."""
-    home = get_strawpot_home()
-    integration_dir = home / "integrations" / name
-    manifest_path = integration_dir / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
-
-    fm, body = parse_integration_manifest(manifest_path)
+    integration_dir, source = _resolve_integration_dir(name, conn, project_id)
+    fm, body = parse_integration_manifest(integration_dir / MANIFEST)
     strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
     manifest = {
         "name": fm.get("name", name),
@@ -173,6 +191,7 @@ def get_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
         "env_schema": strawpot_meta.get("env", {}),
         "health_check": strawpot_meta.get("health_check"),
         "path": str(integration_dir),
+        "source": source,
         "body": body,
         "frontmatter": fm,
     }
@@ -187,12 +206,8 @@ def get_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
 @router.get("/{name}/config")
 def get_integration_config(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Get config schema and saved values for an integration."""
-    home = get_strawpot_home()
-    manifest_path = home / "integrations" / name / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
-
-    fm, _ = parse_integration_manifest(manifest_path)
+    integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+    fm, _ = parse_integration_manifest(integration_dir / MANIFEST)
     env_schema = fm.get("metadata", {}).get("strawpot", {}).get("env", {})
     config_values = _get_db_config(conn, name, project_id)
 
@@ -207,10 +222,7 @@ def put_integration_config(
     name: str, data: dict = Body(...), project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Save config values for an integration."""
-    home = get_strawpot_home()
-    manifest_path = home / "integrations" / name / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
+    _resolve_integration_dir(name, conn, project_id)  # validates existence
 
     config_values = data.get("config_values", {})
     if not isinstance(config_values, dict):
@@ -239,10 +251,7 @@ def put_auto_start(
     name: str, data: dict = Body(...), project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Toggle auto-start for an integration."""
-    home = get_strawpot_home()
-    manifest_path = home / "integrations" / name / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
+    _resolve_integration_dir(name, conn, project_id)  # validates existence
 
     enabled = bool(data.get("enabled", False))
     _ensure_db_row(conn, name, project_id)
@@ -286,12 +295,7 @@ def notify_integration(
     if not message:
         raise HTTPException(400, "'message' is required")
 
-    # Verify the integration exists on disk
-    home = get_strawpot_home()
-    manifest_path = home / "integrations" / name / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
-
+    _resolve_integration_dir(name, conn, project_id)  # validates existence
     _ensure_db_row(conn, name, project_id)
 
     chat_id = data.get("chat_id")
@@ -313,10 +317,7 @@ def list_notifications(name: str, project_id: int = 0, conn=Depends(get_db_conn)
 
     Adapters poll this endpoint to discover messages they need to deliver.
     """
-    home = get_strawpot_home()
-    manifest_path = home / "integrations" / name / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
+    _resolve_integration_dir(name, conn, project_id)  # validates existence
 
     rows = conn.execute(
         "SELECT id, chat_id, message, created_at "
@@ -433,10 +434,10 @@ def reinstall_integration(
     if not name:
         raise HTTPException(400, "'name' is required")
     project_id = int(data.get("project_id", 0))
-    home = get_strawpot_home()
-    version_file = home / "integrations" / name / ".version"
+    integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+    version_file = integration_dir / ".version"
     if not version_file.is_file():
-        raise HTTPException(404, f"Integration not found or has no version: {name}")
+        raise HTTPException(404, f"Integration has no version: {name}")
     version = version_file.read_text(encoding="utf-8").strip()
     if not version:
         raise HTTPException(404, f"Empty version file for integration: {name}")
@@ -466,10 +467,14 @@ def uninstall_integration(name: str, project_id: int = 0, conn=Depends(get_db_co
         (name, project_id),
     )
 
-    # Only uninstall the binary if this is the global instance
-    if project_id == 0:
-        return run_strawhub("uninstall", "integration", name)
-    return {"ok": True}
+    # Uninstall the binary — global or project-scoped
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if working_dir:
+            return run_strawhub("uninstall", "integration", name, "--root", working_dir)
+        return {"ok": True}
+    return run_strawhub("uninstall", "integration", name)
+
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +497,26 @@ def _get_project_working_dir(conn, project_id: int) -> str | None:
         "SELECT working_dir FROM projects WHERE id = ?", (project_id,)
     ).fetchone()
     return row["working_dir"] if row else None
+
+
+def _resolve_integration_dir(
+    name: str, conn, project_id: int = 0
+) -> tuple[Path, str]:
+    """Find an integration directory, checking project-local first then global.
+
+    Returns (integration_dir, source) where source is "project" or "global".
+    Raises HTTPException(404) if not found in either location.
+    """
+    if project_id > 0:
+        working_dir = _get_project_working_dir(conn, project_id)
+        if working_dir:
+            project_dir = Path(working_dir) / ".strawpot" / "integrations" / name
+            if (project_dir / MANIFEST).is_file():
+                return project_dir, "project"
+    global_dir = get_strawpot_home() / "integrations" / name
+    if (global_dir / MANIFEST).is_file():
+        return global_dir, "global"
+    raise HTTPException(404, f"Integration not found: {name}")
 
 
 def _build_env(
@@ -545,23 +570,13 @@ def _build_env(
     return env
 
 
-def _resolve_manifest(name: str) -> tuple[Path, dict]:
-    """Resolve integration directory and parsed manifest. Raises HTTPException(404)."""
-    home = get_strawpot_home()
-    integration_dir = home / "integrations" / name
-    manifest_path = integration_dir / MANIFEST
-    if not manifest_path.is_file():
-        raise HTTPException(404, f"Integration not found: {name}")
-    fm, _ = parse_integration_manifest(manifest_path)
-    return integration_dir, fm
-
-
 @router.post("/{name}/start")
 def start_integration(
     name: str, request: Request, conn=Depends(get_db_conn), project_id: int = 0
 ):
     """Start an integration adapter subprocess."""
-    integration_dir, fm = _resolve_manifest(name)
+    integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+    fm, _ = parse_integration_manifest(integration_dir / MANIFEST)
     strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
     entry_point = strawpot_meta.get("entry_point", "")
     if not entry_point:
@@ -615,7 +630,7 @@ def start_integration(
 @router.post("/{name}/stop")
 def stop_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Stop a running integration adapter by sending SIGTERM."""
-    _resolve_manifest(name)  # verify exists
+    _resolve_integration_dir(name, conn, project_id)  # verify exists
     _ensure_db_row(conn, name, project_id)
 
     db_state = _get_db_state(conn, name, project_id)
@@ -649,7 +664,7 @@ def stop_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
 @router.get("/{name}/status")
 def get_integration_status(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Check live status of an integration (process alive + optional health check)."""
-    _resolve_manifest(name)
+    _resolve_integration_dir(name, conn, project_id)
     db_state = _get_db_state(conn, name, project_id)
     if not db_state:
         return {"name": name, "status": "stopped", "pid": None}
@@ -734,8 +749,6 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
     from strawpot_gui.db import get_db
 
     home = get_strawpot_home()
-    manifests = scan_integrations(home)
-    manifest_by_name = {m["name"]: m for m in manifests}
 
     # Query all rows with auto_start across all projects
     with get_db(db_path) as conn:
@@ -747,14 +760,18 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
     for row in rows:
         name = row["name"]
         project_id = row["project_id"]
-        manifest = manifest_by_name.get(name)
-        if not manifest:
-            continue
-        entry_point = manifest.get("entry_point", "")
+
+        # Resolve integration dir: project-local first, global fallback
+        try:
+            with get_db(db_path) as conn:
+                integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+        except HTTPException:
+            continue  # not installed
+
+        fm, _ = parse_integration_manifest(integration_dir / MANIFEST)
+        entry_point = fm.get("metadata", {}).get("strawpot", {}).get("entry_point", "")
         if not entry_point:
             continue
-
-        integration_dir = Path(manifest["path"])
 
         if row["status"] == "running" and row["pid"]:
             if _is_process_alive(row["pid"]):
@@ -859,10 +876,10 @@ def stop_all_integrations(db_path: str) -> None:
 
 
 @router.delete("/{name}/logs")
-def clear_integration_logs(name: str):
+def clear_integration_logs(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Truncate the integration adapter log file."""
-    home = get_strawpot_home()
-    log_path = home / "integrations" / name / ".log"
+    integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+    log_path = integration_dir / ".log"
     if log_path.is_file():
         log_path.write_text("")
     return {"ok": True}
@@ -883,10 +900,13 @@ async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int =
       {"type": "log_done"}  — integration stopped, stream ends
       {"type": "error", "message": "..."}
     """
-    home = get_strawpot_home()
-    integration_dir = home / "integrations" / name
-    manifest_path = integration_dir / MANIFEST
-    if not manifest_path.is_file():
+    # Resolve integration dir — need DB connection for project-local lookup
+    db_path: str = websocket.app.state.db_path
+    from strawpot_gui.db import get_db
+    try:
+        with get_db(db_path) as conn:
+            integration_dir, _source = _resolve_integration_dir(name, conn, project_id)
+    except HTTPException:
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": f"Integration not found: {name}"})
         await websocket.close(code=4004)
@@ -905,8 +925,6 @@ async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int =
     })
 
     # Check if integration is currently running
-    db_path: str = websocket.app.state.db_path
-    from strawpot_gui.db import get_db
     with get_db(db_path) as conn:
         db_state = _get_db_state(conn, name, project_id)
 
