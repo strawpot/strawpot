@@ -15,12 +15,34 @@ class TestIntegrationTables:
                 ("telegram",),
             )
             row = conn.execute(
-                "SELECT name, status, auto_start FROM integrations WHERE name = ?",
+                "SELECT name, project_id, status, auto_start FROM integrations WHERE name = ?",
                 ("telegram",),
             ).fetchone()
         assert row["name"] == "telegram"
+        assert row["project_id"] == 0
         assert row["status"] == "stopped"
         assert row["auto_start"] == 0
+
+    def test_composite_primary_key(self, tmp_path):
+        """Same integration name can exist for different projects."""
+        db_path = str(tmp_path / "test.db")
+        init_db(db_path)
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO integrations (name, project_id) VALUES (?, ?)",
+                ("telegram", 0),
+            )
+            conn.execute(
+                "INSERT INTO integrations (name, project_id) VALUES (?, ?)",
+                ("telegram", 1),
+            )
+            rows = conn.execute(
+                "SELECT name, project_id FROM integrations WHERE name = ? ORDER BY project_id",
+                ("telegram",),
+            ).fetchall()
+        assert len(rows) == 2
+        assert rows[0]["project_id"] == 0
+        assert rows[1]["project_id"] == 1
 
     def test_config_cascade_delete(self, tmp_path):
         """Deleting an integration cascades to its config rows."""
@@ -32,13 +54,13 @@ class TestIntegrationTables:
                 ("telegram",),
             )
             conn.execute(
-                "INSERT INTO integration_config (integration_name, key, value) "
-                "VALUES (?, ?, ?)",
-                ("telegram", "bot_token", "123:ABC"),
+                "INSERT INTO integration_config (integration_name, project_id, key, value) "
+                "VALUES (?, ?, ?, ?)",
+                ("telegram", 0, "bot_token", "123:ABC"),
             )
             conn.execute(
-                "DELETE FROM integrations WHERE name = ?",
-                ("telegram",),
+                "DELETE FROM integrations WHERE name = ? AND project_id = ?",
+                ("telegram", 0),
             )
             count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM integration_config "
@@ -46,6 +68,43 @@ class TestIntegrationTables:
                 ("telegram",),
             ).fetchone()
         assert count["cnt"] == 0
+
+    def test_config_cascade_delete_project_scoped(self, tmp_path):
+        """Deleting a project-scoped integration only cascades its own config."""
+        db_path = str(tmp_path / "test.db")
+        init_db(db_path)
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO integrations (name, project_id) VALUES (?, ?)",
+                ("telegram", 0),
+            )
+            conn.execute(
+                "INSERT INTO integrations (name, project_id) VALUES (?, ?)",
+                ("telegram", 1),
+            )
+            conn.execute(
+                "INSERT INTO integration_config (integration_name, project_id, key, value) "
+                "VALUES (?, ?, ?, ?)",
+                ("telegram", 0, "bot_token", "global_token"),
+            )
+            conn.execute(
+                "INSERT INTO integration_config (integration_name, project_id, key, value) "
+                "VALUES (?, ?, ?, ?)",
+                ("telegram", 1, "bot_token", "project_token"),
+            )
+            # Delete only project 1's instance
+            conn.execute(
+                "DELETE FROM integrations WHERE name = ? AND project_id = ?",
+                ("telegram", 1),
+            )
+            rows = conn.execute(
+                "SELECT project_id, value FROM integration_config "
+                "WHERE integration_name = ?",
+                ("telegram",),
+            ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["project_id"] == 0
+        assert rows[0]["value"] == "global_token"
 
     def test_notifications_cascade_delete(self, tmp_path):
         """Deleting an integration cascades to its notification rows."""
@@ -58,12 +117,12 @@ class TestIntegrationTables:
             )
             conn.execute(
                 "INSERT INTO integration_notifications "
-                "(integration_name, message) VALUES (?, ?)",
-                ("telegram", "Hello"),
+                "(integration_name, project_id, message) VALUES (?, ?, ?)",
+                ("telegram", 0, "Hello"),
             )
             conn.execute(
-                "DELETE FROM integrations WHERE name = ?",
-                ("telegram",),
+                "DELETE FROM integrations WHERE name = ? AND project_id = ?",
+                ("telegram", 0),
             )
             count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM integration_notifications "

@@ -52,6 +52,7 @@ class TestListIntegrations:
         assert item["entry_point"] == "python adapter.py"
         assert item["status"] == "stopped"
         assert item["pid"] is None
+        assert item["project_id"] == 0
 
     def test_list_multiple(self, client, home):
         _create_integration(home, "telegram")
@@ -60,6 +61,26 @@ class TestListIntegrations:
         names = [i["name"] for i in resp.json()]
         assert "slack" in names
         assert "telegram" in names
+
+    def test_list_by_project_id(self, client, home):
+        """Listing with project_id filters to that project's instances."""
+        _create_integration(home, "telegram")
+        # Save config for project 1
+        client.put(
+            "/api/integrations/telegram/config?project_id=1",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "proj1"}},
+        )
+        # Global should have no config
+        resp = client.get("/api/integrations?project_id=0")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["config_values"] == {}
+        # Project 1 should have config
+        resp = client.get("/api/integrations?project_id=1")
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["config_values"]["STRAWPOT_BOT_TOKEN"] == "proj1"
+        assert data[0]["project_id"] == 1
 
     def test_excludes_hidden_dirs(self, client, home):
         _create_integration(home, "telegram")
@@ -155,6 +176,42 @@ class TestIntegrationConfig:
         item = resp.json()[0]
         assert item["config_values"]["STRAWPOT_BOT_TOKEN"] == "123:ABC"
 
+    def test_config_isolation_between_projects(self, client, home):
+        """Config for project_id=0 and project_id=1 are independent."""
+        _create_integration(home, "telegram")
+        client.put(
+            "/api/integrations/telegram/config?project_id=0",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "global_token"}},
+        )
+        client.put(
+            "/api/integrations/telegram/config?project_id=1",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "project_token"}},
+        )
+        # Each project sees its own config
+        resp0 = client.get("/api/integrations/telegram/config?project_id=0")
+        assert resp0.json()["config_values"]["STRAWPOT_BOT_TOKEN"] == "global_token"
+        resp1 = client.get("/api/integrations/telegram/config?project_id=1")
+        assert resp1.json()["config_values"]["STRAWPOT_BOT_TOKEN"] == "project_token"
+
+    def test_delete_config_project_scoped(self, client, home):
+        """Deleting config for one project doesn't affect another."""
+        _create_integration(home, "telegram")
+        client.put(
+            "/api/integrations/telegram/config?project_id=0",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "global"}},
+        )
+        client.put(
+            "/api/integrations/telegram/config?project_id=1",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "proj"}},
+        )
+        client.delete("/api/integrations/telegram/config?project_id=1")
+        # Global config untouched
+        resp = client.get("/api/integrations/telegram/config?project_id=0")
+        assert resp.json()["config_values"]["STRAWPOT_BOT_TOKEN"] == "global"
+        # Project 1 config cleared
+        resp = client.get("/api/integrations/telegram/config?project_id=1")
+        assert resp.json()["config_values"] == {}
+
 
 class TestIntegrationLifecycle:
     def test_start_integration(self, client, home):
@@ -246,8 +303,8 @@ class TestIntegrationLifecycle:
         db_path = client.app.state.db_path
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO integrations (name, status, pid) "
-                "VALUES (?, 'running', ?)",
+                "INSERT OR REPLACE INTO integrations (name, project_id, status, pid) "
+                "VALUES (?, 0, 'running', ?)",
                 ("telegram", 999999),
             )
         resp = client.get("/api/integrations/telegram/status")
@@ -317,13 +374,30 @@ class TestInstallUninstall:
         db_path = client.app.state.db_path
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT * FROM integrations WHERE name = ?", ("telegram",)
+                "SELECT * FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
             ).fetchone()
             assert row is None
             config = conn.execute(
-                "SELECT * FROM integration_config WHERE integration_name = ?", ("telegram",)
+                "SELECT * FROM integration_config "
+                "WHERE integration_name = ? AND project_id = 0",
+                ("telegram",),
             ).fetchall()
             assert len(config) == 0
+
+    def test_uninstall_project_scoped_no_strawhub(self, client, home):
+        """Uninstalling a project-scoped instance doesn't call strawhub."""
+        _create_integration(home, "telegram")
+        # Create project instance
+        client.put(
+            "/api/integrations/telegram/config?project_id=1",
+            json={"config_values": {"STRAWPOT_BOT_TOKEN": "proj"}},
+        )
+        with patch("strawpot_gui.routers.integrations.run_strawhub") as mock:
+            resp = client.delete("/api/integrations/telegram?project_id=1")
+            assert resp.status_code == 200
+            assert resp.json() == {"ok": True}
+            mock.assert_not_called()
 
     def test_update_calls_strawhub(self, client, home):
         """Update endpoint calls strawhub with correct args."""
@@ -404,7 +478,8 @@ class TestInstallUninstall:
         db_path = client.app.state.db_path
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT * FROM integrations WHERE name = ?", ("telegram",)
+                "SELECT * FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
             ).fetchone()
             assert row is None
 
@@ -419,13 +494,14 @@ class TestOrphanedIntegrations:
         db_path = client.app.state.db_path
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO integrations (name, status, pid) VALUES (?, 'running', ?)",
+                "INSERT OR REPLACE INTO integrations (name, project_id, status, pid) "
+                "VALUES (?, 0, 'running', ?)",
                 ("telegram", 999999),
             )
         mark_orphaned_integrations_stopped(db_path)
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT status, pid FROM integrations WHERE name = ?",
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = 0",
                 ("telegram",),
             ).fetchone()
         assert row["status"] == "stopped"
@@ -496,7 +572,8 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 0, 1)",
                 ("telegram",),
             )
         auto_start_integrations(db_path)
@@ -504,7 +581,7 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT status, pid FROM integrations WHERE name = ?",
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = 0",
                 ("telegram",),
             ).fetchone()
         assert row["status"] == "running"
@@ -525,12 +602,19 @@ class TestAutoStart:
         _create_integration(home, "telegram")  # auto_start: 0 by default in DB
 
         db_path = client.app.state.db_path
-        auto_start_integrations(db_path)
-
+        # Ensure a DB row exists with auto_start=0
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 0, 0)",
+                ("telegram",),
+            )
+        auto_start_integrations(db_path)
+
+        with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT status, pid FROM integrations WHERE name = ?",
+                "SELECT status, pid FROM integrations WHERE name = ? AND project_id = 0",
                 ("telegram",),
             ).fetchone()
         assert row["status"] == "stopped"
@@ -554,7 +638,8 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 0, 1)",
                 ("telegram",),
             )
 
@@ -563,7 +648,8 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT pid FROM integrations WHERE name = ?", ("telegram",)
+                "SELECT pid FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
             ).fetchone()
         first_pid = row["pid"]
 
@@ -571,7 +657,8 @@ class TestAutoStart:
         auto_start_integrations(db_path)
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT pid FROM integrations WHERE name = ?", ("telegram",)
+                "SELECT pid FROM integrations WHERE name = ? AND project_id = 0",
+                ("telegram",),
             ).fetchone()
         assert row["pid"] == first_pid
 
@@ -600,7 +687,8 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO integrations (name, auto_start) VALUES (?, 1)",
+                "INSERT OR REPLACE INTO integrations (name, project_id, auto_start) "
+                "VALUES (?, 0, 1)",
                 ("broken",),
             )
         auto_start_integrations(db_path)  # should not raise
@@ -608,7 +696,8 @@ class TestAutoStart:
         from strawpot_gui.db import get_db
         with get_db(db_path) as conn:
             row = conn.execute(
-                "SELECT status, last_error FROM integrations WHERE name = ?",
+                "SELECT status, last_error FROM integrations "
+                "WHERE name = ? AND project_id = 0",
                 ("broken",),
             ).fetchone()
         assert row["status"] == "error"

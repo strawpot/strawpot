@@ -80,32 +80,33 @@ def scan_integrations(base_dir: Path) -> list[dict]:
     return items
 
 
-def _get_db_state(conn, name: str) -> dict | None:
+def _get_db_state(conn, name: str, project_id: int = 0) -> dict | None:
     """Read runtime state from the integrations DB table."""
     row = conn.execute(
         "SELECT status, pid, auto_start, last_error, started_at, created_at "
-        "FROM integrations WHERE name = ?",
-        (name,),
+        "FROM integrations WHERE name = ? AND project_id = ?",
+        (name, project_id),
     ).fetchone()
     if row is None:
         return None
     return dict(row)
 
 
-def _get_db_config(conn, name: str) -> dict[str, str]:
+def _get_db_config(conn, name: str, project_id: int = 0) -> dict[str, str]:
     """Read saved config values from integration_config table."""
     rows = conn.execute(
-        "SELECT key, value FROM integration_config WHERE integration_name = ?",
-        (name,),
+        "SELECT key, value FROM integration_config "
+        "WHERE integration_name = ? AND project_id = ?",
+        (name, project_id),
     ).fetchall()
     return {r["key"]: r["value"] for r in rows}
 
 
-def _ensure_db_row(conn, name: str) -> None:
+def _ensure_db_row(conn, name: str, project_id: int = 0) -> None:
     """Insert a row into integrations if it doesn't exist yet."""
     conn.execute(
-        "INSERT OR IGNORE INTO integrations (name) VALUES (?)",
-        (name,),
+        "INSERT OR IGNORE INTO integrations (name, project_id) VALUES (?, ?)",
+        (name, project_id),
     )
 
 
@@ -134,21 +135,28 @@ def _merge_integration(manifest: dict, db_state: dict | None, db_config: dict) -
 
 
 @router.get("")
-def list_integrations(conn=Depends(get_db_conn)):
-    """List all installed integrations with their runtime state."""
+def list_integrations(project_id: int | None = None, conn=Depends(get_db_conn)):
+    """List all installed integrations with their runtime state.
+
+    When ``project_id`` is given, return instances for that project only.
+    When omitted, return global (project_id=0) instances (backward compat).
+    """
     home = get_strawpot_home()
     manifests = scan_integrations(home)
+    pid = project_id if project_id is not None else 0
     results = []
     for manifest in manifests:
         name = manifest["name"]
-        db_state = _get_db_state(conn, name)
-        db_config = _get_db_config(conn, name)
-        results.append(_merge_integration(manifest, db_state, db_config))
+        db_state = _get_db_state(conn, name, pid)
+        db_config = _get_db_config(conn, name, pid)
+        merged = _merge_integration(manifest, db_state, db_config)
+        merged["project_id"] = pid
+        results.append(merged)
     return results
 
 
 @router.get("/{name}")
-def get_integration(name: str, conn=Depends(get_db_conn)):
+def get_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Get detail for a single integration."""
     home = get_strawpot_home()
     integration_dir = home / "integrations" / name
@@ -169,13 +177,15 @@ def get_integration(name: str, conn=Depends(get_db_conn)):
         "frontmatter": fm,
     }
 
-    db_state = _get_db_state(conn, name)
-    db_config = _get_db_config(conn, name)
-    return _merge_integration(manifest, db_state, db_config)
+    db_state = _get_db_state(conn, name, project_id)
+    db_config = _get_db_config(conn, name, project_id)
+    merged = _merge_integration(manifest, db_state, db_config)
+    merged["project_id"] = project_id
+    return merged
 
 
 @router.get("/{name}/config")
-def get_integration_config(name: str, conn=Depends(get_db_conn)):
+def get_integration_config(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Get config schema and saved values for an integration."""
     home = get_strawpot_home()
     manifest_path = home / "integrations" / name / MANIFEST
@@ -184,7 +194,7 @@ def get_integration_config(name: str, conn=Depends(get_db_conn)):
 
     fm, _ = parse_integration_manifest(manifest_path)
     env_schema = fm.get("metadata", {}).get("strawpot", {}).get("env", {})
-    config_values = _get_db_config(conn, name)
+    config_values = _get_db_config(conn, name, project_id)
 
     return {
         "env_schema": env_schema,
@@ -194,7 +204,7 @@ def get_integration_config(name: str, conn=Depends(get_db_conn)):
 
 @router.put("/{name}/config")
 def put_integration_config(
-    name: str, data: dict = Body(...), conn=Depends(get_db_conn)
+    name: str, data: dict = Body(...), project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Save config values for an integration."""
     home = get_strawpot_home()
@@ -206,17 +216,19 @@ def put_integration_config(
     if not isinstance(config_values, dict):
         raise HTTPException(400, "config_values must be a dict")
 
-    _ensure_db_row(conn, name)
+    _ensure_db_row(conn, name, project_id)
 
     # Delete existing config and re-insert
     conn.execute(
-        "DELETE FROM integration_config WHERE integration_name = ?", (name,)
+        "DELETE FROM integration_config "
+        "WHERE integration_name = ? AND project_id = ?",
+        (name, project_id),
     )
     for key, value in config_values.items():
         conn.execute(
-            "INSERT INTO integration_config (integration_name, key, value) "
-            "VALUES (?, ?, ?)",
-            (name, key, str(value) if value is not None else None),
+            "INSERT INTO integration_config (integration_name, project_id, key, value) "
+            "VALUES (?, ?, ?, ?)",
+            (name, project_id, key, str(value) if value is not None else None),
         )
 
     return {"ok": True}
@@ -224,7 +236,7 @@ def put_integration_config(
 
 @router.put("/{name}/auto-start")
 def put_auto_start(
-    name: str, data: dict = Body(...), conn=Depends(get_db_conn)
+    name: str, data: dict = Body(...), project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Toggle auto-start for an integration."""
     home = get_strawpot_home()
@@ -233,21 +245,27 @@ def put_auto_start(
         raise HTTPException(404, f"Integration not found: {name}")
 
     enabled = bool(data.get("enabled", False))
-    _ensure_db_row(conn, name)
+    _ensure_db_row(conn, name, project_id)
     conn.execute(
-        "UPDATE integrations SET auto_start = ? WHERE name = ?",
-        (1 if enabled else 0, name),
+        "UPDATE integrations SET auto_start = ? "
+        "WHERE name = ? AND project_id = ?",
+        (1 if enabled else 0, name, project_id),
     )
     return {"ok": True, "auto_start": enabled}
 
 
 @router.delete("/{name}/config")
-def delete_integration_config(name: str, conn=Depends(get_db_conn)):
+def delete_integration_config(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Clear all saved config for an integration."""
     conn.execute(
-        "DELETE FROM integration_config WHERE integration_name = ?", (name,)
+        "DELETE FROM integration_config "
+        "WHERE integration_name = ? AND project_id = ?",
+        (name, project_id),
     )
-    conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
+    conn.execute(
+        "DELETE FROM integrations WHERE name = ? AND project_id = ?",
+        (name, project_id),
+    )
     return {"ok": True}
 
 
@@ -258,7 +276,7 @@ def delete_integration_config(name: str, conn=Depends(get_db_conn)):
 
 @router.post("/{name}/notify")
 def notify_integration(
-    name: str, data: dict = Body(...), conn=Depends(get_db_conn)
+    name: str, data: dict = Body(...), project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Push a notification to an integration for delivery to the chat platform.
 
@@ -274,13 +292,14 @@ def notify_integration(
     if not manifest_path.is_file():
         raise HTTPException(404, f"Integration not found: {name}")
 
-    _ensure_db_row(conn, name)
+    _ensure_db_row(conn, name, project_id)
 
     chat_id = data.get("chat_id")
     conn.execute(
-        "INSERT INTO integration_notifications (integration_name, chat_id, message) "
-        "VALUES (?, ?, ?)",
-        (name, chat_id, message),
+        "INSERT INTO integration_notifications "
+        "(integration_name, project_id, chat_id, message) "
+        "VALUES (?, ?, ?, ?)",
+        (name, project_id, chat_id, message),
     )
     row = conn.execute("SELECT last_insert_rowid()").fetchone()
     notification_id = row[0]
@@ -289,7 +308,7 @@ def notify_integration(
 
 
 @router.get("/{name}/notifications")
-def list_notifications(name: str, conn=Depends(get_db_conn)):
+def list_notifications(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Return pending (undelivered) notifications for an integration.
 
     Adapters poll this endpoint to discover messages they need to deliver.
@@ -302,9 +321,9 @@ def list_notifications(name: str, conn=Depends(get_db_conn)):
     rows = conn.execute(
         "SELECT id, chat_id, message, created_at "
         "FROM integration_notifications "
-        "WHERE integration_name = ? AND delivered_at IS NULL "
+        "WHERE integration_name = ? AND project_id = ? AND delivered_at IS NULL "
         "ORDER BY id",
-        (name,),
+        (name, project_id),
     ).fetchall()
 
     return [dict(r) for r in rows]
@@ -312,7 +331,7 @@ def list_notifications(name: str, conn=Depends(get_db_conn)):
 
 @router.post("/{name}/notifications/{notification_id}/ack")
 def ack_notification(
-    name: str, notification_id: int, conn=Depends(get_db_conn)
+    name: str, notification_id: int, project_id: int = 0, conn=Depends(get_db_conn)
 ):
     """Mark a notification as delivered.
 
@@ -320,8 +339,8 @@ def ack_notification(
     """
     row = conn.execute(
         "SELECT id FROM integration_notifications "
-        "WHERE id = ? AND integration_name = ?",
-        (notification_id, name),
+        "WHERE id = ? AND integration_name = ? AND project_id = ?",
+        (notification_id, name, project_id),
     ).fetchone()
     if row is None:
         raise HTTPException(404, "Notification not found")
@@ -348,9 +367,9 @@ def install_integration(data: dict = Body(...)):
     return run_strawhub("install", "integration", "-y", name)
 
 
-def _stop_if_running(conn, name: str) -> bool:
+def _stop_if_running(conn, name: str, project_id: int = 0) -> bool:
     """Stop an integration if it is running. Returns True if it was running."""
-    db_state = _get_db_state(conn, name)
+    db_state = _get_db_state(conn, name, project_id)
     if not db_state or db_state["status"] != "running" or not db_state["pid"]:
         return False
     pid = db_state["pid"]
@@ -374,8 +393,9 @@ def _stop_if_running(conn, name: str) -> bool:
             except (ProcessLookupError, OSError):
                 pass
     conn.execute(
-        "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-        (name,),
+        "UPDATE integrations SET status = 'stopped', pid = NULL "
+        "WHERE name = ? AND project_id = ?",
+        (name, project_id),
     )
     logger.info("Stopped integration '%s' (pid %s) before mutation", name, pid)
     return True
@@ -391,11 +411,12 @@ def update_integration(
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
-    was_running = _stop_if_running(conn, name)
+    project_id = int(data.get("project_id", 0))
+    was_running = _stop_if_running(conn, name, project_id)
     result = run_strawhub("update", "-y", "integration", name)
     if was_running and result.get("exit_code") == 0:
         try:
-            start_integration(name, request, conn)
+            start_integration(name, request, conn, project_id=project_id)
         except Exception as exc:
             logger.warning("Failed to restart '%s' after update: %s", name, exc)
     return result
@@ -411,6 +432,7 @@ def reinstall_integration(
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(400, "'name' is required")
+    project_id = int(data.get("project_id", 0))
     home = get_strawpot_home()
     version_file = home / "integrations" / name / ".version"
     if not version_file.is_file():
@@ -418,26 +440,36 @@ def reinstall_integration(
     version = version_file.read_text(encoding="utf-8").strip()
     if not version:
         raise HTTPException(404, f"Empty version file for integration: {name}")
-    was_running = _stop_if_running(conn, name)
+    was_running = _stop_if_running(conn, name, project_id)
     result = run_strawhub("install", "integration", "-y", name, "--version", version, "--force")
     if was_running and result.get("exit_code") == 0:
         try:
-            start_integration(name, request, conn)
+            start_integration(name, request, conn, project_id=project_id)
         except Exception as exc:
             logger.warning("Failed to restart '%s' after reinstall: %s", name, exc)
     return result
 
 
 @router.delete("/{name}")
-def uninstall_integration(name: str, conn=Depends(get_db_conn)):
+def uninstall_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Stop (if running) and uninstall an integration."""
-    _stop_if_running(conn, name)
+    _stop_if_running(conn, name, project_id)
 
-    # Remove DB state
-    conn.execute("DELETE FROM integration_config WHERE integration_name = ?", (name,))
-    conn.execute("DELETE FROM integrations WHERE name = ?", (name,))
+    # Remove DB state for this instance
+    conn.execute(
+        "DELETE FROM integration_config "
+        "WHERE integration_name = ? AND project_id = ?",
+        (name, project_id),
+    )
+    conn.execute(
+        "DELETE FROM integrations WHERE name = ? AND project_id = ?",
+        (name, project_id),
+    )
 
-    return run_strawhub("uninstall", "integration", name)
+    # Only uninstall the binary if this is the global instance
+    if project_id == 0:
+        return run_strawhub("uninstall", "integration", name)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +486,7 @@ def _is_process_alive(pid: int) -> bool:
         return False
 
 
-def _build_env(name: str, config_values: dict, request: Request) -> dict:
+def _build_env(name: str, config_values: dict, request: Request, *, project_id: int = 0) -> dict:
     """Build environment variables for the adapter subprocess."""
     env = os.environ.copy()
 
@@ -469,8 +501,13 @@ def _build_env(name: str, config_values: dict, request: Request) -> dict:
     env["PATH"] = ":".join(extra_paths) + ":" + existing
 
     # Derive API URL from the running server's actual request URL.
-    # Include /via/{name} prefix so the middleware auto-tags conversations.
-    env["STRAWPOT_API_URL"] = str(request.base_url).rstrip("/") + f"/via/{name}"
+    # Include /via prefix so the middleware auto-tags conversations.
+    base = str(request.base_url).rstrip("/")
+    if project_id > 0:
+        env["STRAWPOT_API_URL"] = f"{base}/via/p/{project_id}/{name}"
+        env["STRAWPOT_PROJECT_ID"] = str(project_id)
+    else:
+        env["STRAWPOT_API_URL"] = f"{base}/via/{name}"
     env["STRAWPOT_INTEGRATION_NAME"] = name
 
     # Persistent data directory for adapter state (survives reinstalls)
@@ -500,7 +537,9 @@ def _resolve_manifest(name: str) -> tuple[Path, dict]:
 
 
 @router.post("/{name}/start")
-def start_integration(name: str, request: Request, conn=Depends(get_db_conn)):
+def start_integration(
+    name: str, request: Request, conn=Depends(get_db_conn), project_id: int = 0
+):
     """Start an integration adapter subprocess."""
     integration_dir, fm = _resolve_manifest(name)
     strawpot_meta = fm.get("metadata", {}).get("strawpot", {})
@@ -508,17 +547,17 @@ def start_integration(name: str, request: Request, conn=Depends(get_db_conn)):
     if not entry_point:
         raise HTTPException(422, f"Integration '{name}' has no entry_point")
 
-    _ensure_db_row(conn, name)
+    _ensure_db_row(conn, name, project_id)
 
     # Check if already running
-    db_state = _get_db_state(conn, name)
+    db_state = _get_db_state(conn, name, project_id)
     if db_state and db_state["status"] == "running" and db_state["pid"]:
         if _is_process_alive(db_state["pid"]):
             raise HTTPException(409, f"Integration '{name}' is already running (pid {db_state['pid']})")
         # PID stale — clean up below
 
-    config_values = _get_db_config(conn, name)
-    env = _build_env(name, config_values, request)
+    config_values = _get_db_config(conn, name, project_id)
+    env = _build_env(name, config_values, request, project_id=project_id)
 
     # Log file for adapter output
     log_path = integration_dir / ".log"
@@ -538,28 +577,28 @@ def start_integration(name: str, request: Request, conn=Depends(get_db_conn)):
     except OSError as exc:
         conn.execute(
             "UPDATE integrations SET status = 'error', last_error = ?, pid = NULL "
-            "WHERE name = ?",
-            (str(exc), name),
+            "WHERE name = ? AND project_id = ?",
+            (str(exc), name, project_id),
         )
         raise HTTPException(500, f"Failed to start integration: {exc}")
 
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE integrations SET status = 'running', pid = ?, last_error = NULL, "
-        "started_at = ? WHERE name = ?",
-        (proc.pid, now, name),
+        "started_at = ? WHERE name = ? AND project_id = ?",
+        (proc.pid, now, name, project_id),
     )
-    logger.info("Started integration '%s' (pid %d)", name, proc.pid)
-    return {"name": name, "status": "running", "pid": proc.pid}
+    logger.info("Started integration '%s' (project_id=%d, pid %d)", name, project_id, proc.pid)
+    return {"name": name, "project_id": project_id, "status": "running", "pid": proc.pid}
 
 
 @router.post("/{name}/stop")
-def stop_integration(name: str, conn=Depends(get_db_conn)):
+def stop_integration(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Stop a running integration adapter by sending SIGTERM."""
     _resolve_manifest(name)  # verify exists
-    _ensure_db_row(conn, name)
+    _ensure_db_row(conn, name, project_id)
 
-    db_state = _get_db_state(conn, name)
+    db_state = _get_db_state(conn, name, project_id)
     if not db_state or db_state["status"] != "running" or not db_state["pid"]:
         raise HTTPException(409, f"Integration '{name}' is not running")
 
@@ -567,8 +606,9 @@ def stop_integration(name: str, conn=Depends(get_db_conn)):
 
     if not _is_process_alive(pid):
         conn.execute(
-            "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-            (name,),
+            "UPDATE integrations SET status = 'stopped', pid = NULL "
+            "WHERE name = ? AND project_id = ?",
+            (name, project_id),
         )
         return {"name": name, "status": "stopped"}
 
@@ -578,18 +618,19 @@ def stop_integration(name: str, conn=Depends(get_db_conn)):
         pass  # race: died between check and kill
 
     conn.execute(
-        "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-        (name,),
+        "UPDATE integrations SET status = 'stopped', pid = NULL "
+        "WHERE name = ? AND project_id = ?",
+        (name, project_id),
     )
     logger.info("Stopped integration '%s' (pid %d)", name, pid)
     return {"name": name, "status": "stopped"}
 
 
 @router.get("/{name}/status")
-def get_integration_status(name: str, conn=Depends(get_db_conn)):
+def get_integration_status(name: str, project_id: int = 0, conn=Depends(get_db_conn)):
     """Check live status of an integration (process alive + optional health check)."""
     _resolve_manifest(name)
-    db_state = _get_db_state(conn, name)
+    db_state = _get_db_state(conn, name, project_id)
     if not db_state:
         return {"name": name, "status": "stopped", "pid": None}
 
@@ -598,8 +639,9 @@ def get_integration_status(name: str, conn=Depends(get_db_conn)):
         # Process died — update DB
         conn.execute(
             "UPDATE integrations SET status = 'error', "
-            "last_error = 'Process exited unexpectedly' WHERE name = ?",
-            (name,),
+            "last_error = 'Process exited unexpectedly' "
+            "WHERE name = ? AND project_id = ?",
+            (name, project_id),
         )
         return {
             "name": name,
@@ -634,7 +676,8 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
 
     with get_db(db_path) as conn:
         rows = conn.execute(
-            "SELECT name, pid FROM integrations WHERE status = 'running' AND pid IS NOT NULL"
+            "SELECT name, project_id, pid FROM integrations "
+            "WHERE status = 'running' AND pid IS NOT NULL"
         ).fetchall()
         for row in rows:
             pid = row["pid"]
@@ -642,8 +685,8 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
                 try:
                     os.kill(pid, signal.SIGTERM)
                     logger.info(
-                        "Stopped stale integration '%s' (pid %d) from previous run",
-                        row["name"], pid,
+                        "Stopped stale integration '%s' (project_id=%d, pid %d) from previous run",
+                        row["name"], row["project_id"], pid,
                     )
                 except (ProcessLookupError, OSError):
                     pass
@@ -660,8 +703,9 @@ def mark_orphaned_integrations_stopped(db_path: str) -> None:
                     except (ProcessLookupError, OSError):
                         pass
             conn.execute(
-                "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-                (row["name"],),
+                "UPDATE integrations SET status = 'stopped', pid = NULL "
+                "WHERE name = ? AND project_id = ?",
+                (row["name"], row["project_id"]),
             )
 
 
@@ -671,24 +715,33 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
 
     home = get_strawpot_home()
     manifests = scan_integrations(home)
+    manifest_by_name = {m["name"]: m for m in manifests}
 
-    for manifest in manifests:
-        name = manifest["name"]
+    # Query all rows with auto_start across all projects
+    with get_db(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name, project_id, status, pid, auto_start "
+            "FROM integrations WHERE auto_start = 1"
+        ).fetchall()
+
+    for row in rows:
+        name = row["name"]
+        project_id = row["project_id"]
+        manifest = manifest_by_name.get(name)
+        if not manifest:
+            continue
         entry_point = manifest.get("entry_point", "")
         if not entry_point:
             continue
 
         integration_dir = Path(manifest["path"])
-        with get_db(db_path) as conn:
-            _ensure_db_row(conn, name)
-            db_state = _get_db_state(conn, name)
-            if not db_state or not db_state["auto_start"]:
-                continue
-            if db_state["status"] == "running" and db_state["pid"]:
-                if _is_process_alive(db_state["pid"]):
-                    continue  # already running
 
-            config_values = _get_db_config(conn, name)
+        if row["status"] == "running" and row["pid"]:
+            if _is_process_alive(row["pid"]):
+                continue  # already running
+
+        with get_db(db_path) as conn:
+            config_values = _get_db_config(conn, name, project_id)
 
         # Build env without request context
         env = os.environ.copy()
@@ -699,7 +752,10 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
             "/opt/homebrew/bin",
         ]
         env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
-        env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/{name}"
+        if project_id > 0:
+            env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/p/{project_id}/{name}"
+        else:
+            env["STRAWPOT_API_URL"] = f"http://{host}:{port}/via/{name}"
         env["STRAWPOT_INTEGRATION_NAME"] = name
         data_dir = home / "data" / "integrations" / name
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -722,12 +778,12 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
                 env=env,
             )
         except OSError as exc:
-            logger.warning("Failed to auto-start integration '%s': %s", name, exc)
+            logger.warning("Failed to auto-start integration '%s' (project_id=%d): %s", name, project_id, exc)
             with get_db(db_path) as conn:
                 conn.execute(
                     "UPDATE integrations SET status = 'error', last_error = ? "
-                    "WHERE name = ?",
-                    (str(exc), name),
+                    "WHERE name = ? AND project_id = ?",
+                    (str(exc), name, project_id),
                 )
             continue
 
@@ -735,10 +791,10 @@ def auto_start_integrations(db_path: str, *, host: str = "127.0.0.1", port: int 
         with get_db(db_path) as conn:
             conn.execute(
                 "UPDATE integrations SET status = 'running', pid = ?, "
-                "last_error = NULL, started_at = ? WHERE name = ?",
-                (proc.pid, now, name),
+                "last_error = NULL, started_at = ? WHERE name = ? AND project_id = ?",
+                (proc.pid, now, name, project_id),
             )
-        logger.info("Auto-started integration '%s' (pid %d)", name, proc.pid)
+        logger.info("Auto-started integration '%s' (project_id=%d, pid %d)", name, project_id, proc.pid)
 
 
 def stop_all_integrations(db_path: str) -> None:
@@ -747,19 +803,21 @@ def stop_all_integrations(db_path: str) -> None:
 
     with get_db(db_path) as conn:
         rows = conn.execute(
-            "SELECT name, pid FROM integrations WHERE status = 'running' AND pid IS NOT NULL"
+            "SELECT name, project_id, pid FROM integrations "
+            "WHERE status = 'running' AND pid IS NOT NULL"
         ).fetchall()
         for row in rows:
             pid = row["pid"]
             if _is_process_alive(pid):
                 try:
                     os.kill(pid, signal.SIGTERM)
-                    logger.info("Sent SIGTERM to integration '%s' (pid %d)", row["name"], pid)
+                    logger.info("Sent SIGTERM to integration '%s' (project_id=%d, pid %d)", row["name"], row["project_id"], pid)
                 except (ProcessLookupError, OSError):
                     pass
             conn.execute(
-                "UPDATE integrations SET status = 'stopped', pid = NULL WHERE name = ?",
-                (row["name"],),
+                "UPDATE integrations SET status = 'stopped', pid = NULL "
+                "WHERE name = ? AND project_id = ?",
+                (row["name"], row["project_id"]),
             )
 
 
@@ -784,7 +842,7 @@ def clear_integration_logs(name: str):
 
 
 @router.websocket("/{name}/logs/ws")
-async def integration_logs_ws(websocket: WebSocket, name: str) -> None:
+async def integration_logs_ws(websocket: WebSocket, name: str, project_id: int = 0) -> None:
     """Stream integration adapter logs over WebSocket.
 
     Protocol (server → client):
@@ -818,7 +876,7 @@ async def integration_logs_ws(websocket: WebSocket, name: str) -> None:
     db_path: str = websocket.app.state.db_path
     from strawpot_gui.db import get_db
     with get_db(db_path) as conn:
-        db_state = _get_db_state(conn, name)
+        db_state = _get_db_state(conn, name, project_id)
 
     is_running = (
         db_state is not None
@@ -842,7 +900,7 @@ async def integration_logs_ws(websocket: WebSocket, name: str) -> None:
                 if not changed_files:
                     # Timeout — check if still running
                     with get_db(db_path) as conn:
-                        state = _get_db_state(conn, name)
+                        state = _get_db_state(conn, name, project_id)
                     alive = (
                         state is not None
                         and state["status"] == "running"
