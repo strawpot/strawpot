@@ -25,6 +25,28 @@ Agents break down the task, assign roles, and coordinate:
 
 Structured artifacts land in your workspace — a plan, draft post, and engineering tasks. Outputs vary depending on model and task.
 
+## What you can do with StrawPot today
+
+**Autonomous triage and prioritization**
+- AI CEO reviews incoming GitHub issues
+- Prioritizes based on project direction and brand
+- Delegates approved issues to implementation-planner
+- Planner breaks them into ordered sub-issues with dependency ordering
+
+**Feature ideation to delivery**
+- PM analyzes the codebase and proposes a new feature
+- AI CEO evaluates against project direction — approves or rejects
+- Implementer builds in an isolated worktree, reviewer checks, QA validates
+- One task triggers a full product cycle across 5+ roles
+
+**Self-improving roles**
+- role-creator defines a new role, then delegates to 6 evaluators in parallel
+- Evaluators test the role against quality standards
+- Creator iterates based on feedback until the role passes
+- The system literally improves its own capabilities
+
+Structure is consistent. Output quality depends on model and role definitions.
+
 ## Quick Start
 
 ```bash
