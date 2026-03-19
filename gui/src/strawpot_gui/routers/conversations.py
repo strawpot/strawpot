@@ -191,7 +191,7 @@ def _build_conversation_context(conn, conversation_id: int, *, history_path: str
 
 
 def _write_conversation_history(conn, conversation_id: int, working_dir: str) -> str | None:
-    """Write full conversation history to .strawpot/conversation_history.md.
+    """Write full conversation history to .strawpot/conversations/{id}/history.md.
 
     Returns the absolute path to the file, or None if nothing was written.
     Last 5 turns get full output; turns 6-10 get recap only; older turns omitted.
@@ -259,9 +259,9 @@ def _write_conversation_history(conn, conversation_id: int, working_dir: str) ->
         parts.append("---")
         parts.append("")
 
-    history_dir = Path(working_dir) / ".strawpot"
+    history_dir = Path(working_dir) / ".strawpot" / "conversations" / str(conversation_id)
     history_dir.mkdir(parents=True, exist_ok=True)
-    history_path = history_dir / f"conversation_{conversation_id}_history.md"
+    history_path = history_dir / "history.md"
     try:
         history_path.write_text("\n".join(parts), encoding="utf-8")
         return str(history_path)

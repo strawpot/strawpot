@@ -211,10 +211,10 @@ Older turns in the History section continue to use recap only, condensed to 120-
 
 ### Phase 2: Conversation history file
 
-Write a `.strawpot/conversation_history.md` file to the project working directory before spawning the agent. The context prefix includes a hint telling the agent where to find it.
+Write a `.strawpot/conversations/{id}/history.md` file to the project working directory before spawning the agent. The context prefix includes a hint telling the agent where to find it.
 
 ```
-> Full session outputs available at `.strawpot/conversation_history.md` —
+> Full session outputs available at `.strawpot/conversations/{id}/history.md` —
 > read it if you need more detail than the summaries above.
 ```
 
@@ -462,17 +462,19 @@ def em_conversation_dir(storage_dir: Path, conversation_id: str) -> Path:
 
 #### 5d. Conversation-scoped history file
 
-Change `_write_conversation_history()` to include conversation_id in the filename:
+Change `_write_conversation_history()` to scope the history file per conversation:
 
 ```python
 # Before:
-history_path = history_dir / "conversation_history.md"
+history_path = Path(working_dir) / ".strawpot" / "conversation_history.md"
 
 # After:
-history_path = history_dir / f"conversation_{conversation_id}_history.md"
+history_dir = Path(working_dir) / ".strawpot" / "conversations" / str(conversation_id)
+history_dir.mkdir(parents=True, exist_ok=True)
+history_path = history_dir / "history.md"
 ```
 
-The data written is already filtered by conversation_id (SQL WHERE clause). The fix prevents concurrent conversations from overwriting each other's history.
+Each conversation gets its own directory at `.strawpot/conversations/{id}/`, with `history.md` inside. The per-conversation folder structure allows future expansion (conversation-level metadata, config, etc.). The data written is already filtered by conversation_id (SQL WHERE clause). The fix prevents concurrent conversations from overwriting each other's history.
 
 The hint in `_build_conversation_context()` already uses the returned path, so it will automatically reference the correct file.
 
@@ -523,7 +525,7 @@ global          ~/.strawpot/memory/dial-data/
 | strawpot | `cli/src/strawpot/session.py` | Accept conversation_id, pass to all memory calls |
 | strawpot | `cli/src/strawpot/delegation.py` | Pass conversation_id to child agent memory calls |
 | strawpot | `gui/src/strawpot_gui/routers/sessions.py` | Pass `--conversation-id` in subprocess cmd |
-| strawpot | `gui/src/strawpot_gui/routers/conversations.py` | Scope history file to `conversation_{id}_history.md` |
+| strawpot | `gui/src/strawpot_gui/routers/conversations.py` | Scope history file to `conversations/{id}/history.md` |
 
 ## Implementation status
 

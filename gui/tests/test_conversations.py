@@ -1084,8 +1084,8 @@ class TestWriteConversationHistory:
 
         # Different files
         assert path_a != path_b
-        assert f"conversation_{cid_a}_history.md" in path_a
-        assert f"conversation_{cid_b}_history.md" in path_b
+        assert path_a.endswith(f"conversations/{cid_a}/history.md")
+        assert path_b.endswith(f"conversations/{cid_b}/history.md")
 
         # Each file contains only its own conversation's content
         content_a = open(path_a).read()

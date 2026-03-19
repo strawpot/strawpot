@@ -101,7 +101,7 @@ The context builder applies tiered condensation: older turns get brief summaries
 
 Agents in a conversation are asked to end their response with a structured `## Session Recap` section covering accomplishments (with file paths and specifics), changes made, key decisions, and open items. The database stores the full agent output as the session summary. When building context for the next turn, the context builder extracts the recap section for condensed history lines, while the **Pending Follow-up** for the last turn includes both the structured recap and a tail of the raw agent output — giving the next session both curated insight and ground truth.
 
-Additionally, full session outputs are written to `.strawpot/conversation_{id}_history.md` in the project directory before each session spawns (one file per conversation). The agent can read this file on demand when the condensed summaries in the context prefix aren't sufficient. The file includes full output for the last 5 turns and recap only for older turns (up to 10 total).
+Additionally, full session outputs are written to `.strawpot/conversations/{id}/history.md` in the project directory before each session spawns (one file per conversation). The agent can read this file on demand when the condensed summaries in the context prefix aren't sufficient. The file includes full output for the last 5 turns and recap only for older turns (up to 10 total).
 
 ## Crash Recovery
 
