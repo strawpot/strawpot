@@ -1,0 +1,34 @@
+name: Feature Request
+description: Describe a feature or improvement you'd like
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What do you want?
+      description: Describe the outcome, not the implementation.
+      placeholder: "I want to run different Discord bots per project with independent configs."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter?
+      description: What workflow does this enable or what problem does it solve?
+      placeholder: "Right now I can only have one Discord bot globally, but I need separate bots for work and personal projects."
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: A concrete scenario showing how you'd use this feature.
+      placeholder: |
+        1. Install discord integration globally
+        2. Add it to my "work" project with bot token A
+        3. Add it to my "personal" project with bot token B
+        4. Both run independently
+    validations:
+      required: false

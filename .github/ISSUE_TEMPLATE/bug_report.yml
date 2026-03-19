@@ -1,0 +1,62 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the error, unexpected behavior, or crash.
+      placeholder: "When I start the Discord integration, it crashes with..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Describe the correct behavior.
+      placeholder: "The integration should start and connect to Discord."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands, config, or sequence of actions to trigger the bug.
+      placeholder: |
+        1. Install discord integration
+        2. Configure bot token
+        3. Click Start
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste error tracebacks, terminal output, or screenshots of the GUI.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: StrawPot version
+      description: Run `strawpot --version` to find this.
+      placeholder: "0.1.48"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: false
