@@ -196,7 +196,15 @@ function ImuOnboarding({ onSelectPrompt }: { onSelectPrompt: (text: string) => v
 
 function ImuConversationView({ cid }: { cid: number }) {
   const [task, setTask] = useState("");
-  const [interactive, setInteractive] = useState(false);
+  const [interactive, setInteractive] = useState(() => {
+    try { return localStorage.getItem(`conv:${cid}:interactive`) === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { setInteractive(localStorage.getItem(`conv:${cid}:interactive`) === "true"); } catch {}
+  }, [cid]);
+  useEffect(() => {
+    try { localStorage.setItem(`conv:${cid}:interactive`, String(interactive)); } catch {}
+  }, [cid, interactive]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -231,11 +239,12 @@ function ImuConversationView({ cid }: { cid: number }) {
       prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path],
     );
 
-  const { data, isLoading, error, fetchPreviousPage, hasPreviousPage, isFetchingPreviousPage } =
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useConversationInfinite(cid);
 
-  const allSessions = data?.pages.flatMap((p) => p.sessions) ?? [];
-  const conversation = data?.pages[data.pages.length - 1];
+  // Flatten pages: pages[0]=newest, pages[1+]=older → reverse for chronological display
+  const allSessions = data?.pages.slice().reverse().flatMap((p) => p.sessions) ?? [];
+  const conversation = data?.pages[0];
   const lastSession = allSessions[allSessions.length - 1];
   const hasActiveSession =
     lastSession?.status === "running" || lastSession?.status === "starting";
@@ -303,16 +312,16 @@ function ImuConversationView({ cid }: { cid: number }) {
     if (!sentinelRef.current || !scrollRef.current) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasPreviousPage && !isFetchingPreviousPage) {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
           prevScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
-          fetchPreviousPage();
+          fetchNextPage();
         }
       },
       { root: scrollRef.current, threshold: 0.1 },
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
@@ -435,7 +444,7 @@ function ImuConversationView({ cid }: { cid: number }) {
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl space-y-6 py-4">
           <div ref={sentinelRef} className="h-1" />
-          {isFetchingPreviousPage && (
+          {isFetchingNextPage && (
             <div className="flex justify-center py-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>

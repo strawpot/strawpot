@@ -53,7 +53,7 @@ export function useSubmitConversationTask(conversationId: number) {
           (old) => {
             if (!old) return old;
             const pages = old.pages.map((page, i) => {
-              if (i !== old.pages.length - 1) return page;
+              if (i !== 0) return page;
               const newTask = {
                 id: -Date.now(), // temporary ID until refetch
                 task: variables.task,
