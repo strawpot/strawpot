@@ -92,12 +92,16 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
 
     skills_section = data.get("skills", {})
     for slug, skill_data in skills_section.items():
+        if not isinstance(skill_data, dict):
+            continue
         env_data = skill_data.get("env", {})
         if env_data:
             config.skills.setdefault(slug, {}).update(env_data)
 
     roles_section = data.get("roles", {})
     for slug, role_data in roles_section.items():
+        if not isinstance(role_data, dict):
+            continue
         config.roles.setdefault(slug, {}).update(role_data)
 
     if "memory" in data:
