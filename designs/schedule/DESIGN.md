@@ -317,6 +317,123 @@ File: `gui/frontend/src/pages/ScheduledTasks.tsx`
 | **NEW** `gui/frontend/src/components/CreateOneTimeScheduleDialog.tsx` | Create/edit dialog |
 | **NEW** `gui/frontend/src/pages/ScheduleRuns.tsx` | Aggregated run history page |
 
+
+---
+
+## New Feature: Manual Trigger & Re-run
+
+### Problem
+
+Users cannot manually trigger a recurring schedule or replay a past run from
+the GUI. The only way schedules fire is via the automatic 30-second cron tick.
+This makes it hard to test new schedules or retry failed runs.
+
+### Goal
+
+1. "Run Now" button on recurring schedule items to trigger immediately
+2. "Re-run" button on run history items to replay a past run
+
+### Backend Changes
+
+#### Extract shared fire helper
+
+File: `gui/src/strawpot_gui/scheduler.py`
+
+Extract `Scheduler._fire()` logic into a standalone function:
+
+```python
+def fire_schedule(conn, schedule: dict, launch_fn, *, task_override: str | None = None) -> dict:
+    """Fire a schedule immediately.
+
+    Returns {"run_id": ...} or {"queued": True} or {"error": ...}.
+
+    Args:
+        conn: DB connection.
+        schedule: Full schedule row as dict.
+        launch_fn: launch_session_subprocess callable.
+        task_override: If set, use this task instead of schedule's task.
+    """
+```
+
+Logic (moved from `_fire`):
+1. Resolve role (enforce `imu` for project 0)
+2. If conversation-bound and active session exists, queue to `conversation_task_queue`
+3. Otherwise build conversation context from prior turns
+4. Call `launch_fn()` with project_id, task, role, system_prompt, schedule_id, conversation_id
+5. On error, record in `last_error`
+
+`Scheduler._fire()` becomes a thin wrapper that calls `fire_schedule()` then
+calls `_advance_schedule()` on success.
+
+#### New endpoints
+
+File: `gui/src/strawpot_gui/routers/schedules.py`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/schedules/{id}/trigger` | Manual trigger: fire schedule now |
+| POST | `/api/schedules/runs/{run_id}/rerun` | Re-run a past schedule run |
+
+**`POST /api/schedules/{id}/trigger`**
+- Load schedule row, 404 if not found
+- Import `fire_schedule` from scheduler and `launch_session_subprocess` from sessions
+- Call `fire_schedule(conn, schedule, launch_fn)`
+- Do NOT advance `next_run_at` (ad-hoc, not a cron tick)
+- Update `last_run_at` to now
+- Return `{"run_id": ...}` or `{"queued": true}` or 500 on error
+
+**`POST /api/schedules/runs/{run_id}/rerun`**
+- Look up session by `run_id`, 404 if not found or no `schedule_id`
+- Load schedule row, 404 if schedule deleted
+- Use session's `user_task` if available (original task without context), else `task`
+- Call `fire_schedule(conn, schedule, launch_fn, task_override=original_task)`
+- Return `{"run_id": ...}` or `{"queued": true}` or 500 on error
+
+### Frontend Changes
+
+#### Mutations
+
+File: `gui/frontend/src/hooks/mutations/use-schedules.ts`
+
+```typescript
+export function useTriggerSchedule() {
+  // POST /api/schedules/${id}/trigger
+  // Invalidates: schedules.all, schedules.runs
+}
+
+export function useRerunScheduleRun() {
+  // POST /api/schedules/runs/${runId}/rerun
+  // Invalidates: schedules.runs
+}
+```
+
+#### UI Buttons
+
+File: `gui/frontend/src/pages/ScheduledTasks.tsx`
+- Add "Run Now" button (Zap icon) in Actions column, between edit and toggle buttons
+- Calls `useTriggerSchedule()` with schedule id
+
+File: `gui/frontend/src/pages/ScheduleRuns.tsx`
+- Add "Re-run" button (RotateCcw icon) per row, next to existing session link button
+- Calls `useRerunScheduleRun()` with run_id
+
+### Files to Change
+
+| File | Change |
+|------|--------|
+| `gui/src/strawpot_gui/scheduler.py` | Extract `fire_schedule()` from `_fire()` |
+| `gui/src/strawpot_gui/routers/schedules.py` | Add trigger + rerun endpoints |
+| `gui/frontend/src/hooks/mutations/use-schedules.ts` | Add `useTriggerSchedule`, `useRerunScheduleRun` |
+| `gui/frontend/src/pages/ScheduledTasks.tsx` | Add "Run Now" button |
+| `gui/frontend/src/pages/ScheduleRuns.tsx` | Add "Re-run" button |
+
+### Tests
+
+| File | Coverage |
+|------|----------|
+| `gui/tests/test_schedules.py` | Add tests for trigger + rerun endpoints |
+| `gui/tests/test_scheduler.py` | Test `fire_schedule()` standalone function |
+
 ---
 
 ## Implementation Status
@@ -354,10 +471,16 @@ File: `gui/frontend/src/pages/ScheduledTasks.tsx`
 | 29 | Frontend: `ScheduleRuns.tsx` page | Done (PR #275) |
 | 30 | Frontend: update `ScheduledTasks.tsx` to filter recurring only | Done (PR #275) |
 | 31 | Backend tests for one-time schedules + runs endpoint | Done (PR #272) |
+| 32 | Extract `fire_schedule()` from `Scheduler._fire()` | Planned |
+| 33 | `POST /api/schedules/{id}/trigger` endpoint | Planned |
+| 34 | `POST /api/schedules/runs/{run_id}/rerun` endpoint | Planned |
+| 35 | Frontend: `useTriggerSchedule` + `useRerunScheduleRun` mutations | Planned |
+| 36 | Frontend: "Run Now" button on ScheduledTasks | Planned |
+| 37 | Frontend: "Re-run" button on ScheduleRuns | Planned |
+| 38 | Backend tests for trigger + rerun endpoints | Planned |
 
 ## Not in Scope
 
 - CLI commands for schedule management (all management via GUI API)
-- Retry/backfill for missed schedule runs
-- Timezone-aware scheduling (all times UTC)
+- Timezone-aware scheduling (cron stored in UTC, frontend converts to/from local)
 - Schedule templates or presets
