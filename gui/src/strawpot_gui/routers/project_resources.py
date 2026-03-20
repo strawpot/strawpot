@@ -39,11 +39,15 @@ def _count_config_overrides(toml_data: dict, resource_type: str, name: str) -> i
     """Count the number of env/param overrides for a resource in TOML data."""
     count = 0
     if resource_type == "roles":
-        count = len(toml_data.get("roles", {}).get(name, {}))
+        role_data = toml_data.get("roles", {}).get(name, {})
+        count = len(role_data) if isinstance(role_data, dict) else 0
     elif resource_type == "skills":
-        count = len(toml_data.get("skills", {}).get(name, {}).get("env", {}))
+        skill_data = toml_data.get("skills", {}).get(name, {})
+        count = len(skill_data.get("env", {})) if isinstance(skill_data, dict) else 0
     elif resource_type == "agents":
         agent_data = toml_data.get("agents", {}).get(name, {})
+        if not isinstance(agent_data, dict):
+            agent_data = {}
         count = len(agent_data.get("env", {}))
         # Count non-env params (keys other than "env")
         count += sum(1 for k in agent_data if k != "env")
