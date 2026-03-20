@@ -1,10 +1,6 @@
 import { useState } from "react";
 import { useIntegrations } from "@/hooks/queries/use-integrations";
-import { useInstallIntegration } from "@/hooks/mutations/use-integrations";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -14,18 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Download, XCircle } from "lucide-react";
-import { toast } from "sonner";
 import type { Integration } from "@/api/types";
 import IntegrationDetailSheet from "@/components/IntegrationDetailSheet";
 import IntegrationLogSheet from "@/components/IntegrationLogSheet";
@@ -50,7 +35,6 @@ export default function ProjectIntegrationsTab({ projectId }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [logName, setLogName] = useState<string | null>(null);
   const [logProjectId, setLogProjectId] = useState<number | undefined>(undefined);
-  const [installOpen, setInstallOpen] = useState(false);
 
   const integrationList = integrations ?? [];
 
@@ -62,16 +46,6 @@ export default function ProjectIntegrationsTab({ projectId }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Integrations installed in this project
-        </p>
-        <Button onClick={() => setInstallOpen(true)} size="sm">
-          <Download className="mr-2 h-4 w-4" />
-          Install
-        </Button>
-      </div>
-
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -144,122 +118,6 @@ export default function ProjectIntegrationsTab({ projectId }: Props) {
         onOpenChange={(open) => { if (!open) setLogName(null); }}
       />
 
-      <InstallProjectIntegrationDialog
-        open={installOpen}
-        onOpenChange={setInstallOpen}
-        projectId={projectId}
-      />
     </div>
-  );
-}
-
-function InstallProjectIntegrationDialog({
-  open,
-  onOpenChange,
-  projectId,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: number;
-}) {
-  const install = useInstallIntegration();
-  const [name, setName] = useState("");
-  const [result, setResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
-  const isDone = result?.status === "success";
-
-  const handleInstall = () => {
-    if (!name.trim()) return;
-    setResult(null);
-    setOutput(null);
-    install.mutate({ name: name.trim(), projectId }, {
-      onSuccess: (res) => {
-        if (res.exit_code === 0) {
-          toast.success(`Installed ${name.trim()}`);
-          setResult({ status: "success", message: `Successfully installed ${name.trim()}` });
-          setOutput(res.stdout || null);
-        } else {
-          setResult({ status: "error", message: "Installation failed" });
-          setOutput(res.stderr || res.stdout || "Unknown error.");
-        }
-      },
-      onError: () => {
-        setResult({ status: "error", message: "Install request failed" });
-        toast.error("Install request failed");
-      },
-    });
-  };
-
-  const handleClose = (v: boolean) => {
-    if (!v) {
-      setResult(null);
-      setOutput(null);
-      setName("");
-    }
-    onOpenChange(v);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Install Integration</DialogTitle>
-          <DialogDescription>
-            Install a chat adapter for this project from Strawhub by name.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-4">
-          {result && (
-            <Alert variant={result.status === "error" ? "destructive" : "default"} className={result.status === "success" ? "border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-300" : ""}>
-              {result.status === "success" ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-              ) : (
-                <XCircle className="h-4 w-4" />
-              )}
-              <AlertTitle>{result.status === "success" ? "Installed" : "Error"}</AlertTitle>
-              <AlertDescription>{result.message}</AlertDescription>
-            </Alert>
-          )}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="install-project-integration-name">Package Name</Label>
-            <Input
-              id="install-project-integration-name"
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. telegram"
-              readOnly={isDone}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleInstall();
-              }}
-            />
-          </div>
-          {output && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                Output
-              </summary>
-              <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted p-3 text-xs">
-                {output}
-              </pre>
-            </details>
-          )}
-        </div>
-        <DialogFooter>
-          {isDone ? (
-            <Button onClick={() => handleClose(false)}>
-              Done
-            </Button>
-          ) : (
-            <Button
-              onClick={handleInstall}
-              disabled={!name.trim() || install.isPending}
-            >
-              {install.isPending ? "Installing..." : "Install"}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

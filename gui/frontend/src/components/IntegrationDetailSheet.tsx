@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { Play, Square } from "lucide-react";
+import { Eye, EyeOff, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -337,19 +337,34 @@ function ConfigField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const [visible, setVisible] = useState(false);
   return (
     <div className="space-y-1.5">
       <Label htmlFor={`config-${name}`}>
         {name}
         {field.required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <Input
-        id={`config-${name}`}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={field.description}
-      />
+      <div className="relative">
+        <Input
+          id={`config-${name}`}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.description}
+          className="pr-8"
+        />
+        <button
+          type="button"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          onClick={() => setVisible((v) => !v)}
+        >
+          {visible ? (
+            <EyeOff className="h-3.5 w-3.5" />
+          ) : (
+            <Eye className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
       {field.description && (
         <p className="text-xs text-muted-foreground">{field.description}</p>
       )}

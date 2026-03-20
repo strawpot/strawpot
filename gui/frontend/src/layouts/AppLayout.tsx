@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, CalendarClock, History, BotMessageSquare, Users, Wrench, Bot, Brain, Plug, Pencil, Plus, Settings, Sun, Moon, Check, ChevronsUpDown, Trash2 } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, FolderKanban, Clock, CalendarClock, History, BotMessageSquare, Users, Wrench, Bot, Brain, Plug, Pencil, Plus, Settings, Sun, Moon, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useProject, useProjects } from "@/hooks/queries/use-projects";
+import { useProject } from "@/hooks/queries/use-projects";
 import { useImuConversations, useProjectConversations } from "@/hooks/queries/use-conversations";
 import { useCreateConversation, useCreateImuConversation, useDeleteImuConversation, useDeleteConversation, useRenameConversation, useRenameImuConversation } from "@/hooks/mutations/use-conversations";
 import type { ImuConversation } from "@/api/types";
@@ -386,7 +386,7 @@ function useBreadcrumbs() {
   const { data: imuConversations } = useImuConversations();
   const imuConvTitle = imuConversations?.find((c) => c.id === imuConvId)?.title ?? null;
 
-  const crumbs: { label: string; href?: string; projectSwitcher?: boolean }[] = [];
+  const crumbs: { label: string; href?: string }[] = [];
 
   if (segments[0] === "projects") {
     // Bot Imu (project_id=0) has its own section in the nav — show as "Bot Imu" not "Projects > Bot Imu"
@@ -401,7 +401,7 @@ function useBreadcrumbs() {
       if (segments[1]) {
         const projectHref = `/projects/${segments[1]}`;
         const projectLabel = project?.display_name ?? `Project #${segments[1]}`;
-        crumbs.push({ label: projectLabel, href: projectHref, projectSwitcher: true });
+        crumbs.push({ label: projectLabel, href: projectHref });
 
         if (segments[2] === "sessions" && segments[3]) {
           crumbs.push({ label: `Session ${segments[3].slice(0, 8)}…` });
@@ -461,8 +461,6 @@ function useBreadcrumbs() {
 
 export default function AppLayout() {
   const crumbs = useBreadcrumbs();
-  const navigate = useNavigate();
-  const allProjects = useProjects();
   const { data: imuConversations } = useImuConversations();
   const hasActiveImuSession = (imuConversations ?? []).some((c) => c.active_session_count > 0);
   const { setTheme } = useTheme();
@@ -573,29 +571,7 @@ export default function AppLayout() {
                 return (
                   <BreadcrumbItem key={crumb.label}>
                     {i > 0 && <BreadcrumbSeparator />}
-                    {crumb.projectSwitcher ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors">
-                          {crumb.label}
-                          <ChevronsUpDown className="h-3 w-3 text-muted-foreground" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          {(allProjects.data ?? []).map((proj) => (
-                            <DropdownMenuItem
-                              key={proj.id}
-                              onClick={() => navigate(`/projects/${proj.id}`)}
-                            >
-                              {crumb.href === `/projects/${proj.id}` ? (
-                                <Check className="mr-2 h-3.5 w-3.5" />
-                              ) : (
-                                <span className="mr-2 inline-block w-3.5" />
-                              )}
-                              {proj.display_name}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : isLast ? (
+                    {isLast ? (
                       <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
                     ) : (
                       <BreadcrumbLink href={crumb.href}>
