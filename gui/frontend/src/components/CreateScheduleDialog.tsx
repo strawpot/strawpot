@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import cronstrue from "cronstrue";
+import { cronLocalToUtc, cronUtcToLocal } from "@/lib/utils";
 import { useProjects } from "@/hooks/queries/use-projects";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useProjectConversations, useImuConversations } from "@/hooks/queries/use-conversations";
@@ -42,6 +43,7 @@ const CRON_PRESETS = [
   { label: "Every hour", value: "0 * * * *" },
   { label: "Daily at midnight", value: "0 0 * * *" },
   { label: "Weekdays at 9am", value: "0 9 * * 1-5" },
+  { label: "Weekdays at 10am", value: "0 10 * * 1-5" },
   { label: "Weekly Monday 9am", value: "0 9 * * 1" },
 ];
 
@@ -100,7 +102,7 @@ export default function CreateScheduleDialog({
       setName(editing.name);
       setProjectId(String(editing.project_id));
       setTask(editing.task);
-      setCronExpr(editing.cron_expr ?? "");
+      setCronExpr(editing.cron_expr ? cronUtcToLocal(editing.cron_expr) : "");
       setRole(editing.role ?? "");
       setSystemPrompt(editing.system_prompt ?? "");
       setSkipIfRunning(editing.skip_if_running);
@@ -145,7 +147,7 @@ export default function CreateScheduleDialog({
       const body = {
         name: name.trim(),
         task: task.trim(),
-        cron_expr: cronExpr.trim(),
+        cron_expr: cronLocalToUtc(cronExpr.trim()),
         role: role.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
         skip_if_running: skipIfRunning,
