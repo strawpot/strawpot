@@ -95,6 +95,7 @@ export default function ScheduledTasks() {
   const deleteSchedule = useDeleteSchedule();
   const toggleSchedule = useToggleSchedule();
   const triggerSchedule = useTriggerSchedule();
+  const [confirmingTrigger, setConfirmingTrigger] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -173,20 +174,39 @@ export default function ScheduledTasks() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          if (confirm(`Run schedule "${s.name}" now?`)) {
-                            triggerSchedule.mutate(s.id);
-                          }
-                        }}
-                        disabled={triggerSchedule.isPending}
-                        title="Run Now"
-                      >
-                        <Zap className="h-3.5 w-3.5" />
-                      </Button>
+                      {confirmingTrigger === s.id ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              triggerSchedule.mutate(s.id, {
+                                onSettled: () => setConfirmingTrigger(null),
+                              });
+                            }}
+                            disabled={triggerSchedule.isPending}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setConfirmingTrigger(null)}
+                          >
+                            No
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmingTrigger(s.id)}
+                          title="Run Now"
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"

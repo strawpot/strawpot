@@ -69,6 +69,7 @@ export default function ScheduleRuns() {
   const { data, isLoading, error } = useScheduleRuns(page);
   const navigate = useNavigate();
   const rerun = useRerunScheduleRun();
+  const [confirmingRerun, setConfirmingRerun] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -144,20 +145,39 @@ export default function ScheduleRuns() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => {
-                            if (confirm(`Re-run "${r.schedule_name}"?`)) {
-                              rerun.mutate(r.run_id);
-                            }
-                          }}
-                          disabled={rerun.isPending}
-                          title="Re-run"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        </Button>
+                        {confirmingRerun === r.run_id ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => {
+                                rerun.mutate(r.run_id, {
+                                  onSettled: () => setConfirmingRerun(null),
+                                });
+                              }}
+                              disabled={rerun.isPending}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setConfirmingRerun(null)}
+                            >
+                              No
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setConfirmingRerun(r.run_id)}
+                            title="Re-run"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
