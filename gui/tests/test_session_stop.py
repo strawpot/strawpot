@@ -4,6 +4,7 @@ import json
 import os
 from unittest.mock import patch
 
+from test_conversations import _create_conversation, _submit_task
 from test_sessions_sync import _register_project, _write_session
 
 from strawpot_gui.db import get_db, sync_sessions
@@ -139,3 +140,54 @@ class TestStopSession:
         resp = client.post("/api/sessions/run_nopid/stop")
         assert resp.status_code == 200
         assert resp.json() == {"run_id": "run_nopid", "status": "stopped"}
+
+    def test_stop_drains_queued_task(self, client, tmp_path, app):
+        """Stopping a session drains the next queued task."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        # Launch first task — creates a session
+        resp1 = _submit_task(client, cid, task="First task")
+        run_id1 = resp1.json()["run_id"]
+
+        # Queue a second task (session already active → 202)
+        _submit_task(client, cid, task="Queued task")
+
+        # Verify task is queued
+        with get_db(app.state.db_path) as conn:
+            queued = conn.execute(
+                "SELECT task FROM conversation_task_queue WHERE conversation_id = ?",
+                (cid,),
+            ).fetchall()
+        assert len(queued) == 1
+        assert queued[0]["task"] == "Queued task"
+
+        # Stop the first session — should drain the queued task
+        with patch("strawpot_gui.routers.sessions.os.kill"), \
+             patch("strawpot_gui.routers.sessions.shutil.which", return_value="/usr/bin/strawpot"), \
+             patch("strawpot_gui.routers.sessions.subprocess.Popen"), \
+             patch("strawpot_gui.routers.sessions.load_config") as mock_config:
+            from strawpot.config import StrawPotConfig
+            mock_config.return_value = StrawPotConfig()
+            resp = client.post(f"/api/sessions/{run_id1}/stop")
+
+        assert resp.status_code == 200
+
+        # Queue should be empty — task was drained
+        with get_db(app.state.db_path) as conn:
+            remaining = conn.execute(
+                "SELECT id FROM conversation_task_queue WHERE conversation_id = ?",
+                (cid,),
+            ).fetchall()
+        assert len(remaining) == 0
+
+        # A new session should have been created for the queued task
+        with get_db(app.state.db_path) as conn:
+            sessions = conn.execute(
+                "SELECT run_id FROM sessions WHERE conversation_id = ?",
+                (cid,),
+            ).fetchall()
+        assert len(sessions) == 2
