@@ -259,6 +259,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
     hasActiveSession && interactive,
+    cid,
   );
 
   const agentNames = (agents ?? []).map((a: { name: string }) => a.name);

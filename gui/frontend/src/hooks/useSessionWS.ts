@@ -25,6 +25,7 @@ export interface AgentLogState {
 export function useSessionWS(
   runId: string,
   active: boolean,
+  scopeKey?: string | number,
 ): {
   pendingAskUsers: AskUserPending[];
   chatMessages: ChatMessage[];
@@ -76,7 +77,7 @@ export function useSessionWS(
     );
   }, []);
 
-  // Reset all session state when switching to a different session
+  // Reset all session state when switching to a different session or scope
   useEffect(() => {
     setPendingAskUsers([]);
     setChatMessages([]);
@@ -86,7 +87,7 @@ export function useSessionWS(
     subscribedAgentsRef.current.clear();
     streamDoneRef.current = false;
     traceOffsetRef.current = 0;
-  }, [runId]);
+  }, [runId, scopeKey]);
 
   useEffect(() => {
     if (!active) {

@@ -209,6 +209,7 @@ export default function ConversationView() {
   const { pendingAskUsers, chatMessages, respond } = useSessionWS(
     lastSession?.run_id ?? "",
     hasActiveSession && interactive,
+    cid,
   );
 
   const roleError =
