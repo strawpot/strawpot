@@ -1,4 +1,6 @@
 import { useState } from "react";
+import cronstrue from "cronstrue";
+import { cronUtcToLocal } from "@/lib/utils";
 import { useSchedules } from "@/hooks/queries/use-schedules";
 import { useDeleteSchedule, useToggleSchedule } from "@/hooks/mutations/use-schedules";
 import CreateScheduleDialog from "@/components/CreateScheduleDialog";
@@ -22,6 +24,15 @@ import {
 import { AlertCircle, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import type { Schedule } from "@/api/types";
 
+function cronToLocalDesc(cron: string | null): string {
+  if (!cron) return "—";
+  try {
+    return cronstrue.toString(cronUtcToLocal(cron));
+  } catch {
+    return cron;
+  }
+}
+
 function formatRelative(iso: string | null): string {
   if (!iso) return "—";
   try {
@@ -39,6 +50,18 @@ function formatRelative(iso: string | null): string {
       return diffMs > 0 ? `in ${hours}h` : `${hours}h ago`;
     }
     return d.toLocaleDateString();
+  } catch {
+    return "—";
+  }
+}
+
+function formatLocalDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
   } catch {
     return "—";
   }
@@ -120,7 +143,7 @@ export default function ScheduledTasks() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Project</TableHead>
-                <TableHead>Cron</TableHead>
+                <TableHead>Schedule</TableHead>
                 <TableHead>Next Run</TableHead>
                 <TableHead>Last Run</TableHead>
                 <TableHead>Status</TableHead>
@@ -134,13 +157,12 @@ export default function ScheduledTasks() {
                   <TableCell className="text-muted-foreground">
                     {s.project_name}
                   </TableCell>
-                  <TableCell>
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                      {s.cron_expr}
-                    </code>
+                  <TableCell className="text-sm">
+                    {cronToLocalDesc(s.cron_expr)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatRelative(s.next_run_at)}
+                    <span>{formatLocalDateTime(s.next_run_at)}</span>
+                    <span className="ml-1 text-xs opacity-60">({formatRelative(s.next_run_at)})</span>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatRelative(s.last_run_at)}
