@@ -473,28 +473,22 @@ history_path = history_dir / "history.md"
 
 The folder-per-conversation layout supports future expansion (e.g. storing attachments or metadata alongside the history file). The data written is already filtered by conversation_id (SQL WHERE clause). No migration needed — history files are regenerated from the DB on each task submission.
 
-#### 5e. Group scope for remember/recall
+#### 5e. Group scope for remember/recall — Dropped
 
-Add `"group"` as a valid scope for `remember()` and `recall()`:
+Group-scoping for `remember()` / `recall()` (SM/RM knowledge) was considered but intentionally dropped.
+Knowledge entries ("always use pytest", "Stripe needs API keys") are project-level facts that should be
+shared across all conversations. Scoping them per-group would mean knowledge learned in one conversation
+is invisible in another, defeating the purpose of durable knowledge. EM (episodic memory) naturally
+benefits from conversation isolation since it's "what happened" — that's what items 21-22 solve.
 
-```python
-# dial_memory/storage.py
-def knowledge_group_path(storage_dir: Path, group_id: str) -> Path:
-    return storage_dir / "knowledge" / "groups" / group_id / "knowledge.jsonl"
-```
-
-**remember(scope="group"):** Store in `knowledge/groups/{group_id}/knowledge.jsonl`. Requires group_id — falls back to project if None.
-
-**recall(scope=""):** When group_id is set, search group scope in addition to project/role/global. Group entries get higher priority.
-
-**Default scope stays "project"** — most `remember()` calls store durable knowledge that should be shared.
+If a concrete need arises later, this can be revisited.
 
 #### Scope hierarchy
 
 ```
 global          ~/.strawpot/memory/dial-data/
   └─ project    .strawpot/memory/dial-data/
-      └─ group          .../groups/{id}/           (EM + knowledge)
+      └─ group          .../em/groups/{id}/        (EM only)
           └─ session     .../em/{run_id}.jsonl
 ```
 
@@ -514,8 +508,8 @@ global          ~/.strawpot/memory/dial-data/
 | Repo | File | Change |
 |------|------|--------|
 | strawpot_memory | `memory_protocol.py` | Add `group_id` param to all 4 methods |
-| dial | `dial_memory/provider.py` | Group-scoped EM write/read, `"auto"` em_scope, group knowledge |
-| dial | `dial_memory/storage.py` | Add `em_group_dir()`, `knowledge_group_path()` helpers |
+| dial | `dial_memory/provider.py` | Group-scoped EM write/read, `"auto"` em_scope |
+| dial | `dial_memory/storage.py` | Add `em_group_dir()`, `em_group_path()` helpers |
 | strawpot | `cli/src/strawpot/cli.py` | Add `--group-id` option to `start` command |
 | strawpot | `cli/src/strawpot/session.py` | Accept group_id, pass to all memory calls |
 | strawpot | `cli/src/strawpot/delegation.py` | Pass group_id to child agent memory calls |
@@ -543,12 +537,12 @@ global          ~/.strawpot/memory/dial-data/
 | 15 | Structured decision events (Phase 4) | Deferred (see TODO.md) |
 | 16 | Scope `conversation_history.md` to include conversation_id (Phase 5d) | Done |
 | 17 | Add `--group-id` CLI argument (Phase 5a) | Done |
-| 18 | Add `group_id` to MemoryProvider protocol (Phase 5b) | TODO |
-| 19 | Thread `group_id` through session.py and delegation.py (Phase 5a) | TODO |
+| 18 | Add `group_id` to MemoryProvider protocol (Phase 5b) | Done |
+| 19 | Thread `group_id` through session.py and delegation.py (Phase 5a) | Done |
 | 20 | Pass `--group-id` from GUI to CLI subprocess (Phase 5a) | Done |
-| 21 | Group-scoped EM storage in Dial (Phase 5c) | TODO |
-| 22 | `"auto"` em_scope default with group detection (Phase 5c) | TODO |
-| 23 | `"group"` scope for remember/recall (Phase 5e) | TODO |
+| 21 | Group-scoped EM storage in Dial (Phase 5c) | Done |
+| 22 | `"auto"` em_scope default with group detection (Phase 5c) | Done |
+| 23 | `"group"` scope for remember/recall (Phase 5e) | Dropped (knowledge should stay shared across conversations) |
 
 ## Key files
 
