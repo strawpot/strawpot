@@ -88,3 +88,26 @@ export function useToggleSchedule() {
     },
   });
 }
+
+export function useTriggerSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ run_id?: string; queued?: boolean }>(`/schedules/${id}/trigger`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.schedules.all });
+      qc.invalidateQueries({ queryKey: queryKeys.schedules.runs });
+    },
+  });
+}
+
+export function useRerunScheduleRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) =>
+      api.post<{ run_id?: string; queued?: boolean }>(`/schedules/runs/${runId}/rerun`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.schedules.runs });
+    },
+  });
+}
