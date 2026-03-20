@@ -823,6 +823,56 @@ def handle_delegate(
             parent_agent_id=request.parent_agent_id,
         )
 
+    try:
+        return _handle_delegate_body(
+            request=request,
+            config=config,
+            runtime=runtime,
+            working_dir=working_dir,
+            session_dir=session_dir,
+            resolve_role=resolve_role,
+            resolve_role_dirs=resolve_role_dirs,
+            denden_addr=denden_addr,
+            memory_provider=memory_provider,
+            tracer=tracer,
+            agent_spans=agent_spans,
+            register_agent=register_agent,
+            files_dirs=files_dirs,
+            group_id=group_id,
+            delegate_span_id=delegate_span_id,
+            delegate_start_time=delegate_start_time,
+        )
+    except BaseException:
+        # Ensure delegate_end is emitted so the tree node doesn't stay pending
+        _emit_delegate_end(
+            tracer, delegate_span_id, 1,
+            delegate_start_time, output="",
+            role=request.role_slug, session_id=request.run_id,
+            agent_id="",
+        )
+        raise
+
+
+def _handle_delegate_body(
+    *,
+    request: DelegateRequest,
+    config: StrawPotConfig,
+    runtime: AgentRuntime,
+    working_dir: str,
+    session_dir: str,
+    resolve_role: Callable[..., dict],
+    resolve_role_dirs: Callable[[str], str | None],
+    denden_addr: str | None,
+    memory_provider: MemoryProvider | None,
+    tracer: Tracer | None,
+    agent_spans: dict[str, str] | None,
+    register_agent: Callable[[str, str, str, int | None], None] | None,
+    files_dirs: list[str] | None,
+    group_id: str | None,
+    delegate_span_id: str | None,
+    delegate_start_time: float,
+) -> DelegateResult:
+    """Inner body of handle_delegate, wrapped by try/except for delegate_end."""
     # 2. Resolve role + skills
     resolved = resolve_role(request.role_slug, kind="role")
 
