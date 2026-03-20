@@ -335,6 +335,8 @@ def launch_session_subprocess(
         cmd.extend(["--cache-ttl-seconds", str(cache_ttl_seconds)])
     if max_num_delegations is not None:
         cmd.extend(["--max-num-delegations", str(max_num_delegations)])
+    if conversation_id is not None:
+        cmd.extend(["--group-id", str(conversation_id)])
 
     # Ensure subprocess can find user-installed tools (claude, etc.)
     # even when the server was started from a limited-PATH context.

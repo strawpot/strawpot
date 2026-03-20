@@ -353,70 +353,70 @@ ISOLATED (conversation-scoped):
 
 **Why EM must be scoped:** "Implemented auth middleware (success)" from conversation A is noise in conversation B about CSS. EM captures *what happened*, not *what's true*. It's execution context, not knowledge.
 
-#### 5a. Thread conversation_id through CLI
+#### 5a. Thread group_id through CLI
 
-The CLI currently has no awareness of conversation_id. The GUI creates the DB row but only passes `--run-id`.
+The CLI uses a generic `--group-id` flag for memory scoping. The GUI passes `conversation_id` as the group_id value, but the CLI itself is not coupled to the conversation concept — `group_id` can represent any logical grouping.
 
-**Change:** Add `--conversation-id` CLI argument (consistent with `--run-id` pattern).
+**Change:** Add `--group-id` CLI argument.
 
 ```python
 # cli/src/strawpot/cli.py — start command
-@click.option("--conversation-id", default=None, help="Conversation this session belongs to")
+@click.option("--group-id", default=None, help="Group ID for memory scoping")
 
 # gui/src/strawpot_gui/routers/sessions.py — launch_session_subprocess()
 if conversation_id is not None:
-    cmd.extend(["--conversation-id", str(conversation_id)])
+    cmd.extend(["--group-id", str(conversation_id)])
 ```
 
 ```python
 # cli/src/strawpot/session.py — Session.__init__()
-self._conversation_id: str | None = conversation_id
+self._group_id: str | None = group_id
 ```
 
 Thread into all memory calls (get, dump, remember, recall) in both `session.py` and `delegation.py`.
 
 #### 5b. Extend MemoryProvider protocol
 
-Add optional `conversation_id` parameter to all four methods. Optional with `None` default for backward compatibility — existing providers that don't accept it continue to work.
+Add optional `group_id` parameter to all four methods. Optional with `None` default for backward compatibility — existing providers that don't accept it continue to work.
 
 ```python
 # strawpot_memory/memory_protocol.py
 class MemoryProvider(Protocol):
     def get(self, *, session_id, agent_id, role, behavior_ref, task,
             budget=None, parent_agent_id=None,
-            conversation_id: str | None = None,          # NEW
+            group_id: str | None = None,          # NEW
     ) -> GetResult: ...
 
     def dump(self, *, session_id, agent_id, role, behavior_ref, task,
              status, output, tool_trace="", parent_agent_id=None, artifacts=None,
-             conversation_id: str | None = None,         # NEW
+             group_id: str | None = None,         # NEW
     ) -> DumpReceipt: ...
 
     def remember(self, *, session_id, agent_id, role, content,
                  keywords=None, scope="project",
-                 conversation_id: str | None = None,     # NEW
+                 group_id: str | None = None,     # NEW
     ) -> RememberResult: ...
 
     def recall(self, *, session_id, agent_id, role, query,
                keywords=None, scope="", max_results=10,
-               conversation_id: str | None = None,       # NEW
+               group_id: str | None = None,       # NEW
     ) -> RecallResult: ...
 ```
 
-#### 5c. Conversation-scoped EM storage in Dial
+#### 5c. Group-scoped EM storage in Dial
 
 **Storage layout:**
 
 ```
 .strawpot/memory/dial-data/
 ├── em/
-│   ├── run_abc.jsonl                   # standalone session (no conversation)
-│   └── conversations/
+│   ├── run_abc.jsonl                   # standalone session (no group)
+│   └── groups/
 │       ├── 123/
-│       │   ├── run_def.jsonl           # conversation 123, session def
-│       │   └── run_ghi.jsonl           # conversation 123, session ghi
+│       │   ├── run_def.jsonl           # group 123, session def
+│       │   └── run_ghi.jsonl           # group 123, session ghi
 │       └── 456/
-│           └── run_xyz.jsonl           # conversation 456
+│           └── run_xyz.jsonl           # group 456
 └── knowledge/
     └── ... (unchanged — project-scoped)
 ```
@@ -425,34 +425,34 @@ class MemoryProvider(Protocol):
 
 ```python
 # dial_memory/storage.py
-def em_conversation_dir(storage_dir: Path, conversation_id: str) -> Path:
-    return storage_dir / "em" / "conversations" / conversation_id
+def em_group_dir(storage_dir: Path, group_id: str) -> Path:
+    return storage_dir / "em" / "groups" / group_id
 ```
 
-**New em_scope value:** `"auto"` (new default). Selects scope based on whether conversation_id is provided:
+**New em_scope value:** `"auto"` (new default). Selects scope based on whether group_id is provided:
 
-| em_scope | conversation_id | Behavior |
-|----------|----------------|----------|
+| em_scope | group_id | Behavior |
+|----------|----------|----------|
 | `"session"` | any | Current session only (unchanged) |
-| `"conversation"` | set | All sessions in this conversation's directory |
-| `"conversation"` | None | Falls back to session scope |
-| `"project"` | any | All sessions in project `em/` (unchanged — opt-in for cross-conversation) |
+| `"group"` | set | All sessions in this group's directory |
+| `"group"` | None | Falls back to session scope |
+| `"project"` | any | All sessions in project `em/` (unchanged — opt-in for cross-group) |
 | `"global"` | any | Project + global (unchanged) |
-| `"auto"` | set | → `"conversation"` |
+| `"auto"` | set | → `"group"` |
 | `"auto"` | None | → `"project"` |
 
-**EM write (dump):** When `conversation_id` is set, write to `em/conversations/{conversation_id}/{session_id}.jsonl` instead of `em/{session_id}.jsonl`.
+**EM write (dump):** When `group_id` is set, write to `em/groups/{group_id}/{session_id}.jsonl` instead of `em/{session_id}.jsonl`.
 
-**EM read (_collect_em):** When scope resolves to `"conversation"`, read only from `em/conversations/{conversation_id}/`.
+**EM read (_collect_em):** When scope resolves to `"group"`, read only from `em/groups/{group_id}/`.
 
-**EM event metadata:** Add `conversation_id` field to the event record for traceability:
+**EM event metadata:** Add `group_id` field to the event record for traceability:
 
 ```json
 {
   "event_id": "evt_xxx",
   "ts": "...",
   "session_id": "run_abc",
-  "conversation_id": "123",
+  "group_id": "123",
   "agent_id": "agent_xxx",
   "role": "researcher",
   "event_type": "AGENT_RESULT",
@@ -462,35 +462,30 @@ def em_conversation_dir(storage_dir: Path, conversation_id: str) -> Path:
 
 #### 5d. Conversation-scoped history file
 
-Change `_write_conversation_history()` to scope the history file per conversation:
+Each conversation stores its history in a per-conversation folder:
 
 ```python
-# Before:
-history_path = Path(working_dir) / ".strawpot" / "conversation_history.md"
-
-# After:
+# .strawpot/conversations/{conversation_id}/history.md
 history_dir = Path(working_dir) / ".strawpot" / "conversations" / str(conversation_id)
 history_dir.mkdir(parents=True, exist_ok=True)
 history_path = history_dir / "history.md"
 ```
 
-Each conversation gets its own directory at `.strawpot/conversations/{id}/`, with `history.md` inside. The per-conversation folder structure allows future expansion (conversation-level metadata, config, etc.). The data written is already filtered by conversation_id (SQL WHERE clause). The fix prevents concurrent conversations from overwriting each other's history.
+The folder-per-conversation layout supports future expansion (e.g. storing attachments or metadata alongside the history file). The data written is already filtered by conversation_id (SQL WHERE clause). No migration needed — history files are regenerated from the DB on each task submission.
 
-The hint in `_build_conversation_context()` already uses the returned path, so it will automatically reference the correct file.
+#### 5e. Group scope for remember/recall
 
-#### 5e. Conversation scope for remember/recall
-
-Add `"conversation"` as a valid scope for `remember()` and `recall()`:
+Add `"group"` as a valid scope for `remember()` and `recall()`:
 
 ```python
 # dial_memory/storage.py
-def knowledge_conversation_path(storage_dir: Path, conversation_id: str) -> Path:
-    return storage_dir / "knowledge" / "conversations" / conversation_id / "knowledge.jsonl"
+def knowledge_group_path(storage_dir: Path, group_id: str) -> Path:
+    return storage_dir / "knowledge" / "groups" / group_id / "knowledge.jsonl"
 ```
 
-**remember(scope="conversation"):** Store in `knowledge/conversations/{conversation_id}/knowledge.jsonl`. Requires conversation_id — falls back to project if None.
+**remember(scope="group"):** Store in `knowledge/groups/{group_id}/knowledge.jsonl`. Requires group_id — falls back to project if None.
 
-**recall(scope=""):** When conversation_id is set, search conversation scope in addition to project/role/global. Conversation entries get higher priority.
+**recall(scope=""):** When group_id is set, search group scope in addition to project/role/global. Group entries get higher priority.
 
 **Default scope stays "project"** — most `remember()` calls store durable knowledge that should be shared.
 
@@ -499,7 +494,7 @@ def knowledge_conversation_path(storage_dir: Path, conversation_id: str) -> Path
 ```
 global          ~/.strawpot/memory/dial-data/
   └─ project    .strawpot/memory/dial-data/
-      └─ conversation   .../conversations/{id}/    (EM + knowledge)
+      └─ group          .../groups/{id}/           (EM + knowledge)
           └─ session     .../em/{run_id}.jsonl
 ```
 
@@ -508,24 +503,24 @@ global          ~/.strawpot/memory/dial-data/
 #### Migration / backward compatibility
 
 1. **Protocol:** All new params are `Optional[str] = None` — existing providers work unchanged
-2. **Storage:** Existing EM files stay in `em/` (no conversation dir). Provider reads both layouts
-3. **Default scope:** `"auto"` detects conversation vs standalone. Existing `em_scope="project"` config still honored
-4. **CLI:** `--conversation-id` is optional. Standalone `strawpot start` works as before
-5. **Existing events:** Old EM events without `conversation_id` are treated as standalone — visible in project scope but excluded from conversation scope
+2. **Storage:** Existing EM files stay in `em/` (no group dir). Provider reads both layouts
+3. **Default scope:** `"auto"` detects group vs standalone. Existing `em_scope="project"` config still honored
+4. **CLI:** `--group-id` is optional. Standalone `strawpot start` works as before
+5. **Existing events:** Old EM events without `group_id` are treated as standalone — visible in project scope but excluded from group scope
 6. **History file:** Old `conversation_history.md` (no ID) is not read — each conversation writes its own file
 
 #### Files to modify
 
 | Repo | File | Change |
 |------|------|--------|
-| strawpot_memory | `memory_protocol.py` | Add `conversation_id` param to all 4 methods |
-| dial | `dial_memory/provider.py` | Conversation-scoped EM write/read, `"auto"` em_scope, conversation knowledge |
-| dial | `dial_memory/storage.py` | Add `em_conversation_dir()`, `knowledge_conversation_path()` helpers |
-| strawpot | `cli/src/strawpot/cli.py` | Add `--conversation-id` option to `start` command |
-| strawpot | `cli/src/strawpot/session.py` | Accept conversation_id, pass to all memory calls |
-| strawpot | `cli/src/strawpot/delegation.py` | Pass conversation_id to child agent memory calls |
-| strawpot | `gui/src/strawpot_gui/routers/sessions.py` | Pass `--conversation-id` in subprocess cmd |
-| strawpot | `gui/src/strawpot_gui/routers/conversations.py` | Scope history file to `conversations/{id}/history.md` |
+| strawpot_memory | `memory_protocol.py` | Add `group_id` param to all 4 methods |
+| dial | `dial_memory/provider.py` | Group-scoped EM write/read, `"auto"` em_scope, group knowledge |
+| dial | `dial_memory/storage.py` | Add `em_group_dir()`, `knowledge_group_path()` helpers |
+| strawpot | `cli/src/strawpot/cli.py` | Add `--group-id` option to `start` command |
+| strawpot | `cli/src/strawpot/session.py` | Accept group_id, pass to all memory calls |
+| strawpot | `cli/src/strawpot/delegation.py` | Pass group_id to child agent memory calls |
+| strawpot | `gui/src/strawpot_gui/routers/sessions.py` | Pass `--group-id` in subprocess cmd |
+| strawpot | `gui/src/strawpot_gui/routers/conversations.py` | Scope history file to per-conversation folder |
 
 ## Implementation status
 
@@ -547,26 +542,26 @@ global          ~/.strawpot/memory/dial-data/
 | 14 | Conversation history service (Phase 3) | Deferred (see TODO.md) |
 | 15 | Structured decision events (Phase 4) | Deferred (see TODO.md) |
 | 16 | Scope `conversation_history.md` to include conversation_id (Phase 5d) | Done |
-| 17 | Add `--conversation-id` CLI argument (Phase 5a) | TODO |
-| 18 | Add `conversation_id` to MemoryProvider protocol (Phase 5b) | TODO |
-| 19 | Thread `conversation_id` through session.py and delegation.py (Phase 5a) | TODO |
-| 20 | Pass `--conversation-id` from GUI to CLI subprocess (Phase 5a) | TODO |
-| 21 | Conversation-scoped EM storage in Dial (Phase 5c) | TODO |
-| 22 | `"auto"` em_scope default with conversation detection (Phase 5c) | TODO |
-| 23 | `"conversation"` scope for remember/recall (Phase 5e) | TODO |
+| 17 | Add `--group-id` CLI argument (Phase 5a) | Done |
+| 18 | Add `group_id` to MemoryProvider protocol (Phase 5b) | TODO |
+| 19 | Thread `group_id` through session.py and delegation.py (Phase 5a) | TODO |
+| 20 | Pass `--group-id` from GUI to CLI subprocess (Phase 5a) | Done |
+| 21 | Group-scoped EM storage in Dial (Phase 5c) | TODO |
+| 22 | `"auto"` em_scope default with group detection (Phase 5c) | TODO |
+| 23 | `"group"` scope for remember/recall (Phase 5e) | TODO |
 
 ## Key files
 
 | File | Role |
 |------|------|
 | `gui/src/strawpot_gui/routers/conversations.py` | Conversation context builder + task submission endpoint + history file |
-| `gui/src/strawpot_gui/routers/sessions.py` | Session launch subprocess (passes --conversation-id) |
+| `gui/src/strawpot_gui/routers/sessions.py` | Session launch subprocess (passes --group-id) |
 | `gui/src/strawpot_gui/db.py` | Sessions table schema, `_parse_trace()`, `_extract_recap()` |
-| `cli/src/strawpot/cli.py` | CLI entry point (--conversation-id option) |
-| `cli/src/strawpot/session.py` | Memory get/dump at session level, conversation_id threading |
+| `cli/src/strawpot/cli.py` | CLI entry point (--group-id option) |
+| `cli/src/strawpot/session.py` | Memory get/dump at session level, group_id threading |
 | `cli/src/strawpot/delegation.py` | Memory get/dump at delegation level, `_format_memory_prompt()` |
 | `cli/src/strawpot/trace.py` | Trace event definitions and artifact storage |
-| `strawpot_memory/memory_protocol.py` | MemoryProvider protocol (conversation_id param) |
+| `strawpot_memory/memory_protocol.py` | MemoryProvider protocol (group_id param) |
 | `dial_memory/provider.py` | Dial provider — EM scoping, knowledge scoping |
-| `dial_memory/storage.py` | File path helpers for conversation-scoped storage |
+| `dial_memory/storage.py` | File path helpers for group-scoped storage |
 | `gui/tests/test_conversations.py` | Tests for conversation context |

@@ -289,6 +289,7 @@ class Session:
         headless: bool = False,
         system_prompt: str = "",
         memory_task: str = "",
+        group_id: str | None = None,
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -302,6 +303,7 @@ class Session:
         self._ask_user_handler = ask_user_handler or _default_ask_user_handler
         self._provided_run_id = run_id
         self._headless = headless
+        self._group_id: str | None = group_id
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
