@@ -453,3 +453,62 @@ def schedule_history(schedule_id: int, conn=Depends(get_db_conn)):
         (schedule_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.post("/schedules/{schedule_id}/trigger")
+def trigger_schedule(schedule_id: int, conn=Depends(get_db_conn)):
+    """Manually trigger a schedule immediately."""
+    from strawpot_gui.routers.sessions import launch_session_subprocess
+    from strawpot_gui.scheduler import fire_schedule
+
+    row = conn.execute(
+        "SELECT * FROM scheduled_tasks WHERE id = ?", (schedule_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Schedule not found")
+
+    result = fire_schedule(conn, dict(row), launch_session_subprocess)
+
+    if result.get("error"):
+        raise HTTPException(500, result["error"])
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE scheduled_tasks SET last_run_at = ?, last_error = NULL WHERE id = ?",
+        (now, schedule_id),
+    )
+    return result
+
+
+@router.post("/schedules/runs/{run_id}/rerun")
+def rerun_schedule_run(run_id: str, conn=Depends(get_db_conn)):
+    """Re-run a past schedule-triggered session."""
+    from strawpot_gui.routers.sessions import launch_session_subprocess
+    from strawpot_gui.scheduler import fire_schedule
+
+    session = conn.execute(
+        "SELECT schedule_id, user_task, task FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if not session["schedule_id"]:
+        raise HTTPException(422, "Session was not triggered by a schedule")
+
+    schedule = conn.execute(
+        "SELECT * FROM scheduled_tasks WHERE id = ?",
+        (session["schedule_id"],),
+    ).fetchone()
+    if not schedule:
+        raise HTTPException(404, "Schedule has been deleted")
+
+    original_task = session["user_task"] or session["task"]
+    result = fire_schedule(
+        conn, dict(schedule), launch_session_subprocess,
+        task_override=original_task,
+    )
+
+    if result.get("error"):
+        raise HTTPException(500, result["error"])
+
+    return result
