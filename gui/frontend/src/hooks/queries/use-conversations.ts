@@ -25,9 +25,9 @@ export function useConversationInfinite(
         `/conversations/${id}?limit=20${pageParam ? `&before_id=${encodeURIComponent(pageParam)}` : ""}`,
       ),
     initialPageParam: null as string | null,
-    getPreviousPageParam: (firstPage) =>
-      firstPage.has_more ? (firstPage.sessions[0]?.run_id ?? null) : null,
-    getNextPageParam: () => null,
+    getPreviousPageParam: () => null,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? (lastPage.sessions[0]?.run_id ?? null) : null,
     ...options,
   });
 }

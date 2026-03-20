@@ -156,7 +156,15 @@ export default function ConversationView() {
   const [advCacheDelegations, setAdvCacheDelegations] = useState("");
   const [advCacheMaxEntries, setAdvCacheMaxEntries] = useState("");
   const [advCacheTtl, setAdvCacheTtl] = useState("");
-  const [interactive, setInteractive] = useState(false);
+  const [interactive, setInteractive] = useState(() => {
+    try { return localStorage.getItem(`conv:${cid}:interactive`) === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { setInteractive(localStorage.getItem(`conv:${cid}:interactive`) === "true"); } catch {}
+  }, [cid]);
+  useEffect(() => {
+    try { localStorage.setItem(`conv:${cid}:interactive`, String(interactive)); } catch {}
+  }, [cid, interactive]);
   const [askUserResponse, setAskUserResponse] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -180,12 +188,12 @@ export default function ConversationView() {
   } | undefined;
 
   // Initial load — no polling yet
-  const { data, isLoading, error, fetchPreviousPage, hasPreviousPage, isFetchingPreviousPage } =
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useConversationInfinite(cid);
 
-  // Flatten pages: pages[0]=oldest loaded, pages[last]=newest
-  const allSessions = data?.pages.flatMap((p) => p.sessions) ?? [];
-  const conversation = data?.pages[data.pages.length - 1];
+  // Flatten pages: pages[0]=newest, pages[1+]=older → reverse for chronological display
+  const allSessions = data?.pages.slice().reverse().flatMap((p) => p.sessions) ?? [];
+  const conversation = data?.pages[0];
   const lastSession = allSessions[allSessions.length - 1];
   const hasActiveSession =
     lastSession?.status === "running" || lastSession?.status === "starting";
@@ -210,7 +218,7 @@ export default function ConversationView() {
 
   const isActive = hasActiveSession;
 
-  // Scroll anchor: restore position when older pages are prepended
+  // Scroll anchor: restore position when older pages are appended (rendered at top)
   useEffect(() => {
     if (!scrollRef.current) return;
     const delta = scrollRef.current.scrollHeight - prevScrollHeightRef.current;
@@ -243,16 +251,16 @@ export default function ConversationView() {
     if (!sentinelRef.current || !scrollRef.current) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasPreviousPage && !isFetchingPreviousPage) {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
           prevScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
-          fetchPreviousPage();
+          fetchNextPage();
         }
       },
       { root: scrollRef.current, threshold: 0.1 },
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const agentNames = (projectResources ?? [])
     .filter((r) => r.type === "agents")
@@ -434,7 +442,7 @@ export default function ConversationView() {
         <div className="mx-auto w-full max-w-2xl space-y-6 py-4">
           {/* Sentinel at top triggers loading older sessions */}
           <div ref={sentinelRef} className="h-1" />
-          {isFetchingPreviousPage && (
+          {isFetchingNextPage && (
             <div className="flex justify-center py-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
