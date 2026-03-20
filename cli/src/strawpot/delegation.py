@@ -705,7 +705,7 @@ def _format_memory_prompt(get_result: GetResult) -> str:
     """Format context cards from a memory.get result into prompt text."""
     parts = []
     for card in get_result.context_cards:
-        parts.append(f"[{card.kind.value}] {card.content}")
+        parts.append(f"[{card.kind.value}]\n{card.content}")
     if not parts:
         return ""
     return "## Memory\n\n" + "\n\n".join(parts)
