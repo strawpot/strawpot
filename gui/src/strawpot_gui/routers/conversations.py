@@ -152,6 +152,7 @@ def _build_conversation_context(conn, conversation_id: int, *, history_path: str
         else:
             result_line = f"(exit code {row['exit_code']})"
 
+        parts.append("")
         parts.append(header)
         parts.append(f"- Asked: {task_line}")
         parts.append(f"- Result: {result_line}")
@@ -229,9 +230,11 @@ def _write_conversation_history(conn, conversation_id: int, working_dir: str) ->
             else:
                 meta.append(f"{duration_ms // 60_000}m{(duration_ms % 60_000) // 1000}s")
         parts.append(f"## Turn {i} — {row['started_at']} [{', '.join(meta)}]")
+        parts.append("")
 
         task_text = row["user_task"] or _strip_prior_context(row["task"])
         parts.append(f"**Task:** {task_text}")
+        parts.append("")
 
         if row["files_changed"]:
             try:
