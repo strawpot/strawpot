@@ -1620,7 +1620,7 @@ class TestFormatMemoryPrompt:
             context_cards=[ContextCard(kind=MemoryKind.PM, content="Do X")]
         )
         result = _format_memory_prompt(get_result)
-        assert result == "## Memory\n\n[PM]\nDo X"
+        assert result == "## Memory\n\n[PM]\n\nDo X"
 
     def test_multiple_cards(self):
         get_result = GetResult(
@@ -1632,9 +1632,9 @@ class TestFormatMemoryPrompt:
         )
         result = _format_memory_prompt(get_result)
         assert result.startswith("## Memory\n\n")
-        assert "[PM]\ninstructions" in result
-        assert "[SM]\nfact A" in result
-        assert "[STM]\nscratch" in result
+        assert "[PM]\n\ninstructions" in result
+        assert "[SM]\n\nfact A" in result
+        assert "[STM]\n\nscratch" in result
 
 
 class TestAgentStatus:
@@ -1723,8 +1723,8 @@ class TestMemoryIntegration:
 
         # memory_prompt in spawn contains formatted cards
         spawn_kwargs = runtime.spawn.call_args.kwargs
-        assert "[PM]\nrole instructions" in spawn_kwargs["memory_prompt"]
-        assert "[SM]\nworkspace fact" in spawn_kwargs["memory_prompt"]
+        assert "[PM]\n\nrole instructions" in spawn_kwargs["memory_prompt"]
+        assert "[SM]\n\nworkspace fact" in spawn_kwargs["memory_prompt"]
 
     def test_memory_get_empty_cards_gives_empty_prompt(self, tmp_path):
         """When memory.get returns no cards, memory_prompt is empty."""
