@@ -152,6 +152,7 @@ def _build_conversation_context(conn, conversation_id: int, *, history_path: str
         else:
             result_line = f"(exit code {row['exit_code']})"
 
+        parts.append("")
         parts.append(header)
         parts.append(f"- Asked: {task_line}")
         parts.append(f"- Result: {result_line}")
