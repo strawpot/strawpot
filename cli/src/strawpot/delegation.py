@@ -763,6 +763,7 @@ def handle_delegate(
     agent_spans: dict[str, str] | None = None,
     register_agent: Callable[[str, str, str, int | None], None] | None = None,
     files_dirs: list[str] | None = None,
+    group_id: str | None = None,
 ) -> DelegateResult:
     """Handle a delegation request end-to-end.
 
@@ -922,6 +923,7 @@ def handle_delegate(
                 behavior_ref=role_prompt,
                 task=task_text,
                 parent_agent_id=request.parent_agent_id,
+                group_id=group_id,
             )
             if get_result.context_cards:
                 memory_prompt = _format_memory_prompt(get_result)
@@ -937,6 +939,7 @@ def handle_delegate(
                     cards=get_result.context_cards or [],
                     card_count=len(get_result.context_cards) if get_result.context_cards else 0,
                     parent_agent_id=request.parent_agent_id,
+                    group_id=group_id,
                 )
 
         # 7b. Register agent BEFORE spawning so that if the child
@@ -1024,6 +1027,7 @@ def handle_delegate(
                 status=_agent_status(result, timed_out=timed_out),
                 output=result.output,
                 parent_agent_id=request.parent_agent_id,
+                group_id=group_id,
             )
             if tracer is not None and delegate_span_id is not None:
                 tracer.memory_dump(
@@ -1037,6 +1041,7 @@ def handle_delegate(
                     status=_agent_status(result, timed_out=timed_out),
                     output=result.output,
                     parent_agent_id=request.parent_agent_id,
+                    group_id=group_id,
                 )
 
         # 8b. Handle timeout — no retry on timeout

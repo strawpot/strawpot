@@ -1669,7 +1669,7 @@ def _mock_memory_provider(context_cards=None):
 
 class TestMemoryIntegration:
     def _run_delegate(self, tmp_path, runtime=None, memory_provider=None,
-                      **config_overrides):
+                      group_id=None, **config_overrides):
         """Helper to run handle_delegate with minimal setup."""
         base = str(tmp_path / "registry")
         role_path = _write_role(base, "implementer", "Implement things.")
@@ -1692,6 +1692,7 @@ class TestMemoryIntegration:
             resolve_role=lambda slug, kind="role": resolved,
             resolve_role_dirs=lambda s: None,
             memory_provider=memory_provider,
+            group_id=group_id,
         )
 
     def test_no_memory_provider_skips_calls(self, tmp_path):
@@ -1769,6 +1770,28 @@ class TestMemoryIntegration:
 
         dump_kwargs = provider.dump.call_args.kwargs
         assert dump_kwargs["status"] == "timeout"
+
+    def test_group_id_passed_to_memory_calls(self, tmp_path):
+        """group_id is forwarded to both memory.get and memory.dump."""
+        provider = _mock_memory_provider()
+        self._run_delegate(tmp_path, memory_provider=provider, group_id="conv_42")
+
+        get_kwargs = provider.get.call_args.kwargs
+        assert get_kwargs["group_id"] == "conv_42"
+
+        dump_kwargs = provider.dump.call_args.kwargs
+        assert dump_kwargs["group_id"] == "conv_42"
+
+    def test_group_id_none_by_default(self, tmp_path):
+        """Without group_id, memory calls receive None."""
+        provider = _mock_memory_provider()
+        self._run_delegate(tmp_path, memory_provider=provider)
+
+        get_kwargs = provider.get.call_args.kwargs
+        assert get_kwargs["group_id"] is None
+
+        dump_kwargs = provider.dump.call_args.kwargs
+        assert dump_kwargs["group_id"] is None
 
 
 # ---------------------------------------------------------------------------

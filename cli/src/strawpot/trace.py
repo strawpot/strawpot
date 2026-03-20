@@ -216,6 +216,7 @@ class Tracer:
         cards: list,
         card_count: int,
         parent_agent_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         """Emit ``memory_get``.  Stores serialised cards as artifact."""
         cards_content = json.dumps([str(c) for c in cards]) if cards else ""
@@ -234,6 +235,7 @@ class Tracer:
             cards_ref=cards_ref,
             card_count=card_count,
             parent_agent_id=parent_agent_id,
+            group_id=group_id,
         )
 
     def memory_remember(
@@ -250,6 +252,7 @@ class Tracer:
         status: str = "",
         entry_id: str = "",
         parent_agent_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         """Emit ``memory_remember``.  Stores content as artifact."""
         content_ref = self.store_artifact(content)
@@ -266,6 +269,7 @@ class Tracer:
             status=status,
             entry_id=entry_id,
             parent_agent_id=parent_agent_id,
+            group_id=group_id,
         )
 
     def memory_recall(
@@ -281,6 +285,7 @@ class Tracer:
         result_count: int = 0,
         results: list | None = None,
         parent_agent_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         """Emit ``memory_recall``.  Stores results as artifact."""
         results_content = json.dumps(results, indent=2) if results else ""
@@ -297,6 +302,7 @@ class Tracer:
             result_count=result_count,
             results_ref=results_ref,
             parent_agent_id=parent_agent_id,
+            group_id=group_id,
         )
 
     def memory_dump(
@@ -312,6 +318,7 @@ class Tracer:
         status: str = "",
         output: str = "",
         parent_agent_id: str | None = None,
+        group_id: str | None = None,
     ) -> None:
         """Emit ``memory_dump``.  Stores behavior_ref and output as artifacts."""
         behavior_artifact = self.store_artifact(behavior_ref)
@@ -329,6 +336,7 @@ class Tracer:
             status=status,
             output_ref=output_ref,
             parent_agent_id=parent_agent_id,
+            group_id=group_id,
         )
 
     def agent_spawn(
