@@ -1,6 +1,7 @@
 """Tests for scheduled tasks CRUD endpoints."""
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -560,3 +561,109 @@ class TestScheduleRuns:
         assert items[0]["schedule_name"] == "run-test"
         assert items[0]["schedule_type"] == "recurring"
         assert items[0]["project_name"] == "test-proj"
+
+
+class TestTriggerSchedule:
+    def test_trigger(self, client, project_id):
+        sched = client.post(
+            "/api/schedules",
+            json={
+                "name": "trigger-test",
+                "project_id": project_id,
+                "task": "do work",
+                "cron_expr": "0 0 * * *",
+            },
+        ).json()
+
+        with patch(
+            "strawpot_gui.routers.sessions.launch_session_subprocess",
+            return_value="run-trig",
+        ):
+            resp = client.post(f"/api/schedules/{sched['id']}/trigger")
+        assert resp.status_code == 200
+        assert resp.json()["run_id"] == "run-trig"
+
+        # last_run_at should be updated
+        updated = client.get(f"/api/schedules/{sched['id']}").json()
+        assert updated["last_run_at"] is not None
+
+    def test_trigger_not_found(self, client):
+        resp = client.post("/api/schedules/99999/trigger")
+        assert resp.status_code == 404
+
+    def test_trigger_launch_error(self, client, project_id):
+        sched = client.post(
+            "/api/schedules",
+            json={
+                "name": "trigger-err",
+                "project_id": project_id,
+                "task": "fail",
+                "cron_expr": "0 0 * * *",
+            },
+        ).json()
+
+        with patch(
+            "strawpot_gui.routers.sessions.launch_session_subprocess",
+            side_effect=RuntimeError("spawn error"),
+        ):
+            resp = client.post(f"/api/schedules/{sched['id']}/trigger")
+        assert resp.status_code == 500
+
+
+class TestRerunScheduleRun:
+    def test_rerun(self, client, project_id):
+        sched = client.post(
+            "/api/schedules",
+            json={
+                "name": "rerun-test",
+                "project_id": project_id,
+                "task": "original task",
+                "cron_expr": "0 0 * * *",
+            },
+        ).json()
+        sid = sched["id"]
+
+        # Insert a session linked to this schedule
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, schedule_id, status, role, runtime, "
+                " isolation, started_at, session_dir, task, user_task) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-orig", project_id, sid, "completed",
+                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "context\n---\noriginal task", "original task"),
+            )
+
+        with patch(
+            "strawpot_gui.routers.sessions.launch_session_subprocess",
+            return_value="run-rerun",
+        ) as mock_launch:
+            resp = client.post("/api/schedules/runs/run-orig/rerun")
+        assert resp.status_code == 200
+        assert resp.json()["run_id"] == "run-rerun"
+        # Should use user_task (original), not the context-prepended task
+        assert mock_launch.call_args[0][2] == "original task"
+
+    def test_rerun_not_found(self, client):
+        resp = client.post("/api/schedules/runs/nonexistent/rerun")
+        assert resp.status_code == 404
+
+    def test_rerun_no_schedule(self, client, project_id):
+        """Session not triggered by a schedule returns 422."""
+        from strawpot_gui.db import get_db
+        db_path = client.app.state.db_path
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, status, role, runtime, "
+                " isolation, started_at, session_dir, task) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-manual", project_id, "completed",
+                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "manual task"),
+            )
+        resp = client.post("/api/schedules/runs/run-manual/rerun")
+        assert resp.status_code == 422
