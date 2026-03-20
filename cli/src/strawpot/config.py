@@ -238,19 +238,28 @@ def save_resource_config(
 
     existing = _read_toml(toml_path)
 
+    def _ensure_dict(section: dict, key: str) -> dict:
+        """Ensure section[key] is a dict, replacing string values like '*'."""
+        val = section.get(key)
+        if not isinstance(val, dict):
+            section[key] = {}
+        return section[key]
+
     if resource_type == "roles":
         if param_values:
-            role_section = existing.setdefault("roles", {}).setdefault(name, {})
+            roles = existing.setdefault("roles", {})
+            role_section = _ensure_dict(roles, name)
             role_section.update(param_values)
 
     elif resource_type == "skills":
         if env_values:
-            existing.setdefault("skills", {}).setdefault(name, {}).setdefault(
-                "env", {}
-            ).update(env_values)
+            skills = existing.setdefault("skills", {})
+            skill_section = _ensure_dict(skills, name)
+            skill_section.setdefault("env", {}).update(env_values)
 
     elif resource_type == "agents":
-        agent_section = existing.setdefault("agents", {}).setdefault(name, {})
+        agents = existing.setdefault("agents", {})
+        agent_section = _ensure_dict(agents, name)
         if env_values:
             agent_section.setdefault("env", {}).update(env_values)
         if param_values:
