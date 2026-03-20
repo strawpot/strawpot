@@ -177,7 +177,11 @@ export default function ScheduledTasks() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => triggerSchedule.mutate(s.id)}
+                        onClick={() => {
+                          if (confirm(`Run schedule "${s.name}" now?`)) {
+                            triggerSchedule.mutate(s.id);
+                          }
+                        }}
                         disabled={triggerSchedule.isPending}
                         title="Run Now"
                       >

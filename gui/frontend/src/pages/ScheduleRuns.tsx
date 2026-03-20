@@ -148,7 +148,11 @@ export default function ScheduleRuns() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => rerun.mutate(r.run_id)}
+                          onClick={() => {
+                            if (confirm(`Re-run "${r.schedule_name}"?`)) {
+                              rerun.mutate(r.run_id);
+                            }
+                          }}
                           disabled={rerun.isPending}
                           title="Re-run"
                         >
