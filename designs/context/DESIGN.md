@@ -433,13 +433,14 @@ def em_group_dir(storage_dir: Path, group_id: str) -> Path:
 
 | em_scope | group_id | Behavior |
 |----------|----------|----------|
-| `"session"` | any | Current session only (unchanged) |
 | `"group"` | set | All sessions in this group's directory |
-| `"group"` | None | Falls back to session scope |
+| `"group"` | None | Falls back to project scope |
 | `"project"` | any | All sessions in project `em/` (unchanged — opt-in for cross-group) |
 | `"global"` | any | Project + global (unchanged) |
 | `"auto"` | set | → `"group"` |
 | `"auto"` | None | → `"project"` |
+
+`"session"` scope was removed — session IDs are unique UUIDs so a session's own EM file is always empty at `get()` time (`dump()` writes at the end). There is no useful "current session only" read.
 
 **EM write (dump):** When `group_id` is set, write to `em/groups/{group_id}/{session_id}.jsonl` instead of `em/{session_id}.jsonl`.
 
