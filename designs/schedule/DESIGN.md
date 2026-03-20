@@ -474,9 +474,9 @@ File: `gui/frontend/src/pages/ScheduleRuns.tsx`
 | 32 | Extract `fire_schedule()` from `Scheduler._fire()` | Done |
 | 33 | `POST /api/schedules/{id}/trigger` endpoint | Done |
 | 34 | `POST /api/schedules/runs/{run_id}/rerun` endpoint | Done |
-| 35 | Frontend: `useTriggerSchedule` + `useRerunScheduleRun` mutations | Planned |
-| 36 | Frontend: "Run Now" button on ScheduledTasks | Planned |
-| 37 | Frontend: "Re-run" button on ScheduleRuns | Planned |
+| 35 | Frontend: `useTriggerSchedule` + `useRerunScheduleRun` mutations | Done |
+| 36 | Frontend: "Run Now" button on ScheduledTasks | Done |
+| 37 | Frontend: "Re-run" button on ScheduleRuns | Done |
 | 38 | Backend tests for trigger + rerun endpoints | Done |
 
 ## Not in Scope

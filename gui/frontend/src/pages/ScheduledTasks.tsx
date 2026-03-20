@@ -2,7 +2,7 @@ import { useState } from "react";
 import cronstrue from "cronstrue";
 import { cronUtcToLocal } from "@/lib/utils";
 import { useSchedules } from "@/hooks/queries/use-schedules";
-import { useDeleteSchedule, useToggleSchedule } from "@/hooks/mutations/use-schedules";
+import { useDeleteSchedule, useToggleSchedule, useTriggerSchedule } from "@/hooks/mutations/use-schedules";
 import CreateScheduleDialog from "@/components/CreateScheduleDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Pause, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
 import type { Schedule } from "@/api/types";
 
 function cronToLocalDesc(cron: string | null): string {
@@ -94,6 +94,8 @@ export default function ScheduledTasks() {
   const [editing, setEditing] = useState<Schedule | null>(null);
   const deleteSchedule = useDeleteSchedule();
   const toggleSchedule = useToggleSchedule();
+  const triggerSchedule = useTriggerSchedule();
+  const [confirmingTrigger, setConfirmingTrigger] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -172,6 +174,39 @@ export default function ScheduledTasks() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      {confirmingTrigger === s.id ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              triggerSchedule.mutate(s.id, {
+                                onSettled: () => setConfirmingTrigger(null),
+                              });
+                            }}
+                            disabled={triggerSchedule.isPending}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setConfirmingTrigger(null)}
+                          >
+                            No
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmingTrigger(s.id)}
+                          title="Run Now"
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"

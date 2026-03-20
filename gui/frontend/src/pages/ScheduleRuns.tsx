@@ -13,7 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Pagination from "@/components/Pagination";
-import { AlertCircle, ExternalLink } from "lucide-react";
+import { useRerunScheduleRun } from "@/hooks/mutations/use-schedules";
+import { AlertCircle, ExternalLink, RotateCcw } from "lucide-react";
 import type { ScheduleRun } from "@/api/types";
 
 function formatDateTime(iso: string | null): string {
@@ -67,6 +68,8 @@ export default function ScheduleRuns() {
   const [page, setPage] = useState(1);
   const { data, isLoading, error } = useScheduleRuns(page);
   const navigate = useNavigate();
+  const rerun = useRerunScheduleRun();
+  const [confirmingRerun, setConfirmingRerun] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -111,7 +114,7 @@ export default function ScheduleRuns() {
                   <TableHead>Status</TableHead>
                   <TableHead>Started</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead className="w-[80px]">Session</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -141,18 +144,54 @@ export default function ScheduleRuns() {
                       {formatDuration(r.duration_ms)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() =>
-                          navigate(
-                            `/projects/${r.project_id}/sessions/${r.run_id}`,
-                          )
-                        }
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {confirmingRerun === r.run_id ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => {
+                                rerun.mutate(r.run_id, {
+                                  onSettled: () => setConfirmingRerun(null),
+                                });
+                              }}
+                              disabled={rerun.isPending}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setConfirmingRerun(null)}
+                            >
+                              No
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setConfirmingRerun(r.run_id)}
+                            title="Re-run"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() =>
+                            navigate(
+                              `/projects/${r.project_id}/sessions/${r.run_id}`,
+                            )
+                          }
+                          title="View Session"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
