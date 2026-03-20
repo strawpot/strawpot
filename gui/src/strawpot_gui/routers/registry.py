@@ -134,19 +134,25 @@ def extract_saved_values(
 
     if resource_type == "roles":
         role_data = toml_data.get("roles", {}).get(name, {})
-        for key in params_schema:
-            if key in role_data:
-                params_values[key] = role_data[key]
+        if isinstance(role_data, dict):
+            for key in params_schema:
+                if key in role_data:
+                    params_values[key] = role_data[key]
     elif resource_type == "skills":
-        env_values = toml_data.get("skills", {}).get(name, {}).get("env", {})
+        skill_data = toml_data.get("skills", {}).get(name, {})
+        if isinstance(skill_data, dict):
+            env_values = skill_data.get("env", {})
     elif resource_type == "agents":
         agent_data = toml_data.get("agents", {}).get(name, {})
-        env_values = agent_data.get("env", {})
-        for key in params_schema:
-            if key in agent_data:
-                params_values[key] = agent_data[key]
+        if isinstance(agent_data, dict):
+            env_values = agent_data.get("env", {})
+            for key in params_schema:
+                if key in agent_data:
+                    params_values[key] = agent_data[key]
     elif resource_type == "memories":
-        env_values = toml_data.get("memories", {}).get(name, {}).get("env", {})
+        mem_data = toml_data.get("memories", {}).get(name, {})
+        if isinstance(mem_data, dict):
+            env_values = mem_data.get("env", {})
         memory_cfg = toml_data.get("memory_config", {})
         for key in params_schema:
             if key in memory_cfg:
