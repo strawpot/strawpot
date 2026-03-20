@@ -888,6 +888,77 @@ def gui(port):
 
 
 # ---------------------------------------------------------------------------
+# Self-upgrade
+# ---------------------------------------------------------------------------
+
+
+def _detect_installer() -> str:
+    """Detect how strawpot was installed: 'pipx', 'pip', or 'binary'."""
+    # PyInstaller frozen binary
+    if getattr(sys, "_MEIPASS", None):
+        return "binary"
+    # pipx: venv lives under ~/.local/share/pipx/venvs/ (or PIPX_HOME)
+    pipx_home = os.environ.get("PIPX_HOME", os.path.expanduser("~/.local/share/pipx"))
+    if pipx_home in sys.prefix:
+        return "pipx"
+    return "pip"
+
+
+def _check_pypi_version() -> str | None:
+    """Fetch the latest strawpot version from PyPI. Returns None on failure."""
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/strawpot/json",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            return data["info"]["version"]
+    except Exception:
+        return None
+
+
+@cli.command()
+@click.option("--check", is_flag=True, help="Only check for updates, don't install.")
+def upgrade(check):
+    """Upgrade strawpot and all its dependencies to the latest version."""
+    current = __version__
+    latest = _check_pypi_version()
+
+    if latest and latest == current:
+        click.echo(f"strawpot {current} is already up to date.")
+        if check:
+            return
+    elif latest:
+        click.echo(f"strawpot {current} → {latest}")
+        if check:
+            return
+    else:
+        if check:
+            click.echo("Could not check PyPI for latest version.", err=True)
+            sys.exit(1)
+        click.echo("Could not check PyPI — upgrading anyway.")
+
+    installer = _detect_installer()
+
+    if installer == "binary":
+        click.echo("Standalone binary detected. Download the latest release from:", err=True)
+        click.echo("  https://github.com/strawpot/strawpot/releases/latest", err=True)
+        sys.exit(1)
+
+    if installer == "pipx":
+        cmd = ["pipx", "upgrade", "strawpot"]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "strawpot"]
+
+    click.echo(f"Running: {' '.join(cmd)}")
+    # exec replaces this process so pip/pipx can freely overwrite our files
+    os.execvp(cmd[0], cmd)
+
+
+# ---------------------------------------------------------------------------
 # Strawhub passthrough
 # ---------------------------------------------------------------------------
 
