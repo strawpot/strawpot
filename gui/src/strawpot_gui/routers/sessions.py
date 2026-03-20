@@ -117,6 +117,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
                     "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
                     (run_id,),
                 )
+                _drain_pending_task(conn, row["conversation_id"])
         return
 
     session_json = os.path.join(session_dir, "session.json")
@@ -172,6 +173,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
                 "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
                 (run_id,),
             )
+            _drain_pending_task(conn, row["conversation_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -580,12 +582,14 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     project_id = row["project_id"]
     conversation_id = row["conversation_id"]
 
-    # Clear any queued pending_task — user explicitly interrupted the flow
-    if conversation_id:
+    def _mark_stopped_and_drain() -> dict:
         conn.execute(
-            "UPDATE conversations SET pending_task = NULL WHERE id = ?",
-            (conversation_id,),
+            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
+            (run_id,),
         )
+        _drain_pending_task(conn, conversation_id)
+        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
+        return {"run_id": run_id, "status": "stopped"}
 
     # Read PID from session.json
     session_dir = Path(row["session_dir"])
@@ -594,50 +598,30 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
         data = json.loads(session_json.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         # session.json not created yet — session never fully started
-        conn.execute(
-            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
-            (run_id,),
-        )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
-        return {"run_id": run_id, "status": "stopped"}
+        return _mark_stopped_and_drain()
 
     pid = data.get("pid")
     if pid is None:
-        # No PID recorded — mark as stopped
-        conn.execute(
-            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
-            (run_id,),
-        )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
-        return {"run_id": run_id, "status": "stopped"}
+        return _mark_stopped_and_drain()
 
     # Check liveness and send SIGTERM
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, OSError):
         # Process already gone
-        conn.execute(
-            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
-            (run_id,),
-        )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
-        return {"run_id": run_id, "status": "stopped"}
+        return _mark_stopped_and_drain()
 
     try:
         os.kill(pid, signal.SIGTERM)
     except (ProcessLookupError, OSError):
         # Race: died between check and kill
-        conn.execute(
-            "UPDATE sessions SET status = 'stopped', summary = COALESCE(summary, 'Interrupted') WHERE run_id = ?",
-            (run_id,),
-        )
-        event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
-        return {"run_id": run_id, "status": "stopped"}
+        return _mark_stopped_and_drain()
 
     conn.execute(
         "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
         (run_id,),
     )
+    _drain_pending_task(conn, conversation_id)
     event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
     return {"run_id": run_id, "status": "stopped"}
 
