@@ -8,7 +8,7 @@ import pytest
 from croniter import croniter
 
 from strawpot_gui.db import get_db, init_db
-from strawpot_gui.scheduler import Scheduler, _next_run
+from strawpot_gui.scheduler import Scheduler, fire_schedule, _next_run
 
 
 @pytest.fixture
@@ -459,3 +459,77 @@ class TestConversationTargeting:
         assert "run tests" in task_arg
         # user_task should be the original task
         assert launch_fn.call_args[1]["user_task"] == "run tests"
+
+
+# ---------------------------------------------------------------------------
+# fire_schedule() standalone function tests
+# ---------------------------------------------------------------------------
+
+
+class TestFireSchedule:
+    def test_returns_run_id(self, db_path, project_id):
+        """fire_schedule returns {"run_id": ...} on success."""
+        sid = _insert_schedule(db_path, project_id)
+        launch_fn = MagicMock(return_value="run-abc")
+        with get_db(db_path) as conn:
+            schedule = dict(conn.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone())
+            result = fire_schedule(conn, schedule, launch_fn)
+        assert result == {"run_id": "run-abc"}
+        assert launch_fn.called
+
+    def test_returns_error_on_failure(self, db_path, project_id):
+        """fire_schedule returns {"error": ...} on launch failure."""
+        sid = _insert_schedule(db_path, project_id)
+        launch_fn = MagicMock(side_effect=RuntimeError("boom"))
+        with get_db(db_path) as conn:
+            schedule = dict(conn.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone())
+            result = fire_schedule(conn, schedule, launch_fn)
+        assert "boom" in result["error"]
+
+    def test_task_override(self, db_path, project_id):
+        """fire_schedule uses task_override when provided."""
+        sid = _insert_schedule(db_path, project_id, task="original task")
+        launch_fn = MagicMock(return_value="run-ovr")
+        with get_db(db_path) as conn:
+            schedule = dict(conn.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone())
+            fire_schedule(conn, schedule, launch_fn, task_override="override task")
+        assert launch_fn.call_args[0][2] == "override task"
+
+    def test_queues_when_conversation_busy(self, db_path, project_id):
+        """fire_schedule queues task when conversation has active session."""
+        with get_db(db_path) as conn:
+            cursor = conn.execute(
+                "INSERT INTO conversations (project_id) VALUES (?)",
+                (project_id,),
+            )
+            conv_id = cursor.lastrowid
+
+        sid = _insert_schedule(
+            db_path, project_id, conversation_id=conv_id,
+        )
+
+        # Insert active session on the conversation
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, conversation_id, status, role, runtime, "
+                " isolation, started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-busy", project_id, conv_id, "running",
+                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+            )
+
+        launch_fn = MagicMock()
+        with get_db(db_path) as conn:
+            schedule = dict(conn.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (sid,)
+            ).fetchone())
+            result = fire_schedule(conn, schedule, launch_fn)
+        assert result == {"queued": True}
+        assert not launch_fn.called

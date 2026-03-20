@@ -471,7 +471,7 @@ File: `gui/frontend/src/pages/ScheduleRuns.tsx`
 | 29 | Frontend: `ScheduleRuns.tsx` page | Done (PR #275) |
 | 30 | Frontend: update `ScheduledTasks.tsx` to filter recurring only | Done (PR #275) |
 | 31 | Backend tests for one-time schedules + runs endpoint | Done (PR #272) |
-| 32 | Extract `fire_schedule()` from `Scheduler._fire()` | Planned |
+| 32 | Extract `fire_schedule()` from `Scheduler._fire()` | Done |
 | 33 | `POST /api/schedules/{id}/trigger` endpoint | Planned |
 | 34 | `POST /api/schedules/runs/{run_id}/rerun` endpoint | Planned |
 | 35 | Frontend: `useTriggerSchedule` + `useRerunScheduleRun` mutations | Planned |

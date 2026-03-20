@@ -118,90 +118,21 @@ class Scheduler:
 
     def _fire(self, conn, schedule: dict, now: datetime) -> None:
         """Fire a single scheduled task."""
-        schedule_id = schedule["id"]
-        name = schedule["name"]
-        project_id = schedule["project_id"]
-
-        # #20 — enforce imu role for project 0 (strawpot-internal)
-        role = schedule["role"] or ("imu" if project_id == 0 else None)
-
-        task = schedule["task"]
-        conversation_id = schedule.get("conversation_id")
-
-        # For conversation-bound schedules, check for active sessions first.
-        # If one is running, queue the task instead of launching directly.
-        if conversation_id:
-            active = conn.execute(
-                "SELECT 1 FROM sessions "
-                "WHERE conversation_id = ? AND status IN ('starting', 'running') LIMIT 1",
-                (conversation_id,),
-            ).fetchone()
-            if active:
-                conn.execute(
-                    """INSERT INTO conversation_task_queue
-                       (conversation_id, task, source, source_id, role, system_prompt)
-                       VALUES (?, ?, 'scheduler', ?, ?, ?)""",
-                    (conversation_id, task, str(schedule_id), role,
-                     schedule["system_prompt"]),
-                )
+        result = fire_schedule(conn, schedule, self._launch_fn)
+        if result.get("error"):
+            logger.warning("Schedule '%s' failed: %s", schedule["name"], result["error"])
+        else:
+            self._advance_schedule(conn, schedule, now)
+            if result.get("queued"):
                 logger.info(
                     "Schedule '%s' queued (active session on conversation %d)",
-                    name, conversation_id,
+                    schedule["name"], schedule.get("conversation_id"),
                 )
-                self._advance_schedule(conn, schedule, now)
-                return
-
-        # #19 — conversation targeting: build context from prior turns
-        kwargs: dict = {}
-        if conversation_id:
-            from strawpot_gui.routers.conversations import (
-                _build_conversation_context,
-                _write_conversation_history,
-            )
-
-            conv = conn.execute(
-                "SELECT id, project_id FROM conversations WHERE id = ?",
-                (conversation_id,),
-            ).fetchone()
-            if conv:
-                project_row = conn.execute(
-                    "SELECT working_dir FROM projects WHERE id = ?",
-                    (project_id,),
-                ).fetchone()
-                hist_path = None
-                if project_row and project_row["working_dir"]:
-                    hist_path = _write_conversation_history(
-                        conn, conversation_id, project_row["working_dir"]
-                    )
-                context = _build_conversation_context(
-                    conn, conversation_id, history_path=hist_path
+            else:
+                logger.info(
+                    "Schedule '%s' fired session %s",
+                    schedule["name"], result.get("run_id"),
                 )
-                if context:
-                    kwargs["user_task"] = task
-                    task = f"{context}\n\n---\n\n{task}"
-                kwargs["conversation_id"] = conversation_id
-
-        try:
-            run_id = self._launch_fn(
-                conn,
-                project_id,
-                task,
-                role=role,
-                system_prompt=schedule["system_prompt"],
-                schedule_id=schedule_id,
-                **kwargs,
-            )
-            self._advance_schedule(conn, schedule, now)
-            logger.info(
-                "Schedule '%s' fired session %s",
-                name, run_id,
-            )
-        except Exception as exc:
-            conn.execute(
-                "UPDATE scheduled_tasks SET last_error = ? WHERE id = ?",
-                (str(exc), schedule_id),
-            )
-            logger.warning("Schedule '%s' failed: %s", name, exc)
 
     @staticmethod
     def _advance_schedule(conn, schedule: dict, now: datetime) -> None:
@@ -223,6 +154,89 @@ class Scheduler:
                 "WHERE id = ?",
                 (now.isoformat(), next_run, schedule_id),
             )
+
+
+def fire_schedule(conn, schedule: dict, launch_fn, *, task_override: str | None = None) -> dict:
+    """Fire a schedule immediately.
+
+    Returns {"run_id": ...} or {"queued": True} or {"error": ...}.
+
+    Args:
+        conn: DB connection.
+        schedule: Full schedule row as dict.
+        launch_fn: launch_session_subprocess callable.
+        task_override: If set, use this task instead of the schedule's task.
+    """
+    schedule_id = schedule["id"]
+    project_id = schedule["project_id"]
+    role = schedule["role"] or ("imu" if project_id == 0 else None)
+    task = task_override or schedule["task"]
+    conversation_id = schedule.get("conversation_id")
+
+    # Queue if conversation already has an active session
+    if conversation_id:
+        active = conn.execute(
+            "SELECT 1 FROM sessions "
+            "WHERE conversation_id = ? AND status IN ('starting', 'running') LIMIT 1",
+            (conversation_id,),
+        ).fetchone()
+        if active:
+            conn.execute(
+                """INSERT INTO conversation_task_queue
+                   (conversation_id, task, source, source_id, role, system_prompt)
+                   VALUES (?, ?, 'scheduler', ?, ?, ?)""",
+                (conversation_id, task, str(schedule_id), role,
+                 schedule["system_prompt"]),
+            )
+            return {"queued": True}
+
+    # Build conversation context if conversation-bound
+    kwargs: dict = {}
+    if conversation_id:
+        from strawpot_gui.routers.conversations import (
+            _build_conversation_context,
+            _write_conversation_history,
+        )
+
+        conv = conn.execute(
+            "SELECT id, project_id FROM conversations WHERE id = ?",
+            (conversation_id,),
+        ).fetchone()
+        if conv:
+            project_row = conn.execute(
+                "SELECT working_dir FROM projects WHERE id = ?",
+                (project_id,),
+            ).fetchone()
+            hist_path = None
+            if project_row and project_row["working_dir"]:
+                hist_path = _write_conversation_history(
+                    conn, conversation_id, project_row["working_dir"]
+                )
+            context = _build_conversation_context(
+                conn, conversation_id, history_path=hist_path
+            )
+            if context:
+                kwargs["user_task"] = task
+                task = f"{context}\n\n---\n\n{task}"
+            kwargs["conversation_id"] = conversation_id
+
+    try:
+        run_id = launch_fn(
+            conn,
+            project_id,
+            task,
+            role=role,
+            system_prompt=schedule["system_prompt"],
+            schedule_id=schedule_id,
+            **kwargs,
+        )
+        return {"run_id": run_id}
+    except Exception as exc:
+        conn.execute(
+            "UPDATE scheduled_tasks SET last_error = ? WHERE id = ?",
+            (str(exc), schedule_id),
+        )
+        return {"error": str(exc)}
 
 
 def _next_run(cron_expr: str, after: datetime) -> str | None:
