@@ -435,6 +435,7 @@ class Session:
                     role=self.config.orchestrator_role,
                     behavior_ref=role_prompt,
                     task=self.memory_task,
+                    group_id=self._group_id,
                 )
                 if get_result.context_cards:
                     memory_prompt = _format_memory_prompt(get_result)
@@ -449,6 +450,7 @@ class Session:
                         task=self.memory_task,
                         cards=get_result.context_cards or [],
                         card_count=len(get_result.context_cards) if get_result.context_cards else 0,
+                        group_id=self._group_id,
                     )
 
             # 5b. Resolve project files directories
@@ -552,6 +554,7 @@ class Session:
                         task=self.memory_task,
                         status=status,
                         output=output,
+                        group_id=self._group_id,
                     )
                 except Exception:
                     logger.debug("Orchestrator memory.dump failed", exc_info=True)
@@ -566,6 +569,7 @@ class Session:
                         task=self.memory_task,
                         status=status,
                         output=output,
+                        group_id=self._group_id,
                     )
 
         # 0b. Emit session_end trace event before cleanup that might fail
@@ -983,6 +987,7 @@ class Session:
                 agent_spans=self._agent_spans,
                 register_agent=self._register_agent,
                 files_dirs=self._files_dirs,
+                group_id=self._group_id,
             )
             if result.exit_code != 0:
                 msg = f"Sub-agent exited with code {result.exit_code}"
@@ -1129,6 +1134,7 @@ class Session:
                 content=remember.content,
                 keywords=list(remember.keywords) or None,
                 scope=remember.scope or "project",
+                group_id=self._group_id,
             )
             if self._tracer is not None:
                 span_id = self._agent_spans.get(
@@ -1147,6 +1153,7 @@ class Session:
                         status=result.status,
                         entry_id=result.entry_id,
                         parent_agent_id=None,
+                        group_id=self._group_id,
                     )
             return ok_response(
                 request.request_id,
@@ -1186,6 +1193,7 @@ class Session:
                 keywords=list(recall.keywords) or None,
                 scope=recall.scope or "",
                 max_results=recall.max_results or 10,
+                group_id=self._group_id,
             )
             recall_entries = [
                 denden_pb2.RecallEntry(
@@ -1216,6 +1224,7 @@ class Session:
                             for e in result.entries
                         ] if result.entries else None,
                         parent_agent_id=None,
+                        group_id=self._group_id,
                     )
             return ok_response(
                 request.request_id,
