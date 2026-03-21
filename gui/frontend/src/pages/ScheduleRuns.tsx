@@ -58,6 +58,10 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+function sessionLink(r: ScheduleRun): string {
+  return `/projects/${r.project_id}/sessions/${r.run_id}`;
+}
+
 function scheduleLink(r: ScheduleRun): string {
   return r.schedule_type === "one_time"
     ? "/schedules/one-time"
@@ -122,7 +126,7 @@ export default function ScheduleRuns() {
                   <TableRow key={r.run_id}>
                     <TableCell className="font-medium">
                       <Link
-                        to={`/projects/${r.project_id}/sessions/${r.run_id}`}
+                        to={sessionLink(r)}
                         className="hover:underline text-foreground"
                       >
                         {r.schedule_name}
