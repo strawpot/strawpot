@@ -38,6 +38,7 @@ def get_project_stats(
         SELECT COUNT(*) AS total_runs,
                SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN status='stopped' THEN 1 ELSE 0 END) AS stopped,
                CAST(AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END) AS INTEGER) AS avg_duration_ms
         FROM sessions
         WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed','stopped')
@@ -48,8 +49,12 @@ def get_project_stats(
     total_runs = summary["total_runs"] or 0
     completed = summary["completed"] or 0
     failed = summary["failed"] or 0
+    stopped = summary["stopped"] or 0
     avg_duration_ms = summary["avg_duration_ms"]
-    success_rate = round(completed / total_runs * 100, 1) if total_runs > 0 else 0.0
+    # Success rate excludes stopped sessions — user-interrupted runs are
+    # neither successes nor failures.
+    decisive = completed + failed
+    success_rate = round(completed / decisive * 100, 1) if decisive > 0 else 0.0
 
     # Daily breakdown
     daily_rows = conn.execute(
@@ -57,6 +62,7 @@ def get_project_stats(
         SELECT DATE(started_at) AS date, COUNT(*) AS total,
                SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN status='stopped' THEN 1 ELSE 0 END) AS stopped,
                CAST(AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END) AS INTEGER) AS avg_duration_ms
         FROM sessions
         WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed','stopped')
@@ -71,6 +77,7 @@ def get_project_stats(
             "total": row["total"],
             "completed": row["completed"],
             "failed": row["failed"],
+            "stopped": row["stopped"],
             "avg_duration_ms": row["avg_duration_ms"],
         }
         for row in daily_rows
@@ -88,6 +95,7 @@ def get_project_stats(
                 "total": 0,
                 "completed": 0,
                 "failed": 0,
+                "stopped": 0,
                 "avg_duration_ms": None,
             })
         )
@@ -100,6 +108,7 @@ def get_project_stats(
         "total_runs": total_runs,
         "completed": completed,
         "failed": failed,
+        "stopped": stopped,
         "success_rate": success_rate,
         "avg_duration_ms": avg_duration_ms,
         "daily": daily,

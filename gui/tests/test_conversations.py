@@ -441,6 +441,28 @@ class TestBuildConversationContext:
         assert "stopped work" in ctx
         assert "stale work" not in ctx
 
+    def test_stopped_session_shows_interrupted_by_user(self, client, tmp_path, app):
+        """A stopped session with no summary renders '(interrupted by user)' in context."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        with get_db(app.state.db_path) as conn:
+            _insert_completed_session(
+                conn, pid, cid, task="do something",
+                summary=None, status="stopped",
+                started_at="2026-01-01T00:01:00",
+            )
+
+        with get_db(app.state.db_path) as conn:
+            ctx = _build_conversation_context(conn, cid)
+
+        assert "(interrupted by user)" in ctx
+        # Should NOT fall back to the generic exit-code message
+        assert "(exit code" not in ctx
+
     def test_uses_user_task_over_task(self, client, tmp_path, app):
         """Context uses user_task (raw input) instead of task (with nested context)."""
         d = tmp_path / "proj"
