@@ -179,7 +179,24 @@ def resolve_agent(
     metadata = frontmatter.get("metadata", {})
     strawpot_meta = metadata.get("strawpot", {})
 
-    wrapper_cmd = _resolve_wrapper_cmd(agent_dir, strawpot_meta)
+    # Try resolving the wrapper from agent_dir first. If the binary is
+    # missing (e.g. project-local has AGENT.md but no binary), fall back
+    # to other candidates that also have AGENT.md.
+    wrapper_cmd = None
+    wrapper_error: Exception | None = None
+    for try_dir in [agent_dir] + [c for c in candidates if c != agent_dir]:
+        if not (try_dir / "AGENT.md").is_file():
+            continue
+        try:
+            wrapper_cmd = _resolve_wrapper_cmd(try_dir, strawpot_meta)
+            break
+        except ValueError as exc:
+            if wrapper_error is None:
+                wrapper_error = exc
+    if wrapper_cmd is None:
+        raise wrapper_error or ValueError(
+            f"No wrapper command for agent {name!r}"
+        )
     params = strawpot_meta.get("params", {})
     config = _merge_config(params, user_config or {})
     env_schema = strawpot_meta.get("env", {})
