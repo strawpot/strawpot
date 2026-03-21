@@ -127,7 +127,21 @@ def _refresh_session_status(conn, run_id: str) -> None:
         with open(session_json, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
-        # session.json not yet written — still starting
+        # session.json not yet written — still starting; fail after 15s
+        started_at = row.get("started_at") if hasattr(row, "get") else None
+        if started_at:
+            from datetime import datetime, timezone
+
+            age = (
+                datetime.now(timezone.utc)
+                - datetime.fromisoformat(started_at)
+            ).total_seconds()
+            if age > 15:
+                conn.execute(
+                    "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
+                    (run_id,),
+                )
+                _drain_pending_task(conn, row["conversation_id"])
         return
 
     # Check trace for completion

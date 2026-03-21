@@ -68,7 +68,23 @@ class Scheduler:
                 self._check_and_fire()
             except Exception:
                 logger.exception("Scheduler tick error")
+            try:
+                self._refresh_active_sessions()
+            except Exception:
+                logger.exception("Session refresh error")
             await asyncio.sleep(30)
+
+    def _refresh_active_sessions(self) -> None:
+        """Refresh status of all active sessions to detect crashes."""
+        from strawpot_gui.routers.sessions import _refresh_session_status
+
+        with get_db(self._db_path) as conn:
+            rows = conn.execute(
+                "SELECT run_id FROM sessions "
+                "WHERE status IN ('starting', 'running')"
+            ).fetchall()
+            for row in rows:
+                _refresh_session_status(conn, row["run_id"])
 
     def _check_and_fire(self) -> None:
         """Check all enabled schedules and fire any that are due."""
