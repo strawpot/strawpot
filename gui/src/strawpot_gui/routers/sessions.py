@@ -104,7 +104,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
 
     # If session directory doesn't exist, give subprocess time to create it
     if not os.path.isdir(session_dir):
-        started_at = row.get("started_at") if hasattr(row, "get") else None
+        started_at = row["started_at"]
         if started_at:
             from datetime import datetime, timezone
 
@@ -128,7 +128,7 @@ def _refresh_session_status(conn, run_id: str) -> None:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         # session.json not yet written — still starting; fail after 15s
-        started_at = row.get("started_at") if hasattr(row, "get") else None
+        started_at = row["started_at"]
         if started_at:
             from datetime import datetime, timezone
 

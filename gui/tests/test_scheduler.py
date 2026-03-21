@@ -1,5 +1,6 @@
 """Tests for the cron scheduler engine."""
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
@@ -533,3 +534,83 @@ class TestFireSchedule:
             result = fire_schedule(conn, schedule, launch_fn)
         assert result == {"queued": True}
         assert not launch_fn.called
+
+
+# ---------------------------------------------------------------------------
+# _refresh_active_sessions background sweep tests
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshActiveSessions:
+    def test_marks_stale_starting_session_failed(self, db_path, project_id, tmp_path):
+        """A starting session with no session.json older than 15s gets marked failed."""
+        session_dir = str(tmp_path / "sessions" / "run-stale")
+        os.makedirs(session_dir)  # dir exists but no session.json
+
+        stale_time = "2000-01-01T00:00:00+00:00"
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, status, role, runtime, "
+                " isolation, started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-stale", project_id, "starting",
+                 "test", "test", "none", stale_time, session_dir),
+            )
+
+        scheduler = Scheduler(db_path, MagicMock())
+        scheduler._refresh_active_sessions()
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM sessions WHERE run_id = 'run-stale'"
+            ).fetchone()
+        assert row["status"] == "failed"
+
+    def test_leaves_recent_starting_session(self, db_path, project_id, tmp_path):
+        """A recently started session without session.json stays starting."""
+        session_dir = str(tmp_path / "sessions" / "run-recent")
+        os.makedirs(session_dir)
+
+        from datetime import datetime as dt, timezone as tz
+        recent_time = dt.now(tz.utc).isoformat()
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, status, role, runtime, "
+                " isolation, started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-recent", project_id, "starting",
+                 "test", "test", "none", recent_time, session_dir),
+            )
+
+        scheduler = Scheduler(db_path, MagicMock())
+        scheduler._refresh_active_sessions()
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM sessions WHERE run_id = 'run-recent'"
+            ).fetchone()
+        assert row["status"] == "starting"
+
+    def test_marks_missing_dir_session_failed(self, db_path, project_id):
+        """A starting session with no session dir older than 15s gets marked failed."""
+        stale_time = "2000-01-01T00:00:00+00:00"
+        with get_db(db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(run_id, project_id, status, role, runtime, "
+                " isolation, started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-nodir", project_id, "starting",
+                 "test", "test", "none", stale_time, "/nonexistent/path"),
+            )
+
+        scheduler = Scheduler(db_path, MagicMock())
+        scheduler._refresh_active_sessions()
+
+        with get_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM sessions WHERE run_id = 'run-nodir'"
+            ).fetchone()
+        assert row["status"] == "failed"
