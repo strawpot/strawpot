@@ -2,9 +2,10 @@
 
 import json
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
-from strawpot_gui.db import sync_sessions
+from strawpot_gui.db import get_db, sync_sessions
 
 from test_sessions_sync import _register_project, _write_session, _write_trace
 
@@ -13,14 +14,14 @@ def _setup_project_with_sessions(client, tmp_path, sessions_data):
     """Register a project and create sessions, then sync.
 
     sessions_data: list of dicts with keys:
-        run_id, status (completed|failed), duration_ms, started_at
+        run_id, status (completed|failed|stopped), duration_ms, started_at
     """
     pid = _register_project(client, tmp_path)
 
     for s in sessions_data:
         run_id = s["run_id"]
         status = s.get("status", "completed")
-        is_archived = status in ("completed", "failed")
+        is_archived = status in ("completed", "failed", "stopped")
         session_dir = _write_session(
             tmp_path,
             run_id,
@@ -29,7 +30,7 @@ def _setup_project_with_sessions(client, tmp_path, sessions_data):
         )
         # Build trace events matching _parse_trace expectations
         events = []
-        if status in ("completed", "failed"):
+        if status in ("completed", "failed", "stopped"):
             end_data = {}
             if s.get("duration_ms") is not None:
                 end_data["duration_ms"] = s["duration_ms"]
@@ -65,6 +66,7 @@ class TestStatsEndpoint:
         assert data["total_runs"] == 0
         assert data["completed"] == 0
         assert data["failed"] == 0
+        assert data["stopped"] == 0
         assert data["success_rate"] == 0.0
         assert data["avg_duration_ms"] is None
         # Daily array should be gap-filled
@@ -169,6 +171,46 @@ class TestStatsEndpoint:
         data = resp.json()
 
         assert data["avg_duration_ms"] == 120000
+
+    def test_stopped_sessions_in_aggregation(self, client, tmp_path, app):
+        """Stopped sessions count toward total_runs and the stopped field,
+        but do not affect success_rate (which only considers completed vs failed).
+
+        Uses direct DB insertion because sync_sessions infers status from
+        exit_code (non-zero → failed), which would lose the 'stopped' state.
+        """
+        now = datetime.now(timezone.utc)
+        today = now.replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
+
+        pid = _register_project(client, tmp_path)
+
+        with get_db(app.state.db_path) as conn:
+            for status, duration_ms in [("completed", 100000), ("failed", 50000), ("stopped", 30000)]:
+                run_id = f"run_{uuid.uuid4().hex[:8]}"
+                exit_code = 0 if status == "completed" else 1
+                conn.execute(
+                    "INSERT INTO sessions "
+                    "(run_id, project_id, role, runtime, isolation, status, task, "
+                    "exit_code, started_at, duration_ms, session_dir) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, pid, "default", "claude-code", "none", status,
+                     "test task", exit_code, today, duration_ms, str(tmp_path)),
+                )
+
+        resp = client.get(f"/api/projects/{pid}/stats", params={"period": "7d"})
+        data = resp.json()
+
+        assert data["total_runs"] == 3
+        assert data["completed"] == 1
+        assert data["failed"] == 1
+        assert data["stopped"] == 1
+        # success_rate = completed / (completed + failed) = 1/2 = 50%
+        # stopped sessions are excluded from rate calculation
+        assert data["success_rate"] == 50.0
+
+        # Daily breakdown also includes stopped count
+        today_entry = next(d for d in data["daily"] if d["total"] > 0)
+        assert today_entry["stopped"] == 1
 
     def test_period_filters_old_sessions(self, client, tmp_path):
         now = datetime.now(timezone.utc)
