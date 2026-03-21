@@ -479,7 +479,8 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--max-num-delegations", "max_num_delegations", type=int, default=None, help="Max delegation calls per session (0 = unlimited).")
 @click.option("--memory-task", "memory_task", default=None, help="Original task string for memory scoring (defaults to --task if not set).")
 @click.option("--group-id", "group_id", default=None, help="Group ID for memory scoping (e.g. conversation ID from the GUI).")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id):
+@click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup.")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -487,6 +488,14 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     to it. On exit (Ctrl+C or agent quit), cleans up automatically.
     """
     config = load_config(Path.cwd())
+
+    # Auto-update check (skipped for headless/task runs, CI, or explicit opt-out)
+    if not (skip_update_check or config.skip_update_check
+            or os.environ.get("STRAWPOT_SKIP_UPDATE_CHECK")
+            or headless or task):
+        latest = _check_update_async()
+        if latest:
+            _prompt_update(latest)
     if role:
         config.orchestrator_role = role
     if runtime:
@@ -861,10 +870,18 @@ def agents(session_id):
 
 @cli.command()
 @click.option("--port", default=None, type=int, help="Port for GUI server (default: 8741).")
-def gui(port):
+@click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup.")
+def gui(port, skip_update_check):
     """Launch the StrawPot web dashboard."""
     config = load_config(Path.cwd())
     working_dir = str(Path.cwd())
+
+    # Auto-update check
+    if not (skip_update_check or config.skip_update_check
+            or os.environ.get("STRAWPOT_SKIP_UPDATE_CHECK")):
+        latest = _check_update_async()
+        if latest:
+            _prompt_update(latest)
 
     if needs_onboarding(config, working_dir):
         agent_name = _onboarding_wizard(working_dir)
@@ -904,7 +921,7 @@ def _detect_installer() -> str:
     return "pip"
 
 
-def _check_pypi_version() -> str | None:
+def _check_pypi_version(timeout: int = 5) -> str | None:
     """Fetch the latest strawpot version from PyPI. Returns None on failure."""
     import urllib.request
     import urllib.error
@@ -913,11 +930,102 @@ def _check_pypi_version() -> str | None:
             "https://pypi.org/pypi/strawpot/json",
             headers={"Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
             return data["info"]["version"]
     except Exception:
         return None
+
+
+def _version_newer(latest: str, current: str) -> bool:
+    """Return True if *latest* is strictly newer than *current*.
+
+    Uses PEP 440 parsing via :mod:`packaging` when available, otherwise
+    falls back to a simple tuple comparison of dot-separated integers.
+    """
+    try:
+        from packaging.version import Version
+        return Version(latest) > Version(current)
+    except ImportError:
+        pass
+    try:
+        lat = tuple(int(x) for x in latest.split("."))
+        cur = tuple(int(x) for x in current.split("."))
+        return lat > cur
+    except (ValueError, AttributeError):
+        return latest != current
+
+
+def _check_update_async(timeout: float = 3.0) -> str | None:
+    """Check PyPI for a newer version in a background thread.
+
+    Returns the latest version string if an update is available,
+    or None if the check fails, times out, or the current version
+    is already up to date.
+    """
+    import threading
+
+    result: list[str | None] = [None]
+
+    def _fetch():
+        result[0] = _check_pypi_version(timeout=int(timeout))
+
+    t = threading.Thread(target=_fetch, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    latest = result[0]
+    if latest and _version_newer(latest, __version__):
+        return latest
+    return None
+
+
+def _prompt_update(latest: str) -> None:
+    """Prompt the user to upgrade and run the upgrade if they accept."""
+    click.echo()
+    click.echo(
+        click.style(
+            f"A new version of strawpot is available: {__version__} → {latest}",
+            fg="yellow",
+        )
+    )
+    if click.confirm("Would you like to upgrade now?", default=False):
+        installer = _detect_installer()
+
+        if installer == "binary":
+            click.echo(
+                "Standalone binary detected. Download the latest release from:"
+            )
+            click.echo(
+                "  https://github.com/strawpot/strawpot/releases/latest"
+            )
+            click.echo("Then restart this command.")
+            return
+
+        if installer == "pipx":
+            cmd = ["pipx", "upgrade", "strawpot"]
+        else:
+            cmd = [
+                sys.executable, "-m", "pip", "install", "--upgrade", "strawpot",
+            ]
+
+        click.echo(f"Running: {' '.join(cmd)}")
+        try:
+            subprocess.run(cmd, check=True)
+            click.echo(
+                click.style("Upgrade complete! Please re-run your command.", fg="green")
+            )
+            sys.exit(0)
+        except subprocess.CalledProcessError:
+            click.echo(
+                click.style("Upgrade failed. Continuing with current version.", fg="red"),
+                err=True,
+            )
+    else:
+        click.echo(
+            f"You can upgrade later with: {click.style('strawpot upgrade', bold=True)}"
+        )
+    click.echo()
 
 
 @cli.command()
