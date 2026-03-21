@@ -73,7 +73,7 @@ def _build_conversation_context(conn, conversation_id: int, *, history_path: str
         "SELECT task, user_task, summary, exit_code, status, "
         "files_changed, duration_ms "
         "FROM sessions "
-        "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
+        "WHERE conversation_id = ? AND status IN ('completed', 'failed', 'stopped') "
         "ORDER BY started_at",
         (conversation_id,),
     ).fetchall()
@@ -201,7 +201,7 @@ def _write_conversation_history(conn, conversation_id: int, working_dir: str) ->
         "SELECT task, user_task, summary, exit_code, status, "
         "files_changed, duration_ms, started_at "
         "FROM sessions "
-        "WHERE conversation_id = ? AND status IN ('completed', 'failed') "
+        "WHERE conversation_id = ? AND status IN ('completed', 'failed', 'stopped') "
         "ORDER BY started_at",
         (conversation_id,),
     ).fetchall()

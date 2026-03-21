@@ -13,14 +13,14 @@ def _setup_project_with_sessions(client, tmp_path, sessions_data):
     """Register a project and create sessions, then sync.
 
     sessions_data: list of dicts with keys:
-        run_id, status (completed|failed), duration_ms, started_at
+        run_id, status (completed|failed|stopped), duration_ms, started_at
     """
     pid = _register_project(client, tmp_path)
 
     for s in sessions_data:
         run_id = s["run_id"]
         status = s.get("status", "completed")
-        is_archived = status in ("completed", "failed")
+        is_archived = status in ("completed", "failed", "stopped")
         session_dir = _write_session(
             tmp_path,
             run_id,
@@ -29,7 +29,7 @@ def _setup_project_with_sessions(client, tmp_path, sessions_data):
         )
         # Build trace events matching _parse_trace expectations
         events = []
-        if status in ("completed", "failed"):
+        if status in ("completed", "failed", "stopped"):
             end_data = {}
             if s.get("duration_ms") is not None:
                 end_data["duration_ms"] = s["duration_ms"]

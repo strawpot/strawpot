@@ -40,7 +40,7 @@ def get_project_stats(
                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
                CAST(AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END) AS INTEGER) AS avg_duration_ms
         FROM sessions
-        WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed')
+        WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed','stopped')
         """,
         (project_id, since_iso),
     ).fetchone()
@@ -59,7 +59,7 @@ def get_project_stats(
                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
                CAST(AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END) AS INTEGER) AS avg_duration_ms
         FROM sessions
-        WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed')
+        WHERE project_id = ? AND started_at >= ? AND status IN ('completed','failed','stopped')
         GROUP BY DATE(started_at) ORDER BY date ASC
         """,
         (project_id, since_iso),

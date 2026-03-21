@@ -408,7 +408,7 @@ def _insert_completed_session(
 
 class TestBuildConversationContext:
     def test_excludes_non_terminal_sessions(self, client, tmp_path, app):
-        """Only completed/failed sessions appear in context."""
+        """Only completed/failed/stopped sessions appear in context."""
         d = tmp_path / "proj"
         d.mkdir()
         pid = _register_project(client, d)
@@ -438,7 +438,7 @@ class TestBuildConversationContext:
 
         assert "finished work" in ctx
         assert "running work" not in ctx
-        assert "stopped work" not in ctx
+        assert "stopped work" in ctx
         assert "stale work" not in ctx
 
     def test_uses_user_task_over_task(self, client, tmp_path, app):
