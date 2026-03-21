@@ -183,26 +183,31 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
                 early_subscribes.append(msg)
             else:
                 break  # unknown message type — stop reading
-    except (asyncio.TimeoutError, WebSocketDisconnect):
+    except asyncio.TimeoutError:
         pass
+    except WebSocketDisconnect:
+        return
 
     # ---- Build and send initial state ----
-    state, _ = _build_full_state(session_dir)
-    await websocket.send_json({"type": "tree_snapshot", **state.to_dict()})
+    try:
+        state, _ = _build_full_state(session_dir)
+        await websocket.send_json({"type": "tree_snapshot", **state.to_dict()})
 
-    trace_path = os.path.join(session_dir, "trace.jsonl")
-    all_trace, new_offset = _read_trace_lines(trace_path, trace_offset)
-    if all_trace:
-        await websocket.send_json({
-            "type": "trace_snapshot",
-            "events": all_trace,
-            "next_offset": new_offset,
-        })
-    trace_offset = new_offset
+        trace_path = os.path.join(session_dir, "trace.jsonl")
+        all_trace, new_offset = _read_trace_lines(trace_path, trace_offset)
+        if all_trace:
+            await websocket.send_json({
+                "type": "trace_snapshot",
+                "events": all_trace,
+                "next_offset": new_offset,
+            })
+        trace_offset = new_offset
 
-    chat_messages = _read_chat_messages(session_dir)
-    if chat_messages:
-        await websocket.send_json({"type": "chat_history", "messages": chat_messages})
+        chat_messages = _read_chat_messages(session_dir)
+        if chat_messages:
+            await websocket.send_json({"type": "chat_history", "messages": chat_messages})
+    except WebSocketDisconnect:
+        return
 
     known_pending_ids: set[str] = set()
     is_terminal = status in ("completed", "failed", "stopped") or state.is_terminal
