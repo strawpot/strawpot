@@ -177,14 +177,26 @@ class TestSkipUpdateCheckFlag:
         mock_config,
         mock_update,
     ):
+        import sys
         from strawpot.config import StrawPotConfig
+        from unittest.mock import MagicMock
 
         cfg = StrawPotConfig()
         mock_config.return_value = cfg
 
-        runner = CliRunner()
-        result = runner.invoke(cli, ["gui", "--skip-update-check"], catch_exceptions=True)
-        mock_update.assert_called_once()
+        # Mock strawpot_gui.server so the lazy import inside gui() doesn't
+        # start a real server (or fail with ModuleNotFoundError in CLI-only CI).
+        fake_server = MagicMock()
+        fake_server.DEFAULT_PORT = 8741
+        sys.modules.setdefault("strawpot_gui", MagicMock())
+        sys.modules["strawpot_gui.server"] = fake_server
+
+        try:
+            runner = CliRunner()
+            runner.invoke(cli, ["gui", "--skip-update-check"], catch_exceptions=True)
+            mock_update.assert_called_once()
+        finally:
+            sys.modules.pop("strawpot_gui.server", None)
 
 
 # ---------------------------------------------------------------------------
