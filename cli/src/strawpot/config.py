@@ -43,6 +43,7 @@ class StrawPotConfig:
     pull_before_session: str = "prompt"
     pr_command: str = _DEFAULT_PR_COMMAND
     trace: bool = True
+    skip_update_check: bool = False
 
 
 def _read_toml(path: Path) -> dict:
@@ -121,6 +122,9 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     trace_section = data.get("trace", {})
     if "enabled" in trace_section:
         config.trace = trace_section["enabled"]
+
+    if "skip_update_check" in data:
+        config.skip_update_check = data["skip_update_check"]
 
 
 def has_explicit_runtime(project_dir: Path | None = None) -> bool:
