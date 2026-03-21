@@ -489,13 +489,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     """
     config = load_config(Path.cwd())
 
-    # Auto-update check (skipped for headless/task runs, CI, or explicit opt-out)
-    if not (skip_update_check or config.skip_update_check
-            or os.environ.get("STRAWPOT_SKIP_UPDATE_CHECK")
-            or headless or task):
-        latest = _check_update_async()
-        if latest:
-            _prompt_update(latest)
+    # Auto-update check (skipped for headless/task runs or explicit opt-out)
+    _maybe_check_update(skip_update_check, config, headless=headless, task=task)
     if role:
         config.orchestrator_role = role
     if runtime:
@@ -877,11 +872,7 @@ def gui(port, skip_update_check):
     working_dir = str(Path.cwd())
 
     # Auto-update check
-    if not (skip_update_check or config.skip_update_check
-            or os.environ.get("STRAWPOT_SKIP_UPDATE_CHECK")):
-        latest = _check_update_async()
-        if latest:
-            _prompt_update(latest)
+    _maybe_check_update(skip_update_check, config)
 
     if needs_onboarding(config, working_dir):
         agent_name = _onboarding_wizard(working_dir)
@@ -921,7 +912,7 @@ def _detect_installer() -> str:
     return "pip"
 
 
-def _check_pypi_version(timeout: int = 5) -> str | None:
+def _check_pypi_version(timeout: float = 5) -> str | None:
     """Fetch the latest strawpot version from PyPI. Returns None on failure."""
     import urllib.request
     import urllib.error
@@ -934,6 +925,7 @@ def _check_pypi_version(timeout: int = 5) -> str | None:
             data = json.loads(resp.read())
             return data["info"]["version"]
     except Exception:
+        logger.debug("Failed to check PyPI for latest version", exc_info=True)
         return None
 
 
@@ -946,38 +938,55 @@ def _version_newer(latest: str, current: str) -> bool:
     try:
         from packaging.version import Version
         return Version(latest) > Version(current)
-    except ImportError:
+    except Exception:
+        # ImportError if packaging is missing, InvalidVersion if the
+        # version string is malformed — either way, fall through to
+        # the tuple-based comparison.
         pass
     try:
         lat = tuple(int(x) for x in latest.split("."))
         cur = tuple(int(x) for x in current.split("."))
         return lat > cur
     except (ValueError, AttributeError):
-        return latest != current
+        # Can't parse either version string as dotted integers.
+        # Conservatively assume no update to avoid false upgrade prompts.
+        return False
 
 
 def _check_update_async(timeout: float = 3.0) -> str | None:
-    """Check PyPI for a newer version in a background thread.
+    """Check PyPI for a newer version.
 
     Returns the latest version string if an update is available,
     or None if the check fails, times out, or the current version
     is already up to date.
     """
-    import threading
-
-    result: list[str | None] = [None]
-
-    def _fetch():
-        result[0] = _check_pypi_version(timeout=int(timeout))
-
-    t = threading.Thread(target=_fetch, daemon=True)
-    t.start()
-    t.join(timeout=timeout)
-
-    latest = result[0]
+    latest = _check_pypi_version(timeout=timeout)
     if latest and _version_newer(latest, __version__):
         return latest
     return None
+
+
+def _should_skip_update_check() -> bool:
+    """Return True if the STRAWPOT_SKIP_UPDATE_CHECK env var is set to a truthy value."""
+    val = os.environ.get("STRAWPOT_SKIP_UPDATE_CHECK", "").lower()
+    return val not in ("", "0", "false", "no")
+
+
+def _maybe_check_update(
+    skip_flag: bool,
+    config: "StrawPotConfig",
+    *,
+    headless: bool = False,
+    task: str | None = None,
+) -> None:
+    """Run the auto-update check unless suppressed by flag, config, env, or mode."""
+    if skip_flag or config.skip_update_check or _should_skip_update_check():
+        return
+    if headless or task:
+        return
+    latest = _check_update_async()
+    if latest:
+        _prompt_update(latest)
 
 
 def _prompt_update(latest: str) -> None:
@@ -1011,16 +1020,27 @@ def _prompt_update(latest: str) -> None:
 
         click.echo(f"Running: {' '.join(cmd)}")
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             click.echo(
                 click.style("Upgrade complete! Please re-run your command.", fg="green")
             )
+            # Exit because Python has already loaded the old module versions
+            # into memory; the user must restart to pick up the new code.
             sys.exit(0)
-        except subprocess.CalledProcessError:
+        except FileNotFoundError:
             click.echo(
-                click.style("Upgrade failed. Continuing with current version.", fg="red"),
+                click.style(
+                    f"Upgrade failed: '{cmd[0]}' not found on PATH. "
+                    "Continuing with current version.",
+                    fg="red",
+                ),
                 err=True,
             )
+        except subprocess.CalledProcessError as e:
+            msg = "Upgrade failed. Continuing with current version."
+            if e.stderr:
+                msg += f"\n{e.stderr.strip()}"
+            click.echo(click.style(msg, fg="red"), err=True)
     else:
         click.echo(
             f"You can upgrade later with: {click.style('strawpot upgrade', bold=True)}"
