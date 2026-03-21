@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import Pagination from "@/components/Pagination";
 import { useRerunScheduleRun } from "@/hooks/mutations/use-schedules";
-import { AlertCircle, ExternalLink, RotateCcw } from "lucide-react";
+import { AlertCircle, Calendar, RotateCcw } from "lucide-react";
 import type { ScheduleRun } from "@/api/types";
 
 function formatDateTime(iso: string | null): string {
@@ -56,6 +56,10 @@ function TypeBadge({ type }: { type: string }) {
       {type === "one_time" ? "One-Time" : "Recurring"}
     </Badge>
   );
+}
+
+function sessionLink(r: ScheduleRun): string {
+  return `/projects/${r.project_id}/sessions/${r.run_id}`;
 }
 
 function scheduleLink(r: ScheduleRun): string {
@@ -122,7 +126,7 @@ export default function ScheduleRuns() {
                   <TableRow key={r.run_id}>
                     <TableCell className="font-medium">
                       <Link
-                        to={scheduleLink(r)}
+                        to={sessionLink(r)}
                         className="hover:underline text-foreground"
                       >
                         {r.schedule_name}
@@ -182,14 +186,10 @@ export default function ScheduleRuns() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() =>
-                            navigate(
-                              `/projects/${r.project_id}/sessions/${r.run_id}`,
-                            )
-                          }
-                          title="View Session"
+                          onClick={() => navigate(scheduleLink(r))}
+                          title="View Schedule"
                         >
-                          <ExternalLink className="h-3.5 w-3.5" />
+                          <Calendar className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </TableCell>
