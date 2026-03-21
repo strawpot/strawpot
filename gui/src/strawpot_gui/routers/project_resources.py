@@ -237,7 +237,7 @@ def update_project_resource(
     if not resource_type or not name:
         raise HTTPException(400, "Both 'type' and 'name' are required")
     singular = singular_type(resource_type)
-    return run_strawhub("--root", working_dir, "update", singular, name)
+    return run_strawhub("--root", working_dir, "update", singular, "-y", name)
 
 
 @router.post("/{project_id}/resources/reinstall")
