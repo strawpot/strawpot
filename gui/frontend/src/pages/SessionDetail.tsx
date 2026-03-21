@@ -562,6 +562,20 @@ function extractArtifacts(events: TraceEvent[]): ArtifactEntry[] {
         });
       }
     }
+    if (e.event === "memory_remember" && d.content_ref) {
+      artifacts.push({
+        label: `Memory Remember (${d.provider || "memory"})`,
+        hash: String(d.content_ref),
+        event: e.event,
+      });
+    }
+    if (e.event === "memory_recall" && d.results_ref) {
+      artifacts.push({
+        label: `Memory Recall (${d.provider || "memory"})`,
+        hash: String(d.results_ref),
+        event: e.event,
+      });
+    }
     if (e.event === "delegate_start" && d.context_ref) {
       artifacts.push({
         label: `Delegation Context (${d.role || "delegate"})`,
