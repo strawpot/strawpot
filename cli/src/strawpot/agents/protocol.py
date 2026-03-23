@@ -15,12 +15,25 @@ class AgentHandle:
 
 
 @dataclass
+class TokenUsage:
+    """Token usage from an agent run."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cost_usd: float | None = None
+    model: str = ""
+
+
+@dataclass
 class AgentResult:
     """Outcome returned when an agent completes."""
 
     summary: str
     output: str = ""
     exit_code: int = 0
+    usage: TokenUsage | None = None
 
 
 @runtime_checkable
