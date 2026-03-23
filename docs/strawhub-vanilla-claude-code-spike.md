@@ -6,10 +6,10 @@ Sub-issue: #409 (4/9)
 
 ## Objective
 
-Determine whether StrawHub roles provide value when used in vanilla
-Claude Code (without StrawPot runtime). This gates the Platform Track
-of the strategic direction: if roles only work inside StrawPot, the
-platform expansion to Claude Code users is not feasible.
+Determine whether StrawHub roles provide value in vanilla Claude Code
+(without StrawPot runtime). This gates the Platform Track: if roles
+only work inside StrawPot, platform expansion to Claude Code users is
+not feasible.
 
 ## Method
 
@@ -29,7 +29,6 @@ platform expansion to Claude Code users is not feasible.
 **Dependencies:**
 - Skill: `code-review` (Markdown instructions + `gh` CLI)
 - No role dependencies
-- No denden or strawpot-memory references in body
 
 **StrawPot-specific elements:**
 - YAML frontmatter `metadata.strawpot` block (ignored by CLAUDE.md)
@@ -46,14 +45,13 @@ platform expansion to Claude Code users is not feasible.
 - Output format and `NO_FURTHER_IMPROVEMENTS` signal
 
 **What breaks:**
-- Nothing substantive. The YAML frontmatter is metadata for StrawHub
-  package management and has no effect on behavior.
+- Nothing substantive. YAML frontmatter is packaging metadata with no
+  effect on behavior.
 
 **Value retained: ~95%**
 
-The 5% loss is the StrawHub packaging metadata (version tracking,
-dependency resolution, install/update via `strawhub` CLI). The actual
-review behavior is 100% functional.
+The 5% loss is packaging convenience (version tracking, dependency
+resolution, `strawhub` CLI). Review behavior is 100% functional.
 
 ### 2. implementation-planner
 
@@ -72,29 +70,25 @@ review behavior is 100% functional.
 **What works in vanilla Claude Code:**
 - Steps 1-6: full planning workflow (read issue, analyze codebase,
   decompose work, create sub-issues, post summary, label transitions)
-- All 3 skill dependencies are pure Markdown knowledge: they work
-  identically as CLAUDE.md content
-- `gh` CLI interactions for issue creation and management
+- All 3 skill dependencies are pure Markdown; work identically as
+  CLAUDE.md content
+- `gh` CLI interactions for issue management
 - Engineering principles for architecture decisions
 - Sub-issue template and complexity estimation
 
 **What breaks:**
-- Step 7 (hand-off to implementation-executor): requires StrawPot's
-  denden orchestration to delegate to another role. In vanilla Claude
-  Code, the user must manually start a new session with the executor
-  role instructions.
+- Step 7 (hand-off to implementation-executor): requires denden for
+  cross-role delegation. Users must manually start a new session with
+  the executor role instructions.
 
 **What degrades:**
-- The role references `implementation-executor` as a known downstream
-  consumer. Without the StrawPot role registry, this is just a name in
-  the instructions. The user needs to know to set up the executor role
-  separately.
+- References to `implementation-executor` become a dead name without
+  the role registry. Users need to set up the executor role separately.
 
 **Value retained: ~85%**
 
-The core value (planning and decomposition) works fully. Only the
-automated hand-off breaks. A user can work around this by manually
-switching roles or including both role instructions in their CLAUDE.md.
+Core value (planning and decomposition) works fully. Only the automated
+hand-off breaks; users can work around this by manually switching roles.
 
 ### 3. github-triager (additional test)
 
@@ -130,9 +124,8 @@ switching roles or including both role instructions in their CLAUDE.md.
   `pr-test-analyzer`, `silent-failure-hunter`, `type-design-analyzer`
 
 **StrawPot-specific elements:**
-- Entire value proposition is orchestrating 6 sub-roles via delegation
-- Routing logic, delegation patterns, and aggregation all require
-  multi-agent orchestration
+- Entire value proposition is orchestrating 6 sub-roles via delegation;
+  routing, delegation, and aggregation all require multi-agent runtime
 
 **What works in vanilla Claude Code:**
 - The routing logic (deciding which aspects to review) is useful as a
@@ -146,9 +139,8 @@ switching roles or including both role instructions in their CLAUDE.md.
 
 **Value retained: ~10%**
 
-This role is an orchestrator, not an instruction set. Without StrawPot's
-multi-agent delegation, it has minimal standalone value. Users would be
-better served by using `code-reviewer` directly.
+An orchestrator, not an instruction set. Without multi-agent delegation,
+users are better served by `code-reviewer` directly.
 
 ## Dependency Classification
 
@@ -175,7 +167,7 @@ better served by using `code-reviewer` directly.
 
 ## Role Categorization
 
-Based on the analysis, StrawHub roles fall into two clear categories:
+StrawHub roles fall into two categories:
 
 ### Category A: Instruction-set roles (work standalone)
 
@@ -207,9 +199,8 @@ To make Category A roles work seamlessly in vanilla Claude Code:
 1. **Strip YAML frontmatter**: CLAUDE.md does not parse YAML
    frontmatter. The role content (everything below `---`) works as-is.
 
-2. **Inline skill dependencies**: Skills referenced in the role need
-   to be appended to the CLAUDE.md or placed in a separate file that
-   Claude Code reads. A simple concatenation works:
+2. **Inline skill dependencies**: Append referenced skills to the
+   CLAUDE.md or place them in a separate file. Simple concatenation:
    ```
    # CLAUDE.md
    [role content]
@@ -241,9 +232,9 @@ marginal effort.
 
 ### Evidence
 
-1. Roles that are "instruction sets" (code-reviewer, implementation-planner,
-   github-triager) retain 85-95% of their value in vanilla Claude Code.
-   The core workflows, knowledge, and output formats work unchanged.
+1. Instruction-set roles (code-reviewer, implementation-planner,
+   github-triager) retain 85-95% of their value. Core workflows,
+   knowledge, and output formats work unchanged.
 
 2. The main losses are packaging convenience (no `strawhub install`) and
    automated orchestration (no cross-role delegation). These are real
@@ -255,17 +246,17 @@ marginal effort.
 
 ### Recommendations
 
-1. **Proceed with Platform Track for Category A roles.** The value
-   proposition is clear: curated, tested Claude Code instructions that
-   make specific workflows better.
+1. **Proceed with Platform Track for Category A roles.** Value
+   proposition: curated, tested Claude Code instructions that improve
+   specific workflows.
 
 2. **Build a simple export/bundle tool** that strips frontmatter, inlines
    skill dependencies, and removes StrawPot-specific references. This
    produces a single Markdown file users can drop into their CLAUDE.md.
 
 3. **Use Category B roles as StrawPot differentiators.** Multi-agent
-   orchestration is the feature that justifies the full StrawPot runtime.
-   Market these as "upgrade to StrawPot for orchestrated workflows."
+   orchestration justifies the full runtime. Market as "upgrade to
+   StrawPot for orchestrated workflows."
 
 4. **Start with code-reviewer for launch.** It has the broadest appeal,
    zero StrawPot dependencies, and a clear value proposition ("better
