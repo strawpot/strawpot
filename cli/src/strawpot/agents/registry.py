@@ -1,6 +1,7 @@
 """Agent registry — discover AGENT.md manifests and resolve to AgentSpec."""
 
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,7 +234,7 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     # Check tools required by the install script itself
     install_map = strawpot_meta.get("install", {})
     install_cmd = install_map.get(_current_os(), "")
-    if "curl" in install_cmd and shutil.which("curl") is None:
+    if re.search(r"\bcurl\b", install_cmd) and shutil.which("curl") is None:
         missing.append((
             "curl",
             "Install with your package manager "

@@ -265,10 +265,11 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
                     click.echo(f"  - {tool}: {guidance}", err=True)
                 click.echo(
                     "\nInstall the missing tools above, then run "
-                    "'strawpot start' again.",
+                    "'strawpot start' again.\n"
+                    "Run 'strawpot doctor' for a full system check.",
                     err=True,
                 )
-                return
+                sys.exit(1)
 
             # 1. Try metadata.strawpot.install.<os> from AGENT.md frontmatter
             install_cmd = _get_agent_install_cmd(agent_dir)
@@ -606,6 +607,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
     except ValueError as exc:
+        # Safety net: _ensure_agent_installed should catch most cases,
+        # but the binary could become unavailable between install and resolve.
         click.echo(
             click.style("Error: ", fg="red", bold=True) + str(exc),
             err=True,

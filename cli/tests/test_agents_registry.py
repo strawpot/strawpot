@@ -335,53 +335,39 @@ AGENT_MD_WITH_CURL_INSTALL = dedent("""\
 """)
 
 
-def test_check_prerequisites_all_present(tmp_path, monkeypatch):
+@pytest.fixture()
+def curl_agent_dir(tmp_path, monkeypatch):
+    """Create a temp agent dir with AGENT.md that requires curl and npm."""
+    agent_dir = tmp_path / "my-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(AGENT_MD_WITH_CURL_INSTALL)
+    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
+    return agent_dir
+
+
+def test_check_prerequisites_all_present(curl_agent_dir, monkeypatch):
     """When curl and npm are on PATH, no prerequisites are missing."""
-    agent_dir = tmp_path / "my-agent"
-    agent_dir.mkdir()
-    (agent_dir / "AGENT.md").write_text(AGENT_MD_WITH_CURL_INSTALL)
     monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
-    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
-
-    missing = check_install_prerequisites(agent_dir)
-    assert missing == []
+    assert check_install_prerequisites(curl_agent_dir) == []
 
 
-def test_check_prerequisites_missing_curl(tmp_path, monkeypatch):
+def test_check_prerequisites_missing_curl(curl_agent_dir, monkeypatch):
     """When curl is missing, it's reported as a prerequisite."""
-    agent_dir = tmp_path / "my-agent"
-    agent_dir.mkdir()
-    (agent_dir / "AGENT.md").write_text(AGENT_MD_WITH_CURL_INSTALL)
-
-    def fake_which(cmd):
-        if cmd == "curl":
-            return None
-        return f"/usr/bin/{cmd}"
-
-    monkeypatch.setattr("shutil.which", fake_which)
-    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
-
-    missing = check_install_prerequisites(agent_dir)
-    tool_names = [name for name, _ in missing]
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda c: None if c == "curl" else f"/usr/bin/{c}",
+    )
+    tool_names = [name for name, _ in check_install_prerequisites(curl_agent_dir)]
     assert "curl" in tool_names
 
 
-def test_check_prerequisites_missing_npm(tmp_path, monkeypatch):
+def test_check_prerequisites_missing_npm(curl_agent_dir, monkeypatch):
     """When npm is missing, it's reported with install guidance."""
-    agent_dir = tmp_path / "my-agent"
-    agent_dir.mkdir()
-    (agent_dir / "AGENT.md").write_text(AGENT_MD_WITH_CURL_INSTALL)
-
-    def fake_which(cmd):
-        if cmd == "npm":
-            return None
-        return f"/usr/bin/{cmd}"
-
-    monkeypatch.setattr("shutil.which", fake_which)
-    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
-
-    missing = check_install_prerequisites(agent_dir)
-    tool_names = [name for name, _ in missing]
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda c: None if c == "npm" else f"/usr/bin/{c}",
+    )
+    tool_names = [name for name, _ in check_install_prerequisites(curl_agent_dir)]
     assert "npm" in tool_names
 
 
