@@ -258,13 +258,11 @@ class TestStartFlow:
         runtime.attach.assert_called_once()
 
     @patch("strawpot.session.DenDenServer")
-    def test_port_fallback_on_bind_failure(self, mock_server_cls, tmp_path):
-        """If start() raises RuntimeError (port taken), retry with port 0."""
-        first_server = MagicMock()
-        first_server.start.side_effect = RuntimeError("failed to bind")
-        second_server = MagicMock()
-        second_server.bound_addr = "127.0.0.1:54321"
-        mock_server_cls.side_effect = [first_server, second_server]
+    def test_always_uses_port_zero(self, mock_server_cls, tmp_path):
+        """Server always uses port 0 (OS-assigned) to avoid port collisions."""
+        server = MagicMock()
+        server.bound_addr = "127.0.0.1:54321"
+        mock_server_cls.return_value = server
 
         isolator = _mock_isolator()
         isolator.create.return_value = IsolatedEnv(path=str(tmp_path))
@@ -272,10 +270,8 @@ class TestStartFlow:
 
         session.start(str(tmp_path))
 
-        assert mock_server_cls.call_count == 2
-        # Second call should use port 0
-        second_call_kwargs = mock_server_cls.call_args_list[1]
-        assert second_call_kwargs == ({"addr": "127.0.0.1:0"},)
+        assert mock_server_cls.call_count == 1
+        assert mock_server_cls.call_args == ({"addr": "127.0.0.1:0"},)
         assert session._denden_addr == "127.0.0.1:54321"
 
     @patch("strawpot.session.DenDenServer")
