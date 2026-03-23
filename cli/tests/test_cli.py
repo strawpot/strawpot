@@ -167,6 +167,8 @@ def test_start_missing_env_prompts(
 
     assert result.exit_code == 0
     assert os.environ.get("ANTHROPIC_API_KEY") == "sk-test-key-123"
+    assert "console.anthropic.com" in result.output
+    assert "Enter your ANTHROPIC_API_KEY" in result.output
 
     # Clean up
     os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -474,3 +476,31 @@ def test_start_headless_fails_when_not_configured(mock_load, _mock_onboarding):
 
     assert result.exit_code != 0
     assert "StrawPot is not configured" in result.output
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+@patch("strawpot.cli._ensure_agent_installed")
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.validate_agent")
+@patch("strawpot.cli.load_config")
+def test_start_headless_missing_env_shows_guidance(
+    mock_load, mock_validate, mock_resolve,
+    mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
+):
+    """--headless exits 1 with actionable guidance when API key is missing."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+    mock_validate.return_value = ValidationResult(missing_env=["ANTHROPIC_API_KEY"])
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start", "--headless", "--task", "do stuff"])
+
+    assert result.exit_code != 0
+    assert "StrawPot needs an LLM API key" in result.output
+    assert "ANTHROPIC_API_KEY" in result.output
+    assert "console.anthropic.com" in result.output
+    assert "docs.strawpot.com/quickstart" in result.output

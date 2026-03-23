@@ -54,11 +54,13 @@ Workflows improve over time as roles are reused and refined.
 
 - Python 3.11 or later
 - pip
+- An LLM API key (e.g., [Anthropic API key](https://console.anthropic.com))
 
 ### Install and run
 
 ```bash
 pip install strawpot
+export ANTHROPIC_API_KEY=sk-ant-...  # Get yours at console.anthropic.com
 strawpot gui
 ```
 

@@ -62,6 +62,25 @@ _SEEDED_AGENTS = [
     ("strawpot-codex", "OpenAI Codex CLI — requires OpenAI API key"),
 ]
 
+_API_KEY_GUIDANCE: dict[str, dict[str, str]] = {
+    "ANTHROPIC_API_KEY": {
+        "name": "an Anthropic API key",
+        "url": "https://console.anthropic.com/settings/keys",
+    },
+    "OPENAI_API_KEY": {
+        "name": "an OpenAI API key",
+        "url": "https://platform.openai.com/api-keys",
+    },
+    "GEMINI_API_KEY": {
+        "name": "a Google Gemini API key",
+        "url": "https://aistudio.google.com/apikey",
+    },
+    "GOOGLE_API_KEY": {
+        "name": "a Google API key",
+        "url": "https://aistudio.google.com/apikey",
+    },
+}
+
 
 def needs_onboarding(config, working_dir: str) -> bool:
     """Return True when the first-run onboarding wizard should be shown.
@@ -597,14 +616,30 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     if validation.missing_env:
         if headless:
-            click.echo(
-                f"Error: missing environment variables: {', '.join(validation.missing_env)}",
-                err=True,
+            lines = ["Error: StrawPot needs an LLM API key to run.\n"]
+            lines.append(f"Missing: {', '.join(validation.missing_env)}\n")
+            for var in validation.missing_env:
+                guidance = _API_KEY_GUIDANCE.get(var)
+                if guidance:
+                    lines.append(
+                        f"To get started:\n"
+                        f"  1. Sign up at {guidance['url']}\n"
+                        f"  2. Create an API key\n"
+                        f"  3. Set it: export {var}=...\n"
+                    )
+            lines.append(
+                "Or set it permanently in your shell profile (~/.bashrc, ~/.zshrc).\n\n"
+                "See: https://docs.strawpot.com/quickstart"
             )
+            click.echo("\n".join(lines), err=True)
             sys.exit(1)
         agent_env_values: dict[str, str] = {}
         for var in validation.missing_env:
-            value = click.prompt(f"Enter value for {var}")
+            guidance = _API_KEY_GUIDANCE.get(var)
+            if guidance:
+                click.echo(f"\nStrawPot needs {guidance['name']}.")
+                click.echo(f"Get one at: {guidance['url']}\n")
+            value = click.prompt(f"Enter your {var}")
             os.environ[var] = value
             agent_env_values[var] = value
         if agent_env_values:
