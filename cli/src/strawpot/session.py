@@ -761,30 +761,17 @@ class Session:
     def _start_denden_server(self) -> None:
         """Create and start the denden gRPC server.
 
-        Tries the configured address first.  If binding fails (port in
-        use), falls back to port 0 (OS-assigned free port).  The actual
-        bound address is stored in ``self._denden_addr``.
+        Always uses port 0 (OS-assigned) to avoid port collisions when
+        multiple sessions run concurrently.  The actual bound address is
+        stored in ``self._denden_addr`` and passed to child agents.
         """
-        self._server = DenDenServer(addr=self.config.denden_addr)
+        host = self.config.denden_addr.rsplit(":", 1)[0]
+        self._server = DenDenServer(addr=f"{host}:0")
         self._server.on_delegate(self._handle_delegate)
         self._server.on_ask_user(self._handle_ask_user)
         self._server.on_remember(self._handle_remember)
         self._server.on_recall(self._handle_recall)
-
-        try:
-            self._server.start()
-        except RuntimeError:
-            host = self.config.denden_addr.rsplit(":", 1)[0]
-            logger.info(
-                "Port %s in use, falling back to OS-assigned port",
-                self.config.denden_addr,
-            )
-            self._server = DenDenServer(addr=f"{host}:0")
-            self._server.on_delegate(self._handle_delegate)
-            self._server.on_ask_user(self._handle_ask_user)
-            self._server.on_remember(self._handle_remember)
-            self._server.on_recall(self._handle_recall)
-            self._server.start()
+        self._server.start()
 
         self._denden_addr = self._server.bound_addr
 
