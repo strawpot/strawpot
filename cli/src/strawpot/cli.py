@@ -50,10 +50,27 @@ from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
 from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
-@click.group()
+HELP_EPILOG = """
+Getting started:
+
+  strawpot start              Launch your first agent (interactive setup)
+  strawpot start --task "..." Run a task non-interactively
+  strawpot doctor             Check system prerequisites
+  strawpot gui                Open the web dashboard
+
+Docs: https://docs.strawpot.com
+"""
+
+
+@click.group(epilog=HELP_EPILOG)
 @click.version_option(version=__version__)
 def cli():
-    """StrawPot — lightweight agent orchestration."""
+    """StrawPot — AI agent orchestration.
+
+    Compose AI agents that delegate tasks, share memory, and coordinate
+    through roles and skills. Works with Claude Code, Codex, Gemini,
+    and more.
+    """
 
 
 # ---------------------------------------------------------------------------
