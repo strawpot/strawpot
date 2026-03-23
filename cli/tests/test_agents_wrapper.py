@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 
-from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
+from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime, TokenUsage
 from strawpot.agents.registry import AgentSpec
-from strawpot.agents.wrapper import WrapperRuntime
+from strawpot.agents.wrapper import WrapperRuntime, _parse_stream_json_log
 from strawpot._process import kill_process_tree
 
 
@@ -702,3 +702,114 @@ def test_spawn_skill_dirs_precede_system_path(tmp_path, monkeypatch):
     path = popen_captured["env"]["PATH"]
     assert path.startswith(str(skills_dir / "mytool"))
     assert original_path in path
+
+
+# --- _parse_stream_json_log ---
+
+
+def test_parse_stream_json_valid():
+    """Parse a valid stream-json log with result message."""
+    log = (
+        '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking..."}]}}\n'
+        '{"type":"result","subtype":"success","cost_usd":0.05,"result":"Final output","total_cost_usd":0.08,'
+        '"usage":{"input_tokens":5000,"output_tokens":2000,"cache_creation_input_tokens":0,"cache_read_input_tokens":1500}}\n'
+    )
+    output, usage = _parse_stream_json_log(log)
+    assert output == "Final output"
+    assert usage is not None
+    assert usage.input_tokens == 5000
+    assert usage.output_tokens == 2000
+    assert usage.cache_read_input_tokens == 1500
+    assert usage.cache_creation_input_tokens == 0
+    assert usage.cost_usd == 0.05
+
+
+def test_parse_stream_json_plain_text_fallback():
+    """Non-stream-json (plain text) logs fall back to raw content."""
+    log = "This is just plain text output from an agent.\nNo JSON here."
+    output, usage = _parse_stream_json_log(log)
+    assert output == log
+    assert usage is None
+
+
+def test_parse_stream_json_empty_log():
+    """Empty log returns empty output and no usage."""
+    output, usage = _parse_stream_json_log("")
+    assert output == ""
+    assert usage is None
+
+
+def test_parse_stream_json_whitespace_only():
+    """Whitespace-only log returns empty output and no usage."""
+    output, usage = _parse_stream_json_log("   \n\n  ")
+    assert output == ""
+    assert usage is None
+
+
+def test_parse_stream_json_error_result():
+    """Error result with no 'result' field returns empty string."""
+    log = '{"type":"result","subtype":"error","cost_usd":0.01,"usage":{"input_tokens":100,"output_tokens":0}}\n'
+    output, usage = _parse_stream_json_log(log)
+    assert output == ""
+    assert usage is not None
+    assert usage.input_tokens == 100
+    assert usage.cost_usd == 0.01
+
+
+def test_parse_stream_json_no_usage_field():
+    """Result message without usage field still works."""
+    log = '{"type":"result","subtype":"success","result":"done"}\n'
+    output, usage = _parse_stream_json_log(log)
+    assert output == "done"
+    assert usage is not None
+    assert usage.input_tokens == 0
+    assert usage.cost_usd is None
+
+
+def test_parse_stream_json_mixed_lines():
+    """Log with mixed valid JSON and non-JSON lines."""
+    log = (
+        "some stderr noise\n"
+        '{"type":"assistant","message":{"role":"assistant"}}\n'
+        "more noise\n"
+        '{"type":"result","result":"output","cost_usd":0.02,'
+        '"usage":{"input_tokens":300,"output_tokens":100}}\n'
+    )
+    output, usage = _parse_stream_json_log(log)
+    assert output == "output"
+    assert usage is not None
+    assert usage.input_tokens == 300
+    assert usage.cost_usd == 0.02
+
+
+def test_parse_stream_json_with_model():
+    """Model field from result message is captured."""
+    log = '{"type":"result","result":"done","model":"claude-sonnet-4-20250514","cost_usd":0.03,"usage":{"input_tokens":1000,"output_tokens":500}}\n'
+    output, usage = _parse_stream_json_log(log)
+    assert usage is not None
+    assert usage.model == "claude-sonnet-4-20250514"
+
+
+def test_wait_parses_stream_json_log(tmp_path):
+    """wait() extracts result text and token usage from stream-json logs."""
+    rt = WrapperRuntime(_make_spec(), session_dir=str(tmp_path))
+    log_dir = tmp_path / "agents" / "sjson01"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    stream_json_log = (
+        '{"type":"assistant","message":{"role":"assistant"}}\n'
+        '{"type":"result","subtype":"success","result":"The answer is 42",'
+        '"cost_usd":0.07,"usage":{"input_tokens":3000,"output_tokens":1000,'
+        '"cache_read_input_tokens":500,"cache_creation_input_tokens":0}}\n'
+    )
+    (log_dir / ".log").write_text(stream_json_log)
+
+    handle = AgentHandle(agent_id="sjson01", runtime_name="test-agent")
+    result = rt.wait(handle)
+
+    assert result.output == "The answer is 42"
+    assert result.usage is not None
+    assert result.usage.input_tokens == 3000
+    assert result.usage.output_tokens == 1000
+    assert result.usage.cache_read_input_tokens == 500
+    assert result.usage.cost_usd == 0.07

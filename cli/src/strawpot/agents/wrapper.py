@@ -14,10 +14,62 @@ import sys
 import time
 
 from strawpot._process import is_pid_alive, kill_process_tree
-from strawpot.agents.protocol import AgentHandle, AgentResult
+from strawpot.agents.protocol import AgentHandle, AgentResult, TokenUsage
 from strawpot.agents.registry import AgentSpec
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_stream_json_log(
+    log_content: str,
+) -> tuple[str, TokenUsage | None]:
+    """Parse a stream-json JSONL log to extract result text and token usage.
+
+    Returns ``(output_text, usage)`` where *output_text* is the human-readable
+    result and *usage* is a :class:`TokenUsage` if a ``result`` message was
+    found, otherwise ``(raw_content, None)`` as a fallback for non-stream-json
+    logs.
+    """
+    if not log_content.strip():
+        return "", None
+
+    result_msg = None
+    for line in log_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict) and parsed.get("type") == "result":
+            result_msg = parsed
+
+    if result_msg is None:
+        # Not stream-json format — return raw content.
+        return log_content, None
+
+    output_text = result_msg.get("result", "")
+    if not isinstance(output_text, str):
+        output_text = str(output_text) if output_text is not None else ""
+
+    raw_usage = result_msg.get("usage")
+    if isinstance(raw_usage, dict):
+        usage = TokenUsage(
+            input_tokens=raw_usage.get("input_tokens", 0),
+            output_tokens=raw_usage.get("output_tokens", 0),
+            cache_read_input_tokens=raw_usage.get("cache_read_input_tokens", 0),
+            cache_creation_input_tokens=raw_usage.get(
+                "cache_creation_input_tokens", 0
+            ),
+        )
+    else:
+        usage = TokenUsage()
+
+    usage.cost_usd = result_msg.get("cost_usd")
+    usage.model = result_msg.get("model", "")
+
+    return output_text, usage
 
 
 class WrapperRuntime:
@@ -265,17 +317,20 @@ class WrapperRuntime:
                     time.sleep(poll_interval)
                     elapsed += poll_interval
 
-        # Read captured output
+        # Read captured output and parse stream-json if available
         log_path = self._log_file(handle.agent_id)
-        output = ""
+        raw_log = ""
         if os.path.exists(log_path):
             with open(log_path, encoding="utf-8") as f:
-                output = f.read()
+                raw_log = f.read()
+
+        output, usage = _parse_stream_json_log(raw_log)
 
         return AgentResult(
             summary="Agent completed",
             output=output,
             exit_code=exit_code,
+            usage=usage,
         )
 
     def is_alive(self, handle: AgentHandle) -> bool:
