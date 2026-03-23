@@ -560,6 +560,12 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0. First-run onboarding
     if needs_onboarding(config, working_dir):
+        if task and not headless:
+            click.echo(
+                click.style("Note: ", fg="yellow", bold=True)
+                + "No agent configured yet. Running first-time setup.\n"
+                "Your task will be executed after setup completes.\n",
+            )
         if headless:
             click.echo(
                 "Error: StrawPot is not configured. Run 'strawpot start' "
