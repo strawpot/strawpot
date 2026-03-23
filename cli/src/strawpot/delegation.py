@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from strawpot.trace import Tracer
 
-from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime
+from strawpot.agents.protocol import AgentHandle, AgentResult, AgentRuntime, TokenUsage
 from strawpot.agents.registry import resolve_agent
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import StrawPotConfig, get_strawpot_home
@@ -732,10 +732,12 @@ def _emit_delegate_end(
     role: str = "",
     session_id: str = "",
     agent_id: str = "",
+    usage: TokenUsage | None = None,
 ) -> None:
     """Emit delegate_end if tracer is active."""
     if tracer is not None and span_id is not None:
         duration_ms = int((time.monotonic() - start_time) * 1000)
+        u = usage or TokenUsage()
         tracer.delegate_end(
             span_id=span_id,
             exit_code=exit_code,
@@ -744,6 +746,12 @@ def _emit_delegate_end(
             role=role,
             session_id=session_id,
             agent_id=agent_id,
+            input_tokens=u.input_tokens,
+            output_tokens=u.output_tokens,
+            cache_read_input_tokens=u.cache_read_input_tokens,
+            cache_creation_input_tokens=u.cache_creation_input_tokens,
+            cost_usd=u.cost_usd,
+            model=u.model,
         )
 
 
@@ -1053,6 +1061,7 @@ def _handle_delegate_body(
             agent_duration_ms = int(
                 (time.monotonic() - spawn_time) * 1000
             )
+            u = result.usage or TokenUsage()
             tracer.agent_end(
                 span_id=delegate_span_id,
                 exit_code=result.exit_code,
@@ -1061,6 +1070,12 @@ def _handle_delegate_body(
                 agent_id=agent_id,
                 role=request.role_slug,
                 session_id=request.run_id,
+                input_tokens=u.input_tokens,
+                output_tokens=u.output_tokens,
+                cache_read_input_tokens=u.cache_read_input_tokens,
+                cache_creation_input_tokens=u.cache_creation_input_tokens,
+                cost_usd=u.cost_usd,
+                model=u.model,
             )
 
         # 8a. Memory dump — record result after wait
@@ -1101,7 +1116,7 @@ def _handle_delegate_body(
                 tracer, delegate_span_id, 1,
                 delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
-                agent_id=agent_id,
+                agent_id=agent_id, usage=result.usage,
             )
             return DelegateResult(
                 output=result.output,
@@ -1114,7 +1129,7 @@ def _handle_delegate_body(
                 tracer, delegate_span_id, result.exit_code,
                 delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
-                agent_id=agent_id,
+                agent_id=agent_id, usage=result.usage,
             )
             return DelegateResult(
                 output=result.output,
@@ -1130,7 +1145,7 @@ def _handle_delegate_body(
                 tracer, delegate_span_id, result.exit_code,
                 delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
-                agent_id=agent_id,
+                agent_id=agent_id, usage=result.usage,
             )
             return DelegateResult(
                 output=result.output,
@@ -1150,7 +1165,7 @@ def _handle_delegate_body(
                 tracer, delegate_span_id, result.exit_code,
                 delegate_start_time, output=result.output,
                 role=request.role_slug, session_id=request.run_id,
-                agent_id=agent_id,
+                agent_id=agent_id, usage=result.usage,
             )
             return DelegateResult(
                 output=result.output,
@@ -1177,7 +1192,7 @@ def _handle_delegate_body(
         tracer, delegate_span_id, result.exit_code,
         delegate_start_time, output=result.output,
         role=request.role_slug, session_id=request.run_id,
-        agent_id=agent_id,
+        agent_id=agent_id, usage=result.usage,
     )
     return DelegateResult(
         output=result.output,

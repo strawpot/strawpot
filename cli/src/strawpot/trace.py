@@ -174,6 +174,12 @@ class Tracer:
         session_id: str = "",
         agent_id: str = "",
         cache_hit: bool = False,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
+        cost_usd: float | None = None,
+        model: str = "",
     ) -> None:
         """Emit ``delegate_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -187,6 +193,12 @@ class Tracer:
             session_id=session_id,
             agent_id=agent_id,
             cache_hit=cache_hit,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cost_usd=cost_usd if cost_usd is not None else 0.0,
+            model=model,
         )
 
     def delegate_denied(
@@ -386,6 +398,12 @@ class Tracer:
         agent_id: str = "",
         role: str = "",
         session_id: str = "",
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
+        cost_usd: float | None = None,
+        model: str = "",
     ) -> None:
         """Emit ``agent_end``.  Stores output as artifact."""
         output_ref = self.store_artifact(output)
@@ -398,6 +416,12 @@ class Tracer:
             agent_id=agent_id,
             role=role,
             session_id=session_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cost_usd=cost_usd if cost_usd is not None else 0.0,
+            model=model,
         )
 
     def ask_user_start(

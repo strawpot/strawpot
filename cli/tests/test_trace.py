@@ -267,6 +267,37 @@ class TestDelegateEvents:
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "task output here"
 
+    def test_delegate_end_with_token_usage(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.delegate_end(
+            span_id="s1", exit_code=0, duration_ms=5000,
+            output="done", role="implementer",
+            input_tokens=5000, output_tokens=2000,
+            cache_read_input_tokens=1500, cache_creation_input_tokens=0,
+            cost_usd=0.05, model="claude-sonnet-4-20250514",
+        )
+        events = _read_events(session_dir)
+        data = events[0]["data"]
+        assert data["input_tokens"] == 5000
+        assert data["output_tokens"] == 2000
+        assert data["cache_read_input_tokens"] == 1500
+        assert data["cache_creation_input_tokens"] == 0
+        assert data["cost_usd"] == 0.05
+        assert data["model"] == "claude-sonnet-4-20250514"
+
+    def test_delegate_end_without_token_usage(self, tmp_path):
+        """Token fields default to zero when not provided."""
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.delegate_end(
+            span_id="s1", exit_code=0, duration_ms=1000, output="ok",
+        )
+        events = _read_events(session_dir)
+        data = events[0]["data"]
+        assert data["input_tokens"] == 0
+        assert data["output_tokens"] == 0
+        assert data["cost_usd"] == 0.0
+        assert data["model"] == ""
+
     def test_delegate_denied_event(self, tmp_path):
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.delegate_denied(
@@ -466,6 +497,24 @@ class TestAgentEvents:
         artifact_path = os.path.join(session_dir, "artifacts", ref)
         with open(artifact_path, encoding="utf-8") as f:
             assert f.read() == "task completed successfully"
+
+    def test_agent_end_with_token_usage(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.agent_end(
+            span_id="s1", exit_code=0,
+            output="done", duration_ms=8000,
+            agent_id="a1", role="reviewer",
+            input_tokens=3000, output_tokens=1000,
+            cache_read_input_tokens=500, cost_usd=0.03,
+            model="claude-sonnet-4-20250514",
+        )
+        events = _read_events(session_dir)
+        data = events[0]["data"]
+        assert data["input_tokens"] == 3000
+        assert data["output_tokens"] == 1000
+        assert data["cache_read_input_tokens"] == 500
+        assert data["cost_usd"] == 0.03
+        assert data["model"] == "claude-sonnet-4-20250514"
 
 
 # ---------------------------------------------------------------------------
