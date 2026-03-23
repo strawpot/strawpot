@@ -38,7 +38,12 @@ from strawpot.agents.interactive import (
     DirectWrapperRuntime,
     InteractiveWrapperRuntime,
 )
-from strawpot.agents.registry import parse_agent_md, resolve_agent, validate_agent
+from strawpot.agents.registry import (
+    check_install_prerequisites,
+    parse_agent_md,
+    resolve_agent,
+    validate_agent,
+)
 from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
@@ -229,6 +234,25 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     ]
     for agent_dir in agent_dirs:
         if (agent_dir / "AGENT.md").is_file():
+            # Check prerequisites before attempting install
+            missing = check_install_prerequisites(agent_dir)
+            if missing:
+                click.echo(
+                    click.style(
+                        f"\nMissing prerequisites for '{name}':",
+                        fg="red", bold=True,
+                    ),
+                    err=True,
+                )
+                for tool, guidance in missing:
+                    click.echo(f"  - {tool}: {guidance}", err=True)
+                click.echo(
+                    "\nInstall the missing tools above, then run "
+                    "'strawpot start' again.",
+                    err=True,
+                )
+                return
+
             # 1. Try metadata.strawpot.install.<os> from AGENT.md frontmatter
             install_cmd = _get_agent_install_cmd(agent_dir)
             if install_cmd:
@@ -557,6 +581,16 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         )
     except FileNotFoundError as exc:
         click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    except ValueError as exc:
+        click.echo(
+            click.style("Error: ", fg="red", bold=True) + str(exc),
+            err=True,
+        )
+        click.echo(
+            "\nRun 'strawpot doctor' to check all prerequisites.",
+            err=True,
+        )
         sys.exit(1)
 
     # 2. Validate agent dependencies — auto-install tools when possible

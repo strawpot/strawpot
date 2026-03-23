@@ -101,9 +101,19 @@ def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
             )
         binary_path = agent_dir / bin_name
         if not binary_path.exists():
-            raise ValueError(
-                f"Agent binary not found: {binary_path}"
+            # Extract install hint from the same metadata so callers can
+            # display an actionable message.
+            install_map = strawpot_meta.get("install", {})
+            install_hint = install_map.get(_current_os())
+            msg = (
+                f"Agent binary not found: {binary_path}\n\n"
+                "The agent package is installed but its runtime binary is "
+                "missing.\nThis usually means the install script failed "
+                "(e.g. 'curl' or 'npm' not available)."
             )
+            if install_hint:
+                msg += f"\n\nTo install the runtime manually, run:\n  {install_hint}"
+            raise ValueError(msg)
         return [str(binary_path)]
 
     # 2. External CLI on PATH (metadata.strawpot.wrapper.command)
@@ -114,7 +124,9 @@ def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
         resolved = shutil.which(command)
         if resolved is None:
             raise ValueError(
-                f"Wrapper command not found on PATH: {command}"
+                f"Wrapper command not found on PATH: {command}\n\n"
+                f"Make sure '{command}' is installed and available in your "
+                "shell PATH."
             )
         return [resolved]
 
@@ -194,6 +206,53 @@ def resolve_agent(
         env_schema=env_schema,
         tools=tools,
     )
+
+
+def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
+    """Check if system prerequisites for an agent's install script are met.
+
+    Examines the install command in AGENT.md frontmatter and identifies
+    missing system tools (e.g. ``curl``, ``npm``, ``node``).
+
+    Args:
+        agent_dir: Directory containing AGENT.md.
+
+    Returns:
+        List of ``(tool_name, guidance)`` tuples for missing prerequisites.
+        Empty list if all prerequisites are satisfied.
+    """
+    try:
+        frontmatter, _ = parse_agent_md(agent_dir / "AGENT.md")
+    except (ValueError, OSError):
+        return []
+
+    meta = frontmatter.get("metadata", {})
+    strawpot_meta = meta.get("strawpot", {})
+    missing: list[tuple[str, str]] = []
+
+    # Check tools required by the install script itself
+    install_map = strawpot_meta.get("install", {})
+    install_cmd = install_map.get(_current_os(), "")
+    if "curl" in install_cmd and shutil.which("curl") is None:
+        missing.append((
+            "curl",
+            "Install with your package manager "
+            "(e.g. 'apt install curl' or 'brew install curl')",
+        ))
+
+    # Check declared tool dependencies
+    tools = strawpot_meta.get("tools", {})
+    for tool_name, tool_meta in tools.items():
+        if shutil.which(tool_name) is None:
+            desc = tool_meta.get("description", "")
+            install_hints = tool_meta.get("install", {})
+            hint = install_hints.get(_current_os(), "")
+            guidance = desc
+            if hint:
+                guidance += f"\n    Install: {hint}"
+            missing.append((tool_name, guidance))
+
+    return missing
 
 
 def validate_agent(spec: AgentSpec) -> ValidationResult:
