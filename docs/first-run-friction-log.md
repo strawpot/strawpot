@@ -26,7 +26,7 @@
 | Full test protocol | 22:12:39 | 22:12:49 | ~10 seconds |
 
 **Total time from pip install to first useful output: NEVER REACHED.**
-The user cannot get to a useful output without manual intervention outside of StrawPot.
+The user cannot reach useful output without manual intervention outside StrawPot.
 
 ## Test Results
 
@@ -59,16 +59,16 @@ Help text renders correctly. Lists 20 commands. The output is clear and well-org
 
 **Result:** CRASH (exit code 1, unhandled ValueError traceback)
 
-This is the critical test. Here is what happens:
+Here is what happens:
 
 1. StrawPot detects no agent is configured and launches the onboarding wizard
 2. The wizard presents a 3-choice menu (Claude Code, Gemini, Codex)
 3. User selects option 1 (strawpot-claude-code)
 4. StrawPot installs the agent package from StrawHub (succeeds)
-5. StrawPot tries to run the agent's install script via `curl | sh` -- **fails because `curl` is not installed**
-6. StrawPot tries `npm install -g @anthropic-ai/claude-code` -- **fails because `npm` is not installed**
-7. StrawPot prints a warning about failed tool install but continues
-8. StrawPot tries to resolve the agent binary at `~/.strawpot/agents/strawpot-claude-code/strawpot_claude_code` -- **crashes with an unhandled ValueError**
+5. StrawPot tries to run the agent's install script via `curl | sh`: **fails because `curl` is not installed**
+6. StrawPot tries `npm install -g @anthropic-ai/claude-code`: **fails because `npm` is not installed**
+7. StrawPot prints a warning about the failed tool install but continues
+8. StrawPot tries to resolve the agent binary at `~/.strawpot/agents/strawpot-claude-code/strawpot_claude_code`: **crashes with an unhandled ValueError**
 
 The full traceback is:
 ```
@@ -126,14 +126,14 @@ This is a hard crash. The user sees a Python traceback, not a helpful error mess
 
 ### HIGH-1: No prerequisite checker or "doctor" command
 
-**What happens:** StrawPot has hidden dependencies that are not documented or checked:
+**What happens:** StrawPot has undocumented dependencies that are never checked:
 - `curl` (for agent install scripts)
 - `npm` / `node` (for Claude Code)
 - `git` (for worktree isolation, PR workflows)
 - `gh` (GitHub CLI, for PR creation)
 - `ANTHROPIC_API_KEY` or equivalent (for the LLM backend)
 
-None of these are checked upfront. Users discover them one at a time through cryptic errors.
+Users discover these one at a time through cryptic errors.
 
 **Suggested fix:**
 1. Add a `strawpot doctor` command that checks all prerequisites and reports their status.
@@ -142,7 +142,7 @@ None of these are checked upfront. Users discover them one at a time through cry
 
 ### HIGH-2: No getting-started guide in the CLI
 
-**What happens:** After `pip install strawpot`, the user runs `strawpot --help` and sees 20 commands with no guidance on where to start. There is no `strawpot quickstart`, no post-install message, and no indication that `strawpot start` is the entry point.
+**What happens:** After install, `strawpot --help` shows 20 commands with no guidance on where to start. There is no `strawpot quickstart`, no post-install message, and no indication that `strawpot start` is the entry point.
 
 **Suggested fix:**
 1. Add a post-install banner or first-run message: "Get started: run `strawpot start` to launch your first agent."
@@ -151,7 +151,7 @@ None of these are checked upfront. Users discover them one at a time through cry
 
 ### HIGH-3: The --task flag is silently ignored during onboarding
 
-**What happens:** `strawpot start --task "Review my latest PR"` triggers the interactive onboarding wizard. The `--task` flag is accepted but has no effect until onboarding completes. In non-interactive mode (piped input, CI), this means the task is lost.
+**What happens:** `strawpot start --task "Review my latest PR"` triggers the onboarding wizard. The `--task` flag is accepted but has no effect until onboarding completes. In non-interactive contexts (piped input, CI), the task is lost.
 
 **Suggested fix:**
 1. If `--task` is provided and no agent is configured, either (a) auto-select the default agent or (b) print a clear message: "No agent configured. Run `strawpot start` first to set up, then re-run with --task."
@@ -172,7 +172,7 @@ A user guessing at the interface will fail on both.
 
 ### MEDIUM-2: Tool install prompts are not non-interactive-friendly
 
-**What happens:** `strawpot install role code-reviewer` prompts `Install 'gh' (GitHub CLI)? Command: apt install gh [Y/n]:` and waits for input. In non-interactive contexts, this hangs or fails silently.
+**What happens:** `strawpot install role code-reviewer` prompts `Install 'gh' (GitHub CLI)? Command: apt install gh [Y/n]:` and waits for input. In non-interactive contexts this hangs or fails silently.
 
 **Suggested fix:**
 1. Add `--yes` / `-y` flag to auto-accept tool installs.
@@ -189,15 +189,15 @@ A user guessing at the interface will fail on both.
 
 ### LOW-1: `strawpot` with no args exits with code 2
 
-**What happens:** Running `strawpot` with no arguments shows the help text but exits with code 2 (error). This is standard Click behavior but could confuse scripts.
+**What happens:** Running `strawpot` with no arguments shows help text but exits with code 2 (error). Standard Click behavior, but could confuse scripts.
 
-**Suggested fix:** Set `invoke_without_command=True` on the CLI group to show help and exit 0, or add a note in documentation.
+**Suggested fix:** Set `invoke_without_command=True` on the CLI group to exit 0, or document this behavior.
 
 ### LOW-2: pip "running as root" and "new release available" warnings
 
-**What happens:** Standard pip warnings appear during install. Not a StrawPot issue, but it adds noise for new users.
+**What happens:** Standard pip warnings appear during install. Not a StrawPot issue, but adds noise.
 
-**Suggested fix:** None needed. This is expected pip behavior.
+**Suggested fix:** None needed. Expected pip behavior.
 
 ## Honest Assessment
 
@@ -220,6 +220,6 @@ A user guessing at the interface will fail on both.
 
 ## Raw Test Output
 
-Full test output is available in the PR for reference. Key files tested:
+Full test output is available in the linked PR. Key files tested:
 - `strawpot/cli.py` (CLI entry point, onboarding wizard)
 - `strawpot/agents/registry.py` (agent resolution, binary detection)
