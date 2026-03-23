@@ -10,8 +10,18 @@ StrawPot lets agents figure out how to solve the task.
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
+<h4 align="center">CLI</h4>
 <p align="center">
-  <img src="docs/demo.png" alt="StrawPot demo" width="1280">
+  <a href="https://strawpot.com/demo.mp4">
+    <img src="docs/demo.png" alt="StrawPot CLI demo" width="1280">
+  </a>
+</p>
+
+<h4 align="center">GUI</h4>
+<p align="center">
+  <a href="https://strawpot.com/demo-gui.mp4">
+    <img src="docs/demo-gui.png" alt="StrawPot GUI demo" width="1280">
+  </a>
 </p>
 
 - Agents compose other agents dynamically, with no fixed pipelines
