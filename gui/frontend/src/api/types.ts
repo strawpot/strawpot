@@ -47,11 +47,27 @@ export interface TraceEvent {
   data: Record<string, unknown>;
 }
 
+export interface RoleCost {
+  role: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
+export interface SessionCost {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cost_usd: number | null;
+  by_role: RoleCost[];
+}
+
 export interface SessionDetail extends Session {
   interactive: boolean;
   agents: Record<string, AgentInfo>;
   events: TraceEvent[];
   tree: TreeData;
+  cost: SessionCost | null;
 }
 
 export interface AskUserPending {

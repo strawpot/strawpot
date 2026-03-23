@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ViewToggle from "@/components/ViewToggle";
-import { cn } from "@/lib/utils";
+import { cn, formatTokens, formatCost } from "@/lib/utils";
 import {
   AlertCircle,
   ArrowLeft,
@@ -159,6 +159,31 @@ export default function SessionDetail() {
                 runId={sessionData.run_id}
                 hash={outputRef}
               />
+            </OverviewSection>
+          )}
+
+          {sessionData.cost && sessionData.cost.by_role.length > 0 && (
+            <OverviewSection label="Cost Breakdown" defaultOpen={false}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="text-right">Input</TableHead>
+                    <TableHead className="text-right">Output</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sessionData.cost.by_role.map((rc) => (
+                    <TableRow key={rc.role}>
+                      <TableCell className="font-medium">{rc.role}</TableCell>
+                      <TableCell className="text-right">{formatTokens(rc.input_tokens)}</TableCell>
+                      <TableCell className="text-right">{formatTokens(rc.output_tokens)}</TableCell>
+                      <TableCell className="text-right">{formatCost(rc.cost_usd) ?? "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </OverviewSection>
           )}
 
@@ -371,6 +396,23 @@ function SessionMetadata({ session }: { session: SessionDetailType }) {
             <>
               <dt className="font-medium text-muted-foreground">Exit Code</dt>
               <dd>{session.exit_code}</dd>
+            </>
+          )}
+          {session.cost && (
+            <>
+              {session.cost.total_cost_usd != null && (
+                <>
+                  <dt className="font-medium text-muted-foreground">Cost</dt>
+                  <dd>{formatCost(session.cost.total_cost_usd)}</dd>
+                </>
+              )}
+              <dt className="font-medium text-muted-foreground">Tokens</dt>
+              <dd>
+                {formatTokens(session.cost.total_input_tokens)} in / {formatTokens(session.cost.total_output_tokens)} out
+                {session.cost.total_cache_read_tokens > 0 && (
+                  <span className="text-muted-foreground"> ({formatTokens(session.cost.total_cache_read_tokens)} cached)</span>
+                )}
+              </dd>
             </>
           )}
         </dl>
