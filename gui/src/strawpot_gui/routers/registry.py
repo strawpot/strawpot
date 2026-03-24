@@ -94,6 +94,12 @@ def scan_dir(
     return items
 
 
+@router.post("/update-all")
+def update_all_resources():
+    """Update all global resources to their latest versions via strawhub."""
+    return run_strawhub("update", "--all", "--global", "-y")
+
+
 @router.get("/{resource_type}")
 def list_resources(resource_type: str):
     """List all installed resources of a given type."""

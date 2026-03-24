@@ -182,6 +182,19 @@ class TestGetProjectResource:
         assert resp.status_code == 404
 
 
+class TestUpdateAllProjectResources:
+    def test_endpoint_exists(self, client, tmp_path, global_home):
+        pid, _ = _setup_project(client, tmp_path)
+        resp = client.post(f"/api/projects/{pid}/resources/update-all")
+        # Will be 503 if strawhub not on PATH, or 200 if it is.
+        assert resp.status_code != 404
+        assert resp.status_code != 405
+
+    def test_nonexistent_project_returns_404(self, client, tmp_path, global_home):
+        resp = client.post("/api/projects/9999/resources/update-all")
+        assert resp.status_code == 404
+
+
 class TestProjectResourceConfig:
     def test_get_config_for_global_resource(self, client, tmp_path, global_home):
         """Can read config schema from global resource + saved values from project toml."""

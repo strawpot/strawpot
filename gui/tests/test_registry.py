@@ -142,6 +142,16 @@ class TestReinstallResource:
         assert resp.status_code == 404
 
 
+class TestUpdateAllResources:
+    def test_endpoint_exists(self, client, home):
+        """update-all endpoint accepts POST and runs strawhub."""
+        resp = client.post("/api/registry/update-all")
+        # Will be 503 if strawhub not on PATH, or 200 if it is.
+        # Either way, it should not be 404 or 405.
+        assert resp.status_code != 404
+        assert resp.status_code != 405
+
+
 class TestUninstallProtectedResources:
     """Built-in resources cannot be uninstalled."""
 

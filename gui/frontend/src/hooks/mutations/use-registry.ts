@@ -36,6 +36,17 @@ export function useUpdateResource() {
   });
 }
 
+export function useUpdateAllResources() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<InstallResult>("/registry/update-all"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["registry"] });
+    },
+  });
+}
+
 export function useReinstallResource() {
   const qc = useQueryClient();
   return useMutation({

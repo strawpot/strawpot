@@ -15,10 +15,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ResourceDetailSheet from "@/components/ResourceDetailSheet";
 import InstallDialog from "@/components/InstallDialog";
+import UpdateAllDialog from "@/components/UpdateAllDialog";
 import ProjectIntegrationsTab from "@/components/ProjectIntegrationsTab";
-import { useUninstallProjectResource } from "@/hooks/mutations/use-project-resources";
+import {
+  useUninstallProjectResource,
+  useUpdateAllProjectResources,
+} from "@/hooks/mutations/use-project-resources";
 import { useIntegrations } from "@/hooks/queries/use-integrations";
-import { Download, Settings, Trash2 } from "lucide-react";
+import { Download, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectResource } from "@/api/types";
 
@@ -50,6 +54,9 @@ export default function ProjectResourcesTab({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [internalInstallOpen, setInternalInstallOpen] = useState(false);
 
+  const [updateAllOpen, setUpdateAllOpen] = useState(false);
+  const updateAll = useUpdateAllProjectResources(projectId);
+
   const installOpen = externalInstallOpen ?? internalInstallOpen;
   const setInstallOpen = externalOnInstallOpenChange ?? setInternalInstallOpen;
 
@@ -72,10 +79,16 @@ export default function ProjectResourcesTab({
         <p className="text-sm text-muted-foreground">
           Resources available to this project
         </p>
-        <Button onClick={() => setInstallOpen(true)} size="sm">
-          <Download className="mr-2 h-4 w-4" />
-          Install
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Update All
+          </Button>
+          <Button onClick={() => setInstallOpen(true)} size="sm">
+            <Download className="mr-2 h-4 w-4" />
+            Install
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -140,6 +153,13 @@ export default function ProjectResourcesTab({
         open={installOpen}
         onOpenChange={setInstallOpen}
         projectId={projectId}
+      />
+
+      <UpdateAllDialog
+        open={updateAllOpen}
+        onOpenChange={setUpdateAllOpen}
+        onUpdate={() => updateAll.mutateAsync()}
+        scope="project"
       />
     </div>
   );

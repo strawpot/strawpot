@@ -38,6 +38,17 @@ export function useUpdateProjectResource(projectId: number) {
   });
 }
 
+export function useUpdateAllProjectResources(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<InstallResult>(`/projects/${projectId}/resources/update-all`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.projects.resources(projectId) });
+    },
+  });
+}
+
 export function useReinstallProjectResource(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
