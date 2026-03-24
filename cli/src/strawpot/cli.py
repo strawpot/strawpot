@@ -300,7 +300,7 @@ def _get_agent_install_cmd(agent_dir: Path) -> str | None:
 
 # Pattern: curl [flags] <URL> | sh [args]
 _CURL_PIPE_SH_RE = re.compile(
-    r"^curl\s+[^|]*?(https?://\S+)\s*\|\s*sh\b(.*)$"
+    r"^curl\s+[^|]*?(https?://\S+)\s*\|\s*sh\b.*$"
 )
 
 

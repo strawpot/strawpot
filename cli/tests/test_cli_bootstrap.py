@@ -246,7 +246,7 @@ def test_run_install_non_curl_cmd_uses_sh_c(tmp_path):
 
     assert result is True
     cmd = mock_run.call_args[0][0]
-    assert cmd[0:2] == ["sh", "-c"]
+    assert cmd[:2] == ["sh", "-c"]
 
 
 def test_run_install_download_failure_returns_false(tmp_path):
