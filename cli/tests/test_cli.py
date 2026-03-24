@@ -546,7 +546,7 @@ def test_start_invalid_run_id_rejected(
 
 
 # ---------------------------------------------------------------------------
-# Headless fail-fast
+# Fail-fast when not configured (--task / --headless)
 # ---------------------------------------------------------------------------
 
 
@@ -562,7 +562,38 @@ def test_start_headless_fails_when_not_configured(mock_load, _mock_onboarding):
     result = runner.invoke(cli, ["start", "--headless", "--task", "do stuff"])
 
     assert result.exit_code != 0
-    assert "StrawPot is not configured" in result.output
+    assert "No agent configured" in result.output
+
+
+@patch("strawpot.cli.needs_onboarding", return_value=True)
+@patch("strawpot.cli.load_config")
+def test_start_task_fails_when_not_configured(mock_load, _mock_onboarding):
+    """--task without --headless exits 1 instead of launching the wizard (#442)."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start", "--task", "Review my latest PR"])
+
+    assert result.exit_code != 0
+    assert "No agent configured" in result.output
+    assert "strawpot start" in result.output
+
+
+@patch("strawpot.cli.needs_onboarding", return_value=True)
+@patch("strawpot.cli.load_config")
+def test_start_headless_alone_fails_when_not_configured(mock_load, _mock_onboarding):
+    """--headless without --task also exits 1 when not configured."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start", "--headless"])
+
+    assert result.exit_code != 0
+    assert "No agent configured" in result.output
 
 
 # ---------------------------------------------------------------------------
