@@ -23,6 +23,20 @@ def _make_spec(**overrides):
 
 
 # ---------------------------------------------------------------------------
+# No-args invocation (issue #446)
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._show_first_run_banner")
+def test_no_args_shows_help_and_exits_zero(_mock_banner):
+    """Running ``strawpot`` with no arguments should show help and exit 0."""
+    runner = CliRunner()
+    result = runner.invoke(cli, [])
+    assert result.exit_code == 0
+    assert "StrawPot" in result.output
+
+
+# ---------------------------------------------------------------------------
 # Agent resolution
 # ---------------------------------------------------------------------------
 

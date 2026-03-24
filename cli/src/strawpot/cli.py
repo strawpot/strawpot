@@ -125,9 +125,10 @@ def _show_first_run_banner() -> None:
 
 
 
-@click.group(cls=GroupedGroup, epilog=HELP_EPILOG)
+@click.group(cls=GroupedGroup, epilog=HELP_EPILOG, invoke_without_command=True)
 @click.version_option(version=__version__)
-def cli():
+@click.pass_context
+def cli(ctx):
     """StrawPot — AI agent orchestration.
 
     Compose AI agents that delegate tasks, share memory, and coordinate
@@ -135,6 +136,8 @@ def cli():
     and more.
     """
     _show_first_run_banner()
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 # ---------------------------------------------------------------------------
 # Quickstart guide
