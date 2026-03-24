@@ -293,24 +293,26 @@ def test_run_install_no_install_method_returns_false(tmp_path):
 # _run_install_for_agent — prerequisite checks (issue #439)
 # ---------------------------------------------------------------------------
 
+_AGENT_MD_WITH_NPM_TOOL = (
+    "---\n"
+    "name: test-agent\n"
+    "metadata:\n"
+    "  strawpot:\n"
+    "    install:\n"
+    "      macos: npm install -g my-agent\n"
+    "      linux: npm install -g my-agent\n"
+    "    tools:\n"
+    "      npm:\n"
+    "        description: Node.js package manager\n"
+    "---\n"
+)
+
 
 def test_run_install_returns_false_when_npm_missing(tmp_path):
     """Returns False and prints error when npm is declared as a tool but missing."""
     agent_dir = tmp_path / "agent"
     agent_dir.mkdir()
-    (agent_dir / "AGENT.md").write_text(
-        "---\n"
-        "name: test-agent\n"
-        "metadata:\n"
-        "  strawpot:\n"
-        "    install:\n"
-        "      macos: npm install -g my-agent\n"
-        "      linux: npm install -g my-agent\n"
-        "    tools:\n"
-        "      npm:\n"
-        "        description: Node.js package manager\n"
-        "---\n"
-    )
+    (agent_dir / "AGENT.md").write_text(_AGENT_MD_WITH_NPM_TOOL)
     with patch("strawpot.agents.registry.shutil.which", return_value=None), \
          patch("strawpot.cli.subprocess.run") as mock_run, \
          patch("strawpot.cli.click.echo") as mock_echo:
@@ -320,25 +322,31 @@ def test_run_install_returns_false_when_npm_missing(tmp_path):
     mock_run.assert_not_called()  # should not attempt install
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Missing" in c for c in calls)
+    assert any("strawpot doctor" in c for c in calls)
+
+
+def test_run_install_quiet_skips_error_banner(tmp_path):
+    """With loud=False, returns False but does not print the error banner."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(_AGENT_MD_WITH_NPM_TOOL)
+    with patch("strawpot.agents.registry.shutil.which", return_value=None), \
+         patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo") as mock_echo:
+        result = _run_install_for_agent(agent_dir, "test-agent", loud=False)
+
+    assert result is False
+    mock_run.assert_not_called()
+    # No error banner should be printed
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert not any("Missing" in c for c in calls)
 
 
 def test_run_install_succeeds_when_prerequisites_present(tmp_path):
     """Proceeds with install when all declared tools are on PATH."""
     agent_dir = tmp_path / "agent"
     agent_dir.mkdir()
-    (agent_dir / "AGENT.md").write_text(
-        "---\n"
-        "name: test-agent\n"
-        "metadata:\n"
-        "  strawpot:\n"
-        "    install:\n"
-        "      macos: npm install -g my-agent\n"
-        "      linux: npm install -g my-agent\n"
-        "    tools:\n"
-        "      npm:\n"
-        "        description: Node.js package manager\n"
-        "---\n"
-    )
+    (agent_dir / "AGENT.md").write_text(_AGENT_MD_WITH_NPM_TOOL)
     with patch("strawpot.agents.registry.shutil.which", return_value="/usr/bin/npm"), \
          patch("strawpot.cli.subprocess.run") as mock_run, \
          patch("strawpot.cli.click.echo"):
