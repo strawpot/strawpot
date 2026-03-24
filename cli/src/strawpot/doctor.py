@@ -11,11 +11,17 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CheckResult:
-    """Result of a single prerequisite check."""
+    """Result of a single prerequisite check.
+
+    ``passed`` is ``True`` when the check succeeded — the tool is on PATH
+    **and** satisfies any minimum-version requirement.  Use ``path`` to
+    distinguish *missing* (``path is None``) from *wrong version*
+    (``path`` set, ``passed`` is ``False``).
+    """
 
     name: str
     description: str
-    found: bool
+    passed: bool
     version: str | None = None
     path: str | None = None
     required: bool = True
@@ -30,15 +36,17 @@ class DoctorReport:
 
     @property
     def ok(self) -> bool:
-        return all(c.found for c in self.checks if c.required)
+        if not self.checks:
+            return False
+        return all(c.passed for c in self.checks if c.required)
 
     @property
     def missing_required(self) -> list[CheckResult]:
-        return [c for c in self.checks if c.required and not c.found]
+        return [c for c in self.checks if c.required and not c.passed]
 
     @property
     def missing_optional(self) -> list[CheckResult]:
-        return [c for c in self.checks if not c.required and not c.found]
+        return [c for c in self.checks if not c.required and not c.passed]
 
 
 def _get_version(cmd: str, args: tuple[str, ...] = ("--version",)) -> str | None:
@@ -61,7 +69,7 @@ def _get_version(cmd: str, args: tuple[str, ...] = ("--version",)) -> str | None
 
 
 def _version_at_least(version: str | None, minimum: str) -> bool:
-    """Return True if *version* >= *minimum* (major.minor comparison)."""
+    """Return True if *version* >= *minimum* using segment-wise comparison."""
     if version is None:
         return False
     try:
@@ -129,11 +137,11 @@ _PREREQUISITES: list[tuple[str, str, str, bool, str | None]] = [
     ),
 ]
 
-# Environment variables to check
-_ENV_VARS: list[tuple[str, str, bool]] = [
-    ("ANTHROPIC_API_KEY", "Anthropic API key (for Claude)", False),
-    ("OPENAI_API_KEY", "OpenAI API key (for Codex)", False),
-    ("GITHUB_TOKEN", "GitHub token (for PR workflows)", False),
+# Environment variables to check (all informational, none required)
+_ENV_VARS: list[tuple[str, str]] = [
+    ("ANTHROPIC_API_KEY", "Anthropic API key (for Claude)"),
+    ("OPENAI_API_KEY", "OpenAI API key (for Codex)"),
+    ("GITHUB_TOKEN", "GitHub token (for PR workflows)"),
 ]
 
 
@@ -152,21 +160,25 @@ def check_prerequisites() -> DoctorReport:
 
         if path:
             version = _get_version(cmd)
-            version_ok = True
-            if min_ver and version:
+            if min_ver:
                 version_ok = _version_at_least(version, min_ver)
-            elif min_ver and not version:
-                version_ok = True  # can't determine; assume OK
+            else:
+                version_ok = True
+
+            check_hint = hint if not version_ok else ""
+            if min_ver and version is None and not version_ok:
+                # Fail-safe: version unknown, cannot verify minimum
+                check_hint = f"version unknown — cannot verify >={min_ver}"
 
             report.checks.append(
                 CheckResult(
                     name=cmd,
                     description=desc,
-                    found=version_ok,
+                    passed=version_ok,
                     version=version,
                     path=path,
                     required=required,
-                    hint=hint if not version_ok else "",
+                    hint=check_hint,
                 )
             )
         else:
@@ -174,7 +186,7 @@ def check_prerequisites() -> DoctorReport:
                 CheckResult(
                     name=cmd,
                     description=desc,
-                    found=False,
+                    passed=False,
                     required=required,
                     hint=hint,
                 )
@@ -184,16 +196,20 @@ def check_prerequisites() -> DoctorReport:
 
 
 def check_env_vars() -> list[CheckResult]:
-    """Check key environment variables and return results."""
+    """Check key environment variables and return informational results.
+
+    All env-var checks are informational (``required=False``) and do not
+    affect the overall pass/fail status of a :class:`DoctorReport`.
+    """
     results = []
-    for var, desc, required in _ENV_VARS:
+    for var, desc in _ENV_VARS:
         value = os.environ.get(var)
         results.append(
             CheckResult(
                 name=var,
                 description=desc,
-                found=bool(value),
-                required=required,
+                passed=bool(value),
+                required=False,
             )
         )
     return results
@@ -208,18 +224,22 @@ def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
     lines.append("StrawPot needs:")
 
     for check in report.checks:
-        if check.found:
+        if check.passed:
             detail = check.description
             if check.version:
                 detail += f" ({check.version})"
             lines.append(f"  [✓] {detail}")
         elif check.required:
             detail = check.description
+            if check.version:
+                detail += f" (found {check.version})"
             if check.hint:
                 detail += f" — {check.hint}"
             lines.append(f"  [✗] {detail}")
         else:
             detail = f"{check.description} (optional)"
+            if check.version:
+                detail += f" (found {check.version})"
             if check.hint:
                 detail += f" — {check.hint}"
             lines.append(f"  [-] {detail}")
@@ -228,7 +248,7 @@ def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
         lines.append("")
         lines.append("Environment:")
         for check in env_results:
-            mark = "[✓]" if check.found else "[-]"
+            mark = "[✓]" if check.passed else "[-]"
             lines.append(f"  {mark} {check.name}")
 
     return "\n".join(lines)
