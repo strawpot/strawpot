@@ -546,7 +546,7 @@ def test_start_invalid_run_id_rejected(
 
 
 # ---------------------------------------------------------------------------
-# Headless fail-fast
+# Fail-fast when not configured (--task / --headless)
 # ---------------------------------------------------------------------------
 
 
