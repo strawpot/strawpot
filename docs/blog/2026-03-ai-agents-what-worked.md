@@ -2,10 +2,9 @@
 
 I'm a solo founder. Over the past month, I built 32 AI agents and
 pointed them at every job in my company — engineering, marketing,
-DevOps, code review, issue triage, even writing release notes. Then I
-stepped back and watched what happened. Some of it worked shockingly
-well. Some of it failed in ways I didn't expect. This is the honest
-version.
+DevOps, code review, issue triage, even release notes. Then I stepped
+back and watched what happened. Some of it worked shockingly well.
+Some of it failed in ways I didn't expect. This is the honest version.
 
 ## The Setup
 
@@ -38,14 +37,13 @@ anything that implements the wrapper protocol.
 
 ### Issue Triage and PR Review Pipeline
 
-This was the first thing that paid off, and it's still the most
-reliable part of the system. The `github-triager` reads every new
-issue, categorizes it (bug, feature, enhancement, chore), assigns
-priority labels (p0 through p3), and posts a triage summary comment
-explaining its rationale. It handles edge cases well — it knows the
-difference between a user-facing bug and an internal chore, and it
-catches duplicate issues. It's not revolutionary, but it means I never
-look at a wall of unlabeled issues anymore.
+This was the first thing that paid off and is still the most reliable
+part of the system. The `github-triager` reads every new issue,
+categorizes it (bug, feature, enhancement, chore), assigns priority
+labels (p0 through p3), and posts a triage summary explaining its
+rationale. It handles edge cases well — distinguishing user-facing
+bugs from internal chores, catching duplicates. Not revolutionary, but
+I never look at a wall of unlabeled issues anymore.
 
 The `pipeline-orchestrator` takes it further. When an issue is labeled
 `pipeline/ready`, it kicks off a full lifecycle: it delegates to
@@ -56,10 +54,10 @@ orchestrates `code-reviewer`, `silent-failure-hunter`,
 `type-design-analyzer`, and `pr-test-analyzer` in parallel.
 
 The result: I open an issue describing what I want, and within an
-hour, I have a set of scoped PRs ready for my review. The code isn't
-always perfect — I reject maybe 20% of PRs or ask for changes — but
-the throughput increase is enormous. I went from shipping maybe one
-feature a day to shipping three or four.
+hour I have scoped PRs ready for review. The code isn't always
+perfect — I reject about 20% or ask for changes — but the throughput
+increase is enormous. I went from shipping one feature a day to three
+or four.
 
 ### The imu Bot
 
@@ -71,10 +69,10 @@ the full StrawPot agent system.
 <!-- [Demo video: imu bot in action](VIDEO_URL_HERE) -->
 
 I message imu on Telegram: "The version number in pyproject.toml
-doesn't match the latest PyPI release. Fix it." imu creates a
-StrawPot session, delegates to the right agent, opens a PR, runs
-tests, and messages me back with the PR link. The whole exchange takes
-about 3 minutes.
+doesn't match the latest PyPI release. Fix it." It creates a StrawPot
+session, delegates to the right agent, opens a PR, runs tests, and
+messages me back with the link. The whole exchange takes about 3
+minutes.
 
 It sounds like a gimmick, but it changed how I work. Instead of
 context-switching into my IDE, I fire off quick tasks from my phone
@@ -86,16 +84,16 @@ back at my desk, the PR is waiting.
 Agents are stateless by default — each session starts from scratch.
 The memory system fixes this. After every session, StrawPot persists
 key context: what was decided, what conventions were established, what
-failed last time. The next session loads this context automatically.
+failed last time. The next session loads it automatically.
 
 This matters more than I expected. Without memory, agents repeat the
 same mistakes. They re-discover that the docs site is at
 docs.strawpot.com (not docs.strawpot.dev). They forget which repos
 exist and where they live. With memory, they just know.
 
-The implementation is simple — a pluggable memory provider that stores
-key-value observations. Nothing fancy. But the compounding effect of
-agents that remember is significant.
+The implementation is simple — a pluggable provider that stores
+key-value observations. Nothing fancy. But the compounding effect is
+significant.
 
 ### Scheduled Agents
 
@@ -106,11 +104,11 @@ runs agents on a cron schedule. I have agents that:
 - Check for stale PRs daily
 - Run a session recap agent after every session
 
-These are the "set and forget" wins. None of them are individually
-impressive, but together they mean the project never falls behind on
-housekeeping. Before the scheduler, I'd come back from a weekend to
-find 15 untriaged issues and a pile of stale PRs. Now the backlog is
-always clean when I sit down on Monday.
+These are the "set and forget" wins. None are individually impressive, but
+together they mean the project never falls behind on housekeeping.
+Before the scheduler, I'd come back from a weekend to 15 untriaged
+issues and a pile of stale PRs. Now the backlog is clean when I sit
+down on Monday.
 
 ## What Spectacularly Failed
 
@@ -118,37 +116,36 @@ always clean when I sit down on Monday.
 
 I built a `strawpot-twitter-marketer` role. It was supposed to analyze
 the product, draft tweets, evaluate them for quality, and post
-automatically. I spent real engineering time on this — the role had an
+automatically. I invested serious engineering time — the role had an
 evaluator, a content strategy, tone guidelines, the works.
 
 Total tweets produced in a month: **zero**.
 
-Here's what happened. First, Twitter's free API tier was eliminated in
-February 2026. The agent kept hitting a `402 CreditsDepleted` error.
-Fine — I pivoted to a "draft-to-Telegram" mode where it would draft
-tweets and send them to me for manual posting. But even the drafts
-were mediocre. The agent could write grammatically correct, technically
-accurate tweets. They were also completely generic and uninteresting.
-Nobody would click on "StrawPot v0.1.52 is out! New features include
-improved session isolation and memory persistence." Riveting stuff.
+Here's what happened. Twitter's free API tier was eliminated in
+February 2026. The agent kept hitting `402 CreditsDepleted`. Fine — I
+pivoted to a "draft-to-Telegram" mode where it would send drafts for
+manual posting. But even the drafts were mediocre. Grammatically
+correct, technically accurate — and completely generic. Nobody would
+click on "StrawPot v0.1.52 is out! New features include improved
+session isolation and memory persistence." Riveting stuff.
 
 The deeper problem: **you can't automate your way to an audience you
-don't have.** Marketing automation assumes you have a distribution
-channel. I had zero followers, zero community, zero organic reach. No
-amount of AI-generated content was going to fix that. The bottleneck
-wasn't content production — it was that nobody was listening.
+don't have.** Marketing automation assumes a distribution channel. I
+had zero followers, zero community, zero organic reach. No amount of
+AI-generated content was going to fix that. The bottleneck wasn't
+content production — it was that nobody was listening.
 
-This was the most expensive lesson of the month, measured in
-engineering hours wasted.
+The most expensive lesson of the month, measured in engineering hours
+wasted.
 
 ### The Insight
 
-The failure forced a strategic rethink. Instead of automating
-distribution, I needed to do the one thing that can't be automated:
-build trust through authentic engagement. Write honest content (like
-this post). Show up in communities. Respond to real people.
+The failure forced a rethink. Instead of automating distribution, I
+needed to do the one thing that can't be automated: build trust
+through authentic engagement. Write honest content (like this post).
+Show up in communities. Respond to real people.
 
-AI agents are force multipliers. But a multiplier applied to zero is
+AI agents are force multipliers — but a multiplier applied to zero is
 still zero.
 
 ## The Honest Assessment
@@ -173,17 +170,17 @@ Let me be direct about what's real and what's not:
 - Some of the 32 roles are barely used. The core 8-10 roles do 90% of
   the useful work. The rest are experiments.
 
-I'm not pretending this is a polished product with thousands of happy
-users. It's a working system that one person uses every day, and the
-bones are solid enough to share. The gap between "works on my machine"
-and "works for anyone" is exactly what I'm closing right now.
+I'm not pretending this is a polished product with thousands of users.
+It's a working system that one person uses daily, and the bones are
+solid enough to share. The gap between "works on my machine" and
+"works for anyone" is exactly what I'm closing now.
 
 ## The Tech
 
-For the HN audience who wants to know how it works:
+For those who want to know how it works:
 
 **StrawPot** is the orchestrator CLI. It manages sessions, spawns
-agents, and coordinates delegation.
+agents, and coordinates delegation between them.
 
 ```bash
 pip install strawpot
@@ -191,12 +188,11 @@ strawpot start --role team-lead
 ```
 
 On first run, an onboarding wizard walks you through agent selection
-(Claude Code, Codex, Gemini CLI, OpenHands) and configuration.
+(Claude Code, Codex, Gemini CLI, or OpenHands) and configuration.
 
 **Architecture:**
-- **Denden** — gRPC transport between agents and the orchestrator.
-  Each agent connects as a client; the orchestrator routes delegation
-  requests to the right role.
+- **Denden** — gRPC transport layer. Each agent connects as a client;
+  the orchestrator routes delegation requests to the right role.
 - **StrawHub** — Public registry at [strawhub.dev](https://strawhub.dev)
   for skills, roles, and integrations. Think npm for agent
   configurations.
@@ -215,8 +211,8 @@ Everything is open source:
 1. **Skip marketing automation entirely.** Build the product, write
    one honest post, share it. Let the work speak.
 2. **Test the first-run experience earlier.** I was 300 commits deep
-   before realizing nobody else had ever run `strawpot start` on a
-   clean machine.
+   before realizing nobody else had run `strawpot start` on a clean
+   machine.
 3. **Fewer roles, deeper.** I didn't need 32 agents. I needed 8 good
    ones. The rest were yak-shaving.
 
