@@ -15,6 +15,7 @@ from strawpot.isolation.protocol import IsolatedEnv, NoneIsolator
 from strawpot.session import (
     AskUserRequest,
     AskUserResponse,
+    MergeOutcome,
     Session,
     recover_stale_sessions,
     resolve_isolator,
@@ -370,7 +371,7 @@ class TestStopMerge:
             "worktree_branch": "strawpot/run_merge_wt",
         }
 
-        with patch.object(session, "_merge_session_changes", return_value=True) as mock_merge:
+        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.MERGED) as mock_merge:
             session.stop()
 
         mock_merge.assert_called_once()
@@ -388,7 +389,7 @@ class TestStopMerge:
         mock_merge.assert_not_called()
 
     def test_delete_branch_false_for_pr(self, tmp_path):
-        """When merge returns False, cleanup receives delete_branch=False."""
+        """When merge returns KEPT_FOR_PR, cleanup receives that outcome."""
         from strawpot.isolation.worktree import WorktreeIsolator
 
         wt_isolator = MagicMock(spec=WorktreeIsolator)
@@ -404,7 +405,7 @@ class TestStopMerge:
             "worktree_branch": "strawpot/run_pr",
         }
 
-        with patch.object(session, "_merge_session_changes", return_value=False):
+        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.KEPT_FOR_PR):
             session.stop()
 
         wt_isolator.cleanup.assert_called_once()
@@ -432,7 +433,7 @@ class TestStopMerge:
             "worktree_branch": "strawpot/run_local",
         }
 
-        with patch.object(session, "_merge_session_changes", return_value=True):
+        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.MERGED):
             session.stop()
 
         wt_isolator.cleanup.assert_called_once()
