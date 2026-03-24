@@ -125,7 +125,17 @@ def _pick_agent() -> str | None:
 
 def _authenticate_agent(agent_name: str, working_dir: str) -> None:
     """Offer login-session or API-key auth for a newly installed agent."""
-    spec = resolve_agent(agent_name, working_dir)
+    try:
+        spec = resolve_agent(agent_name, working_dir)
+    except ValueError as exc:
+        click.echo(
+            click.style("Error: ", fg="red", bold=True)
+            + f"Agent binary not available: {exc}\n\n"
+            "Skipping authentication — the agent runtime is not installed.\n"
+            "Run 'strawpot doctor' to diagnose, then 'strawpot start' to retry.",
+            err=True,
+        )
+        return
 
     env_vars = list(spec.env_schema.keys())
     has_env = bool(env_vars)
@@ -172,6 +182,35 @@ def _authenticate_agent(agent_name: str, working_dir: str) -> None:
         )
 
 
+def _check_system_prerequisites() -> list[tuple[str, str]]:
+    """Check that basic system tools required by agent installs are on PATH.
+
+    Returns a list of ``(tool_name, guidance)`` tuples for missing tools.
+    Empty list when everything is present.
+    """
+    checks = [
+        ("node", "Install from https://nodejs.org/ or via your package manager"),
+        ("npm", "Install from https://nodejs.org/ (npm is bundled with Node.js)"),
+    ]
+    return [(tool, guidance) for tool, guidance in checks if shutil.which(tool) is None]
+
+
+def _print_missing_prerequisites(
+    missing: list[tuple[str, str]],
+    *,
+    footer: str = "",
+) -> None:
+    """Print a formatted list of missing system prerequisites to stderr."""
+    click.echo(
+        click.style("Missing system prerequisites:", fg="red", bold=True),
+        err=True,
+    )
+    for tool, guidance in missing:
+        click.echo(f"  - {tool}: {guidance}", err=True)
+    if footer:
+        click.echo(f"\n{footer}", err=True)
+
+
 def _onboarding_wizard(working_dir: str) -> str | None:
     """Run the first-run onboarding wizard.
 
@@ -179,6 +218,15 @@ def _onboarding_wizard(working_dir: str) -> str | None:
     normal start/gui flow, or ``None`` if the user cancelled.
     """
     click.echo("Welcome to StrawPot! Let's set up your first agent.\n")
+
+    # Step 1: Pre-flight check for system tools
+    missing_tools = _check_system_prerequisites()
+    if missing_tools:
+        _print_missing_prerequisites(
+            missing_tools,
+            footer="Install the missing tools above, then run 'strawpot start' again.",
+        )
+        return None
 
     # Step 2: Agent selection
     agent_name = _pick_agent()
@@ -189,6 +237,22 @@ def _onboarding_wizard(working_dir: str) -> str | None:
 
     # Step 3: Install agent wrapper from StrawHub
     _ensure_agent_installed(agent_name, working_dir, auto_setup=True)
+
+    # Step 3b: Verify the agent binary resolved after install
+    try:
+        resolve_agent(agent_name, working_dir)
+    except ValueError as exc:
+        click.echo(
+            click.style("\nError: ", fg="red", bold=True)
+            + "The agent package was installed but its runtime binary is missing.\n\n"
+            + f"{exc}\n\n"
+            "Run 'strawpot doctor' to check all prerequisites, then "
+            "'strawpot start' to retry.",
+            err=True,
+        )
+        return None
+    except FileNotFoundError:
+        pass  # Will be caught downstream by the start() handler
 
     # Step 4: Authentication
     _authenticate_agent(agent_name, working_dir)
@@ -589,7 +653,18 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     for rid in recovered:
         click.echo(f"Recovered stale session: {rid}")
 
-    # 0b. Auto-install default dependencies if not found
+    # 0b. Pre-flight check for system tools (node, npm)
+    missing_prereqs = _check_system_prerequisites()
+    if missing_prereqs:
+        _print_missing_prerequisites(
+            missing_prereqs,
+            footer="Install the missing tools above, then run "
+            "'strawpot start' again.\n"
+            "Run 'strawpot doctor' for a full system check.",
+        )
+        sys.exit(1)
+
+    # 0c. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
     _ensure_skill_installed("denden", working_dir, auto_setup=True)
     _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
@@ -607,12 +682,20 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
     except ValueError as exc:
-        # Safety net: _ensure_agent_installed should catch most cases,
-        # but the binary could become unavailable between install and resolve.
+        # The agent package is installed but its runtime binary is missing.
+        # Common cause: the underlying CLI (e.g. claude) was never installed,
+        # or node/npm is not available on PATH.
         click.echo(
-            click.style("Error: ", fg="red", bold=True) + str(exc),
+            click.style("Error: ", fg="red", bold=True)
+            + "Agent runtime binary not found.\n\n"
+            + str(exc),
             err=True,
         )
+        # Check for common missing prerequisites and give targeted advice
+        missing = _check_system_prerequisites()
+        if missing:
+            click.echo(err=True)  # blank line before the list
+            _print_missing_prerequisites(missing)
         click.echo(
             "\nRun 'strawpot doctor' to check all prerequisites.",
             err=True,
