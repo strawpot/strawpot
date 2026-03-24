@@ -437,6 +437,12 @@ def test_load_provider_pip(tmp_path, monkeypatch):
     # Add temp dir to sys.path so importlib can find it
     monkeypatch.syspath_prepend(str(tmp_path))
 
+    # Mock _pip_install so the test doesn't require a real venv.
+    # The module is already importable via sys.path above.
+    monkeypatch.setattr(
+        "strawpot.memory.registry._pip_install", lambda req: None
+    )
+
     spec = MemorySpec(
         name="dial", version="1.0",
         pip="dial-memory", module_path="dial_memory.provider",
