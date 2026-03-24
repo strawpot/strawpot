@@ -290,6 +290,7 @@ class Session:
         system_prompt: str = "",
         memory_task: str = "",
         group_id: str | None = None,
+        keep_branch: bool = False,
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -304,6 +305,7 @@ class Session:
         self._provided_run_id = run_id
         self._headless = headless
         self._group_id: str | None = group_id
+        self._keep_branch: bool = keep_branch
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
@@ -603,21 +605,22 @@ class Session:
         self._stop_denden_server()
 
         # 3. Merge session changes (worktree isolation only)
-        delete_branch = True
+        merge_succeeded = True
         if self._env and self._env.branch and self._working_dir:
             try:
-                delete_branch = self._merge_session_changes()
+                merge_succeeded = self._merge_session_changes()
             except Exception:
+                merge_succeeded = False
                 logger.debug("Merge failed", exc_info=True)
 
-        # 4. Isolator cleanup
+        # 4. Isolator cleanup (worktree removal only — branch cleanup is separate)
         if self._env and self._working_dir:
             try:
                 if isinstance(self.isolator, WorktreeIsolator):
                     self.isolator.cleanup(
                         self._env,
                         base_dir=self._working_dir,
-                        delete_branch=delete_branch,
+                        delete_branch=False,
                     )
                 else:
                     self.isolator.cleanup(
@@ -626,7 +629,14 @@ class Session:
             except Exception:
                 logger.debug("Isolator cleanup failed", exc_info=True)
 
-        # 5. Archive session directory for GUI history browsing
+        # 5. Branch cleanup (after worktree removal, before archive)
+        if self._env and self._env.branch and self._working_dir:
+            try:
+                self._cleanup_session_branch(merge_succeeded=merge_succeeded)
+            except Exception:
+                logger.debug("Branch cleanup failed", exc_info=True)
+
+        # 6. Archive session directory for GUI history browsing
         self._archive_session_dir()
 
     # ------------------------------------------------------------------
@@ -753,6 +763,147 @@ class Session:
             logger.debug("Merge failed", exc_info=True)
 
         return True  # fallback: delete branch
+
+    # ------------------------------------------------------------------
+    # Branch cleanup
+    # ------------------------------------------------------------------
+
+    def _cleanup_session_branch(self, *, merge_succeeded: bool) -> None:
+        """Delete the session branch locally (and remotely) if safe to do so.
+
+        Skips deletion and warns when:
+        - ``--keep-branch`` was passed (CLI override)
+        - ``cleanup_branches`` is disabled in config
+        - The session was force-stopped (user may want to recover)
+        - The merge failed / there are unmerged changes
+        - The branch has an open pull request
+        - The branch is checked out elsewhere (e.g. another worktree)
+
+        Called after worktree removal but before the session is archived.
+        """
+        branch = self._env.branch
+        base_dir = self._working_dir
+
+        # --- Skip conditions ---
+        if self._keep_branch:
+            logger.info(
+                "Keeping branch %s (--keep-branch flag)", branch
+            )
+            return
+
+        if not self.config.cleanup_branches:
+            logger.info(
+                "Keeping branch %s (cleanup_branches=false)", branch
+            )
+            return
+
+        if self._interrupted:
+            logger.warning(
+                "Keeping branch %s — session was interrupted; "
+                "branch preserved for recovery",
+                branch,
+            )
+            return
+
+        if not merge_succeeded:
+            logger.warning(
+                "Keeping branch %s — merge failed or had unmerged changes",
+                branch,
+            )
+            return
+
+        if self._branch_has_open_pr(branch, base_dir):
+            logger.warning(
+                "Keeping branch %s — an open pull request depends on it",
+                branch,
+            )
+            return
+
+        if self._branch_checked_out_elsewhere(branch, base_dir):
+            logger.warning(
+                "Keeping branch %s — it is checked out in another worktree",
+                branch,
+            )
+            return
+
+        # --- Delete local branch ---
+        self._delete_local_branch(branch, base_dir)
+
+        # --- Delete remote branch ---
+        if self.config.cleanup_remote:
+            self._delete_remote_branch(branch, base_dir)
+
+    @staticmethod
+    def _branch_has_open_pr(branch: str, base_dir: str) -> bool:
+        """Check whether *branch* has an open pull request on the remote."""
+        if not shutil.which("gh"):
+            return False
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "list", "--head", branch, "--state", "open",
+                 "--json", "number", "--limit", "1"],
+                cwd=base_dir,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0 and result.stdout.strip() not in ("", "[]"):
+                return True
+        except Exception:
+            logger.debug("gh pr list check failed", exc_info=True)
+        return False
+
+    @staticmethod
+    def _branch_checked_out_elsewhere(branch: str, base_dir: str) -> bool:
+        """Return True if *branch* is checked out in another worktree."""
+        from strawpot.isolation.worktree import _git
+
+        result = _git(["worktree", "list", "--porcelain"], cwd=base_dir)
+        if result.returncode != 0:
+            return False
+        # Parse porcelain output: look for "branch refs/heads/<branch>"
+        ref = f"refs/heads/{branch}"
+        for line in result.stdout.splitlines():
+            if line.strip() == f"branch {ref}":
+                return True
+        return False
+
+    @staticmethod
+    def _delete_local_branch(branch: str, base_dir: str) -> None:
+        """Force-delete a local branch."""
+        from strawpot.isolation.worktree import _git
+
+        result = _git(["branch", "-D", branch], cwd=base_dir)
+        if result.returncode == 0:
+            logger.info("Deleted local branch %s", branch)
+        else:
+            logger.warning(
+                "Failed to delete local branch %s: %s",
+                branch,
+                result.stderr.strip(),
+            )
+
+    @staticmethod
+    def _delete_remote_branch(branch: str, base_dir: str) -> None:
+        """Delete the remote tracking branch if it was pushed."""
+        from strawpot.isolation.worktree import _git
+
+        # Check if the branch exists on origin
+        result = _git(
+            ["ls-remote", "--heads", "origin", branch], cwd=base_dir
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return  # not on remote, nothing to do
+
+        result = _git(["push", "origin", "--delete", branch], cwd=base_dir)
+        if result.returncode == 0:
+            logger.info("Deleted remote branch origin/%s", branch)
+        else:
+            logger.warning(
+                "Failed to delete remote branch %s: %s",
+                branch,
+                result.stderr.strip(),
+            )
 
     # ------------------------------------------------------------------
     # Denden server

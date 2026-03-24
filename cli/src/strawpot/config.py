@@ -42,6 +42,8 @@ class StrawPotConfig:
     merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
     pr_command: str = _DEFAULT_PR_COMMAND
+    cleanup_branches: bool = True
+    cleanup_remote: bool = True
     trace: bool = True
     skip_update_check: bool = False
 
@@ -118,6 +120,10 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.pull_before_session = session["pull_before_session"]
     if "pr_command" in session:
         config.pr_command = session["pr_command"]
+    if "cleanup_branches" in session:
+        config.cleanup_branches = session["cleanup_branches"]
+    if "cleanup_remote" in session:
+        config.cleanup_remote = session["cleanup_remote"]
 
     trace_section = data.get("trace", {})
     if "enabled" in trace_section:
