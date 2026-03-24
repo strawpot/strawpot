@@ -524,61 +524,6 @@ def list_sessions(
     }
 
 
-def _compute_session_cost(events: list[dict]) -> dict | None:
-    """Aggregate token costs from ``delegate_end`` trace events.
-
-    Returns a cost summary dict or ``None`` when no token data is present.
-    """
-    total_input = 0
-    total_output = 0
-    total_cache_read = 0
-    total_cost: float | None = None
-    by_role: dict[str, dict] = {}
-    has_data = False
-
-    for ev in events:
-        if ev.get("event") != "delegate_end":
-            continue
-        data = ev.get("data", {})
-        inp = data.get("input_tokens", 0) or 0
-        out = data.get("output_tokens", 0) or 0
-        cr = data.get("cache_read_input_tokens", 0) or 0
-        cost = data.get("cost_usd")
-
-        if inp or out or cr or cost:
-            has_data = True
-
-        total_input += inp
-        total_output += out
-        total_cache_read += cr
-        if cost is not None:
-            total_cost = (total_cost or 0.0) + cost
-
-        role = data.get("role", "unknown")
-        if role not in by_role:
-            by_role[role] = {
-                "role": role,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd": None,
-            }
-        by_role[role]["input_tokens"] += inp
-        by_role[role]["output_tokens"] += out
-        if cost is not None:
-            by_role[role]["cost_usd"] = (by_role[role]["cost_usd"] or 0.0) + cost
-
-    if not has_data:
-        return None
-
-    return {
-        "total_input_tokens": total_input,
-        "total_output_tokens": total_output,
-        "total_cache_read_tokens": total_cache_read,
-        "total_cost_usd": total_cost,
-        "by_role": list(by_role.values()),
-    }
-
-
 @router.get("/projects/{project_id}/sessions/{run_id}")
 def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
     # Refresh status for active sessions before returning
@@ -624,7 +569,6 @@ def get_session(project_id: int, run_id: str, conn=Depends(get_db_conn)):
     except (OSError, json.JSONDecodeError):
         pass
     result["events"] = events
-    result["cost"] = _compute_session_cost(events)
 
     # Build agent tree from session.json + trace.jsonl
     from strawpot_gui.routers.ws import _build_full_state

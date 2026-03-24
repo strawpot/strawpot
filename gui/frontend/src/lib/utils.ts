@@ -5,18 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toString();
-}
-
-export function formatCost(usd: number | null): string | null {
-  if (usd == null) return null;
-  if (usd >= 1) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(4)}`;
-}
-
 /**
  * Convert a UTC cron expression's hour/minute fields to local time.
  * Only handles simple numeric hour/minute (not ranges or steps).
