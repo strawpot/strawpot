@@ -47,6 +47,14 @@ jobs:
             echo "tag=v${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify version
+        run: |
+          if [ -z "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Version output is empty — aborting build"
+            exit 1
+          fi
+          echo "Building version: ${{ steps.version.outputs.version }}"
+
       - name: Build package
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
