@@ -244,10 +244,21 @@ def test_branch_has_open_pr_false(mock_run, monkeypatch):
 
 
 @patch("subprocess.run")
-def test_branch_has_open_pr_gh_failure(mock_run, monkeypatch):
+def test_branch_has_open_pr_gh_failure_assumes_open(mock_run, monkeypatch):
+    """When gh exits non-zero, assume an open PR exists (safe default)."""
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
     mock_run.return_value = MagicMock(returncode=1, stdout="")
-    assert Session._branch_has_open_pr("strawpot/run_x", "/tmp") is False
+    assert Session._branch_has_open_pr("strawpot/run_x", "/tmp") is True
+
+
+@patch("subprocess.run")
+def test_branch_has_open_pr_timeout_assumes_open(mock_run, monkeypatch):
+    """When gh times out, assume an open PR exists (safe default)."""
+    import subprocess as sp
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
+    mock_run.side_effect = sp.TimeoutExpired(cmd="gh", timeout=15)
+    assert Session._branch_has_open_pr("strawpot/run_x", "/tmp") is True
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +280,18 @@ def test_branch_checked_out_elsewhere_true(mock_git):
             "branch refs/heads/strawpot/run_abc123\n"
         ),
     )
+    assert (
+        Session._branch_checked_out_elsewhere(
+            "strawpot/run_abc123", "/home/user/project"
+        )
+        is True
+    )
+
+
+@patch("strawpot.session._git")
+def test_branch_checked_out_elsewhere_git_failure_assumes_true(mock_git):
+    """When git worktree list fails, assume checked out (safe default)."""
+    mock_git.return_value = MagicMock(returncode=128, stdout="")
     assert (
         Session._branch_checked_out_elsewhere(
             "strawpot/run_abc123", "/home/user/project"

@@ -634,7 +634,7 @@ class Session:
             try:
                 self._cleanup_session_branch(merge_succeeded=merge_succeeded)
             except Exception:
-                logger.debug("Branch cleanup failed", exc_info=True)
+                logger.warning("Branch cleanup failed", exc_info=True)
 
         # 6. Archive session directory for GUI history browsing
         self._archive_session_dir()
@@ -835,8 +835,16 @@ class Session:
 
     @staticmethod
     def _branch_has_open_pr(branch: str, base_dir: str) -> bool:
-        """Check whether *branch* has an open pull request on the remote."""
+        """Check whether *branch* has an open pull request on the remote.
+
+        Returns ``True`` (safe — keep the branch) when the check cannot
+        be performed, so that a transient failure never causes deletion
+        of a PR-protected branch.
+        """
         if not shutil.which("gh"):
+            logger.info(
+                "gh CLI not found — skipping open PR check for %s", branch
+            )
             return False
         try:
             result = subprocess.run(
@@ -847,18 +855,32 @@ class Session:
                 text=True,
                 timeout=15,
             )
-            if result.returncode == 0 and result.stdout.strip() not in ("", "[]"):
-                return True
+            if result.returncode == 0:
+                return result.stdout.strip() not in ("", "[]")
+            logger.warning(
+                "gh pr list failed (exit %d) for %s — assuming open PR exists",
+                result.returncode,
+                branch,
+            )
+            return True
         except Exception:
-            logger.debug("gh pr list check failed", exc_info=True)
-        return False
+            logger.warning("gh pr list check failed for %s", branch, exc_info=True)
+            return True
 
     @staticmethod
     def _branch_checked_out_elsewhere(branch: str, base_dir: str) -> bool:
-        """Return True if *branch* is checked out in another worktree."""
+        """Return True if *branch* is checked out in another worktree.
+
+        Returns ``True`` (safe — keep the branch) when the check fails,
+        so that a git error never causes accidental deletion.
+        """
         result = _git(["worktree", "list", "--porcelain"], cwd=base_dir)
         if result.returncode != 0:
-            return False
+            logger.warning(
+                "git worktree list failed — assuming %s is checked out elsewhere",
+                branch,
+            )
+            return True
         # Parse porcelain output: look for "branch refs/heads/<branch>"
         ref = f"refs/heads/{branch}"
         for line in result.stdout.splitlines():
