@@ -172,7 +172,16 @@ def resolve_memory(
 
 
 def _pip_install(requirement: str) -> None:
-    """Install or upgrade a Python package via pip."""
+    """Install or upgrade a Python package via pip.
+
+    Raises:
+        RuntimeError: If called outside a virtual environment.
+    """
+    if sys.prefix == sys.base_prefix:
+        raise RuntimeError(
+            "Refusing to install packages outside a virtual environment. "
+            "Please activate a venv first."
+        )
     log.info("Installing %s via pip...", requirement)
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", requirement],

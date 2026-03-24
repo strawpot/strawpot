@@ -10,6 +10,7 @@ from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import (
     MemorySpec,
     _merge_config,
+    _pip_install,
     _resolve_script,
     load_provider,
     parse_memory_md,
@@ -436,6 +437,12 @@ def test_load_provider_pip(tmp_path, monkeypatch):
     # Add temp dir to sys.path so importlib can find it
     monkeypatch.syspath_prepend(str(tmp_path))
 
+    # Mock _pip_install so the test doesn't require a real venv.
+    # The module is already importable via sys.path above.
+    monkeypatch.setattr(
+        "strawpot.memory.registry._pip_install", lambda req: None
+    )
+
     spec = MemorySpec(
         name="dial", version="1.0",
         pip="dial-memory", module_path="dial_memory.provider",
@@ -443,3 +450,25 @@ def test_load_provider_pip(tmp_path, monkeypatch):
     provider = load_provider(spec)
     assert isinstance(provider, MemoryProvider)
     assert provider.name == "dial"
+
+
+# --- _pip_install venv guard ---
+
+
+def test_pip_install_refuses_outside_venv(monkeypatch):
+    """_pip_install raises RuntimeError when not inside a virtual environment."""
+    monkeypatch.setattr("sys.prefix", "/usr/local")
+    monkeypatch.setattr("sys.base_prefix", "/usr/local")
+    with pytest.raises(RuntimeError, match="outside a virtual environment"):
+        _pip_install("some-package")
+
+
+def test_pip_install_allowed_inside_venv(monkeypatch):
+    """_pip_install proceeds when inside a virtual environment (prefix != base_prefix)."""
+    monkeypatch.setattr("sys.prefix", "/home/user/.venv")
+    monkeypatch.setattr("sys.base_prefix", "/usr/local")
+    monkeypatch.setattr(
+        "subprocess.check_call", lambda *args, **kwargs: None
+    )
+    # Should not raise
+    _pip_install("some-package")
