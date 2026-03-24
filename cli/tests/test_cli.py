@@ -581,6 +581,21 @@ def test_start_task_fails_when_not_configured(mock_load, _mock_onboarding):
     assert "strawpot start" in result.output
 
 
+@patch("strawpot.cli.needs_onboarding", return_value=True)
+@patch("strawpot.cli.load_config")
+def test_start_headless_alone_fails_when_not_configured(mock_load, _mock_onboarding):
+    """--headless without --task also exits 1 when not configured."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start", "--headless"])
+
+    assert result.exit_code != 0
+    assert "No agent configured" in result.output
+
+
 # ---------------------------------------------------------------------------
 # Doctor command
 # ---------------------------------------------------------------------------
