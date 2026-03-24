@@ -15,6 +15,51 @@ import click
 logger = logging.getLogger(__name__)
 
 
+
+# ---------------------------------------------------------------------------
+# Grouped help -- shows "Getting Started" commands first in --help
+# ---------------------------------------------------------------------------
+
+_COMMAND_GROUPS: list[tuple[str, list[str]]] = [
+    ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
+    ("Sessions", ["sessions", "agents", "config"]),
+    ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
+    ("Discovery", ["search", "list", "info", "resolve"]),
+    ("Publishing", ["publish"]),
+    ("Authentication", ["login", "logout", "whoami"]),
+    ("Maintenance", ["upgrade"]),
+]
+
+
+class GroupedGroup(click.Group):
+    """A Click group that displays commands organized by category in --help."""
+
+    def format_commands(self, ctx, formatter):
+        commands = {}
+        for subcommand in self.list_commands(ctx):
+            cmd = self.get_command(ctx, subcommand)
+            if cmd is None or cmd.hidden:
+                continue
+            commands[subcommand] = cmd
+        if not commands:
+            return
+        grouped = set()
+        for group_name, group_cmds in _COMMAND_GROUPS:
+            rows = []
+            for name in group_cmds:
+                if name in commands:
+                    rows.append((name, commands[name].get_short_help_str(limit=150)))
+                    grouped.add(name)
+            if rows:
+                with formatter.section(group_name):
+                    formatter.write_dl(rows)
+        remaining = [(n, commands[n].get_short_help_str(limit=150))
+                     for n in sorted(commands) if n not in grouped]
+        if remaining:
+            with formatter.section("Other"):
+                formatter.write_dl(remaining)
+
+
 def _strawhub_cmd() -> list[str] | None:
     """Locate the strawhub CLI. Returns the command prefix list, or None."""
     path = shutil.which("strawhub")
@@ -51,19 +96,36 @@ from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
 from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
-HELP_EPILOG = """
-Getting started:
+HELP_EPILOG = """\nDocs: https://docs.strawpot.com\n"""
 
-  strawpot start              Launch your first agent (interactive setup)
-  strawpot start --task "..." Run a task non-interactively
-  strawpot doctor             Check system prerequisites
-  strawpot gui                Open the web dashboard
-
-Docs: https://docs.strawpot.com
-"""
+_FIRST_RUN_MARKER = ".first_run_done"
 
 
-@click.group(epilog=HELP_EPILOG)
+def _first_run_marker_path() -> Path:
+    """Return the path to the first-run marker file."""
+    return get_strawpot_home() / _FIRST_RUN_MARKER
+
+
+def _show_first_run_banner() -> None:
+    """Show a welcome banner on first run, then create the marker file."""
+    marker = _first_run_marker_path()
+    if marker.exists():
+        return
+    click.echo()
+    click.echo(click.style("Welcome to StrawPot!", fg="green", bold=True))
+    click.echo()
+    click.echo("  Get started: run " + click.style("strawpot start", bold=True) + " to launch your first agent.")
+    click.echo("  Need help?   run " + click.style("strawpot quickstart", bold=True) + " for a step-by-step guide.")
+    click.echo()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        marker.touch()
+    except OSError:
+        pass  # Non-fatal -- banner will show again next time
+
+
+
+@click.group(cls=GroupedGroup, epilog=HELP_EPILOG)
 @click.version_option(version=__version__)
 def cli():
     """StrawPot — AI agent orchestration.
@@ -72,6 +134,63 @@ def cli():
     through roles and skills. Works with Claude Code, Codex, Gemini,
     and more.
     """
+    _show_first_run_banner()
+
+# ---------------------------------------------------------------------------
+# Quickstart guide
+# ---------------------------------------------------------------------------
+
+_QUICKSTART_TEXT = """\
+{header}
+
+{step1}  Check prerequisites
+   Run {doctor} to verify your system has the required tools
+   (Node.js, npm, git).
+
+{step2}  Launch your first agent
+   Run {start} to pick an agent runtime (Claude Code, Gemini,
+   or Codex), install it, and start an interactive session.
+
+{step3}  Run a task non-interactively
+   Pass a task string to skip the interactive prompt:
+   {task_example}
+
+{step4}  Open the web dashboard
+   Run {gui} to launch the StrawPot GUI in your browser.
+
+{step5}  Install packages from StrawHub
+   Browse available roles, skills, and agents:
+   {search_example}
+
+   Install a package:
+   {install_example}
+
+{step6}  Learn more
+   Documentation:  https://docs.strawpot.com
+   GitHub:         https://github.com/strawpot/strawpot
+"""
+
+
+@cli.command()
+def quickstart():
+    """Print a step-by-step getting-started guide."""
+    click.echo(
+        _QUICKSTART_TEXT.format(
+            header=click.style("StrawPot -- Quick Start Guide", bold=True),
+            step1=click.style("1.", bold=True),
+            step2=click.style("2.", bold=True),
+            step3=click.style("3.", bold=True),
+            step4=click.style("4.", bold=True),
+            step5=click.style("5.", bold=True),
+            step6=click.style("6.", bold=True),
+            doctor=click.style("strawpot doctor", bold=True),
+            start=click.style("strawpot start", bold=True),
+            task_example=click.style('strawpot start --task "Fix the login bug"', bold=True),
+            gui=click.style("strawpot gui", bold=True),
+            search_example=click.style("strawpot search role", bold=True),
+            install_example=click.style("strawpot install role ai-ceo", bold=True),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
