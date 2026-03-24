@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from strawpot.agents.registry import AgentSpec, ValidationResult
+from strawpot.cli import _check_system_prerequisites as _real_check_system_prerequisites
 from strawpot.cli import cli
 
 
@@ -105,6 +106,96 @@ def test_start_agent_not_found(mock_load, mock_resolve, mock_ensure_agent, mock_
 
     assert result.exit_code != 0
     assert "Agent not found" in result.output
+
+
+@patch("strawpot.cli.needs_onboarding", return_value=False)
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+@patch("strawpot.cli._ensure_agent_installed")
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+def test_start_agent_binary_not_found(
+    mock_load, mock_resolve, mock_ensure_agent, mock_ensure_skill,
+    mock_ensure_role, mock_ensure_memory, _mock_onboarding
+):
+    """ValueError from resolve_agent prints actionable error and exits 1."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.side_effect = ValueError("Agent binary not found: /path/to/binary")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start"])
+
+    assert result.exit_code != 0
+    assert "Agent runtime binary not found" in result.output
+    assert "strawpot doctor" in result.output
+
+
+@patch("strawpot.cli.needs_onboarding", return_value=False)
+@patch("strawpot.cli._check_system_prerequisites")
+@patch("strawpot.cli.load_config")
+def test_start_missing_system_prerequisites(mock_load, mock_prereqs, _mock_onboarding):
+    """Missing system tools (node, npm) exits 1 with actionable guidance."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_prereqs.return_value = [
+        ("node", "Install from https://nodejs.org/"),
+        ("npm", "Install from https://nodejs.org/ (npm is bundled with Node.js)"),
+    ]
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["start"])
+
+    assert result.exit_code != 0
+    assert "Missing system prerequisites" in result.output
+    assert "node" in result.output
+    assert "npm" in result.output
+    assert "nodejs.org" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _check_system_prerequisites
+# ---------------------------------------------------------------------------
+
+
+def test_check_system_prerequisites_all_present(monkeypatch):
+    """Returns empty list when node and npm are on PATH."""
+    monkeypatch.setattr("strawpot.cli.shutil.which", lambda c: f"/usr/bin/{c}")
+    assert _real_check_system_prerequisites() == []
+
+
+def test_check_system_prerequisites_missing_node(monkeypatch):
+    """Returns node as missing when not on PATH."""
+    monkeypatch.setattr(
+        "strawpot.cli.shutil.which",
+        lambda c: None if c == "node" else f"/usr/bin/{c}",
+    )
+    result = _real_check_system_prerequisites()
+    tool_names = [name for name, _ in result]
+    assert "node" in tool_names
+    assert "npm" not in tool_names
+
+
+# ---------------------------------------------------------------------------
+# _authenticate_agent ValueError handling
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.resolve_agent")
+def test_authenticate_agent_catches_value_error(mock_resolve, capsys):
+    """_authenticate_agent catches ValueError and prints guidance."""
+    from strawpot.cli import _authenticate_agent
+
+    mock_resolve.side_effect = ValueError("Agent binary not found")
+
+    _authenticate_agent("test-agent", "/tmp/project")
+
+    captured = capsys.readouterr()
+    assert "Agent binary not available" in captured.err
+    assert "strawpot doctor" in captured.err
 
 
 # ---------------------------------------------------------------------------
