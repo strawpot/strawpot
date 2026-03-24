@@ -1151,13 +1151,13 @@ def upgrade(check):
 # ---------------------------------------------------------------------------
 
 
-_DOCTOR_TOOLS = [
-    ("python3", "Python 3.11+", "https://python.org"),
-    ("node", "Node.js 18+ (required by Claude Code)", "https://nodejs.org"),
-    ("npm", "npm (ships with Node.js)", "https://nodejs.org"),
-    ("git", "Git (required for worktree isolation)", "https://git-scm.com"),
-    ("gh", "GitHub CLI (required for PR workflows)", "https://cli.github.com"),
-    ("curl", "curl (required for agent install scripts)", None),
+_DOCTOR_TOOLS: list[tuple[str, str, str | None, bool]] = [
+    ("python3", "Python 3.11+", "https://python.org", True),
+    ("node", "Node.js 18+ (required by Claude Code)", "https://nodejs.org", True),
+    ("npm", "npm (ships with Node.js)", "https://nodejs.org", True),
+    ("git", "Git (required for worktree isolation)", "https://git-scm.com", True),
+    ("gh", "GitHub CLI (optional, for PR workflows)", "https://cli.github.com", False),
+    ("curl", "curl (required for agent install scripts)", None, True),
 ]
 
 
@@ -1177,13 +1177,18 @@ def doctor():
 
     # 1. System tools
     click.echo(click.style("System tools:", bold=True))
-    for tool, desc, url in _DOCTOR_TOOLS:
+    for tool, desc, url, required in _DOCTOR_TOOLS:
         path = shutil.which(tool)
         if path:
             click.echo(f"  {click.style('OK', fg='green')}  {desc} ({path})")
-        else:
+        elif required:
             all_ok = False
             msg = f"  {click.style('MISSING', fg='red')}  {desc}"
+            if url:
+                msg += f" — {url}"
+            click.echo(msg)
+        else:
+            msg = f"  {click.style('OPTIONAL', fg='yellow')}  {desc}"
             if url:
                 msg += f" — {url}"
             click.echo(msg)

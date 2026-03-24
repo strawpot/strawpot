@@ -233,7 +233,7 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
 
     # Check tools required by the install script itself
     install_map = strawpot_meta.get("install", {})
-    install_cmd = install_map.get(_current_os(), "")
+    install_cmd = install_map.get(_current_os(), "") or ""
     if re.search(r"\bcurl\b", install_cmd) and shutil.which("curl") is None:
         missing.append((
             "curl",
