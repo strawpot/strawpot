@@ -1,3 +1,10 @@
+---
+title: "I Tried to Automate My Entire Company with 32 AI Agents. Here's What Actually Worked."
+date: 2026-03-24
+author: Woong
+tags: [show-hn, agents, retrospective]
+---
+
 # I Tried to Automate My Entire Company with 32 AI Agents. Here's What Actually Worked.
 
 I'm a solo founder. Over the past month, I built 32 AI agents and
@@ -23,10 +30,10 @@ delegating to other roles in sequence.
 
 Here's what a month of running this looked like:
 
-- **392 commits** across 28 days
+- **392 agent-authored commits** across 28 days
 - **56 releases** shipped to PyPI
 - **32 roles** (AI agents) across 16 repositories
-- **27k monthly PyPI downloads**
+- **27k monthly PyPI downloads** (mostly CI bots and mirrors — be honest)
 - Scheduled agents running autonomously every 2 hours
 
 The system runs on Claude Code under the hood, but StrawPot is
@@ -61,7 +68,7 @@ or four.
 
 ### The imu Bot
 
-This is the one I'm most proud of. [imu](https://github.com/strawpot/strawpot)
+This is the one I'm most proud of. [imu](https://github.com/strawpot/integrations)
 is a chat integration that connects Telegram (or Slack, or Discord) to
 the full StrawPot agent system.
 
@@ -102,7 +109,8 @@ runs agents on a cron schedule. I have agents that:
 
 - Triage new issues every 2 hours
 - Check for stale PRs daily
-- Run a session recap agent after every session
+- Run a session recap agent after every session that summarizes what
+  changed, which issues were touched, and what decisions were made
 
 These are the "set and forget" wins. None are individually impressive, but
 together they mean the project never falls behind on housekeeping.
@@ -175,20 +183,19 @@ It's a working system that one person uses daily, and the bones are
 solid enough to share. The gap between "works on my machine" and
 "works for anyone" is exactly what I'm closing now.
 
-## The Tech
-
-For those who want to know how it works:
+## How It Works
 
 **StrawPot** is the orchestrator CLI. It manages sessions, spawns
 agents, and coordinates delegation between them.
 
 ```bash
 pip install strawpot
-strawpot start --role team-lead
+strawpot start
 ```
 
 On first run, an onboarding wizard walks you through agent selection
-(Claude Code, Codex, Gemini CLI, or OpenHands) and configuration.
+(Claude Code, Codex, Gemini CLI, or OpenHands) and configuration. You
+can specify a role with `--role team-lead` once you're set up.
 
 **Architecture:**
 - **Denden** — gRPC transport layer. Each agent connects as a client;
@@ -214,7 +221,9 @@ Everything is open source:
    before realizing nobody else had run `strawpot start` on a clean
    machine.
 3. **Fewer roles, deeper.** I didn't need 32 agents. I needed 8 good
-   ones. The rest were yak-shaving.
+   ones. Roles like `strawpot-twitter-marketer`, `release-notes-writer`,
+   and `strawpot-moltbook-marketer` consumed real engineering time for
+   near-zero value. The rest were yak-shaving.
 
 ## Try It
 
@@ -235,4 +244,4 @@ the agents will keep triaging my issues while I wait to find out.
 
 ---
 
-*Show HN title: Show HN: I automated my company with 32 AI agents -- here's what actually worked*
+*Show HN title: Show HN: I automated my dev workflow with 32 AI agents -- here's what actually worked*
