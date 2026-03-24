@@ -36,6 +36,26 @@ export function useUpdateResource() {
   });
 }
 
+export function useUpdateAllResources() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 150_000);
+      return fetch("/api/registry/update-all", {
+        method: "POST",
+        signal: controller.signal,
+      }).then(async (res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json() as Promise<InstallResult>;
+      });
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["registry"] });
+    },
+  });
+}
+
 export function useReinstallResource() {
   const qc = useQueryClient();
   return useMutation({

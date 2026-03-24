@@ -142,6 +142,31 @@ class TestReinstallResource:
         assert resp.status_code == 404
 
 
+class TestUpdateAllResources:
+    def test_endpoint_exists(self, client, home):
+        """update-all endpoint accepts POST and runs strawhub."""
+        resp = client.post("/api/registry/update-all")
+        # Will be 503 if strawhub not on PATH, or 200 if it is.
+        # Either way, it should not be 404 or 405.
+        assert resp.status_code != 404
+        assert resp.status_code != 405
+
+    def test_calls_strawhub_with_correct_args(self, client, home, monkeypatch):
+        """Verify the correct strawhub arguments are passed."""
+        captured_args = {}
+
+        def fake_run(*args, **kwargs):
+            captured_args["args"] = args
+            captured_args["kwargs"] = kwargs
+            return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr("strawpot_gui.routers.registry.run_strawhub", fake_run)
+        resp = client.post("/api/registry/update-all")
+        assert resp.status_code == 200
+        assert captured_args["args"] == ("update", "--all", "--global", "-y")
+        assert captured_args["kwargs"] == {"timeout": 300}
+
+
 class TestUninstallProtectedResources:
     """Built-in resources cannot be uninstalled."""
 

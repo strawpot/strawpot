@@ -182,6 +182,39 @@ class TestGetProjectResource:
         assert resp.status_code == 404
 
 
+class TestUpdateAllProjectResources:
+    def test_endpoint_exists(self, client, tmp_path, global_home):
+        pid, _ = _setup_project(client, tmp_path)
+        resp = client.post(f"/api/projects/{pid}/resources/update-all")
+        # Will be 503 if strawhub not on PATH, or 200 if it is.
+        assert resp.status_code != 404
+        assert resp.status_code != 405
+
+    def test_nonexistent_project_returns_404(self, client, tmp_path, global_home):
+        resp = client.post("/api/projects/9999/resources/update-all")
+        assert resp.status_code == 404
+
+    def test_calls_strawhub_with_correct_args(self, client, tmp_path, global_home, monkeypatch):
+        """Verify the correct strawhub arguments including --root and project dir."""
+        pid, project_dir = _setup_project(client, tmp_path)
+        captured_args = {}
+
+        def fake_run(*args, **kwargs):
+            captured_args["args"] = args
+            captured_args["kwargs"] = kwargs
+            return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(
+            "strawpot_gui.routers.project_resources.run_strawhub", fake_run
+        )
+        resp = client.post(f"/api/projects/{pid}/resources/update-all")
+        assert resp.status_code == 200
+        assert captured_args["args"] == (
+            "--root", str(project_dir), "update", "--all", "-y"
+        )
+        assert captured_args["kwargs"] == {"timeout": 300}
+
+
 class TestProjectResourceConfig:
     def test_get_config_for_global_resource(self, client, tmp_path, global_home):
         """Can read config schema from global resource + saved values from project toml."""

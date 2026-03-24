@@ -14,8 +14,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import ResourceDetailSheet from "@/components/ResourceDetailSheet";
 import InstallDialog from "@/components/InstallDialog";
-import { useUninstallResource } from "@/hooks/mutations/use-registry";
-import { Download, Trash2 } from "lucide-react";
+import UpdateAllDialog from "@/components/UpdateAllDialog";
+import { useUninstallResource, useUpdateAllResources } from "@/hooks/mutations/use-registry";
+import { Download, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 // Built-in resources that cannot be uninstalled.
@@ -41,6 +42,8 @@ export default function ResourceBrowser() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  const [updateAllOpen, setUpdateAllOpen] = useState(false);
+  const updateAll = useUpdateAllResources();
 
   const { data: detail } = useResourceDetail(resourceType, selectedName ?? "", {
     enabled: sheetOpen && !!selectedName,
@@ -57,10 +60,16 @@ export default function ResourceBrowser() {
             Installed {label.toLowerCase()} from StrawHub
           </p>
         </div>
-        <Button onClick={() => setInstallOpen(true)} size="sm">
-          <Download className="mr-2 h-4 w-4" />
-          Install
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Update All
+          </Button>
+          <Button onClick={() => setInstallOpen(true)} size="sm">
+            <Download className="mr-2 h-4 w-4" />
+            Install
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -131,6 +140,13 @@ export default function ResourceBrowser() {
         open={installOpen}
         onOpenChange={setInstallOpen}
         defaultType={resourceType}
+      />
+
+      <UpdateAllDialog
+        open={updateAllOpen}
+        onOpenChange={setUpdateAllOpen}
+        onUpdate={() => updateAll.mutateAsync()}
+        scope="global"
       />
     </div>
   );
