@@ -63,13 +63,31 @@ Workflows improve over time as roles are reused and refined.
 ### Prerequisites
 
 - Python 3.11 or later
-- pip
+- [Node.js 18+](https://nodejs.org) (required by Claude Code agent)
+- [Git](https://git-scm.com) (required for worktree isolation)
+- [GitHub CLI](https://cli.github.com) (`gh`) — optional, for PR workflows
+
+Run `strawpot doctor` after install to verify your setup.
 
 ### Install and run
 
 ```bash
 pip install strawpot
+strawpot start
+```
+
+The first run will walk you through agent setup (choosing a runtime,
+authentication). After setup:
+
+```bash
+# Run a task
+strawpot start --task "Review my latest PR"
+
+# Open the web dashboard
 strawpot gui
+
+# Check system prerequisites
+strawpot doctor
 ```
 
 ## Why this exists

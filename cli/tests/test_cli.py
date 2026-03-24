@@ -474,3 +474,84 @@ def test_start_headless_fails_when_not_configured(mock_load, _mock_onboarding):
 
     assert result.exit_code != 0
     assert "StrawPot is not configured" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Doctor command
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.validate_agent", return_value=ValidationResult())
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+@patch("strawpot.cli.shutil.which")
+def test_doctor_healthy(mock_which, mock_load, mock_resolve, mock_validate):
+    """Doctor reports all-OK when tools are present and agent resolves."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+    mock_which.return_value = "/usr/bin/fake"
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "All checks passed" in result.output
+
+
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+@patch("strawpot.cli.shutil.which")
+def test_doctor_missing_system_tools(mock_which, mock_load, mock_resolve):
+    """Doctor reports MISSING for required tools not found on PATH."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.return_value = _make_spec()
+    # All tools missing
+    mock_which.return_value = None
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code != 0
+    assert "MISSING" in result.output
+    assert "Some checks failed" in result.output
+
+
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+@patch("strawpot.cli.shutil.which")
+def test_doctor_agent_not_found(mock_which, mock_load, mock_resolve):
+    """Doctor handles agent resolution failure gracefully."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.side_effect = FileNotFoundError("Agent not found")
+    mock_which.return_value = "/usr/bin/fake"
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code != 0
+    assert "NOT FOUND" in result.output
+
+
+@patch("strawpot.cli.resolve_agent")
+@patch("strawpot.cli.load_config")
+@patch("strawpot.cli.shutil.which")
+def test_doctor_agent_value_error(mock_which, mock_load, mock_resolve):
+    """Doctor handles ValueError from resolve_agent gracefully."""
+    from strawpot.config import StrawPotConfig
+
+    mock_load.return_value = StrawPotConfig()
+    mock_resolve.side_effect = ValueError("AGENT.md missing frontmatter")
+    mock_which.return_value = "/usr/bin/fake"
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code != 0
+    assert "ERROR" in result.output
+    assert "missing frontmatter" in result.output

@@ -11,6 +11,7 @@ from strawpot.agents.registry import (
     ValidationResult,
     _merge_config,
     _resolve_wrapper_cmd,
+    check_install_prerequisites,
     parse_agent_md,
     resolve_agent,
     validate_agent,
@@ -129,7 +130,7 @@ def test_resolve_wrapper_cmd_bin_not_found(tmp_path, monkeypatch):
         "strawpot.agents.registry._current_os", lambda: "macos"
     )
     meta = {"bin": {"macos": "missing-binary"}}
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="Agent binary not found"):
         _resolve_wrapper_cmd(tmp_path, meta)
 
 
@@ -306,3 +307,120 @@ def test_validation_result_ok_property():
     assert ValidationResult().ok
     assert not ValidationResult(missing_tools=[("x", None)]).ok
     assert not ValidationResult(missing_env=["Y"]).ok
+
+
+# --- check_install_prerequisites ---
+
+
+AGENT_MD_WITH_CURL_INSTALL = dedent("""\
+    ---
+    name: curl-agent
+    metadata:
+      strawpot:
+        bin:
+          macos: my_binary
+          linux: my_binary
+        install:
+          macos: curl -fsSL https://example.com/install.sh | sh
+          linux: curl -fsSL https://example.com/install.sh | sh
+        tools:
+          npm:
+            description: Node.js package manager
+            install:
+              macos: brew install node
+              linux: apt install nodejs
+    ---
+
+    # Curl Agent
+""")
+
+
+@pytest.fixture()
+def curl_agent_dir(tmp_path, monkeypatch):
+    """Create a temp agent dir with AGENT.md that requires curl and npm."""
+    agent_dir = tmp_path / "my-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(AGENT_MD_WITH_CURL_INSTALL)
+    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
+    return agent_dir
+
+
+def test_check_prerequisites_all_present(curl_agent_dir, monkeypatch):
+    """When curl and npm are on PATH, no prerequisites are missing."""
+    monkeypatch.setattr("shutil.which", lambda c: f"/usr/bin/{c}")
+    assert check_install_prerequisites(curl_agent_dir) == []
+
+
+def test_check_prerequisites_missing_curl(curl_agent_dir, monkeypatch):
+    """When curl is missing, it's reported as a prerequisite."""
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda c: None if c == "curl" else f"/usr/bin/{c}",
+    )
+    tool_names = [name for name, _ in check_install_prerequisites(curl_agent_dir)]
+    assert "curl" in tool_names
+
+
+def test_check_prerequisites_missing_npm(curl_agent_dir, monkeypatch):
+    """When npm is missing, it's reported with install guidance."""
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda c: None if c == "npm" else f"/usr/bin/{c}",
+    )
+    tool_names = [name for name, _ in check_install_prerequisites(curl_agent_dir)]
+    assert "npm" in tool_names
+
+
+def test_check_prerequisites_no_agent_md(tmp_path):
+    """When AGENT.md doesn't exist, returns empty list (graceful)."""
+    agent_dir = tmp_path / "missing-agent"
+    agent_dir.mkdir()
+    assert check_install_prerequisites(agent_dir) == []
+
+
+def test_check_prerequisites_null_tool_meta(tmp_path, monkeypatch):
+    """When tool metadata is YAML null (e.g. 'tools:\\n  npm:'), no crash."""
+    agent_md = dedent("""\
+        ---
+        name: null-meta-agent
+        metadata:
+          strawpot:
+            bin:
+              macos: my_binary
+              linux: my_binary
+            tools:
+              npm:
+        ---
+
+        # Agent with null tool meta
+    """)
+    agent_dir = tmp_path / "null-meta-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(agent_md)
+    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
+    monkeypatch.setattr("shutil.which", lambda c: None)
+
+    result = check_install_prerequisites(agent_dir)
+    tool_names = [name for name, _ in result]
+    assert "npm" in tool_names
+
+
+def test_check_prerequisites_malformed_agent_md(tmp_path):
+    """When AGENT.md is malformed, ValueError propagates (not silently swallowed)."""
+    agent_dir = tmp_path / "bad-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text("not valid frontmatter at all")
+
+    with pytest.raises(ValueError, match="missing frontmatter"):
+        check_install_prerequisites(agent_dir)
+
+
+def test_resolve_wrapper_cmd_bin_not_found_includes_install_hint(tmp_path, monkeypatch):
+    """When binary is missing, error includes install hint from metadata."""
+    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
+    meta = {
+        "bin": {"macos": "missing-binary"},
+        "install": {"macos": "curl -fsSL https://example.com/install.sh | sh"},
+    }
+    with pytest.raises(ValueError, match="curl -fsSL"):
+        _resolve_wrapper_cmd(tmp_path, meta)

@@ -38,17 +38,39 @@ from strawpot.agents.interactive import (
     DirectWrapperRuntime,
     InteractiveWrapperRuntime,
 )
-from strawpot.agents.registry import parse_agent_md, resolve_agent, validate_agent
+from strawpot.agents.registry import (
+    check_install_prerequisites,
+    parse_agent_md,
+    resolve_agent,
+    validate_agent,
+)
 from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
 from strawpot.session import Session, recover_stale_sessions, resolve_isolator
 
 
-@click.group()
+HELP_EPILOG = """
+Getting started:
+
+  strawpot start              Launch your first agent (interactive setup)
+  strawpot start --task "..." Run a task non-interactively
+  strawpot doctor             Check system prerequisites
+  strawpot gui                Open the web dashboard
+
+Docs: https://docs.strawpot.com
+"""
+
+
+@click.group(epilog=HELP_EPILOG)
 @click.version_option(version=__version__)
 def cli():
-    """StrawPot — lightweight agent orchestration."""
+    """StrawPot — AI agent orchestration.
+
+    Compose AI agents that delegate tasks, share memory, and coordinate
+    through roles and skills. Works with Claude Code, Codex, Gemini,
+    and more.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +251,26 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     ]
     for agent_dir in agent_dirs:
         if (agent_dir / "AGENT.md").is_file():
+            # Check prerequisites before attempting install
+            missing = check_install_prerequisites(agent_dir)
+            if missing:
+                click.echo(
+                    click.style(
+                        f"\nMissing prerequisites for '{name}':",
+                        fg="red", bold=True,
+                    ),
+                    err=True,
+                )
+                for tool, guidance in missing:
+                    click.echo(f"  - {tool}: {guidance}", err=True)
+                click.echo(
+                    "\nInstall the missing tools above, then run "
+                    "'strawpot start' again.\n"
+                    "Run 'strawpot doctor' for a full system check.",
+                    err=True,
+                )
+                sys.exit(1)
+
             # 1. Try metadata.strawpot.install.<os> from AGENT.md frontmatter
             install_cmd = _get_agent_install_cmd(agent_dir)
             if install_cmd:
@@ -519,6 +561,12 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0. First-run onboarding
     if needs_onboarding(config, working_dir):
+        if task and not headless:
+            click.echo(
+                click.style("Note: ", fg="yellow", bold=True)
+                + "No agent configured yet. Running first-time setup.\n"
+                "Your task will be executed after setup completes.\n",
+            )
         if headless:
             click.echo(
                 "Error: StrawPot is not configured. Run 'strawpot start' "
@@ -557,6 +605,18 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         )
     except FileNotFoundError as exc:
         click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    except ValueError as exc:
+        # Safety net: _ensure_agent_installed should catch most cases,
+        # but the binary could become unavailable between install and resolve.
+        click.echo(
+            click.style("Error: ", fg="red", bold=True) + str(exc),
+            err=True,
+        )
+        click.echo(
+            "\nRun 'strawpot doctor' to check all prerequisites.",
+            err=True,
+        )
         sys.exit(1)
 
     # 2. Validate agent dependencies — auto-install tools when possible
@@ -1084,6 +1144,108 @@ def upgrade(check):
     click.echo(f"Running: {' '.join(cmd)}")
     # exec replaces this process so pip/pipx can freely overwrite our files
     os.execvp(cmd[0], cmd)
+
+
+# ---------------------------------------------------------------------------
+# Doctor — prerequisite checker
+# ---------------------------------------------------------------------------
+
+
+_DOCTOR_TOOLS: list[tuple[str, str, str | None, bool]] = [
+    ("python3", "Python 3.11+", "https://python.org", True),
+    ("node", "Node.js 18+ (required by Claude Code)", "https://nodejs.org", True),
+    ("npm", "npm (ships with Node.js)", "https://nodejs.org", True),
+    ("git", "Git (required for worktree isolation)", "https://git-scm.com", True),
+    ("gh", "GitHub CLI (optional, for PR workflows)", "https://cli.github.com", False),
+    ("curl", "curl (required for agent install scripts)", None, True),
+]
+
+
+@cli.command()
+def doctor():
+    """Check system prerequisites and configuration.
+
+    Verifies that required tools are installed, the configured agent
+    is available, and environment variables are set.
+    """
+    config = load_config(Path.cwd())
+    working_dir = str(Path.cwd())
+    all_ok = True
+
+    click.echo(click.style("StrawPot Doctor", bold=True))
+    click.echo(f"Version: {__version__}\n")
+
+    # 1. System tools
+    click.echo(click.style("System tools:", bold=True))
+    for tool, desc, url, required in _DOCTOR_TOOLS:
+        path = shutil.which(tool)
+        if path:
+            click.echo(f"  {click.style('OK', fg='green')}  {desc} ({path})")
+        elif required:
+            all_ok = False
+            msg = f"  {click.style('MISSING', fg='red')}  {desc}"
+            if url:
+                msg += f" — {url}"
+            click.echo(msg)
+        else:
+            msg = f"  {click.style('OPTIONAL', fg='yellow')}  {desc}"
+            if url:
+                msg += f" — {url}"
+            click.echo(msg)
+
+    # 2. Agent resolution
+    click.echo(f"\n{click.style('Agent:', bold=True)} {config.runtime}")
+    try:
+        spec = resolve_agent(config.runtime, working_dir, config.agents.get(config.runtime))
+        click.echo(f"  {click.style('OK', fg='green')}  Agent resolved ({spec.version})")
+
+        # 3. Agent dependencies
+        validation = validate_agent(spec)
+        if validation.missing_tools:
+            all_ok = False
+            for tool, hint in validation.missing_tools:
+                msg = f"  {click.style('MISSING', fg='red')}  Tool: {tool}"
+                if hint:
+                    msg += f" — install: {hint}"
+                click.echo(msg)
+        if validation.missing_env:
+            all_ok = False
+            for var in validation.missing_env:
+                click.echo(
+                    f"  {click.style('MISSING', fg='red')}  Env: {var}"
+                )
+    except FileNotFoundError:
+        all_ok = False
+        click.echo(
+            f"  {click.style('NOT FOUND', fg='red')}  "
+            "Agent not installed. Run 'strawpot start' to set up."
+        )
+    except ValueError as exc:
+        all_ok = False
+        click.echo(f"  {click.style('ERROR', fg='red')}  {exc}")
+
+    # 4. Key environment variables
+    click.echo(f"\n{click.style('Environment:', bold=True)}")
+    for var in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN"]:
+        if os.environ.get(var):
+            click.echo(f"  {click.style('SET', fg='green')}    {var}")
+        else:
+            # Not all are required, just informational
+            click.echo(f"  {click.style('UNSET', fg='yellow')}  {var}")
+
+    # 5. Summary
+    click.echo()
+    if all_ok:
+        click.echo(click.style("All checks passed!", fg="green", bold=True))
+    else:
+        click.echo(
+            click.style(
+                "Some checks failed. Fix the issues above and run "
+                "'strawpot doctor' again.",
+                fg="red",
+            )
+        )
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
