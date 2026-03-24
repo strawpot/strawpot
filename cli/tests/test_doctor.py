@@ -235,6 +235,22 @@ def test_check_prerequisites_no_min_version_ok_without_version(mock_which, mock_
     assert git_check.version is None
 
 
+@patch("strawpot.doctor.shutil.which")
+def test_check_prerequisites_exception_guard(mock_which):
+    """Unexpected exception during a check should not crash the entire run."""
+    mock_which.side_effect = RuntimeError("corrupted PATH")
+
+    report = check_prerequisites()
+    # All checks should still produce results (none skipped)
+    assert len(report.checks) == len(
+        [t for t in report.checks]
+    )
+    # The first check should have failed gracefully
+    first = report.checks[0]
+    assert first.passed is False
+    assert "check failed" in first.hint
+
+
 # ---------------------------------------------------------------------------
 # check_env_vars
 # ---------------------------------------------------------------------------

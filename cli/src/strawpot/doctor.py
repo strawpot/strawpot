@@ -13,10 +13,12 @@ from dataclasses import dataclass, field
 class CheckResult:
     """Result of a single prerequisite check.
 
-    ``passed`` is ``True`` when the check succeeded — the tool is on PATH
-    **and** satisfies any minimum-version requirement.  Use ``path`` to
-    distinguish *missing* (``path is None``) from *wrong version*
-    (``path`` set, ``passed`` is ``False``).
+    ``passed`` is ``True`` when the check succeeded.  For tool checks this
+    means the tool is on PATH and meets any minimum-version constraint.
+    For env-var checks it means the variable is set.
+
+    Use ``path`` to distinguish *missing* (``path is None``) from
+    *wrong version* (``path`` set, ``passed`` is ``False``).
     """
 
     name: str
@@ -150,47 +152,58 @@ def check_prerequisites() -> DoctorReport:
     report = DoctorReport()
 
     for cmd, desc, hint, required, min_ver in _PREREQUISITES:
-        path = shutil.which(cmd)
-        # Try fallback command (pip3 -> pip, python3 -> python)
-        fallback_cmd = cmd.rstrip("3")
-        if not path and fallback_cmd != cmd:
-            path = shutil.which(fallback_cmd)
+        try:
+            path = shutil.which(cmd)
+            # Try fallback command (pip3 -> pip, python3 -> python)
+            fallback_cmd = cmd.rstrip("3")
+            if not path and fallback_cmd != cmd:
+                path = shutil.which(fallback_cmd)
+                if path:
+                    cmd = fallback_cmd
+
             if path:
-                cmd = fallback_cmd
+                version = _get_version(cmd)
+                if min_ver:
+                    version_ok = _version_at_least(version, min_ver)
+                else:
+                    version_ok = True
 
-        if path:
-            version = _get_version(cmd)
-            if min_ver:
-                version_ok = _version_at_least(version, min_ver)
-            else:
-                version_ok = True
+                if not version_ok and min_ver and version is None:
+                    check_hint = f"version unknown — cannot verify >={min_ver}"
+                elif not version_ok:
+                    check_hint = hint
+                else:
+                    check_hint = ""
 
-            if not version_ok and min_ver and version is None:
-                check_hint = f"version unknown — cannot verify >={min_ver}"
-            elif not version_ok:
-                check_hint = hint
-            else:
-                check_hint = ""
-
-            report.checks.append(
-                CheckResult(
-                    name=cmd,
-                    description=desc,
-                    passed=version_ok,
-                    version=version,
-                    path=path,
-                    required=required,
-                    hint=check_hint,
+                report.checks.append(
+                    CheckResult(
+                        name=cmd,
+                        description=desc,
+                        passed=version_ok,
+                        version=version,
+                        path=path,
+                        required=required,
+                        hint=check_hint,
+                    )
                 )
-            )
-        else:
+            else:
+                report.checks.append(
+                    CheckResult(
+                        name=cmd,
+                        description=desc,
+                        passed=False,
+                        required=required,
+                        hint=hint,
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
             report.checks.append(
                 CheckResult(
                     name=cmd,
                     description=desc,
                     passed=False,
                     required=required,
-                    hint=hint,
+                    hint=f"check failed: {exc}",
                 )
             )
 
@@ -217,7 +230,7 @@ def check_env_vars() -> list[CheckResult]:
 def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
     """Format a doctor report as a human-readable checklist string.
 
-    Returns a multi-line string with ``[✓]`` / ``[✗]`` markers.
+    Returns a multi-line string with ``[✓]`` / ``[✗]`` / ``[-]`` markers.
     """
     lines: list[str] = ["StrawPot needs:"]
 
