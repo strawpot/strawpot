@@ -24,7 +24,6 @@ dependencies = [
     "tomli_w>=1.0",
     "strawhub",
     "strawpot-memory",
-    "strawpot-gui",
     "denden-server",
 ]
 
@@ -37,6 +36,9 @@ Issues = "https://github.com/strawpot/strawpot/issues"
 strawpot = "strawpot.cli:cli"
 
 [project.optional-dependencies]
+gui = [
+    "strawpot-gui",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
