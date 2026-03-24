@@ -687,3 +687,160 @@ def test_doctor_agent_value_error(mock_which, mock_run, mock_load, mock_resolve)
     assert result.exit_code != 0
     assert "[✗]" in result.output
     assert "missing frontmatter" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Search command
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._strawhub")
+def test_search_positional_query(mock_strawhub):
+    """strawpot search <query> passes the query to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "code-reviewer"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("search", "code-reviewer")
+
+
+@patch("strawpot.cli._strawhub")
+def test_search_option_query(mock_strawhub):
+    """strawpot search --query <query> passes the query to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "--query", "code-reviewer"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("search", "code-reviewer")
+
+
+@patch("strawpot.cli._strawhub")
+def test_search_with_kind(mock_strawhub):
+    """strawpot search <query> --kind role forwards kind to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "code-reviewer", "--kind", "role"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with(
+        "search", "code-reviewer", "--kind", "role"
+    )
+
+
+@patch("strawpot.cli._strawhub")
+def test_search_with_limit(mock_strawhub):
+    """strawpot search <query> --limit 5 forwards limit to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "test", "--limit", "5"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("search", "test", "--limit", "5")
+
+
+@patch("strawpot.cli._strawhub")
+def test_search_with_json_flag(mock_strawhub):
+    """strawpot search <query> --json forwards flag to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "test", "--json"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("search", "test", "--json")
+
+
+def test_search_no_query():
+    """strawpot search with no query shows an error."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search"])
+    assert result.exit_code != 0
+    assert "Missing search query" in result.output
+
+
+def test_search_conflicting_queries():
+    """strawpot search foo --query bar shows a conflict error."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "foo", "--query", "bar"])
+    assert result.exit_code != 0
+    assert "Conflicting" in result.output
+
+
+# ---------------------------------------------------------------------------
+# List command
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_no_filter(mock_strawhub):
+    """strawpot list with no arguments passes through."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("list")
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_positional_filter(mock_strawhub):
+    """strawpot list roles maps to --kind roles."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "roles"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("list", "--kind", "roles")
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_kind_option(mock_strawhub):
+    """strawpot list --kind skills works as before."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "--kind", "skills"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("list", "--kind", "skills")
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_matching_positional_and_kind(mock_strawhub):
+    """strawpot list roles --kind roles succeeds when both match."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "roles", "--kind", "roles"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("list", "--kind", "roles")
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_with_sort(mock_strawhub):
+    """strawpot list roles --sort downloads forwards all args."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "roles", "--sort", "downloads"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with(
+        "list", "--kind", "roles", "--sort", "downloads"
+    )
+
+
+@patch("strawpot.cli._strawhub")
+def test_list_with_limit(mock_strawhub):
+    """strawpot list --limit 10 forwards limit to strawhub."""
+    mock_strawhub.side_effect = SystemExit(0)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "--limit", "10"])
+    assert result.exit_code == 0
+    mock_strawhub.assert_called_once_with("list", "--limit", "10")
+
+
+def test_list_invalid_filter():
+    """strawpot list <invalid> shows an error with valid types."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "foobar"])
+    assert result.exit_code != 0
+    assert "Unknown resource type" in result.output
+    assert "roles" in result.output
+
+
+def test_list_conflicting_kind():
+    """strawpot list roles --kind skills shows a conflict error."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list", "roles", "--kind", "skills"])
+    assert result.exit_code != 0
+    assert "Conflicting" in result.output

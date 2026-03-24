@@ -1504,9 +1504,94 @@ cli.add_command(_make_passthrough("update", "Update installed packages to latest
 cli.add_command(_make_passthrough("init", "Create strawpot.toml from installed packages."))
 cli.add_command(_make_passthrough("install-tools", "Install system tools declared by packages."))
 
-# Discovery
-cli.add_command(_make_passthrough("search", "Search the StrawHub registry."))
-cli.add_command(_make_passthrough("list", "Browse skills, roles, agents, and memories on the registry."))
+# Discovery — valid filter values accepted by `list`
+_LIST_VALID_KINDS = ("skills", "roles", "agents", "memories", "integrations", "all")
+
+
+@cli.command()
+@click.argument("query", required=False, default=None)
+@click.option("--query", "query_opt", default=None, help="Search query (alternative to positional argument).")
+@click.option("--kind", type=click.Choice(["skill", "role", "agent", "memory", "integration", "all"]), default=None)
+@click.option("--limit", type=int, default=None, help="Max results (1-100).")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output as JSON.")
+def search(query, query_opt, kind, limit, as_json):
+    """Search the StrawHub registry.
+
+    \b
+    Examples:
+      strawpot search code-reviewer
+      strawpot search --query code-reviewer
+      strawpot search code-reviewer --kind role
+    """
+    if query and query_opt and query != query_opt:
+        click.echo(
+            f"Error: Conflicting queries: positional '{query}' vs --query '{query_opt}'.",
+            err=True,
+        )
+        sys.exit(1)
+    resolved = query or query_opt
+    if not resolved:
+        click.echo("Error: Missing search query.", err=True)
+        click.echo(
+            "Usage: strawpot search <query>  or  strawpot search --query <query>",
+            err=True,
+        )
+        sys.exit(1)
+    args: list[str] = ["search", resolved]
+    if kind:
+        args += ["--kind", kind]
+    if limit is not None:
+        args += ["--limit", str(limit)]
+    if as_json:
+        args.append("--json")
+    _strawhub(*args)
+
+
+@cli.command("list")
+@click.argument("resource_type", required=False, default=None)
+@click.option("--kind", default=None, type=click.Choice(["skills", "roles", "agents", "memories", "integrations", "all"]))
+@click.option("--limit", type=int, default=None, help="Max results (1-200).")
+@click.option("--sort", type=click.Choice(["updated", "downloads", "stars"]), default=None)
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output as JSON.")
+def list_cmd(resource_type, kind, limit, sort, as_json):
+    """Browse skills, roles, agents, and memories on the registry.
+
+    \b
+    Optionally pass a resource type as a positional filter:
+      strawpot list roles
+      strawpot list skills --sort downloads
+
+    This is equivalent to --kind:
+      strawpot list --kind roles
+    """
+    resolved_kind = kind
+    if resource_type:
+        if resource_type not in _LIST_VALID_KINDS:
+            click.echo(f"Error: Unknown resource type '{resource_type}'.", err=True)
+            click.echo(
+                f"Valid types: {', '.join(_LIST_VALID_KINDS)}",
+                err=True,
+            )
+            sys.exit(1)
+        if kind and kind != resource_type:
+            click.echo(
+                f"Error: Conflicting filters: positional '{resource_type}' vs --kind '{kind}'.",
+                err=True,
+            )
+            sys.exit(1)
+        resolved_kind = resource_type
+    args: list[str] = ["list"]
+    if resolved_kind:
+        args += ["--kind", resolved_kind]
+    if limit is not None:
+        args += ["--limit", str(limit)]
+    if sort:
+        args += ["--sort", sort]
+    if as_json:
+        args.append("--json")
+    _strawhub(*args)
+
+
 cli.add_command(_make_passthrough("info", "Show detailed information about a package."))
 cli.add_command(_make_passthrough("resolve", "Resolve a slug to its installed path."))
 
