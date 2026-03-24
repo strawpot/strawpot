@@ -165,10 +165,12 @@ def check_prerequisites() -> DoctorReport:
             else:
                 version_ok = True
 
-            check_hint = hint if not version_ok else ""
-            if min_ver and version is None and not version_ok:
-                # Fail-safe: version unknown, cannot verify minimum
+            if not version_ok and min_ver and version is None:
                 check_hint = f"version unknown — cannot verify >={min_ver}"
+            elif not version_ok:
+                check_hint = hint
+            else:
+                check_hint = ""
 
             report.checks.append(
                 CheckResult(
@@ -201,18 +203,15 @@ def check_env_vars() -> list[CheckResult]:
     All env-var checks are informational (``required=False``) and do not
     affect the overall pass/fail status of a :class:`DoctorReport`.
     """
-    results = []
-    for var, desc in _ENV_VARS:
-        value = os.environ.get(var)
-        results.append(
-            CheckResult(
-                name=var,
-                description=desc,
-                passed=bool(value),
-                required=False,
-            )
+    return [
+        CheckResult(
+            name=var,
+            description=desc,
+            passed=bool(os.environ.get(var)),
+            required=False,
         )
-    return results
+        for var, desc in _ENV_VARS
+    ]
 
 
 def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
@@ -220,8 +219,7 @@ def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
 
     Returns a multi-line string with ``[✓]`` / ``[✗]`` markers.
     """
-    lines: list[str] = []
-    lines.append("StrawPot needs:")
+    lines: list[str] = ["StrawPot needs:"]
 
     for check in report.checks:
         if check.passed:
@@ -229,20 +227,17 @@ def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
             if check.version:
                 detail += f" ({check.version})"
             lines.append(f"  [✓] {detail}")
-        elif check.required:
-            detail = check.description
-            if check.version:
-                detail += f" (found {check.version})"
-            if check.hint:
-                detail += f" — {check.hint}"
-            lines.append(f"  [✗] {detail}")
         else:
-            detail = f"{check.description} (optional)"
+            # Failed checks: required get [✗], optional get [-]
+            marker = "[✗]" if check.required else "[-]"
+            detail = check.description
+            if not check.required:
+                detail += " (optional)"
             if check.version:
                 detail += f" (found {check.version})"
             if check.hint:
                 detail += f" — {check.hint}"
-            lines.append(f"  [-] {detail}")
+            lines.append(f"  {marker} {detail}")
 
     if env_results:
         lines.append("")
