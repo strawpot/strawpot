@@ -19,7 +19,9 @@ StrawPot lets agents figure out how to solve the task.
 
 <h4 align="center">GUI</h4>
 <p align="center">
-  <a href="https://strawpot.com/demo-gui.mp4">▶ Watch GUI demo</a>
+  <a href="https://strawpot.com/demo.mp4">
+    <img src="docs/demo-gui.png" alt="StrawPot GUI demo" width="1280">
+  </a>
 </p>
 
 - Agents compose other agents dynamically, with no fixed pipelines
