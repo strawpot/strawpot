@@ -50,6 +50,11 @@ from strawpot_gui.sse import (
 
 router = APIRouter(tags=["websocket"])
 
+# Configurable drain timeouts — low defaults work for localhost; override via
+# environment for high-latency networks or to speed up test teardown.
+WS_DRAIN_TIMEOUT = float(os.environ.get("STRAWPOT_WS_DRAIN_TIMEOUT", "1.0"))
+WS_DRAIN_TIMEOUT_LONG = float(os.environ.get("STRAWPOT_WS_DRAIN_TIMEOUT_LONG", "2.0"))
+
 
 # ---------------------------------------------------------------------------
 # Helpers (shared logic with the former SSE tree router)
@@ -172,7 +177,7 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
     early_subscribes: list[dict] = []
     try:
         while True:
-            raw = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_DRAIN_TIMEOUT)
             try:
                 msg = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
@@ -247,7 +252,7 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
         # Drain additional subscribe_logs from the client
         try:
             while True:
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_DRAIN_TIMEOUT_LONG)
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
