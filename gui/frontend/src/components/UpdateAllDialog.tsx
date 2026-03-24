@@ -20,21 +20,14 @@ interface UpdateLine {
 }
 
 function parseOutput(stdout: string): { lines: UpdateLine[]; updated: number; upToDate: number } {
-  let updated = 0;
-  let upToDate = 0;
-  const lines: UpdateLine[] = [];
+  const lines: UpdateLine[] = stdout
+    .split("\n")
+    .map((raw) => raw.trim())
+    .filter(Boolean)
+    .map((text) => ({ text, updated: !text.includes("already up to date") }));
 
-  for (const raw of stdout.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    const isUpToDate = line.includes("already up to date");
-    const isUpdated = !isUpToDate && line.length > 0;
-    if (isUpToDate) upToDate++;
-    if (isUpdated) updated++;
-    lines.push({ text: line, updated: isUpdated });
-  }
-
-  return { lines, updated, upToDate };
+  const updated = lines.filter((l) => l.updated).length;
+  return { lines, updated, upToDate: lines.length - updated };
 }
 
 interface Props {
@@ -75,11 +68,9 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope }:
         <DialogHeader>
           <DialogTitle>Update All Resources</DialogTitle>
           <DialogDescription>
-            {status === "idle" &&
-              `Update all installed resources (${scope}) to their latest versions.`}
+            {status === "idle" && `Update all installed resources (${scope}) to their latest versions.`}
             {status === "running" && "Updating resources..."}
-            {status === "done" && parsed &&
-              `${parsed.updated} updated, ${parsed.upToDate} already up to date.`}
+            {status === "done" && parsed && `${parsed.updated} updated, ${parsed.upToDate} already up to date.`}
             {status === "error" && "Update failed."}
           </DialogDescription>
         </DialogHeader>
