@@ -2,6 +2,8 @@
 
 import os
 import subprocess
+import sys
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +11,7 @@ from click.testing import CliRunner
 
 from strawpot.cli import (
     _check_update_async,
+    _detect_installer,
     _maybe_check_update,
     _prompt_update,
     _should_skip_update_check,
@@ -275,6 +278,85 @@ class TestEnvVarSkip:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("STRAWPOT_SKIP_UPDATE_CHECK", None)
             assert _should_skip_update_check() is False
+
+
+# ---------------------------------------------------------------------------
+# _detect_installer
+# ---------------------------------------------------------------------------
+
+
+class TestDetectInstaller:
+    def test_frozen_binary(self):
+        """Binary detection takes priority over all env-based signals."""
+        with patch.object(sys, "_MEIPASS", "/tmp/frozen", create=True), \
+             patch.dict(os.environ, {"PIPX_HOME": "/custom/pipx"}, clear=False):
+            assert _detect_installer() == "binary"
+
+    def test_pipx_home_with_matching_venv(self):
+        """PIPX_HOME + VIRTUAL_ENV under it => pipx."""
+        env = {
+            "PIPX_HOME": "/custom/pipx",
+            "VIRTUAL_ENV": "/custom/pipx/venvs/strawpot",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert _detect_installer() == "pipx"
+
+    def test_pipx_home_without_matching_venv(self):
+        """PIPX_HOME set but venv is elsewhere => pip (not a false positive)."""
+        env = {
+            "PIPX_HOME": "/custom/pipx",
+            "VIRTUAL_ENV": "/home/user/.venv",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert _detect_installer() == "pip"
+
+    def test_pipx_home_empty_string(self):
+        """PIPX_HOME='' (set but empty) => treated as unset."""
+        with patch.dict(os.environ, {"PIPX_HOME": "", "VIRTUAL_ENV": "/home/user/.venv"}, clear=False):
+            assert _detect_installer() == "pip"
+
+    def test_virtual_env_with_pipx_segment(self):
+        venv_path = f"/home/user/.local/share/pipx{os.sep}venvs/strawpot"
+        with self._without_env("PIPX_HOME"), \
+             patch.dict(os.environ, {"VIRTUAL_ENV": venv_path}, clear=False):
+            assert _detect_installer() == "pipx"
+
+    def test_plain_pip(self):
+        with self._without_env("PIPX_HOME"), \
+             patch.dict(os.environ, {"VIRTUAL_ENV": "/home/user/.venv"}, clear=False):
+            assert _detect_installer() == "pip"
+
+    def test_no_virtual_env_no_pipx(self):
+        with self._without_env("PIPX_HOME"), \
+             self._without_env("VIRTUAL_ENV"):
+            assert _detect_installer() == "pip"
+
+    def test_pipx_substring_in_unrelated_path_no_match(self):
+        """A path like '/home/pipxfan/.venv' should NOT trigger pipx detection."""
+        with self._without_env("PIPX_HOME"), \
+             patch.dict(os.environ, {"VIRTUAL_ENV": "/home/pipxfan/.venv"}, clear=False):
+            assert _detect_installer() == "pip"
+
+    def test_both_pipx_home_and_venv_segment(self):
+        """When both signals agree, still returns pipx."""
+        env = {
+            "PIPX_HOME": "/home/user/.local/share/pipx",
+            "VIRTUAL_ENV": "/home/user/.local/share/pipx/venvs/strawpot",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert _detect_installer() == "pipx"
+
+    @staticmethod
+    @contextmanager
+    def _without_env(key: str):
+        """Context manager that temporarily removes an env var if present."""
+        sentinel = object()
+        old = os.environ.pop(key, sentinel)
+        try:
+            yield
+        finally:
+            if old is not sentinel:
+                os.environ[key] = old
 
 
 # ---------------------------------------------------------------------------

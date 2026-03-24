@@ -1088,9 +1088,14 @@ def _detect_installer() -> str:
     # PyInstaller frozen binary
     if getattr(sys, "_MEIPASS", None):
         return "binary"
-    # pipx: venv lives under ~/.local/share/pipx/venvs/ (or PIPX_HOME)
-    pipx_home = os.environ.get("PIPX_HOME", os.path.expanduser("~/.local/share/pipx"))
-    if pipx_home in sys.prefix:
+    # pipx detection: check whether the active virtualenv lives under a pipx-
+    # managed directory.  PIPX_HOME alone is insufficient (it's a user config
+    # variable that may be set even for pip-installed packages).
+    venv = os.environ.get("VIRTUAL_ENV", "")
+    pipx_home = os.environ.get("PIPX_HOME", "")
+    if pipx_home and venv.startswith(pipx_home):
+        return "pipx"
+    if f"{os.sep}pipx{os.sep}" in venv:
         return "pipx"
     return "pip"
 
