@@ -1,4 +1,4 @@
-"""StrawPot — lightweight CLI for agent orchestration."""
+"""StrawPot — CLI for AI agent orchestration."""
 
 from importlib.metadata import PackageNotFoundError, version
 
