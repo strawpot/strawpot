@@ -389,7 +389,7 @@ class TestStopMerge:
         mock_merge.assert_not_called()
 
     def test_delete_branch_false_for_pr(self, tmp_path):
-        """When merge returns KEPT_FOR_PR, cleanup receives delete_branch=False."""
+        """When merge returns KEPT_FOR_PR, cleanup receives that outcome."""
         from strawpot.isolation.worktree import WorktreeIsolator
 
         wt_isolator = MagicMock(spec=WorktreeIsolator)

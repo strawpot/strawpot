@@ -784,7 +784,7 @@ class Session:
             logger.debug("Merge failed", exc_info=True)
             return MergeOutcome.FAILED
 
-        return MergeOutcome.MERGED  # fallback: no changes to merge
+        return MergeOutcome.MERGED  # unrecognized strategy — nothing to merge
 
     # ------------------------------------------------------------------
     # Branch cleanup
