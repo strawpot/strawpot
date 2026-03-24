@@ -189,11 +189,10 @@ def _check_system_prerequisites() -> list[tuple[str, str]]:
     Returns a list of ``(tool_name, guidance)`` tuples for missing tools.
     Empty list when everything is present.
     """
-    checks = [
-        ("node", "Install from https://nodejs.org/ or via your package manager"),
-        ("npm", "Install from https://nodejs.org/ (npm is bundled with Node.js)"),
-    ]
-    return [(tool, guidance) for tool, guidance in checks if shutil.which(tool) is None]
+    from strawpot.doctor import check_prerequisites
+
+    report = check_prerequisites()
+    return [(c.name, c.hint) for c in report.missing_required]
 
 
 def _print_missing_prerequisites(
@@ -1279,89 +1278,60 @@ def upgrade(check):
 # ---------------------------------------------------------------------------
 
 
-_DOCTOR_TOOLS: list[tuple[str, str, str | None, bool]] = [
-    ("python3", "Python 3.11+", "https://python.org", True),
-    ("node", "Node.js 18+ (required by Claude Code)", "https://nodejs.org", True),
-    ("npm", "npm (ships with Node.js)", "https://nodejs.org", True),
-    ("git", "Git (required for worktree isolation)", "https://git-scm.com", True),
-    ("gh", "GitHub CLI (optional, for PR workflows)", "https://cli.github.com", False),
-    ("curl", "curl (optional, install scripts use Python download)", None, False),
-]
-
-
 @cli.command()
 def doctor():
     """Check system prerequisites and configuration.
 
-    Verifies that required tools are installed, the configured agent
-    is available, and environment variables are set.
+    Verifies that required tools are installed (with version checks),
+    the configured agent is available, and environment variables are set.
+    Displays a checklist with version info and install hints.
     """
+    from strawpot.doctor import check_env_vars, check_prerequisites, format_report
+
     config = load_config(Path.cwd())
     working_dir = str(Path.cwd())
-    all_ok = True
 
     click.echo(click.style("StrawPot Doctor", bold=True))
     click.echo(f"Version: {__version__}\n")
 
-    # 1. System tools
-    click.echo(click.style("System tools:", bold=True))
-    for tool, desc, url, required in _DOCTOR_TOOLS:
-        path = shutil.which(tool)
-        if path:
-            click.echo(f"  {click.style('OK', fg='green')}  {desc} ({path})")
-        elif required:
-            all_ok = False
-            msg = f"  {click.style('MISSING', fg='red')}  {desc}"
-            if url:
-                msg += f" — {url}"
-            click.echo(msg)
-        else:
-            msg = f"  {click.style('OPTIONAL', fg='yellow')}  {desc}"
-            if url:
-                msg += f" — {url}"
-            click.echo(msg)
+    # 1. System tools + environment (checklist format)
+    report = check_prerequisites()
+    env_results = check_env_vars()
+    click.echo(format_report(report, env_results))
+
+    all_ok = report.ok
 
     # 2. Agent resolution
     click.echo(f"\n{click.style('Agent:', bold=True)} {config.runtime}")
     try:
-        spec = resolve_agent(config.runtime, working_dir, config.agents.get(config.runtime))
-        click.echo(f"  {click.style('OK', fg='green')}  Agent resolved ({spec.version})")
+        spec = resolve_agent(
+            config.runtime, working_dir, config.agents.get(config.runtime)
+        )
+        click.echo(f"  [✓] Agent resolved ({spec.version})")
 
         # 3. Agent dependencies
         validation = validate_agent(spec)
         if validation.missing_tools:
             all_ok = False
             for tool, hint in validation.missing_tools:
-                msg = f"  {click.style('MISSING', fg='red')}  Tool: {tool}"
+                msg = f"  [✗] Tool: {tool}"
                 if hint:
                     msg += f" — install: {hint}"
                 click.echo(msg)
         if validation.missing_env:
             all_ok = False
             for var in validation.missing_env:
-                click.echo(
-                    f"  {click.style('MISSING', fg='red')}  Env: {var}"
-                )
+                click.echo(f"  [✗] Env: {var}")
     except FileNotFoundError:
         all_ok = False
         click.echo(
-            f"  {click.style('NOT FOUND', fg='red')}  "
-            "Agent not installed. Run 'strawpot start' to set up."
+            "  [✗] Agent not installed. Run 'strawpot start' to set up."
         )
     except ValueError as exc:
         all_ok = False
-        click.echo(f"  {click.style('ERROR', fg='red')}  {exc}")
+        click.echo(f"  [✗] {exc}")
 
-    # 4. Key environment variables
-    click.echo(f"\n{click.style('Environment:', bold=True)}")
-    for var in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN"]:
-        if os.environ.get(var):
-            click.echo(f"  {click.style('SET', fg='green')}    {var}")
-        else:
-            # Not all are required, just informational
-            click.echo(f"  {click.style('UNSET', fg='yellow')}  {var}")
-
-    # 5. Summary
+    # 4. Summary
     click.echo()
     if all_ok:
         click.echo(click.style("All checks passed!", fg="green", bold=True))

@@ -1,0 +1,234 @@
+"""Prerequisite checker for StrawPot (``strawpot doctor``)."""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+
+
+@dataclass
+class CheckResult:
+    """Result of a single prerequisite check."""
+
+    name: str
+    description: str
+    found: bool
+    version: str | None = None
+    path: str | None = None
+    required: bool = True
+    hint: str = ""
+
+
+@dataclass
+class DoctorReport:
+    """Aggregated results from all prerequisite checks."""
+
+    checks: list[CheckResult] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return all(c.found for c in self.checks if c.required)
+
+    @property
+    def missing_required(self) -> list[CheckResult]:
+        return [c for c in self.checks if c.required and not c.found]
+
+    @property
+    def missing_optional(self) -> list[CheckResult]:
+        return [c for c in self.checks if not c.required and not c.found]
+
+
+def _get_version(cmd: str, args: tuple[str, ...] = ("--version",)) -> str | None:
+    """Run ``cmd --version`` and return the first version-like match."""
+    path = shutil.which(cmd)
+    if not path:
+        return None
+    try:
+        result = subprocess.run(
+            [path, *args],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = result.stdout.strip() or result.stderr.strip()
+        match = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", output)
+        return match.group(1) if match else None
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+
+def _version_at_least(version: str | None, minimum: str) -> bool:
+    """Return True if *version* >= *minimum* (major.minor comparison)."""
+    if version is None:
+        return False
+    try:
+        v_parts = [int(x) for x in version.split(".")]
+        m_parts = [int(x) for x in minimum.split(".")]
+        return v_parts >= m_parts
+    except (ValueError, AttributeError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Prerequisite definitions
+# ---------------------------------------------------------------------------
+# Each tuple: (command, description, install_hint, required, min_version)
+
+_PREREQUISITES: list[tuple[str, str, str, bool, str | None]] = [
+    (
+        "python3",
+        "Python 3.11+",
+        "https://python.org",
+        True,
+        "3.11",
+    ),
+    (
+        "pip3",
+        "pip (Python package manager)",
+        "python3 -m ensurepip or https://pip.pypa.io",
+        True,
+        None,
+    ),
+    (
+        "node",
+        "Node.js 18+ (required by Claude Code)",
+        "https://nodejs.org",
+        True,
+        "18",
+    ),
+    (
+        "npm",
+        "npm (ships with Node.js)",
+        "https://nodejs.org",
+        True,
+        None,
+    ),
+    (
+        "git",
+        "git (worktree isolation, PR workflows)",
+        "https://git-scm.com",
+        True,
+        None,
+    ),
+    (
+        "gh",
+        "GitHub CLI (for PR creation)",
+        "https://cli.github.com",
+        False,
+        None,
+    ),
+    (
+        "curl",
+        "curl (optional, install scripts can use Python)",
+        "Install via your package manager",
+        False,
+        None,
+    ),
+]
+
+# Environment variables to check
+_ENV_VARS: list[tuple[str, str, bool]] = [
+    ("ANTHROPIC_API_KEY", "Anthropic API key (for Claude)", False),
+    ("OPENAI_API_KEY", "OpenAI API key (for Codex)", False),
+    ("GITHUB_TOKEN", "GitHub token (for PR workflows)", False),
+]
+
+
+def check_prerequisites() -> DoctorReport:
+    """Run all prerequisite checks and return a :class:`DoctorReport`."""
+    report = DoctorReport()
+
+    for cmd, desc, hint, required, min_ver in _PREREQUISITES:
+        path = shutil.which(cmd)
+        # Try fallback command (pip3 -> pip, python3 -> python)
+        fallback_cmd = cmd.rstrip("3")
+        if not path and fallback_cmd != cmd:
+            path = shutil.which(fallback_cmd)
+            if path:
+                cmd = fallback_cmd
+
+        if path:
+            version = _get_version(cmd)
+            version_ok = True
+            if min_ver and version:
+                version_ok = _version_at_least(version, min_ver)
+            elif min_ver and not version:
+                version_ok = True  # can't determine; assume OK
+
+            report.checks.append(
+                CheckResult(
+                    name=cmd,
+                    description=desc,
+                    found=version_ok,
+                    version=version,
+                    path=path,
+                    required=required,
+                    hint=hint if not version_ok else "",
+                )
+            )
+        else:
+            report.checks.append(
+                CheckResult(
+                    name=cmd,
+                    description=desc,
+                    found=False,
+                    required=required,
+                    hint=hint,
+                )
+            )
+
+    return report
+
+
+def check_env_vars() -> list[CheckResult]:
+    """Check key environment variables and return results."""
+    results = []
+    for var, desc, required in _ENV_VARS:
+        value = os.environ.get(var)
+        results.append(
+            CheckResult(
+                name=var,
+                description=desc,
+                found=bool(value),
+                required=required,
+            )
+        )
+    return results
+
+
+def format_report(report: DoctorReport, env_results: list[CheckResult]) -> str:
+    """Format a doctor report as a human-readable checklist string.
+
+    Returns a multi-line string with ``[✓]`` / ``[✗]`` markers.
+    """
+    lines: list[str] = []
+    lines.append("StrawPot needs:")
+
+    for check in report.checks:
+        if check.found:
+            detail = check.description
+            if check.version:
+                detail += f" ({check.version})"
+            lines.append(f"  [✓] {detail}")
+        elif check.required:
+            detail = check.description
+            if check.hint:
+                detail += f" — {check.hint}"
+            lines.append(f"  [✗] {detail}")
+        else:
+            detail = f"{check.description} (optional)"
+            if check.hint:
+                detail += f" — {check.hint}"
+            lines.append(f"  [-] {detail}")
+
+    if env_results:
+        lines.append("")
+        lines.append("Environment:")
+        for check in env_results:
+            mark = "[✓]" if check.found else "[-]"
+            lines.append(f"  {mark} {check.name}")
+
+    return "\n".join(lines)
