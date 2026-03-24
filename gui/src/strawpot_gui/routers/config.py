@@ -55,7 +55,7 @@ def _merge_config_form(existing: dict, form_data: dict) -> dict:
     merged = dict(form_data)
     for key in _RESOURCE_SECTIONS:
         if key in existing:
-            merged.setdefault(key, existing[key])
+            merged[key] = existing[key]  # Always preserve — resource sheet manages these
     return merged
 
 

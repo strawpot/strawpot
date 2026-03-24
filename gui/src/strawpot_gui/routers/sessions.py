@@ -93,7 +93,10 @@ def _read_startup_error(run_id: str) -> str | None:
     try:
         text = log_path.read_text(encoding="utf-8").strip()
         return text if text else None
+    except FileNotFoundError:
+        return None
     except OSError:
+        _logger.warning("Could not read startup error log %s", log_path, exc_info=True)
         return None
 
 
@@ -387,6 +390,7 @@ def launch_session_subprocess(
     log_dir.mkdir(parents=True, exist_ok=True)
     stderr_log = log_dir / f"{run_id}.log"
 
+    stderr_fh = None
     try:
         stderr_fh = open(stderr_log, "w")
         subprocess.Popen(
@@ -398,8 +402,10 @@ def launch_session_subprocess(
             stdin=subprocess.DEVNULL,
             env=env,
         )
-    except OSError:
         stderr_fh.close()
+    except OSError:
+        if stderr_fh is not None:
+            stderr_fh.close()
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
         raise RuntimeError("Failed to start session subprocess")
 
