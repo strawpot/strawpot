@@ -6,8 +6,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from strawpot.agents.registry import AgentSpec, ValidationResult
-from strawpot.cli import _check_system_prerequisites as _real_check_system_prerequisites
-from strawpot.cli import cli
+from strawpot.cli import _check_system_prerequisites, cli
 
 
 def _make_spec(**overrides):
@@ -164,7 +163,7 @@ def test_start_missing_system_prerequisites(mock_load, mock_prereqs, _mock_onboa
 def test_check_system_prerequisites_all_present(monkeypatch):
     """Returns empty list when node and npm are on PATH."""
     monkeypatch.setattr("strawpot.cli.shutil.which", lambda c: f"/usr/bin/{c}")
-    assert _real_check_system_prerequisites() == []
+    assert _check_system_prerequisites() == []
 
 
 def test_check_system_prerequisites_missing_node(monkeypatch):
@@ -173,7 +172,7 @@ def test_check_system_prerequisites_missing_node(monkeypatch):
         "strawpot.cli.shutil.which",
         lambda c: None if c == "node" else f"/usr/bin/{c}",
     )
-    result = _real_check_system_prerequisites()
+    result = _check_system_prerequisites()
     tool_names = [name for name, _ in result]
     assert "node" in tool_names
     assert "npm" not in tool_names

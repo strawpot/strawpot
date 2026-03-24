@@ -188,15 +188,27 @@ def _check_system_prerequisites() -> list[tuple[str, str]]:
     Returns a list of ``(tool_name, guidance)`` tuples for missing tools.
     Empty list when everything is present.
     """
-    checks: list[tuple[str, str]] = [
+    checks = [
         ("node", "Install from https://nodejs.org/ or via your package manager"),
         ("npm", "Install from https://nodejs.org/ (npm is bundled with Node.js)"),
     ]
-    missing: list[tuple[str, str]] = []
-    for tool, guidance in checks:
-        if shutil.which(tool) is None:
-            missing.append((tool, guidance))
-    return missing
+    return [(tool, guidance) for tool, guidance in checks if shutil.which(tool) is None]
+
+
+def _print_missing_prerequisites(
+    missing: list[tuple[str, str]],
+    *,
+    footer: str = "",
+) -> None:
+    """Print a formatted list of missing system prerequisites to stderr."""
+    click.echo(
+        click.style("Missing system prerequisites:", fg="red", bold=True),
+        err=True,
+    )
+    for tool, guidance in missing:
+        click.echo(f"  - {tool}: {guidance}", err=True)
+    if footer:
+        click.echo(f"\n{footer}", err=True)
 
 
 def _onboarding_wizard(working_dir: str) -> str | None:
@@ -210,16 +222,9 @@ def _onboarding_wizard(working_dir: str) -> str | None:
     # Step 1: Pre-flight check for system tools
     missing_tools = _check_system_prerequisites()
     if missing_tools:
-        click.echo(
-            click.style("Missing system prerequisites:", fg="red", bold=True),
-            err=True,
-        )
-        for tool, guidance in missing_tools:
-            click.echo(f"  - {tool}: {guidance}", err=True)
-        click.echo(
-            "\nInstall the missing tools above, then run "
-            "'strawpot start' again.",
-            err=True,
+        _print_missing_prerequisites(
+            missing_tools,
+            footer="Install the missing tools above, then run 'strawpot start' again.",
         )
         return None
 
@@ -240,10 +245,7 @@ def _onboarding_wizard(working_dir: str) -> str | None:
         click.echo(
             click.style("\nError: ", fg="red", bold=True)
             + "The agent package was installed but its runtime binary is missing.\n\n"
-            + str(exc) + "\n",
-            err=True,
-        )
-        click.echo(
+            + f"{exc}\n\n"
             "Run 'strawpot doctor' to check all prerequisites, then "
             "'strawpot start' to retry.",
             err=True,
@@ -654,17 +656,11 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     # 0b. Pre-flight check for system tools (node, npm)
     missing_prereqs = _check_system_prerequisites()
     if missing_prereqs:
-        click.echo(
-            click.style("Missing system prerequisites:", fg="red", bold=True),
-            err=True,
-        )
-        for tool, guidance in missing_prereqs:
-            click.echo(f"  - {tool}: {guidance}", err=True)
-        click.echo(
-            "\nInstall the missing tools above, then run "
+        _print_missing_prerequisites(
+            missing_prereqs,
+            footer="Install the missing tools above, then run "
             "'strawpot start' again.\n"
             "Run 'strawpot doctor' for a full system check.",
-            err=True,
         )
         sys.exit(1)
 
@@ -698,9 +694,8 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         # Check for common missing prerequisites and give targeted advice
         missing = _check_system_prerequisites()
         if missing:
-            click.echo("\nMissing system tools:", err=True)
-            for tool, guidance in missing:
-                click.echo(f"  - {tool}: {guidance}", err=True)
+            click.echo(err=True)  # blank line before the list
+            _print_missing_prerequisites(missing)
         click.echo(
             "\nRun 'strawpot doctor' to check all prerequisites.",
             err=True,
