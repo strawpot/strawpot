@@ -171,11 +171,14 @@ def recover_stale_sessions(
 def _recover_merge(
     data: dict, working_dir: str, config: StrawPotConfig
 ) -> bool:
-    """Run the merge strategy for a stale worktree session.
+    """Recover changes from a stale worktree session.
+
+    Detects whether a PR was created.  If so, nothing to merge — just
+    clean up.  Otherwise patch-apply changes as unstaged to *working_dir*.
 
     Returns ``True`` if the branch should be deleted, ``False`` to keep it.
     """
-    from strawpot.merge import merge_local, merge_pr, resolve_strategy
+    from strawpot.merge import detect_pr_created, merge_local
 
     base_branch = data.get("base_branch")
     session_branch = data.get("worktree_branch")
@@ -192,29 +195,19 @@ def _recover_merge(
         logger.debug("Worktree directory missing, skipping merge")
         return True
 
-    strategy = resolve_strategy(config.merge_strategy, working_dir)
-
     try:
-        if strategy == "local":
-            result = merge_local(
-                base_branch=base_branch,
-                session_branch=session_branch,
-                worktree_dir=worktree_dir,
-                base_dir=working_dir,
-            )
-            logger.info("Recovery merge (local): %s", result.message)
-            return True
+        if detect_pr_created(session_branch, working_dir):
+            logger.info("Recovery: PR exists for %s — cleanup only", session_branch)
+            return False  # keep remote branch for the PR
 
-        if strategy == "pr":
-            result = merge_pr(
-                base_branch=base_branch,
-                session_branch=session_branch,
-                worktree_dir=worktree_dir,
-                base_dir=working_dir,
-                pr_command=config.pr_command,
-            )
-            logger.info("Recovery merge (PR): %s", result.message)
-            return False
+        result = merge_local(
+            base_branch=base_branch,
+            session_branch=session_branch,
+            worktree_dir=worktree_dir,
+            base_dir=working_dir,
+        )
+        logger.info("Recovery merge (local): %s", result.message)
+        return True
     except Exception:
         logger.debug("Recovery merge failed", exc_info=True)
 
@@ -603,7 +596,7 @@ class Session:
             files_changed = self._detect_files_changed()
             self._tracer.session_end(
                 span_id=self._session_span_id,
-                merge_strategy=self.config.merge_strategy,
+                merge_action="pending",
                 duration_ms=duration_ms,
                 output=result.output if result else "",
                 exit_code=exit_code,
@@ -727,7 +720,10 @@ class Session:
     # ------------------------------------------------------------------
 
     def _merge_session_changes(self) -> MergeOutcome:
-        """Run the configured merge strategy for worktree isolation.
+        """Detect agent action and merge accordingly.
+
+        If the agent created a PR → nothing to merge, just clean up.
+        If no PR → patch-apply changes as unstaged to the original dir.
 
         Must be called *before* isolator cleanup (the worktree needs to
         exist for patch generation).
@@ -738,7 +734,7 @@ class Session:
             - ``KEPT_FOR_PR`` — a PR was created; keep remote branch.
             - ``FAILED`` — merge failed; keep everything for recovery.
         """
-        from strawpot.merge import merge_local, merge_pr, resolve_strategy
+        from strawpot.merge import detect_pr_created, merge_local
 
         base_branch = self._session_data.get("base_branch")
         session_branch = self._session_data.get("worktree_branch")
@@ -752,40 +748,28 @@ class Session:
             )
             return MergeOutcome.MERGED
 
-        strategy = resolve_strategy(
-            self.config.merge_strategy, self._working_dir
-        )
-
         try:
-            if strategy == "local":
-                prompt_fn = (lambda *a, **kw: "d") if self._headless else None
-                result = merge_local(
-                    base_branch=base_branch,
-                    session_branch=session_branch,
-                    worktree_dir=self._env.path,
-                    base_dir=self._working_dir,
-                    prompt=prompt_fn,
+            if detect_pr_created(session_branch, self._working_dir):
+                logger.info(
+                    "PR detected for %s — cleanup only, no local merge",
+                    session_branch,
                 )
-                logger.info("Local merge: %s", result.message)
-                return MergeOutcome.MERGED
-
-            if strategy == "pr":
-                result = merge_pr(
-                    base_branch=base_branch,
-                    session_branch=session_branch,
-                    worktree_dir=self._env.path,
-                    base_dir=self._working_dir,
-                    pr_command=self.config.pr_command,
-                )
-                logger.info("PR merge: %s", result.message)
                 return MergeOutcome.KEPT_FOR_PR
+
+            prompt_fn = (lambda *a, **kw: "d") if self._headless else None
+            result = merge_local(
+                base_branch=base_branch,
+                session_branch=session_branch,
+                worktree_dir=self._env.path,
+                base_dir=self._working_dir,
+                prompt=prompt_fn,
+            )
+            logger.info("Local merge: %s", result.message)
+            return MergeOutcome.MERGED
 
         except Exception:
             logger.debug("Merge failed", exc_info=True)
             return MergeOutcome.FAILED
-
-        logger.warning("Unrecognized merge strategy %r — keeping branch for safety", strategy)
-        return MergeOutcome.FAILED
 
     # ------------------------------------------------------------------
     # Branch cleanup

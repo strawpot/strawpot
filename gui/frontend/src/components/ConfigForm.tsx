@@ -35,9 +35,7 @@ interface FlatState {
   policy_cache_max_entries: string;
   policy_cache_ttl_seconds: string;
   policy_max_num_delegations: string;
-  session_merge_strategy: string;
   session_pull_before_session: string;
-  session_pr_command: string;
   trace_enabled: string;
 }
 
@@ -59,9 +57,7 @@ function toFlat(v: Record<string, unknown>): FlatState {
     policy_cache_max_entries: str(policy.cache_max_entries),
     policy_cache_ttl_seconds: str(policy.cache_ttl_seconds),
     policy_max_num_delegations: str(policy.max_num_delegations),
-    session_merge_strategy: str(session.merge_strategy),
     session_pull_before_session: str(session.pull_before_session),
-    session_pr_command: str(session.pr_command),
     trace_enabled: str(trace.enabled),
   };
 }
@@ -102,11 +98,8 @@ function toNested(flat: FlatState): Record<string, unknown> {
   if (Object.keys(policy).length > 0) result.policy = policy;
 
   const session: Record<string, unknown> = {};
-  if (flat.session_merge_strategy)
-    session.merge_strategy = flat.session_merge_strategy;
   if (flat.session_pull_before_session)
     session.pull_before_session = flat.session_pull_before_session;
-  if (flat.session_pr_command) session.pr_command = flat.session_pr_command;
   if (Object.keys(session).length > 0) result.session = session;
 
   const trace: Record<string, unknown> = {};
@@ -120,7 +113,7 @@ function toNested(flat: FlatState): Record<string, unknown> {
 
 const ISOLATION_OPTIONS = ["none", "worktree"];
 const PERMISSION_OPTIONS = ["default", "plan", "bypassPermissions"];
-const MERGE_OPTIONS = ["auto", "local", "pr"];
+
 const PULL_OPTIONS = ["prompt", "always", "never"];
 const BOOL_OPTIONS = ["true", "false"];
 
@@ -348,15 +341,6 @@ export default function ConfigForm({
         <h3 className="text-sm font-semibold">Session</h3>
         <Separator />
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Merge Strategy">
-            <SelectField
-              value={state.session_merge_strategy}
-              onChange={set("session_merge_strategy")}
-              options={MERGE_OPTIONS}
-              placeholder={ph?.session_merge_strategy || "auto"}
-              allowEmpty
-            />
-          </Field>
           <Field label="Pull Before Session">
             <SelectField
               value={state.session_pull_before_session}
@@ -364,17 +348,6 @@ export default function ConfigForm({
               options={PULL_OPTIONS}
               placeholder={ph?.session_pull_before_session || "prompt"}
               allowEmpty
-            />
-          </Field>
-          <Field label="PR Command" className="sm:col-span-3">
-            <Input
-              value={state.session_pr_command}
-              onChange={(e) => set("session_pr_command")(e.target.value)}
-              placeholder={
-                ph?.session_pr_command ||
-                "gh pr create --base {base_branch} --head {session_branch}"
-              }
-              className="h-8 text-xs font-mono"
             />
           </Field>
         </div>

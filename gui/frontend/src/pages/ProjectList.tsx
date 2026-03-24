@@ -144,7 +144,6 @@ function RegisterForm({
   const [displayName, setDisplayName] = useState("");
   const [workingDir, setWorkingDir] = useState("");
   const [isolation, setIsolation] = useState("");
-  const [mergeStrategy, setMergeStrategy] = useState("");
   const [showBrowser, setShowBrowser] = useState(false);
   const [gitInitPrompt, setGitInitPrompt] = useState(false);
   const createProject = useCreateProject();
@@ -152,10 +151,9 @@ function RegisterForm({
   const globalConfig = useGlobalConfig();
 
   const globalDefaults = globalConfig.data?.defaults as
-    | { isolation?: string; session?: { merge_strategy?: string } }
+    | { isolation?: string }
     | undefined;
   const defaultIsolation = globalDefaults?.isolation ?? "none";
-  const defaultMergeStrategy = globalDefaults?.session?.merge_strategy ?? "auto";
 
   const effectiveIsolation = isolation || defaultIsolation;
 
@@ -165,9 +163,7 @@ function RegisterForm({
       working_dir: workingDir.trim(),
     });
     const configData: Record<string, unknown> = {};
-    const selectedMergeStrategy = mergeStrategy || defaultMergeStrategy;
     configData.isolation = effectiveIsolation;
-    configData.session = { merge_strategy: selectedMergeStrategy };
     await saveConfig.mutateAsync({
       projectId: (project as { id: number }).id,
       data: configData,
@@ -262,22 +258,6 @@ function RegisterForm({
                 <SelectContent>
                   <SelectItem value="none">none</SelectItem>
                   <SelectItem value="worktree">worktree</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="merge-strategy">Merge Strategy</Label>
-              <Select
-                value={mergeStrategy || defaultMergeStrategy}
-                onValueChange={setMergeStrategy}
-              >
-                <SelectTrigger id="merge-strategy">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">auto</SelectItem>
-                  <SelectItem value="local">local</SelectItem>
-                  <SelectItem value="pr">pr</SelectItem>
                 </SelectContent>
               </Select>
             </div>

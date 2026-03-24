@@ -14,7 +14,6 @@ def _make_config(**overrides):
         orchestrator_role="orchestrator",
         runtime="strawpot-claude-code",
         isolation="none",
-        merge_strategy="auto",
         pull_before_session="never",
         denden_addr="127.0.0.1:9700",
         memory=None,

@@ -120,7 +120,7 @@ class Tracer:
         return span_id
 
     def session_end(
-        self, *, span_id: str, merge_strategy: str, duration_ms: int,
+        self, *, span_id: str, merge_action: str, duration_ms: int,
         output: str = "", exit_code: int = 0,
         files_changed: list[str] | None = None,
     ) -> None:
@@ -129,7 +129,7 @@ class Tracer:
         self.emit(
             "session_end",
             span_id,
-            merge_strategy=merge_strategy,
+            merge_action=merge_action,
             duration_ms=duration_ms,
             output_ref=output_ref,
             exit_code=exit_code,

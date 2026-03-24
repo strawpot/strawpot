@@ -34,9 +34,7 @@ def _config_to_nested(config: StrawPotConfig) -> dict:
             "max_num_delegations": config.max_num_delegations,
         },
         "session": {
-            "merge_strategy": config.merge_strategy,
             "pull_before_session": config.pull_before_session,
-            "pr_command": config.pr_command,
         },
         "trace": {"enabled": config.trace},
     }

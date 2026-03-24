@@ -710,12 +710,6 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
     help="Isolation method.",
 )
 @click.option(
-    "--merge-strategy",
-    default=None,
-    type=click.Choice(["auto", "local", "pr"]),
-    help="How to apply session changes at cleanup.",
-)
-@click.option(
     "--pull",
     default=None,
     type=click.Choice(["auto", "always", "never", "prompt"]),
@@ -743,7 +737,7 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config).")
 @click.option("--yes", "-y", "yes_flag", is_flag=True, default=False, help="Auto-accept all install prompts (tools, agents, etc.).")
 @click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely.")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools):
+def start(role, runtime, isolation, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -765,8 +759,6 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         config.runtime = runtime
     if isolation:
         config.isolation = isolation
-    if merge_strategy:
-        config.merge_strategy = merge_strategy
     if pull:
         config.pull_before_session = pull
     if no_cache_delegations:
@@ -1058,9 +1050,7 @@ def show_config():
     click.echo(f"permission_mode:      {config.permission_mode}")
     click.echo(f"max_depth:            {config.max_depth}")
     click.echo(f"agent_timeout:        {config.agent_timeout}")
-    click.echo(f"merge_strategy:       {config.merge_strategy}")
     click.echo(f"pull_before_session:  {config.pull_before_session}")
-    click.echo(f"pr_command:           {config.pr_command}")
     click.echo(f"agents:               {config.agents}")
     click.echo(f"skills:               {config.skills}")
     click.echo(f"roles:                {config.roles}")

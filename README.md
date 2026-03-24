@@ -270,7 +270,6 @@ role = "ai-ceo"
 permission_mode = "default"
 
 [session]
-merge_strategy = "auto"                 # auto | local | pr
 pull_before_session = "prompt"          # auto | always | never | prompt
 
 [policy]

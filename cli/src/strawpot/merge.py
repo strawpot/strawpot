@@ -1,23 +1,18 @@
-"""Merge strategies — apply session changes at cleanup time.
+"""Merge — apply worktree session changes at cleanup time.
 
-Handles local patch application, PR creation, and auto-detection of the
-appropriate strategy.  Called from ``Session.stop()`` for worktree (and
-future docker) isolation modes.
+Detects what the agent actually did and acts accordingly:
 
-Strategies
-----------
-- ``local`` — generate a unified diff patch from the session branch, apply
-  it to the base branch in the project directory.  Conflicts are detected
+- **PR created** — the work product is the PR; nothing to merge locally,
+  just clean up the worktree.
+- **No PR** — generate a unified diff patch from the session branch and
+  apply it to the base branch as unstaged changes.  Conflicts are detected
   and the user is prompted for resolution.
-- ``pr`` — push the session branch to the remote and create a pull request
-  using the configured ``pr_command`` template.
-- ``auto`` — detect a remote (``git remote get-url origin``): use ``pr``
-  if a remote exists, otherwise fall back to ``local``.
+
+Called from ``Session.stop()`` for worktree isolation.
 """
 
 import logging
 import os
-import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -34,7 +29,7 @@ logger = logging.getLogger(__name__)
 class MergeResult:
     """Outcome of a merge operation."""
 
-    strategy: str  # "local", "pr", or "none"
+    strategy: str  # "local" or "none"
     success: bool
     message: str  # human-readable summary
     pr_url: str | None = None
@@ -57,12 +52,6 @@ def _git(args: list[str], cwd: str, **kwargs) -> subprocess.CompletedProcess:
     )
 
 
-def _has_remote(cwd: str) -> bool:
-    """Return ``True`` if the repo at *cwd* has an ``origin`` remote."""
-    result = _git(["remote", "get-url", "origin"], cwd=cwd)
-    return result.returncode == 0
-
-
 def _is_git_repo(path: str) -> bool:
     """Return ``True`` if *path* is inside a git repository."""
     result = _git(["rev-parse", "--git-dir"], cwd=path)
@@ -70,23 +59,40 @@ def _is_git_repo(path: str) -> bool:
 
 
 # ------------------------------------------------------------------
-# Strategy resolution
+# PR detection
 # ------------------------------------------------------------------
 
 
-def resolve_strategy(strategy: str, base_dir: str) -> str:
-    """Resolve ``"auto"`` to ``"local"`` or ``"pr"``.
+def detect_pr_created(session_branch: str, base_dir: str) -> bool:
+    """Return ``True`` if *session_branch* has an open pull request.
 
-    Args:
-        strategy: One of ``"auto"``, ``"local"``, ``"pr"``.
-        base_dir: Project root directory.
-
-    Returns:
-        ``"local"`` or ``"pr"``.
+    Uses ``gh pr list`` when available.  Returns ``False`` when ``gh``
+    is not installed or the check fails — the safe default is to
+    patch-apply changes rather than silently discard them.
     """
-    if strategy == "auto":
-        return "pr" if _has_remote(base_dir) else "local"
-    return strategy
+    if not shutil.which("gh"):
+        logger.debug("gh CLI not found — assuming no PR created")
+        return False
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "list", "--head", session_branch, "--state", "open",
+             "--json", "number", "--limit", "1"],
+            cwd=base_dir,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() not in ("", "[]")
+        logger.debug(
+            "gh pr list failed (exit %d) for %s",
+            result.returncode,
+            session_branch,
+        )
+        return False
+    except Exception:
+        logger.debug("gh pr list check failed for %s", session_branch, exc_info=True)
+        return False
 
 
 # ------------------------------------------------------------------
@@ -311,7 +317,7 @@ def _prompt_conflict_resolution(
 
 
 # ------------------------------------------------------------------
-# Public: local strategy
+# Public: local patch-apply
 # ------------------------------------------------------------------
 
 
@@ -324,7 +330,7 @@ def merge_local(
     echo=None,
     prompt=None,
 ) -> MergeResult:
-    """Execute the **local** merge strategy.
+    """Patch-apply session changes as unstaged changes to *base_dir*.
 
     Generates a patch from *session_branch* vs *base_branch* (run in
     *worktree_dir* which has access to both), then applies it to
@@ -384,95 +390,4 @@ def merge_local(
         strategy="local",
         success=True,
         message="All session changes discarded.",
-    )
-
-
-# ------------------------------------------------------------------
-# Public: PR strategy
-# ------------------------------------------------------------------
-
-
-def merge_pr(
-    *,
-    base_branch: str,
-    session_branch: str,
-    worktree_dir: str,
-    base_dir: str,
-    pr_command: str,
-    echo=None,
-) -> MergeResult:
-    """Execute the **PR** merge strategy.
-
-    Commits any uncommitted changes in the worktree, pushes the branch
-    to the remote, and creates a PR using the configured *pr_command*
-    template.
-
-    Args:
-        base_branch: Branch the session diverged from.
-        session_branch: The session's worktree branch.
-        worktree_dir: Path to the worktree.
-        base_dir: Project root.
-        pr_command: PR creation command template with ``{base_branch}``
-            and ``{session_branch}`` placeholders.
-        echo: Output callable (for testing).
-    """
-    import click as _click
-
-    _echo = echo or _click.echo
-
-    # 1. Commit any uncommitted changes
-    status = _git(["status", "--porcelain"], cwd=worktree_dir)
-    if status.stdout.strip():
-        _git(["add", "-A"], cwd=worktree_dir)
-        _git(
-            ["commit", "-m", "strawpot: uncommitted changes from session"],
-            cwd=worktree_dir,
-        )
-
-    # 2. Push branch
-    push = _git(
-        ["push", "-u", "origin", session_branch],
-        cwd=worktree_dir,
-    )
-    if push.returncode != 0:
-        return MergeResult(
-            strategy="pr",
-            success=False,
-            message=f"Failed to push branch: {push.stderr.strip()}",
-        )
-
-    # 3. Create PR (if command is non-empty)
-    pr_url = None
-    if pr_command.strip():
-        cmd = pr_command.format(
-            base_branch=base_branch,
-            session_branch=session_branch,
-        )
-        tokens = shlex.split(cmd)
-        pr_result = subprocess.run(
-            tokens,
-            cwd=base_dir,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        if pr_result.returncode == 0:
-            pr_url = pr_result.stdout.strip()
-            _echo(f"PR created: {pr_url}")
-        else:
-            _echo(f"PR creation failed: {pr_result.stderr.strip()}")
-            return MergeResult(
-                strategy="pr",
-                success=True,
-                message=(
-                    "Branch pushed but PR creation failed: "
-                    f"{pr_result.stderr.strip()}"
-                ),
-            )
-
-    return MergeResult(
-        strategy="pr",
-        success=True,
-        message="Branch pushed and PR created.",
-        pr_url=pr_url,
     )

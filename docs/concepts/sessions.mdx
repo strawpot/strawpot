@@ -22,31 +22,21 @@ When you run `strawpot start`:
 
 Session state is tracked in `.strawpot/sessions/<session_id>/session.json`.
 
-## Merge Strategies
+## Worktree Merge Behavior
 
-When a session ends with worktree isolation, changes need to be merged back. The `merge_strategy` config controls how:
+When a worktree session ends, StrawPot detects what the agent actually did and acts accordingly — no configuration needed:
 
-| Strategy | Behavior |
-|----------|----------|
-| `auto` | Detect remote: use `pr` if remote exists, `local` otherwise |
-| `local` | Generate a patch from the session branch, apply to the base branch |
-| `pr` | Push session branch, create PR via `gh` (or custom command) |
+| Agent action | What happens at cleanup |
+|-------------|------------------------|
+| **Created a PR** | Nothing to merge — the PR is the work product. Worktree is cleaned up, remote branch preserved. |
+| **No PR** | Changes are patch-applied as **unstaged changes** to the original working directory, then worktree is cleaned up. |
 
-### Local Merge
+### How it works
 
-1. Generate patch: `git diff base_branch...session_branch`
-2. Switch to base branch
-3. Apply patch with `git apply`
-4. If conflicts arise, prompt user for resolution
-
-### PR Merge
-
-1. Push session branch to remote
-2. Run the PR command (configurable):
-   ```
-   gh pr create --base {base_branch} --head {session_branch}
-   ```
-3. The `pr_command` config supports `{base_branch}` and `{session_branch}` placeholders
+1. On session end, StrawPot checks whether the session branch has an open pull request (via `gh pr list`)
+2. **If PR exists** → just clean up the worktree. The work lives on the remote.
+3. **If no PR** → generate a patch (`git diff base..session`), apply it to the base directory as unstaged changes
+4. If the patch has conflicts, the user is prompted for resolution (apply all, skip conflicts, or discard)
 
 ## Pull Before Session
 
@@ -152,7 +142,7 @@ This separation keeps the event stream small and scannable while preserving full
 | Event | When | Key data |
 |-------|------|----------|
 | `session_start` | Session begins | role, runtime, isolation, task_ref |
-| `session_end` | Session stops | merge_strategy, duration_ms, output_ref, files_changed |
+| `session_end` | Session stops | merge_action, duration_ms, output_ref, files_changed |
 | `delegate_start` | Delegation begins | role, depth, context_ref, session_id, parent_agent_id |
 | `delegate_end` | Delegation completes | exit_code, summary, duration_ms, output_ref, role, session_id, agent_id |
 | `delegate_denied` | Policy blocks delegation | role, reason, depth |

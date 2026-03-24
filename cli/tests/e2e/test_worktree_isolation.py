@@ -1,4 +1,4 @@
-"""E2E tests for git worktree isolation and merge strategies."""
+"""E2E tests for git worktree isolation."""
 
 import os
 import subprocess
@@ -13,13 +13,12 @@ class TestWorktreeIsolation:
     def test_worktree_agent_changes_merged_local(
         self, make_session, git_project, strawpot_home
     ):
-        """Agent writes a file in worktree; local merge applies it to base."""
+        """Agent writes a file in worktree; changes are patched back to base."""
         session = make_session(
             str(git_project),
             task="write from-worktree.txt",
             config_overrides={
                 "isolation": "worktree",
-                "merge_strategy": "local",
             },
         )
         session.start(str(git_project))
@@ -39,7 +38,6 @@ class TestWorktreeIsolation:
             task="noop",
             config_overrides={
                 "isolation": "worktree",
-                "merge_strategy": "local",
             },
         )
         session.start(str(git_project))
@@ -63,7 +61,6 @@ class TestWorktreeIsolation:
             task="noop",
             config_overrides={
                 "isolation": "worktree",
-                "merge_strategy": "local",
             },
         )
         session.start(str(git_project))

@@ -16,9 +16,8 @@ from strawpot.merge import (
     _ensure_patch_available,
     _generate_patch,
     _prompt_conflict_resolution,
+    detect_pr_created,
     merge_local,
-    merge_pr,
-    resolve_strategy,
 )
 
 
@@ -84,24 +83,43 @@ def _create_worktree(base_path, session_id):
 
 
 # ---------------------------------------------------------------------------
-# resolve_strategy
+# detect_pr_created
 # ---------------------------------------------------------------------------
 
 
-class TestResolveStrategy:
-    @patch("strawpot.merge._has_remote", return_value=True)
-    def test_auto_with_remote_returns_pr(self, _mock):
-        assert resolve_strategy("auto", "/fake") == "pr"
+class TestDetectPrCreated:
+    @patch("strawpot.merge.shutil.which", return_value=None)
+    def test_no_gh_returns_false(self, _mock):
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
-    @patch("strawpot.merge._has_remote", return_value=False)
-    def test_auto_without_remote_returns_local(self, _mock):
-        assert resolve_strategy("auto", "/fake") == "local"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_pr_exists(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='[{"number":42}]', stderr=""
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is True
 
-    def test_local_passthrough(self):
-        assert resolve_strategy("local", "/fake") == "local"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_no_pr(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="[]", stderr=""
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
-    def test_pr_passthrough(self):
-        assert resolve_strategy("pr", "/fake") == "pr"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_gh_fails_returns_false(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="error"
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
+
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run", side_effect=Exception("timeout"))
+    def test_exception_returns_false(self, _mock_run, _mock_which):
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +193,7 @@ class TestCheckPatch:
         assert conflicts == []
 
     def test_conflicting_patch(self, tmp_path):
-        """Working tree differs from patch context → conflict detected.
+        """Working tree differs from patch context — conflict detected.
 
         git apply --check fails when the working tree has modifications
         that don't match the patch's expected ``-`` lines.
@@ -434,172 +452,6 @@ class TestMergeLocal:
 
         assert result.success
         assert "skip" in result.message.lower()
-
-
-# ---------------------------------------------------------------------------
-# merge_pr
-# ---------------------------------------------------------------------------
-
-
-class TestMergePR:
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_push_and_create_pr(self, mock_run, mock_git):
-        """Successful push + PR creation."""
-        # status --porcelain: no uncommitted changes
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        # pr_command
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://github.com/pr/1\n", stderr=""
-        )
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_abc",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create --base {base_branch} --head {session_branch}",
-            echo=lambda x: None,
-        )
-
-        assert result.success
-        assert result.pr_url == "https://github.com/pr/1"
-        assert result.strategy == "pr"
-
-        # PR command should be tokenized via shlex (no shell=True)
-        mock_run.assert_called_once()
-        call_args, call_kwargs = mock_run.call_args
-        assert call_args[0] == [
-            "gh", "pr", "create",
-            "--base", "main",
-            "--head", "strawpot/run_abc",
-        ]
-        assert "shell" not in call_kwargs
-
-    @patch("strawpot.merge._git")
-    def test_push_fails(self, mock_git):
-        """Push failure returns error."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=1, stderr="permission denied"),  # push
-        ]
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_fail",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        assert not result.success
-        assert "permission denied" in result.message
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_push_ok_pr_fails(self, mock_run, mock_git):
-        """Push succeeds but PR creation fails — partial success."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="gh: not found"
-        )
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_partial",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        assert result.success  # branch pushed
-        assert result.pr_url is None
-        assert "PR creation failed" in result.message
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_commits_uncommitted_changes(self, mock_run, mock_git):
-        """Uncommitted changes are committed before push."""
-        mock_git.side_effect = [
-            MagicMock(stdout="M file.py\n", returncode=0),  # status (dirty)
-            MagicMock(returncode=0),  # add -A
-            MagicMock(returncode=0),  # commit
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://pr/1\n", stderr=""
-        )
-
-        merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_dirty",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        # Check add -A and commit were called
-        calls = mock_git.call_args_list
-        assert calls[1][0][0] == ["add", "-A"]
-        assert calls[2][0][0][0] == "commit"
-
-    @patch("strawpot.merge._git")
-    def test_empty_pr_command(self, mock_git):
-        """Empty pr_command skips PR creation."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_noPR",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="",
-            echo=lambda x: None,
-        )
-
-        assert result.success
-        assert result.pr_url is None
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_pr_command_shlex_tokenization(self, mock_run, mock_git):
-        """Complex pr_command with quoted args is tokenized correctly."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://pr/2\n", stderr=""
-        )
-
-        merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_x",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command='my-tool --title "PR for {session_branch}" --base {base_branch}',
-            echo=lambda x: None,
-        )
-
-        call_args = mock_run.call_args[0][0]
-        assert call_args == [
-            "my-tool",
-            "--title", "PR for strawpot/run_x",
-            "--base", "main",
-        ]
-
 
 
 # ---------------------------------------------------------------------------

@@ -27,9 +27,7 @@ def test_defaults():
     assert config.roles == {}
     assert config.memory == "dial"
     assert config.memory_config == {}
-    assert config.merge_strategy == "auto"
     assert config.pull_before_session == "prompt"
-    assert "gh pr create" in config.pr_command
     assert config.trace is True
     assert config.cleanup_branches is True
     assert config.cleanup_remote is True
@@ -103,9 +101,7 @@ def test_load_config_full(tmp_path, monkeypatch):
         "max_delegate_retries = 2\n"
         "\n"
         "[session]\n"
-        'merge_strategy = "pr"\n'
         'pull_before_session = "auto"\n'
-        'pr_command = "glab mr create --source {session_branch} --target {base_branch}"\n'
         "\n"
         "[memory_config]\n"
         'storage_dir = "/custom/mem"\n'
@@ -126,9 +122,7 @@ def test_load_config_full(tmp_path, monkeypatch):
     assert config.agents == {"strawpot-claude-code": {"model": "claude-sonnet-4-6"}}
     assert config.memory == "test-provider"
     assert config.memory_config == {"storage_dir": "/custom/mem"}
-    assert config.merge_strategy == "pr"
     assert config.pull_before_session == "auto"
-    assert config.pr_command == "glab mr create --source {session_branch} --target {base_branch}"
 
 
 def test_load_config_session_override(tmp_path, monkeypatch):
@@ -137,8 +131,8 @@ def test_load_config_session_override(tmp_path, monkeypatch):
     global_dir.mkdir()
     (global_dir / "strawpot.toml").write_text(
         "[session]\n"
-        'merge_strategy = "local"\n'
         'pull_before_session = "never"\n'
+        "cleanup_branches = false\n"
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
@@ -146,12 +140,12 @@ def test_load_config_session_override(tmp_path, monkeypatch):
     project_dir.mkdir(parents=True)
     (project_dir / "strawpot.toml").write_text(
         "[session]\n"
-        'merge_strategy = "pr"\n'
+        'pull_before_session = "always"\n'
     )
 
     config = load_config(project_dir)
-    assert config.merge_strategy == "pr"
-    assert config.pull_before_session == "never"  # from global
+    assert config.pull_before_session == "always"
+    assert config.cleanup_branches is False  # from global
 
 
 def test_load_config_agents_merge(tmp_path, monkeypatch):
