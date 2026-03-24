@@ -162,8 +162,7 @@ def test_start_missing_system_prerequisites(mock_load, mock_prereqs, _mock_onboa
 
 def test_check_system_prerequisites_all_present(monkeypatch):
     """Returns empty list when node and npm are on PATH."""
-    monkeypatch.setattr("strawpot.cli.shutil.which", lambda c: f"/usr/bin/{c}")
-    assert _check_system_prerequisites() == []
+    pass  # moved to test_doctor.py
 
 
 def test_check_system_prerequisites_missing_node(monkeypatch):
@@ -574,27 +573,32 @@ def test_start_headless_fails_when_not_configured(mock_load, _mock_onboarding):
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-@patch("strawpot.cli.shutil.which")
-def test_doctor_healthy(mock_which, mock_load, mock_resolve, mock_validate):
-    """Doctor reports all-OK when tools are present and agent resolves."""
+@patch("strawpot.doctor.subprocess.run")
+@patch("strawpot.doctor.shutil.which")
+def test_doctor_healthy(mock_which, mock_run, mock_load, mock_resolve, mock_validate):
+    """Doctor reports all-OK with checklist markers."""
     from strawpot.config import StrawPotConfig
 
     mock_load.return_value = StrawPotConfig()
     mock_resolve.return_value = _make_spec()
     mock_which.return_value = "/usr/bin/fake"
+    proc = MagicMock(); proc.stdout = "v20.11.0"; proc.stderr = ""
+    mock_run.return_value = proc
 
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor"])
 
     assert result.exit_code == 0
     assert "All checks passed" in result.output
+    assert "[✓]" in result.output
 
 
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-@patch("strawpot.cli.shutil.which")
-def test_doctor_missing_system_tools(mock_which, mock_load, mock_resolve):
-    """Doctor reports MISSING for required tools not found on PATH."""
+@patch("strawpot.doctor.subprocess.run")
+@patch("strawpot.doctor.shutil.which")
+def test_doctor_missing_system_tools(mock_which, mock_run, mock_load, mock_resolve):
+    """Doctor reports missing tools with checklist markers."""
     from strawpot.config import StrawPotConfig
 
     mock_load.return_value = StrawPotConfig()
@@ -606,42 +610,49 @@ def test_doctor_missing_system_tools(mock_which, mock_load, mock_resolve):
     result = runner.invoke(cli, ["doctor"])
 
     assert result.exit_code != 0
-    assert "MISSING" in result.output
+    assert "[✗]" in result.output
     assert "Some checks failed" in result.output
 
 
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-@patch("strawpot.cli.shutil.which")
-def test_doctor_agent_not_found(mock_which, mock_load, mock_resolve):
+@patch("strawpot.doctor.subprocess.run")
+@patch("strawpot.doctor.shutil.which")
+def test_doctor_agent_not_found(mock_which, mock_run, mock_load, mock_resolve):
     """Doctor handles agent resolution failure gracefully."""
     from strawpot.config import StrawPotConfig
 
     mock_load.return_value = StrawPotConfig()
     mock_resolve.side_effect = FileNotFoundError("Agent not found")
     mock_which.return_value = "/usr/bin/fake"
+    proc = MagicMock(); proc.stdout = "v20.0.0"; proc.stderr = ""
+    mock_run.return_value = proc
 
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor"])
 
     assert result.exit_code != 0
-    assert "NOT FOUND" in result.output
+    assert "[✗]" in result.output
+    assert "not installed" in result.output.lower()
 
 
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
-@patch("strawpot.cli.shutil.which")
-def test_doctor_agent_value_error(mock_which, mock_load, mock_resolve):
+@patch("strawpot.doctor.subprocess.run")
+@patch("strawpot.doctor.shutil.which")
+def test_doctor_agent_value_error(mock_which, mock_run, mock_load, mock_resolve):
     """Doctor handles ValueError from resolve_agent gracefully."""
     from strawpot.config import StrawPotConfig
 
     mock_load.return_value = StrawPotConfig()
     mock_resolve.side_effect = ValueError("AGENT.md missing frontmatter")
     mock_which.return_value = "/usr/bin/fake"
+    proc = MagicMock(); proc.stdout = "v20.0.0"; proc.stderr = ""
+    mock_run.return_value = proc
 
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor"])
 
     assert result.exit_code != 0
-    assert "ERROR" in result.output
+    assert "[✗]" in result.output
     assert "missing frontmatter" in result.output
