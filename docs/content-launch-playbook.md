@@ -1,7 +1,7 @@
 # Content Launch Playbook
 
 Step-by-step guide for distributing the blog post across channels.
-This is a manual/operational task for the founder.
+This is a manual task for the founder.
 
 ## Prerequisites
 
@@ -16,13 +16,13 @@ Before starting:
 
 ## Posting Order and Timing
 
-Post channels in this order with gaps between them:
+Post channels in this order, with gaps between them:
 
 1. **Hacker News** -- weekday, 9-11am ET
-2. **Reddit** -- 2-4 hours after HN post
+2. **Reddit** -- 2-4 hours after HN
 3. **Twitter** -- after Reddit, or skip if < 500 followers
 
-Do NOT post everything simultaneously. HN first, let it breathe.
+Do NOT post everything simultaneously. Post HN first and let it breathe.
 
 ---
 

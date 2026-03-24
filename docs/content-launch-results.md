@@ -1,7 +1,7 @@
 # Content Launch Results
 
 Tracking document for the first content launch campaign.
-Updated as results come in after posting.
+Fill in as results come in after posting.
 
 ## Pre-Launch Baselines
 
@@ -18,7 +18,7 @@ Capture these **before** posting anything.
 - **Post URL**:
 - **Title**: Show HN: I tried to automate my entire company with 32 AI agents
 - **Posted at**: (weekday, 9-11am ET)
-- **First comment posted**: [ ] yes / [ ] no
+- **First comment posted**: yes / no
 
 | Time after post | Points | Comments | Front page? |
 |-----------------|--------|----------|-------------|
@@ -28,8 +28,8 @@ Capture these **before** posting anything.
 | +24h            |        |          |             |
 | +48h            |        |          |             |
 
-**Peak front-page position**: N/A
-**Total time on front page**: N/A
+- **Peak front-page position**: N/A
+- **Total time on front page**: N/A
 
 ## Reddit
 
@@ -74,7 +74,7 @@ Capture these **before** posting anything.
 - **Thread URL**:
 - **Posted from**: personal account
 - **Posted at**:
-- **Skipped?**: [ ] yes (< 500 followers) / [ ] no
+- **Skipped?**: yes (< 500 followers) / no
 
 | Time after post | Impressions | Likes | Retweets | Replies |
 |-----------------|-------------|-------|----------|---------|
