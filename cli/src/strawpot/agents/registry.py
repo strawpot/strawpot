@@ -245,17 +245,15 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     # Check declared tool dependencies
     tools = strawpot_meta.get("tools", {})
     for tool_name, tool_meta in tools.items():
-        if shutil.which(tool_name) is None:
-            # Guard against YAML null values (e.g. "tools:\n  npm:")
-            if not isinstance(tool_meta, dict):
-                tool_meta = {}
-            desc = tool_meta.get("description", "")
-            install_hints = tool_meta.get("install", {})
-            hint = install_hints.get(_current_os(), "")
-            guidance = desc
-            if hint:
-                guidance += f"\n    Install: {hint}"
-            missing.append((tool_name, guidance))
+        if shutil.which(tool_name) is not None:
+            continue
+        # Guard against YAML null values (e.g. "tools:\n  npm:")
+        if not isinstance(tool_meta, dict):
+            tool_meta = {}
+        desc = tool_meta.get("description", "")
+        hint = (tool_meta.get("install") or {}).get(_current_os(), "")
+        guidance = f"{desc}\n    Install: {hint}" if hint else desc
+        missing.append((tool_name, guidance))
 
     return missing
 
