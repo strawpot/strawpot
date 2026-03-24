@@ -31,6 +31,8 @@ def test_defaults():
     assert config.pull_before_session == "prompt"
     assert "gh pr create" in config.pr_command
     assert config.trace is True
+    assert config.cleanup_branches is True
+    assert config.cleanup_remote is True
 
 
 def test_strawpot_home_default(monkeypatch):

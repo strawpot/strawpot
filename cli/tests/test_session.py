@@ -411,8 +411,12 @@ class TestStopMerge:
         call_kwargs = wt_isolator.cleanup.call_args.kwargs
         assert call_kwargs["delete_branch"] is False
 
-    def test_delete_branch_true_for_local(self, tmp_path):
-        """When merge returns True, cleanup receives delete_branch=True."""
+    def test_worktree_cleanup_always_keeps_branch(self, tmp_path):
+        """Worktree isolator cleanup always receives delete_branch=False.
+
+        Branch deletion is now handled separately by _cleanup_session_branch
+        (issue #459) rather than inside the isolator.
+        """
         from strawpot.isolation.worktree import WorktreeIsolator
 
         wt_isolator = MagicMock(spec=WorktreeIsolator)
@@ -433,7 +437,7 @@ class TestStopMerge:
 
         wt_isolator.cleanup.assert_called_once()
         call_kwargs = wt_isolator.cleanup.call_args.kwargs
-        assert call_kwargs["delete_branch"] is True
+        assert call_kwargs["delete_branch"] is False
 
     def test_merge_failure_still_cleans_up(self, tmp_path):
         """If merge raises an exception, isolator.cleanup still runs."""
