@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -297,10 +298,8 @@ def _get_agent_install_cmd(agent_dir: Path) -> str | None:
         return None
 
 
-import re as _re
-
 # Pattern: curl [flags] <URL> | sh [args]
-_CURL_PIPE_SH_RE = _re.compile(
+_CURL_PIPE_SH_RE = re.compile(
     r"^curl\s+[^|]*?(https?://\S+)\s*\|\s*sh\b(.*)$"
 )
 
@@ -337,11 +336,12 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
     Returns False (and prints to stderr) if the install fails or no install
     method is found.
     """
+    env = {**os.environ, "INSTALL_DIR": str(agent_dir)}
+    run_kw = dict(cwd=str(agent_dir), env=env, stdout=sys.stdout, stderr=sys.stderr)
+
     # 1. Try metadata.strawpot.install.<os>
     install_cmd = _get_agent_install_cmd(agent_dir)
     if install_cmd:
-        env = {**os.environ, "INSTALL_DIR": str(agent_dir)}
-
         # Prefer Python-native download over shelling out to curl
         match = _CURL_PIPE_SH_RE.match(install_cmd.strip())
         if match:
@@ -353,23 +353,11 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
                 click.echo(str(exc), err=True)
                 return False
             click.echo(f"Running install for '{name}'...")
-            result = subprocess.run(
-                ["sh"],
-                input=script_bytes,
-                cwd=str(agent_dir),
-                env=env,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
+            result = subprocess.run(["sh"], input=script_bytes, **run_kw)
         else:
             click.echo(f"Running install for '{name}'...")
             result = subprocess.run(
-                ["sh", "-c", install_cmd],
-                cwd=str(agent_dir),
-                env=env,
-                stdin=sys.stdin,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
+                ["sh", "-c", install_cmd], stdin=sys.stdin, **run_kw,
             )
         if result.returncode != 0:
             click.echo(f"Install failed for '{name}'.", err=True)
@@ -381,12 +369,7 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
     if install_script.is_file():
         click.echo(f"Running install script for '{name}'...")
         result = subprocess.run(
-            ["sh", str(install_script)],
-            cwd=str(agent_dir),
-            env={**os.environ, "INSTALL_DIR": str(agent_dir)},
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
+            ["sh", str(install_script)], stdin=sys.stdin, **run_kw,
         )
         if result.returncode != 0:
             click.echo(f"Install script failed for '{name}'.", err=True)

@@ -231,9 +231,6 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     strawpot_meta = meta.get("strawpot", {})
     missing: list[tuple[str, str]] = []
 
-    # Note: curl is no longer checked here — the CLI downloads install
-    # scripts using Python's urllib, eliminating the curl dependency.
-
     # Check declared tool dependencies
     tools = strawpot_meta.get("tools", {})
     for tool_name, tool_meta in tools.items():
