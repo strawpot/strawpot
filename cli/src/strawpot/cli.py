@@ -323,7 +323,9 @@ def _download_script(url: str, *, timeout: float = 30) -> bytes:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc
 
 
-def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
+def _run_install_for_agent(
+    agent_dir: Path, name: str, *, loud: bool = True,
+) -> bool:
     """Run the install script for an agent and return True on success.
 
     Tries, in order:
@@ -336,14 +338,22 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
     Returns False (and prints to stderr) if the install fails or no install
     method is found.  Also returns False when required system tools (e.g.
     ``node``, ``npm``) are missing — the caller should abort gracefully.
+
+    When *loud* is False the prerequisite error banner is suppressed. Use
+    this on code paths where a failed install is non-fatal.
     """
     # Pre-flight: check system prerequisites declared in AGENT.md
     missing = check_install_prerequisites(agent_dir)
     if missing:
-        _print_missing_prerequisites(
-            missing,
-            footer="Install the missing tools above, then run `strawpot start` again.",
-        )
+        if loud:
+            _print_missing_prerequisites(
+                missing,
+                footer=(
+                    "Install the missing tools above, then run "
+                    "`strawpot start` again.\n"
+                    "Run `strawpot doctor` for a full system check."
+                ),
+            )
         return False
 
     env = {**os.environ, "INSTALL_DIR": str(agent_dir)}
@@ -442,7 +452,7 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     # binary.  The subsequent resolve_agent() in start() will catch real
     # errors.
     global_agent_dir = get_strawpot_home() / "agents" / name
-    _run_install_for_agent(global_agent_dir, name)
+    _run_install_for_agent(global_agent_dir, name, loud=False)
 
 
 def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:

@@ -320,6 +320,36 @@ def test_run_install_returns_false_when_npm_missing(tmp_path):
     mock_run.assert_not_called()  # should not attempt install
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Missing" in c for c in calls)
+    assert any("strawpot doctor" in c for c in calls)
+
+
+def test_run_install_quiet_skips_error_banner(tmp_path):
+    """With loud=False, returns False but does not print the error banner."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    install:\n"
+        "      macos: npm install -g my-agent\n"
+        "      linux: npm install -g my-agent\n"
+        "    tools:\n"
+        "      npm:\n"
+        "        description: Node.js package manager\n"
+        "---\n"
+    )
+    with patch("strawpot.agents.registry.shutil.which", return_value=None), \
+         patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo") as mock_echo:
+        result = _run_install_for_agent(agent_dir, "test-agent", loud=False)
+
+    assert result is False
+    mock_run.assert_not_called()
+    # No error banner should be printed
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert not any("Missing" in c for c in calls)
 
 
 def test_run_install_succeeds_when_prerequisites_present(tmp_path):
