@@ -342,10 +342,7 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
     if missing:
         _print_missing_prerequisites(
             missing,
-            footer=(
-                "Claude Code requires Node.js. Install Node.js from "
-                "https://nodejs.org (v18+), then run `strawpot start` again."
-            ),
+            footer="Install the missing tools above, then run `strawpot start` again.",
         )
         return False
 
