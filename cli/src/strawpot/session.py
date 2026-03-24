@@ -1,5 +1,6 @@
 """Session lifecycle — owns denden server, isolation, orchestrator, and delegation."""
 
+import enum
 import hashlib
 import json
 import logging
@@ -47,6 +48,24 @@ from strawpot.isolation.worktree import WorktreeIsolator, _git
 from strawpot.trace import Tracer
 
 logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Merge outcome
+# ------------------------------------------------------------------
+
+
+class MergeOutcome(enum.Enum):
+    """Result of ``_merge_session_changes`` — drives branch cleanup decisions.
+
+    MERGED — changes were merged locally; safe to delete the branch.
+    KEPT_FOR_PR — a PR was created; keep remote branch, clean up local only.
+    FAILED — merge failed; keep everything so the user can recover.
+    """
+
+    MERGED = "merged"
+    KEPT_FOR_PR = "kept_for_pr"
+    FAILED = "failed"
 
 
 # ------------------------------------------------------------------
@@ -605,12 +624,12 @@ class Session:
         self._stop_denden_server()
 
         # 3. Merge session changes (worktree isolation only)
-        merge_succeeded = True
+        merge_outcome = MergeOutcome.MERGED
         if self._env and self._env.branch and self._working_dir:
             try:
-                merge_succeeded = self._merge_session_changes()
+                merge_outcome = self._merge_session_changes()
             except Exception:
-                merge_succeeded = False
+                merge_outcome = MergeOutcome.FAILED
                 logger.debug("Merge failed", exc_info=True)
 
         # 4. Isolator cleanup (worktree removal only — branch cleanup is separate)
@@ -632,7 +651,7 @@ class Session:
         # 5. Branch cleanup (after worktree removal, before archive)
         if self._env and self._env.branch and self._working_dir:
             try:
-                self._cleanup_session_branch(merge_succeeded=merge_succeeded)
+                self._cleanup_session_branch(merge_outcome=merge_outcome)
             except Exception:
                 logger.warning("Branch cleanup failed", exc_info=True)
 
@@ -707,15 +726,17 @@ class Session:
     # Merge strategies
     # ------------------------------------------------------------------
 
-    def _merge_session_changes(self) -> bool:
+    def _merge_session_changes(self) -> MergeOutcome:
         """Run the configured merge strategy for worktree isolation.
 
         Must be called *before* isolator cleanup (the worktree needs to
         exist for patch generation).
 
         Returns:
-            ``True`` if the branch should be deleted during cleanup,
-            ``False`` if it should be kept (PR strategy).
+            A ``MergeOutcome`` indicating what happened:
+            - ``MERGED`` — local merge succeeded; branch can be deleted.
+            - ``KEPT_FOR_PR`` — a PR was created; keep remote branch.
+            - ``FAILED`` — merge failed; keep everything for recovery.
         """
         from strawpot.merge import merge_local, merge_pr, resolve_strategy
 
@@ -729,7 +750,7 @@ class Session:
                 base_branch,
                 session_branch,
             )
-            return True
+            return MergeOutcome.MERGED
 
         strategy = resolve_strategy(
             self.config.merge_strategy, self._working_dir
@@ -746,7 +767,7 @@ class Session:
                     prompt=prompt_fn,
                 )
                 logger.info("Local merge: %s", result.message)
-                return True  # always delete branch for local strategy
+                return MergeOutcome.MERGED
 
             if strategy == "pr":
                 result = merge_pr(
@@ -757,18 +778,19 @@ class Session:
                     pr_command=self.config.pr_command,
                 )
                 logger.info("PR merge: %s", result.message)
-                return False  # keep branch — it's on remote
+                return MergeOutcome.KEPT_FOR_PR
 
         except Exception:
             logger.debug("Merge failed", exc_info=True)
+            return MergeOutcome.FAILED
 
-        return True  # fallback: delete branch
+        return MergeOutcome.MERGED  # fallback: no changes to merge
 
     # ------------------------------------------------------------------
     # Branch cleanup
     # ------------------------------------------------------------------
 
-    def _cleanup_session_branch(self, *, merge_succeeded: bool) -> None:
+    def _cleanup_session_branch(self, *, merge_outcome: MergeOutcome) -> None:
         """Delete the session branch locally (and remotely) if safe to do so.
 
         Skips deletion and warns when:
@@ -776,15 +798,18 @@ class Session:
         - ``cleanup_branches`` is disabled in config
         - The session was force-stopped (user may want to recover)
         - The merge failed / there are unmerged changes
-        - The branch has an open pull request
         - The branch is checked out elsewhere (e.g. another worktree)
+
+        When ``merge_outcome`` is ``KEPT_FOR_PR``, the remote branch is
+        preserved (the PR depends on it) but the local branch is still
+        cleaned up.
 
         Called after worktree removal but before the session is archived.
         """
         branch = self._env.branch
         base_dir = self._working_dir
 
-        # --- Skip conditions ---
+        # --- Skip conditions (no cleanup at all) ---
         if self._keep_branch:
             logger.info(
                 "Keeping branch %s (--keep-branch flag)", branch
@@ -805,16 +830,9 @@ class Session:
             )
             return
 
-        if not merge_succeeded:
+        if merge_outcome is MergeOutcome.FAILED:
             logger.warning(
                 "Keeping branch %s — merge failed or had unmerged changes",
-                branch,
-            )
-            return
-
-        if self._branch_has_open_pr(branch, base_dir):
-            logger.warning(
-                "Keeping branch %s — an open pull request depends on it",
                 branch,
             )
             return
@@ -826,10 +844,26 @@ class Session:
             )
             return
 
-        # --- Delete local branch ---
+        # --- PR strategy: keep remote, clean up local ---
+        if merge_outcome is MergeOutcome.KEPT_FOR_PR:
+            logger.info(
+                "Keeping remote branch %s — PR depends on it; "
+                "deleting local only",
+                branch,
+            )
+            self._delete_local_branch(branch, base_dir)
+            return
+
+        # --- Merge succeeded: clean up everything ---
+        if self._branch_has_open_pr(branch, base_dir):
+            logger.warning(
+                "Keeping branch %s — an open pull request depends on it",
+                branch,
+            )
+            return
+
         self._delete_local_branch(branch, base_dir)
 
-        # --- Delete remote branch ---
         if self.config.cleanup_remote:
             self._delete_remote_branch(branch, base_dir)
 

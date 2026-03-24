@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from strawpot.config import StrawPotConfig
 from strawpot.isolation.protocol import IsolatedEnv
-from strawpot.session import Session
+from strawpot.session import MergeOutcome, Session
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def test_cleanup_deletes_branch_on_success(
     mock_pr, mock_checkout, mock_local, mock_remote
 ):
     session = _make_session()
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_called_once_with(
         "strawpot/run_abc123", "/tmp/fake"
@@ -109,7 +109,7 @@ def test_cleanup_deletes_branch_on_success(
 @patch.object(Session, "_delete_remote_branch")
 def test_keep_branch_flag_skips_cleanup(mock_remote, mock_local):
     session = _make_session(keep_branch=True)
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -125,7 +125,7 @@ def test_keep_branch_flag_skips_cleanup(mock_remote, mock_local):
 def test_config_cleanup_branches_false(mock_remote, mock_local):
     config = _make_config(cleanup_branches=False)
     session = _make_session(config=config)
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -145,7 +145,7 @@ def test_config_cleanup_remote_false(
 ):
     config = _make_config(cleanup_remote=False)
     session = _make_session(config=config)
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_called_once()
     mock_remote.assert_not_called()
@@ -160,7 +160,7 @@ def test_config_cleanup_remote_false(
 @patch.object(Session, "_delete_remote_branch")
 def test_interrupted_session_keeps_branch(mock_remote, mock_local):
     session = _make_session(interrupted=True)
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -175,7 +175,7 @@ def test_interrupted_session_keeps_branch(mock_remote, mock_local):
 @patch.object(Session, "_delete_remote_branch")
 def test_merge_failed_keeps_branch(mock_remote, mock_local):
     session = _make_session()
-    session._cleanup_session_branch(merge_succeeded=False)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.FAILED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -189,9 +189,10 @@ def test_merge_failed_keeps_branch(mock_remote, mock_local):
 @patch.object(Session, "_delete_local_branch")
 @patch.object(Session, "_delete_remote_branch")
 @patch.object(Session, "_branch_has_open_pr", return_value=True)
-def test_open_pr_keeps_branch(mock_pr, mock_remote, mock_local):
+@patch.object(Session, "_branch_checked_out_elsewhere", return_value=False)
+def test_open_pr_keeps_branch(mock_checkout, mock_pr, mock_remote, mock_local):
     session = _make_session()
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -210,7 +211,7 @@ def test_checked_out_elsewhere_keeps_branch(
     mock_pr, mock_checkout, mock_remote, mock_local
 ):
     session = _make_session()
-    session._cleanup_session_branch(merge_succeeded=True)
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.MERGED)
 
     mock_local.assert_not_called()
     mock_remote.assert_not_called()
@@ -375,7 +376,7 @@ def test_delete_remote_branch_success(mock_git):
 
 @patch.object(Session, "_archive_session_dir")
 @patch.object(Session, "_cleanup_session_branch")
-@patch.object(Session, "_merge_session_changes", return_value=True)
+@patch.object(Session, "_merge_session_changes", return_value=MergeOutcome.MERGED)
 @patch.object(Session, "_stop_denden_server")
 def test_stop_calls_cleanup_session_branch(
     mock_denden, mock_merge, mock_cleanup, mock_archive
@@ -386,7 +387,7 @@ def test_stop_calls_cleanup_session_branch(
 
     session.stop()
 
-    mock_cleanup.assert_called_once_with(merge_succeeded=True)
+    mock_cleanup.assert_called_once_with(merge_outcome=MergeOutcome.MERGED)
 
 
 @patch.object(Session, "_archive_session_dir")
@@ -401,4 +402,71 @@ def test_stop_passes_merge_failure_to_cleanup(
 
     session.stop()
 
-    mock_cleanup.assert_called_once_with(merge_succeeded=False)
+    mock_cleanup.assert_called_once_with(merge_outcome=MergeOutcome.FAILED)
+
+@patch.object(Session, "_archive_session_dir")
+@patch.object(Session, "_cleanup_session_branch")
+@patch.object(Session, "_merge_session_changes", return_value=MergeOutcome.KEPT_FOR_PR)
+@patch.object(Session, "_stop_denden_server")
+def test_stop_passes_kept_for_pr_to_cleanup(
+    mock_denden, mock_merge, mock_cleanup, mock_archive
+):
+    session = _make_session()
+    session._agents = {}
+
+    session.stop()
+
+    mock_cleanup.assert_called_once_with(merge_outcome=MergeOutcome.KEPT_FOR_PR)
+
+
+# ---------------------------------------------------------------------------
+# Edge case: KEPT_FOR_PR — deletes local, keeps remote
+# ---------------------------------------------------------------------------
+
+
+@patch.object(Session, "_delete_remote_branch")
+@patch.object(Session, "_delete_local_branch")
+@patch.object(Session, "_branch_checked_out_elsewhere", return_value=False)
+def test_kept_for_pr_deletes_local_keeps_remote(
+    mock_checkout, mock_local, mock_remote
+):
+    """When merge outcome is KEPT_FOR_PR, local branch is deleted but remote is preserved."""
+    session = _make_session()
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.KEPT_FOR_PR)
+
+    mock_local.assert_called_once_with("strawpot/run_abc123", "/tmp/fake")
+    mock_remote.assert_not_called()
+
+
+@patch.object(Session, "_delete_remote_branch")
+@patch.object(Session, "_delete_local_branch")
+@patch.object(Session, "_branch_checked_out_elsewhere", return_value=True)
+def test_kept_for_pr_checked_out_elsewhere_skips_all(
+    mock_checkout, mock_local, mock_remote
+):
+    """KEPT_FOR_PR still respects checked-out-elsewhere guard."""
+    session = _make_session()
+    session._cleanup_session_branch(merge_outcome=MergeOutcome.KEPT_FOR_PR)
+
+    mock_local.assert_not_called()
+    mock_remote.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MergeOutcome enum
+# ---------------------------------------------------------------------------
+
+
+def test_merge_outcome_values():
+    """MergeOutcome has exactly the three expected members."""
+    assert set(MergeOutcome) == {
+        MergeOutcome.MERGED,
+        MergeOutcome.KEPT_FOR_PR,
+        MergeOutcome.FAILED,
+    }
+
+
+def test_merge_outcome_identity():
+    """Enum members compare by identity, not by value."""
+    assert MergeOutcome.MERGED is not MergeOutcome.FAILED
+    assert MergeOutcome.KEPT_FOR_PR is not MergeOutcome.MERGED
