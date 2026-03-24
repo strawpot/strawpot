@@ -129,7 +129,7 @@ def _show_first_run_banner() -> None:
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx):
-    """StrawPot orchestrates AI coding agents with roles, skills, and team coordination.
+    """StrawPot orchestrates AI agents with roles, skills, and delegation.
 
     Define roles (what an agent does), attach skills (what it knows),
     and let agents delegate to each other in sessions. Works with
