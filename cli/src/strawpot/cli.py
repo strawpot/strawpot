@@ -1065,8 +1065,15 @@ def gui(port, skip_update_check):
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
-    from strawpot_gui.server import DEFAULT_PORT
-    from strawpot_gui.server import main as gui_main
+    try:
+        from strawpot_gui.server import DEFAULT_PORT, main as gui_main
+    except ImportError:
+        click.echo(
+            "Error: strawpot-gui is not installed.\n"
+            "Install it with:  pip install 'strawpot[gui]'",
+            err=True,
+        )
+        sys.exit(1)
 
     gui_main(port=port or DEFAULT_PORT)
 
