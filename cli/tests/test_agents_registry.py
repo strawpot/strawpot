@@ -351,14 +351,14 @@ def test_check_prerequisites_all_present(curl_agent_dir, monkeypatch):
     assert check_install_prerequisites(curl_agent_dir) == []
 
 
-def test_check_prerequisites_missing_curl(curl_agent_dir, monkeypatch):
-    """When curl is missing, it's reported as a prerequisite."""
+def test_check_prerequisites_curl_no_longer_checked(curl_agent_dir, monkeypatch):
+    """curl is no longer a prerequisite — CLI uses Python urllib instead."""
     monkeypatch.setattr(
         "shutil.which",
         lambda c: None if c == "curl" else f"/usr/bin/{c}",
     )
     tool_names = [name for name, _ in check_install_prerequisites(curl_agent_dir)]
-    assert "curl" in tool_names
+    assert "curl" not in tool_names
 
 
 def test_check_prerequisites_missing_npm(curl_agent_dir, monkeypatch):

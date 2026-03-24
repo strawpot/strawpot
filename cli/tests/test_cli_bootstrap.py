@@ -3,17 +3,21 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from strawpot.cli import (
+    _CURL_PIPE_SH_RE,
     _SEEDED_AGENTS,
     _authenticate_agent,
+    _download_script,
     _ensure_agent_installed,
     _ensure_memory_installed,
     _ensure_role_installed,
     _ensure_skill_installed,
     _onboarding_wizard,
     _pick_agent,
+    _run_install_for_agent,
     needs_onboarding,
 )
 from strawpot.config import StrawPotConfig
@@ -97,8 +101,8 @@ def test_ensure_agent_install_fails(mock_resolve, mock_confirm, mock_which, mock
     assert any("Failed to install agent" in c for c in calls)
 
 
-def test_ensure_agent_runs_strawpot_install_from_frontmatter(tmp_path):
-    """Runs metadata.strawpot.install.<os> from AGENT.md when binary is missing."""
+def test_ensure_agent_downloads_and_runs_curl_install_via_urllib(tmp_path):
+    """curl-pipe-sh install commands are downloaded via urllib and piped to sh."""
     agent_dir = tmp_path / ".strawpot" / "agents" / "test-agent"
     agent_dir.mkdir(parents=True)
     (agent_dir / "AGENT.md").write_text(
@@ -114,18 +118,22 @@ def test_ensure_agent_runs_strawpot_install_from_frontmatter(tmp_path):
         "      linux: curl -fsSL https://example.com/install.sh | sh\n"
         "---\n"
     )
+    fake_script = b"#!/bin/sh\necho installed\n"
     # resolve_agent raises ValueError because binary doesn't exist
     with patch("strawpot.cli.resolve_agent", side_effect=ValueError("binary not found")), \
+         patch("strawpot.cli._download_script", return_value=fake_script) as mock_dl, \
          patch("strawpot.cli.subprocess.run") as mock_run, \
          patch("strawpot.cli.click.echo"):
         mock_run.return_value = MagicMock(returncode=0)
         _ensure_agent_installed("test-agent", str(tmp_path))
 
+        # Should have downloaded from the URL in the install command
+        mock_dl.assert_called_once_with("https://example.com/install.sh")
+        # Should pipe script to sh (not call curl)
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["sh", "-c", mock_run.call_args[0][0][2]]
-        # Verify the install command from frontmatter was used
-        assert "curl" in mock_run.call_args[0][0][2]
+        assert cmd == ["sh"]
+        assert mock_run.call_args[1]["input"] == fake_script
 
 
 def test_ensure_agent_falls_back_to_install_sh(tmp_path):
@@ -152,6 +160,133 @@ def test_ensure_agent_falls_back_to_install_sh(tmp_path):
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd == ["sh", str(agent_dir / "install.sh")]
+
+
+# ---------------------------------------------------------------------------
+# _CURL_PIPE_SH_RE pattern matching
+# ---------------------------------------------------------------------------
+
+
+def test_curl_regex_matches_standard_curl_pipe_sh():
+    """Matches standard curl -fsSL <url> | sh."""
+    m = _CURL_PIPE_SH_RE.match("curl -fsSL https://example.com/install.sh | sh")
+    assert m is not None
+    assert m.group(1) == "https://example.com/install.sh"
+
+
+def test_curl_regex_matches_various_flags():
+    """Matches curl with different flags."""
+    m = _CURL_PIPE_SH_RE.match("curl -sL https://example.com/install.sh | sh")
+    assert m is not None
+    assert m.group(1) == "https://example.com/install.sh"
+
+
+def test_curl_regex_no_match_for_non_curl():
+    """Does not match non-curl commands."""
+    m = _CURL_PIPE_SH_RE.match("wget -q https://example.com/install.sh | sh")
+    assert m is None
+
+
+def test_curl_regex_no_match_without_pipe_sh():
+    """Does not match curl without piping to sh."""
+    m = _CURL_PIPE_SH_RE.match("curl -fsSL https://example.com/install.sh > script.sh")
+    assert m is None
+
+
+# ---------------------------------------------------------------------------
+# _download_script
+# ---------------------------------------------------------------------------
+
+
+def test_download_script_success():
+    """Downloads script content via urllib."""
+    import urllib.request
+    fake_content = b"#!/bin/sh\necho hello\n"
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = fake_content
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    with patch.object(urllib.request, "urlopen", return_value=mock_resp):
+        result = _download_script("https://example.com/install.sh")
+        assert result == fake_content
+
+
+def test_download_script_failure_raises():
+    """Raises RuntimeError on download failure."""
+    import urllib.error
+    import urllib.request
+    with patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("timeout")):
+        with pytest.raises(RuntimeError, match="Failed to download"):
+            _download_script("https://example.com/install.sh")
+
+
+# ---------------------------------------------------------------------------
+# _run_install_for_agent — non-curl install commands
+# ---------------------------------------------------------------------------
+
+
+def test_run_install_non_curl_cmd_uses_sh_c(tmp_path):
+    """Non-curl install commands are run via sh -c as before."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    install:\n"
+        "      macos: npm install -g my-agent\n"
+        "      linux: npm install -g my-agent\n"
+        "---\n"
+    )
+    with patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo"):
+        mock_run.return_value = MagicMock(returncode=0)
+        result = _run_install_for_agent(agent_dir, "test-agent")
+
+    assert result is True
+    cmd = mock_run.call_args[0][0]
+    assert cmd[0:2] == ["sh", "-c"]
+
+
+def test_run_install_download_failure_returns_false(tmp_path):
+    """Returns False when script download fails."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    install:\n"
+        "      macos: curl -fsSL https://example.com/install.sh | sh\n"
+        "      linux: curl -fsSL https://example.com/install.sh | sh\n"
+        "---\n"
+    )
+    with patch("strawpot.cli._download_script", side_effect=RuntimeError("network error")), \
+         patch("strawpot.cli.click.echo"):
+        result = _run_install_for_agent(agent_dir, "test-agent")
+
+    assert result is False
+
+
+def test_run_install_no_install_method_returns_false(tmp_path):
+    """Returns False when no install command or install.sh exists."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    bin:\n"
+        "      macos: my_binary\n"
+        "---\n"
+    )
+    with patch("strawpot.cli.click.echo"):
+        result = _run_install_for_agent(agent_dir, "test-agent")
+
+    assert result is False
 
 
 # ---------------------------------------------------------------------------

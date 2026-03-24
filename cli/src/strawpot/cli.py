@@ -297,6 +297,106 @@ def _get_agent_install_cmd(agent_dir: Path) -> str | None:
         return None
 
 
+import re as _re
+
+# Pattern: curl [flags] <URL> | sh [args]
+_CURL_PIPE_SH_RE = _re.compile(
+    r"^curl\s+[^|]*?(https?://\S+)\s*\|\s*sh\b(.*)$"
+)
+
+
+def _download_script(url: str, *, timeout: float = 30) -> bytes:
+    """Download a script from *url* using Python's urllib.
+
+    Returns the raw response bytes.
+
+    Raises:
+        RuntimeError: If the download fails for any reason.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "strawpot"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except (urllib.error.URLError, OSError) as exc:
+        raise RuntimeError(f"Failed to download {url}: {exc}") from exc
+
+
+def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
+    """Run the install script for an agent and return True on success.
+
+    Tries, in order:
+        1. ``metadata.strawpot.install.<os>`` from AGENT.md — if the command
+           is a ``curl ... | sh`` pipeline, download the script with Python's
+           stdlib urllib and pipe it to ``sh``, eliminating the ``curl``
+           dependency.
+        2. ``install.sh`` on disk.
+
+    Returns False (and prints to stderr) if the install fails or no install
+    method is found.
+    """
+    # 1. Try metadata.strawpot.install.<os>
+    install_cmd = _get_agent_install_cmd(agent_dir)
+    if install_cmd:
+        env = {**os.environ, "INSTALL_DIR": str(agent_dir)}
+
+        # Prefer Python-native download over shelling out to curl
+        match = _CURL_PIPE_SH_RE.match(install_cmd.strip())
+        if match:
+            url = match.group(1)
+            click.echo(f"Downloading install script for '{name}'...")
+            try:
+                script_bytes = _download_script(url)
+            except RuntimeError as exc:
+                click.echo(str(exc), err=True)
+                return False
+            click.echo(f"Running install for '{name}'...")
+            result = subprocess.run(
+                ["sh"],
+                input=script_bytes,
+                cwd=str(agent_dir),
+                env=env,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+        else:
+            click.echo(f"Running install for '{name}'...")
+            result = subprocess.run(
+                ["sh", "-c", install_cmd],
+                cwd=str(agent_dir),
+                env=env,
+                stdin=sys.stdin,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+        if result.returncode != 0:
+            click.echo(f"Install failed for '{name}'.", err=True)
+            return False
+        return True
+
+    # 2. Fallback to install.sh on disk
+    install_script = agent_dir / "install.sh"
+    if install_script.is_file():
+        click.echo(f"Running install script for '{name}'...")
+        result = subprocess.run(
+            ["sh", str(install_script)],
+            cwd=str(agent_dir),
+            env={**os.environ, "INSTALL_DIR": str(agent_dir)},
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        if result.returncode != 0:
+            click.echo(f"Install script failed for '{name}'.", err=True)
+            return False
+        return True
+
+    click.echo(f"Agent '{name}' binary is missing and no install command found.", err=True)
+    return False
+
+
 def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install an agent from StrawHub if it is not found locally."""
     try:
@@ -335,37 +435,7 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
                 )
                 sys.exit(1)
 
-            # 1. Try metadata.strawpot.install.<os> from AGENT.md frontmatter
-            install_cmd = _get_agent_install_cmd(agent_dir)
-            if install_cmd:
-                click.echo(f"Running install for '{name}'...")
-                result = subprocess.run(
-                    ["sh", "-c", install_cmd],
-                    cwd=str(agent_dir),
-                    env={**os.environ, "INSTALL_DIR": str(agent_dir)},
-                    stdin=sys.stdin,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
-                if result.returncode != 0:
-                    click.echo(f"Install failed for '{name}'.", err=True)
-                return
-            # 2. Fallback to install.sh on disk
-            install_script = agent_dir / "install.sh"
-            if install_script.is_file():
-                click.echo(f"Running install script for '{name}'...")
-                result = subprocess.run(
-                    ["sh", str(install_script)],
-                    cwd=str(agent_dir),
-                    env={**os.environ, "INSTALL_DIR": str(agent_dir)},
-                    stdin=sys.stdin,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
-                if result.returncode != 0:
-                    click.echo(f"Install script failed for '{name}'.", err=True)
-                return
-            click.echo(f"Agent '{name}' binary is missing and no install command found.", err=True)
+            _run_install_for_agent(agent_dir, name)
             return
 
     if not auto_setup:
@@ -380,11 +450,11 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
         click.echo("Install it with: pip install strawhub", err=True)
         return
 
-    install_cmd = [*cmd, "install", "agent", name, "--global"]
+    strawhub_install_cmd = [*cmd, "install", "agent", name, "--global"]
     if auto_setup:
-        install_cmd.append("--yes")
+        strawhub_install_cmd.append("--yes")
     result = subprocess.run(
-        install_cmd,
+        strawhub_install_cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -395,33 +465,7 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
 
     # Run install command from AGENT.md or fallback to install.sh
     global_agent_dir = get_strawpot_home() / "agents" / name
-    install_cmd = _get_agent_install_cmd(global_agent_dir)
-    if install_cmd:
-        click.echo(f"Running install for '{name}'...")
-        result = subprocess.run(
-            ["sh", "-c", install_cmd],
-            cwd=str(global_agent_dir),
-            env={**os.environ, "INSTALL_DIR": str(global_agent_dir)},
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-        if result.returncode != 0:
-            click.echo(f"Install failed for '{name}'.", err=True)
-    else:
-        install_script = global_agent_dir / "install.sh"
-        if install_script.is_file():
-            click.echo(f"Running install script for '{name}'...")
-            result = subprocess.run(
-                ["sh", str(install_script)],
-                cwd=str(global_agent_dir),
-                env={**os.environ, "INSTALL_DIR": str(global_agent_dir)},
-                stdin=sys.stdin,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
-            if result.returncode != 0:
-                click.echo(f"Install script failed for '{name}'.", err=True)
+    _run_install_for_agent(global_agent_dir, name)
 
 
 def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
@@ -1240,7 +1284,7 @@ _DOCTOR_TOOLS: list[tuple[str, str, str | None, bool]] = [
     ("npm", "npm (ships with Node.js)", "https://nodejs.org", True),
     ("git", "Git (required for worktree isolation)", "https://git-scm.com", True),
     ("gh", "GitHub CLI (optional, for PR workflows)", "https://cli.github.com", False),
-    ("curl", "curl (required for agent install scripts)", None, True),
+    ("curl", "curl (optional, install scripts use Python download)", None, False),
 ]
 
 

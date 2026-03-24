@@ -1,7 +1,6 @@
 """Agent registry — discover AGENT.md manifests and resolve to AgentSpec."""
 
 import os
-import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -110,7 +109,7 @@ def _resolve_wrapper_cmd(agent_dir: Path, strawpot_meta: dict) -> list[str]:
                 f"Agent binary not found: {binary_path}\n\n"
                 "The agent package is installed but its runtime binary is "
                 "missing.\nThis usually means the install script failed "
-                "(e.g. 'curl' or 'npm' not available)."
+                "(e.g. 'npm' or 'node' not available)."
             )
             if install_hint:
                 msg += f"\n\nTo install the runtime manually, run:\n  {install_hint}"
@@ -232,15 +231,8 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     strawpot_meta = meta.get("strawpot", {})
     missing: list[tuple[str, str]] = []
 
-    # Check tools required by the install script itself
-    install_map = strawpot_meta.get("install", {})
-    install_cmd = install_map.get(_current_os(), "") or ""
-    if re.search(r"\bcurl\b", install_cmd) and shutil.which("curl") is None:
-        missing.append((
-            "curl",
-            "Install with your package manager "
-            "(e.g. 'apt install curl' or 'brew install curl')",
-        ))
+    # Note: curl is no longer checked here — the CLI downloads install
+    # scripts using Python's urllib, eliminating the curl dependency.
 
     # Check declared tool dependencies
     tools = strawpot_meta.get("tools", {})
