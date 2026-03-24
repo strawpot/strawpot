@@ -226,7 +226,7 @@ Event types and their `data` fields:
 | Event | Data fields |
 |-------|-------------|
 | `session_start` | `run_id`, `role`, `runtime`, `isolation` |
-| `session_end` | `merge_strategy`, `duration_ms` |
+| `session_end` | `merge_action`, `duration_ms` |
 | `delegate_start` | `role`, `context_ref`, `parent_span` |
 | `delegate_end` | `exit_code`, `summary`, `duration_ms` |
 | `delegate_denied` | `role`, `reason`, `parent_span` |
@@ -275,9 +275,7 @@ Project: `<project>/strawpot.toml` (overrides global)
 | `roles` | dict | `{}` |
 | `memory` | str | `"dial"` |
 | `memory_config` | dict | `{}` |
-| `merge_strategy` | str | `"auto"` |
 | `pull_before_session` | str | `"prompt"` |
-| `pr_command` | str | `"gh pr create ..."` |
 | `trace` | bool | `true` |
 
 ---
@@ -345,7 +343,7 @@ chat panel where agents can ask the user questions via `ask_user`.
 - Context file attachment (@ button to attach project files)
 - Role selector from installed roles (datalist with validation)
 - Collapsible advanced options:
-  - Runtime, isolation, merge strategy overrides
+  - Runtime and isolation overrides
   - Custom system prompt textarea (appended to role instructions)
 - Loading state during launch, success/error toasts on completion
 - Navigation to the new session on success

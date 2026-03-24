@@ -1024,10 +1024,10 @@ class TestRecoverStaleSessions:
 
     @patch("strawpot.session._recover_merge", return_value=False)
     @patch("strawpot.session.WorktreeIsolator")
-    def test_worktree_pr_strategy_keeps_branch(
+    def test_worktree_pr_detected_keeps_branch(
         self, mock_wt_cls, mock_merge, tmp_path
     ):
-        """PR strategy merge returns False — branch is kept."""
+        """PR detected — merge returns False, branch is kept."""
         wt_path = str(tmp_path / "worktrees" / "run_pr")
         os.makedirs(wt_path)
         _write_stale_session(

@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: Session lifecycle, crash recovery, and merge strategies
+description: Session lifecycle, crash recovery, and worktree merge behavior
 ---
 
 A session is the unit of work in StrawPot. It encapsulates an isolated environment, a Denden server, and all spawned agents.
@@ -99,7 +99,7 @@ If StrawPot crashes or is interrupted, sessions may be left in a stale state. On
 
 1. Scans `.strawpot/sessions/` for stale session files
 2. Checks if the session's PID is still alive
-3. For dead sessions: applies the merge strategy and cleans up the worktree
+3. For dead sessions: detects PR status, patch-applies changes if needed, and cleans up the worktree
 4. Removes orphaned session files
 
 ## Monitoring

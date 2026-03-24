@@ -79,7 +79,7 @@ def recover_stale_sessions(
     """Detect and clean up stale sessions left behind by crashes.
 
     Scans ``.strawpot/sessions/`` for session files whose ``pid`` is no
-    longer alive.  For each stale session the merge strategy is applied
+    longer alive.  For each stale session, changes are merged back
     (worktree isolation only) and the session directory is removed.
 
     Called at the beginning of ``strawpot start`` so orphaned worktrees
@@ -716,7 +716,7 @@ class Session:
                 pass
 
     # ------------------------------------------------------------------
-    # Merge strategies
+    # Merge behavior
     # ------------------------------------------------------------------
 
     def _merge_session_changes(self) -> MergeOutcome:
@@ -829,7 +829,7 @@ class Session:
             )
             return
 
-        # --- PR strategy: keep remote, clean up local ---
+        # --- PR detected: keep remote, clean up local ---
         if merge_outcome is MergeOutcome.KEPT_FOR_PR:
             logger.info(
                 "Keeping remote branch %s — PR depends on it; "

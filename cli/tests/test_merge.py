@@ -291,7 +291,7 @@ class TestMergeLocal:
 
         assert result.success
         assert "No changes" in result.message
-        assert result.strategy == "local"
+        assert result.success
 
     def test_clean_apply(self, tmp_path):
         """Patch with no conflicts is applied cleanly."""
@@ -362,7 +362,7 @@ class TestMergeLocal:
             prompt=lambda *a, **kw: "a",
         )
 
-        assert result.strategy == "local"
+        assert result.success
         assert "override" in result.message.lower() or "applied" in result.message.lower()
 
     def test_conflict_discard(self, tmp_path):

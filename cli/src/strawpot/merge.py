@@ -29,10 +29,8 @@ logger = logging.getLogger(__name__)
 class MergeResult:
     """Outcome of a merge operation."""
 
-    strategy: str  # "local" or "none"
     success: bool
     message: str  # human-readable summary
-    pr_url: str | None = None
 
 
 # ------------------------------------------------------------------
@@ -348,7 +346,6 @@ def merge_local(
 
     if not patch.strip():
         return MergeResult(
-            strategy="local",
             success=True,
             message="No changes to apply.",
         )
@@ -361,7 +358,6 @@ def merge_local(
     if not conflicts:
         ok = _apply_patch(patch, cwd=base_dir)
         return MergeResult(
-            strategy="local",
             success=ok,
             message="Changes applied cleanly."
             if ok
@@ -374,20 +370,17 @@ def merge_local(
     if choice == "a":
         ok = _apply_patch_all(patch, base_dir)
         return MergeResult(
-            strategy="local",
             success=ok,
             message="All changes applied (conflicts overridden).",
         )
     if choice == "s":
         _apply_patch_skip(patch, base_dir)
         return MergeResult(
-            strategy="local",
             success=True,
             message="Non-conflicting changes applied, conflicts skipped.",
         )
     # "d"
     return MergeResult(
-        strategy="local",
         success=True,
         message="All session changes discarded.",
     )

@@ -9,7 +9,7 @@ to avoid interfering with IDEs, file watchers, and gitignore:
 
     <STRAWPOT_HOME>/worktrees/<project_hash>/<session_id>
 
-Merge strategy and conflict resolution are handled by the session layer,
+Merge behavior and conflict resolution are handled by the session layer,
 not here.  This module only manages worktree creation and removal.
 """
 
@@ -102,8 +102,8 @@ class WorktreeIsolator:
         Args:
             env: The IsolatedEnv returned by :meth:`create`.
             base_dir: The original project root passed to :meth:`create`.
-            delete_branch: If ``False``, keep the branch (e.g. for the PR
-                strategy where the branch has been pushed to the remote).
+            delete_branch: If ``False``, keep the branch (e.g. when a PR
+                depends on it).
         """
         # Remove the worktree (--force handles dirty worktrees)
         _git(["worktree", "remove", env.path, "--force"], cwd=base_dir)

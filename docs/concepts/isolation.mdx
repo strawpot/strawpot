@@ -42,7 +42,7 @@ Creates a git worktree per session, giving agents a separate working copy of you
 1. **Create** — `git worktree add` creates a new worktree at `~/.strawpot/worktrees/<project_hash>/<session_id>`
 2. **Branch** — Each session gets branch `strawpot/<session_id>`
 3. **Work** — All agents operate in the worktree directory
-4. **Merge** — On session end, changes are merged back via the configured [merge strategy](/concepts/sessions#merge-strategies)
+4. **Merge** — On session end, changes are [merged back automatically](/concepts/sessions#worktree-merge-behavior) (patch-apply if no PR, cleanup-only if PR exists)
 5. **Cleanup** — `git worktree remove` deletes the worktree
 
 ### Benefits
