@@ -775,16 +775,12 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
 
     # 0. First-run onboarding
     if needs_onboarding(config, working_dir):
-        if task and not headless:
+        if task or headless:
             click.echo(
-                click.style("Note: ", fg="yellow", bold=True)
-                + "No agent configured yet. Running first-time setup.\n"
-                "Your task will be executed after setup completes.\n",
-            )
-        if headless:
-            click.echo(
-                "Error: StrawPot is not configured. Run 'strawpot start' "
-                "interactively to complete first-run setup, or manually:\n"
+                "Error: No agent configured. Run 'strawpot start' "
+                "interactively to complete first-run setup, then re-run "
+                "with --task.\n\n"
+                "Alternatively, configure manually:\n"
                 f"  1. Install an agent:  strawhub install agent {config.runtime} --global\n"
                 f"  2. Set runtime:       Add 'runtime = \"{config.runtime}\"' to ~/.strawpot/strawpot.toml\n"
                 "  3. Set required env:  Add API keys to [agents.<name>.env] in strawpot.toml",
