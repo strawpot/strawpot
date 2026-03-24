@@ -194,6 +194,26 @@ class TestUpdateAllProjectResources:
         resp = client.post("/api/projects/9999/resources/update-all")
         assert resp.status_code == 404
 
+    def test_calls_strawhub_with_correct_args(self, client, tmp_path, global_home, monkeypatch):
+        """Verify the correct strawhub arguments including --root and project dir."""
+        pid, project_dir = _setup_project(client, tmp_path)
+        captured_args = {}
+
+        def fake_run(*args, **kwargs):
+            captured_args["args"] = args
+            captured_args["kwargs"] = kwargs
+            return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(
+            "strawpot_gui.routers.project_resources.run_strawhub", fake_run
+        )
+        resp = client.post(f"/api/projects/{pid}/resources/update-all")
+        assert resp.status_code == 200
+        assert captured_args["args"] == (
+            "--root", str(project_dir), "update", "--all", "-y"
+        )
+        assert captured_args["kwargs"] == {"timeout": 300}
+
 
 class TestProjectResourceConfig:
     def test_get_config_for_global_resource(self, client, tmp_path, global_home):

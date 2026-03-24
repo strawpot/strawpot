@@ -244,7 +244,7 @@ def update_project_resource(
 def update_all_project_resources(project_id: int, conn=Depends(get_db_conn)):
     """Update all project resources to their latest versions via strawhub --root."""
     working_dir = _get_project_dir(project_id, conn)
-    return run_strawhub("--root", working_dir, "update", "--all", "-y")
+    return run_strawhub("--root", working_dir, "update", "--all", "-y", timeout=300)
 
 
 @router.post("/{project_id}/resources/reinstall")

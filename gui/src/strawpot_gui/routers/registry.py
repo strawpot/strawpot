@@ -97,7 +97,7 @@ def scan_dir(
 @router.post("/update-all")
 def update_all_resources():
     """Update all global resources to their latest versions via strawhub."""
-    return run_strawhub("update", "--all", "--global", "-y")
+    return run_strawhub("update", "--all", "--global", "-y", timeout=300)
 
 
 @router.get("/{resource_type}")
@@ -305,7 +305,7 @@ def _strawhub_cmd() -> list[str] | None:
         return None
 
 
-def run_strawhub(*args: str) -> dict:
+def run_strawhub(*args: str, timeout: int = 120) -> dict:
     """Run a strawhub CLI command and return result."""
     cmd = _strawhub_cmd()
     if cmd is None:
@@ -313,13 +313,18 @@ def run_strawhub(*args: str) -> dict:
             503,
             "strawhub CLI not found. Install it with: pip install strawhub",
         )
-    result = subprocess.run(
-        [*cmd, *args],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            [*cmd, *args],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            504, f"Command timed out after {timeout} seconds"
+        )
     return {
         "exit_code": result.returncode,
         "stdout": result.stdout,

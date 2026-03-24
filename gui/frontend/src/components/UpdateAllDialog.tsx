@@ -51,7 +51,12 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope }:
       const res = await onUpdate();
       setResult(res);
       setStatus(res.exit_code === 0 ? "done" : "error");
-    } catch {
+    } catch (err) {
+      setResult({
+        exit_code: -1,
+        stdout: "",
+        stderr: err instanceof Error ? err.message : String(err),
+      });
       setStatus("error");
     }
   };

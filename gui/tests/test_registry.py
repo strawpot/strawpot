@@ -151,6 +151,21 @@ class TestUpdateAllResources:
         assert resp.status_code != 404
         assert resp.status_code != 405
 
+    def test_calls_strawhub_with_correct_args(self, client, home, monkeypatch):
+        """Verify the correct strawhub arguments are passed."""
+        captured_args = {}
+
+        def fake_run(*args, **kwargs):
+            captured_args["args"] = args
+            captured_args["kwargs"] = kwargs
+            return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr("strawpot_gui.routers.registry.run_strawhub", fake_run)
+        resp = client.post("/api/registry/update-all")
+        assert resp.status_code == 200
+        assert captured_args["args"] == ("update", "--all", "--global", "-y")
+        assert captured_args["kwargs"] == {"timeout": 300}
+
 
 class TestUninstallProtectedResources:
     """Built-in resources cannot be uninstalled."""
