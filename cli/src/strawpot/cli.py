@@ -334,8 +334,18 @@ def _run_install_for_agent(agent_dir: Path, name: str) -> bool:
         2. ``install.sh`` on disk.
 
     Returns False (and prints to stderr) if the install fails or no install
-    method is found.
+    method is found.  Also returns False when required system tools (e.g.
+    ``node``, ``npm``) are missing — the caller should abort gracefully.
     """
+    # Pre-flight: check system prerequisites declared in AGENT.md
+    missing = check_install_prerequisites(agent_dir)
+    if missing:
+        _print_missing_prerequisites(
+            missing,
+            footer="Install the missing tools above, then run `strawpot start` again.",
+        )
+        return False
+
     env = {**os.environ, "INSTALL_DIR": str(agent_dir)}
     run_kw = dict(cwd=str(agent_dir), env=env, stdout=sys.stdout, stderr=sys.stderr)
 
@@ -398,27 +408,8 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     ]
     for agent_dir in agent_dirs:
         if (agent_dir / "AGENT.md").is_file():
-            # Check prerequisites before attempting install
-            missing = check_install_prerequisites(agent_dir)
-            if missing:
-                click.echo(
-                    click.style(
-                        f"\nMissing prerequisites for '{name}':",
-                        fg="red", bold=True,
-                    ),
-                    err=True,
-                )
-                for tool, guidance in missing:
-                    click.echo(f"  - {tool}: {guidance}", err=True)
-                click.echo(
-                    "\nInstall the missing tools above, then run "
-                    "'strawpot start' again.\n"
-                    "Run 'strawpot doctor' for a full system check.",
-                    err=True,
-                )
+            if not _run_install_for_agent(agent_dir, name):
                 sys.exit(1)
-
-            _run_install_for_agent(agent_dir, name)
             return
 
     if not auto_setup:
@@ -446,7 +437,10 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
         click.echo(f"Failed to install agent '{name}'.", err=True)
         return
 
-    # Run install command from AGENT.md or fallback to install.sh
+    # Run install command from AGENT.md or fallback to install.sh.
+    # Failure here is not fatal — strawhub may have already installed the
+    # binary.  The subsequent resolve_agent() in start() will catch real
+    # errors.
     global_agent_dir = get_strawpot_home() / "agents" / name
     _run_install_for_agent(global_agent_dir, name)
 

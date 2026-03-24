@@ -290,6 +290,97 @@ def test_run_install_no_install_method_returns_false(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# _run_install_for_agent — prerequisite checks (issue #439)
+# ---------------------------------------------------------------------------
+
+
+def test_run_install_returns_false_when_npm_missing(tmp_path):
+    """Returns False and prints error when npm is declared as a tool but missing."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    install:\n"
+        "      macos: npm install -g my-agent\n"
+        "      linux: npm install -g my-agent\n"
+        "    tools:\n"
+        "      npm:\n"
+        "        description: Node.js package manager\n"
+        "---\n"
+    )
+    with patch("strawpot.agents.registry.shutil.which", return_value=None), \
+         patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo") as mock_echo:
+        result = _run_install_for_agent(agent_dir, "test-agent")
+
+    assert result is False
+    mock_run.assert_not_called()  # should not attempt install
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Missing" in c for c in calls)
+
+
+def test_run_install_succeeds_when_prerequisites_present(tmp_path):
+    """Proceeds with install when all declared tools are on PATH."""
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    install:\n"
+        "      macos: npm install -g my-agent\n"
+        "      linux: npm install -g my-agent\n"
+        "    tools:\n"
+        "      npm:\n"
+        "        description: Node.js package manager\n"
+        "---\n"
+    )
+    with patch("strawpot.agents.registry.shutil.which", return_value="/usr/bin/npm"), \
+         patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo"):
+        mock_run.return_value = MagicMock(returncode=0)
+        result = _run_install_for_agent(agent_dir, "test-agent")
+
+    assert result is True
+    mock_run.assert_called_once()
+
+
+def test_ensure_agent_exits_on_missing_prerequisites(tmp_path):
+    """_ensure_agent_installed exits with code 1 when prerequisites are missing."""
+    agent_dir = tmp_path / ".strawpot" / "agents" / "test-agent"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "AGENT.md").write_text(
+        "---\n"
+        "name: test-agent\n"
+        "metadata:\n"
+        "  strawpot:\n"
+        "    bin:\n"
+        "      macos: test_binary\n"
+        "      linux: test_binary\n"
+        "    install:\n"
+        "      macos: npm install -g test-agent\n"
+        "      linux: npm install -g test-agent\n"
+        "    tools:\n"
+        "      npm:\n"
+        "        description: Node.js package manager\n"
+        "---\n"
+    )
+    with patch("strawpot.cli.resolve_agent", side_effect=ValueError("binary not found")), \
+         patch("strawpot.agents.registry.shutil.which", return_value=None), \
+         patch("strawpot.cli.subprocess.run") as mock_run, \
+         patch("strawpot.cli.click.echo"), \
+         pytest.raises(SystemExit) as exc_info:
+        _ensure_agent_installed("test-agent", str(tmp_path))
+
+    assert exc_info.value.code == 1
+    mock_run.assert_not_called()  # should not attempt npm install
+
+
+# ---------------------------------------------------------------------------
 # _ensure_skill_installed
 # ---------------------------------------------------------------------------
 
