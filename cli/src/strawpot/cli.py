@@ -736,13 +736,20 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--group-id", "group_id", default=None, help="Group ID for memory scoping (e.g. conversation ID from the GUI).")
 @click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup.")
 @click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config).")
-def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch):
+@click.option("--yes", "-y", "yes_flag", is_flag=True, default=False, help="Auto-accept all install prompts (tools, agents, etc.).")
+@click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely.")
+def start(role, runtime, isolation, merge_strategy, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
     starts the denden server, spawns the orchestrator agent, and attaches you
     to it. On exit (Ctrl+C or agent quit), cleans up automatically.
     """
+    # Derive whether prompts should be auto-accepted (--yes / --headless).
+    auto_accept = yes_flag or headless
+    # Detect non-interactive terminal (no TTY on stdin) — prompts would hang.
+    non_interactive = not sys.stdin.isatty() and not auto_accept
+
     config = load_config(Path.cwd())
 
     # Auto-update check (skipped for headless/task runs or explicit opt-out)
@@ -811,7 +818,7 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
         sys.exit(1)
 
     # 0c. Auto-install default dependencies if not found
-    _ensure_agent_installed(config.runtime, working_dir, auto_setup=headless)
+    _ensure_agent_installed(config.runtime, working_dir, auto_setup=auto_accept)
     _ensure_skill_installed("denden", working_dir, auto_setup=True)
     _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
@@ -851,10 +858,19 @@ def start(role, runtime, isolation, merge_strategy, pull, host, port, task, head
     # 2. Validate agent dependencies — auto-install tools when possible
     validation = validate_agent(spec)
     if validation.missing_tools:
+        if no_tools or non_interactive:
+            label = "--no-tools" if no_tools else "non-interactive shell"
+            click.echo(f"Missing required tools (skipped — {label}):", err=True)
+            for tool, hint in validation.missing_tools:
+                msg = f"  - {tool}"
+                if hint:
+                    msg += f"  (install: {hint})"
+                click.echo(msg, err=True)
+            sys.exit(1)
         unresolvable = []
         for tool, hint in validation.missing_tools:
             if hint:
-                if headless:
+                if auto_accept:
                     click.echo(f"Installing {tool}: {hint}")
                     proceed = True
                 else:
