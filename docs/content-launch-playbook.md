@@ -18,9 +18,9 @@ Before starting:
 
 Post channels in this order, with gaps between them:
 
-1. **Hacker News** -- weekday, 9-11am ET
-2. **Reddit** -- 2-4 hours after HN
-3. **Twitter** -- after Reddit, or skip if < 500 followers
+1. **Hacker News**: weekday, 9-11am ET
+2. **Reddit**: 2-4 hours after HN
+3. **Twitter**: after Reddit, or skip if < 500 followers
 
 Do NOT post everything simultaneously. Post HN first and let it breathe.
 
@@ -43,7 +43,7 @@ Use the canonical blog URL (not GitHub directly).
 Adapt the following template based on the final blog post:
 
 ```
-Hey HN, founder here. I built StrawPot -- an open-source orchestrator
+Hey HN, founder here. I built StrawPot, an open-source orchestrator
 that coordinates multiple AI coding agents (Claude Code, Codex, etc.)
 through a single system. 32 roles, from code reviewer to release
 manager, all working together.
@@ -66,7 +66,7 @@ Happy to answer any questions about the architecture or lessons learned.
 ### Tips
 
 - Respond to every genuine comment in the first 2-3 hours
-- Be authentic -- HN rewards transparency about failures
+- Be authentic. HN rewards transparency about failures
 - Don't be defensive about criticism
 - If asked "why not just use X?", give an honest technical comparison
 
@@ -108,13 +108,13 @@ Would love feedback from anyone who's worked on multi-agent systems.
 
 ### r/artificial
 
-**Title**: "Lessons from running 32 AI agents as a solo founder -- what automation can and can't replace"
+**Title**: "Lessons from running 32 AI agents as a solo founder: what automation can and can't replace"
 
 **Tone**: AI/ML-focused, emphasize multi-agent coordination insights.
 
 **Body template**:
 ```
-I've been running a multi-agent AI system for my solo startup --
+I've been running a multi-agent AI system for my solo startup:
 32 specialized roles coordinated by an orchestrator. Each agent has a
 defined specialty (code review, implementation, release management,
 marketing drafts, etc.).
@@ -138,7 +138,7 @@ Happy to discuss the architecture or share specific failure modes.
 
 ### r/SideProject
 
-**Title**: "I built an AI orchestrator that runs 32 agents for my solo startup -- here's what I learned"
+**Title**: "I built an AI orchestrator that runs 32 agents for my solo startup. Here's what I learned"
 
 **Tone**: Indie/founder perspective, personal story.
 
@@ -146,7 +146,7 @@ Happy to discuss the architecture or share specific failure modes.
 ```
 Solo founder here. I built StrawPot, an open-source tool that lets
 you orchestrate multiple AI coding agents through one system. I've
-been using it to run my own company with 32 AI "roles" -- everything
+been using it to run my own company with 32 AI "roles": everything
 from code review to marketing drafts.
 
 The honest truth: the agents are incredible at execution, but they
@@ -181,7 +181,7 @@ Skip if personal account has < 500 followers.
 1/ I tried to automate my entire company with 32 AI agents.
    Here's what happened (and what I learned the hard way).
 
-2/ I built an orchestrator that coordinates AI coding agents --
+2/ I built an orchestrator that coordinates AI coding agents:
    code reviewers, implementers, release managers, marketers.
    Each agent has a defined role with strict boundaries.
 
