@@ -43,7 +43,7 @@ from strawpot.delegation import (
 from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
-from strawpot.isolation.worktree import WorktreeIsolator
+from strawpot.isolation.worktree import WorktreeIsolator, _git
 from strawpot.trace import Tracer
 
 logger = logging.getLogger(__name__)
@@ -856,8 +856,6 @@ class Session:
     @staticmethod
     def _branch_checked_out_elsewhere(branch: str, base_dir: str) -> bool:
         """Return True if *branch* is checked out in another worktree."""
-        from strawpot.isolation.worktree import _git
-
         result = _git(["worktree", "list", "--porcelain"], cwd=base_dir)
         if result.returncode != 0:
             return False
@@ -871,8 +869,6 @@ class Session:
     @staticmethod
     def _delete_local_branch(branch: str, base_dir: str) -> None:
         """Force-delete a local branch."""
-        from strawpot.isolation.worktree import _git
-
         result = _git(["branch", "-D", branch], cwd=base_dir)
         if result.returncode == 0:
             logger.info("Deleted local branch %s", branch)
@@ -886,8 +882,6 @@ class Session:
     @staticmethod
     def _delete_remote_branch(branch: str, base_dir: str) -> None:
         """Delete the remote tracking branch if it was pushed."""
-        from strawpot.isolation.worktree import _git
-
         # Check if the branch exists on origin
         result = _git(
             ["ls-remote", "--heads", "origin", branch], cwd=base_dir

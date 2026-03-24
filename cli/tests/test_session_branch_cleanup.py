@@ -4,12 +4,7 @@ Covers the ``_cleanup_session_branch`` logic added for issue #459:
 auto-cleanup of ``strawpot/run_*`` branches when a session tears down.
 """
 
-import json
-import os
-import subprocess
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from strawpot.config import StrawPotConfig
 from strawpot.isolation.protocol import IsolatedEnv
@@ -260,7 +255,7 @@ def test_branch_has_open_pr_gh_failure(mock_run, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_branch_checked_out_elsewhere_true(mock_git):
     mock_git.return_value = MagicMock(
         returncode=0,
@@ -282,7 +277,7 @@ def test_branch_checked_out_elsewhere_true(mock_git):
     )
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_branch_checked_out_elsewhere_false(mock_git):
     mock_git.return_value = MagicMock(
         returncode=0,
@@ -305,7 +300,7 @@ def test_branch_checked_out_elsewhere_false(mock_git):
 # ---------------------------------------------------------------------------
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_delete_local_branch_success(mock_git):
     mock_git.return_value = MagicMock(returncode=0, stderr="")
     Session._delete_local_branch("strawpot/run_x", "/tmp")
@@ -314,7 +309,7 @@ def test_delete_local_branch_success(mock_git):
     )
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_delete_local_branch_failure_does_not_raise(mock_git):
     mock_git.return_value = MagicMock(returncode=1, stderr="error")
     # Should not raise — just logs a warning
@@ -326,7 +321,7 @@ def test_delete_local_branch_failure_does_not_raise(mock_git):
 # ---------------------------------------------------------------------------
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_delete_remote_branch_not_on_remote(mock_git):
     """If branch doesn't exist on remote, skip deletion."""
     mock_git.return_value = MagicMock(returncode=0, stdout="")
@@ -336,7 +331,7 @@ def test_delete_remote_branch_not_on_remote(mock_git):
     assert mock_git.call_args[0][0][:2] == ["ls-remote", "--heads"]
 
 
-@patch("strawpot.isolation.worktree._git")
+@patch("strawpot.session._git")
 def test_delete_remote_branch_success(mock_git):
     """If branch exists on remote, delete it."""
     mock_git.side_effect = [
