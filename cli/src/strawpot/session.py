@@ -784,7 +784,8 @@ class Session:
             logger.debug("Merge failed", exc_info=True)
             return MergeOutcome.FAILED
 
-        return MergeOutcome.MERGED  # unrecognized strategy — nothing to merge
+        logger.warning("Unrecognized merge strategy %r — keeping branch for safety", strategy)
+        return MergeOutcome.FAILED
 
     # ------------------------------------------------------------------
     # Branch cleanup
@@ -855,6 +856,10 @@ class Session:
             return
 
         # --- Merge succeeded: clean up everything ---
+        assert merge_outcome is MergeOutcome.MERGED, (
+            f"Unexpected merge outcome: {merge_outcome}"
+        )
+
         if self._branch_has_open_pr(branch, base_dir):
             logger.warning(
                 "Keeping branch %s — an open pull request depends on it",

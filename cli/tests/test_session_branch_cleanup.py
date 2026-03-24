@@ -404,6 +404,7 @@ def test_stop_passes_merge_failure_to_cleanup(
 
     mock_cleanup.assert_called_once_with(merge_outcome=MergeOutcome.FAILED)
 
+
 @patch.object(Session, "_archive_session_dir")
 @patch.object(Session, "_cleanup_session_branch")
 @patch.object(Session, "_merge_session_changes", return_value=MergeOutcome.KEPT_FOR_PR)
