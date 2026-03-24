@@ -129,11 +129,13 @@ def _show_first_run_banner() -> None:
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx):
-    """StrawPot — AI agent orchestration.
+    """StrawPot orchestrates AI coding agents with roles, skills, and team coordination.
 
-    Compose AI agents that delegate tasks, share memory, and coordinate
-    through roles and skills. Works with Claude Code, Codex, Gemini,
-    and more.
+    Define roles (what an agent does), attach skills (what it knows),
+    and let agents delegate to each other in sessions. Works with
+    Claude Code, Codex, Gemini, and more.
+
+    Run 'strawpot start' to begin.
     """
     _show_first_run_banner()
     if ctx.invoked_subcommand is None:
