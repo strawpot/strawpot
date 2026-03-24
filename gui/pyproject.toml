@@ -1,6 +1,6 @@
 [project]
 name = "strawpot-gui"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Local web dashboard for StrawPot agent orchestration"
 requires-python = ">=3.11"
 license = "MIT"
@@ -35,6 +35,10 @@ where = ["src"]
 [tool.setuptools.package-data]
 strawpot_gui = ["static/**/*"]
 
+[tool.setuptools_scm]
+root = ".."
+tag_regex = "^gui-v(?P<version>[\\d.]+)$"
+
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"

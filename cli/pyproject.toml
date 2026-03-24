@@ -1,6 +1,6 @@
 [project]
 name = "strawpot"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Lightweight CLI for agent orchestration"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -57,6 +57,10 @@ markers = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools_scm]
+root = ".."
+tag_regex = "^v(?P<version>[\\d.]+)$"
+
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"

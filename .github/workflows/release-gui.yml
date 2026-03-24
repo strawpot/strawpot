@@ -52,10 +52,13 @@ jobs:
             echo "tag=gui-v${MAJOR}.${MINOR}.${NEW_PATCH}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update version
+      - name: Verify version
         run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
-          sed -i "s/^__version__ = .*/__version__ = \"${{ steps.version.outputs.version }}\"/" src/strawpot_gui/__init__.py
+          if [ -z "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Version output is empty — aborting build"
+            exit 1
+          fi
+          echo "Building version: ${{ steps.version.outputs.version }}"
 
       - name: Build frontend
         run: |
@@ -69,6 +72,8 @@ jobs:
           cp -r frontend/dist src/strawpot_gui/static
 
       - name: Build package
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.version }}
         run: |
           pip install build
           python -m build
