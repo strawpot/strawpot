@@ -241,10 +241,21 @@ def update_project_resource(
 
 
 @router.post("/{project_id}/resources/update-all")
-def update_all_project_resources(project_id: int, conn=Depends(get_db_conn)):
-    """Update all project resources to their latest versions via strawhub --root."""
+def update_all_project_resources(
+    project_id: int, data: dict = Body(default={}), conn=Depends(get_db_conn)
+):
+    """Update all project resources to their latest versions via strawhub --root.
+
+    Optionally accepts {"resource_type": "roles"} to scope the update to a
+    single resource type.
+    """
     working_dir = _get_project_dir(project_id, conn)
-    return run_strawhub("--root", working_dir, "update", "--all", "-y", timeout=300)
+    args = ["--root", working_dir, "update", "--all", "-y"]
+    resource_type = data.get("resource_type")
+    if resource_type:
+        validate_type(resource_type)
+        args.extend(["--type", singular_type(resource_type)])
+    return run_strawhub(*args, timeout=300)
 
 
 @router.post("/{project_id}/resources/reinstall")

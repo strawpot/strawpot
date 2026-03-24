@@ -30,14 +30,22 @@ function parseOutput(stdout: string): { lines: UpdateLine[]; updated: number; up
   return { lines, updated, upToDate: lines.length - updated };
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  roles: "Roles",
+  skills: "Skills",
+  agents: "Agents",
+  memories: "Memory Providers",
+};
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate: () => Promise<InstallResult>;
   scope: string; // e.g. "global" or project name
+  resourceType?: string; // e.g. "roles", "skills" — omit to update all types
 }
 
-export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope }: Props) {
+export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, resourceType }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<InstallResult | null>(null);
 
@@ -71,9 +79,12 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope }:
     <Dialog open={open} onOpenChange={status === "running" ? undefined : handleClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Update All Resources</DialogTitle>
+          <DialogTitle>
+            Update All {resourceType ? TYPE_LABELS[resourceType] ?? resourceType : "Resources"}
+          </DialogTitle>
           <DialogDescription>
-            {status === "idle" && `Update all installed resources (${scope}) to their latest versions.`}
+            {status === "idle" &&
+              `Update all installed ${resourceType ? (TYPE_LABELS[resourceType] ?? resourceType).toLowerCase() : "resources"} (${scope}) to their latest versions.`}
             {status === "running" && "Updating resources..."}
             {status === "done" && parsed && `${parsed.updated} updated, ${parsed.upToDate} already up to date.`}
             {status === "error" && "Update failed."}
@@ -122,7 +133,7 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope }:
               </Button>
               <Button onClick={handleUpdate}>
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Update All
+                Update All{resourceType ? ` ${TYPE_LABELS[resourceType] ?? resourceType}` : ""}
               </Button>
             </>
           )}

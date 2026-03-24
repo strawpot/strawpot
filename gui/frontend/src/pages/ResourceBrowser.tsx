@@ -63,7 +63,7 @@ export default function ResourceBrowser() {
         <div className="flex gap-2">
           <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
             <RefreshCw className="mr-2 h-4 w-4" />
-            Update All
+            Update All {label}
           </Button>
           <Button onClick={() => setInstallOpen(true)} size="sm">
             <Download className="mr-2 h-4 w-4" />
@@ -145,8 +145,9 @@ export default function ResourceBrowser() {
       <UpdateAllDialog
         open={updateAllOpen}
         onOpenChange={setUpdateAllOpen}
-        onUpdate={() => updateAll.mutateAsync()}
+        onUpdate={() => updateAll.mutateAsync(resourceType)}
         scope="global"
+        resourceType={resourceType}
       />
     </div>
   );

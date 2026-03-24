@@ -39,11 +39,14 @@ export function useUpdateResource() {
 export function useUpdateAllResources() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => {
+    mutationFn: (resourceType?: string) => {
       const controller = new AbortController();
       setTimeout(() => controller.abort(), 150_000);
+      const body = resourceType ? { resource_type: resourceType } : {};
       return fetch("/api/registry/update-all", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
         signal: controller.signal,
       }).then(async (res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);

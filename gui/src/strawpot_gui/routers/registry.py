@@ -95,9 +95,18 @@ def scan_dir(
 
 
 @router.post("/update-all")
-def update_all_resources():
-    """Update all global resources to their latest versions via strawhub."""
-    return run_strawhub("update", "--all", "--global", "-y", timeout=300)
+def update_all_resources(data: dict = Body(default={})):
+    """Update all global resources to their latest versions via strawhub.
+
+    Optionally accepts {"resource_type": "roles"} to scope the update to a
+    single resource type.
+    """
+    args = ["update", "--all", "--global", "-y"]
+    resource_type = data.get("resource_type")
+    if resource_type:
+        validate_type(resource_type)
+        args.extend(["--type", singular_type(resource_type)])
+    return run_strawhub(*args, timeout=300)
 
 
 @router.get("/{resource_type}")
