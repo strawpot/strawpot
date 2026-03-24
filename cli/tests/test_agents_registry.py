@@ -378,6 +378,43 @@ def test_check_prerequisites_no_agent_md(tmp_path):
     assert check_install_prerequisites(agent_dir) == []
 
 
+def test_check_prerequisites_null_tool_meta(tmp_path, monkeypatch):
+    """When tool metadata is YAML null (e.g. 'tools:\\n  npm:'), no crash."""
+    agent_md = dedent("""\
+        ---
+        name: null-meta-agent
+        metadata:
+          strawpot:
+            bin:
+              macos: my_binary
+              linux: my_binary
+            tools:
+              npm:
+        ---
+
+        # Agent with null tool meta
+    """)
+    agent_dir = tmp_path / "null-meta-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text(agent_md)
+    monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")
+    monkeypatch.setattr("shutil.which", lambda c: None)
+
+    result = check_install_prerequisites(agent_dir)
+    tool_names = [name for name, _ in result]
+    assert "npm" in tool_names
+
+
+def test_check_prerequisites_malformed_agent_md(tmp_path):
+    """When AGENT.md is malformed, ValueError propagates (not silently swallowed)."""
+    agent_dir = tmp_path / "bad-agent"
+    agent_dir.mkdir()
+    (agent_dir / "AGENT.md").write_text("not valid frontmatter at all")
+
+    with pytest.raises(ValueError, match="missing frontmatter"):
+        check_install_prerequisites(agent_dir)
+
+
 def test_resolve_wrapper_cmd_bin_not_found_includes_install_hint(tmp_path, monkeypatch):
     """When binary is missing, error includes install hint from metadata."""
     monkeypatch.setattr("strawpot.agents.registry._current_os", lambda: "macos")

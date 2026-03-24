@@ -224,7 +224,8 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     """
     try:
         frontmatter, _ = parse_agent_md(agent_dir / "AGENT.md")
-    except (ValueError, OSError):
+    except OSError:
+        # AGENT.md doesn't exist or can't be read — nothing to check.
         return []
 
     meta = frontmatter.get("metadata", {})
@@ -245,6 +246,9 @@ def check_install_prerequisites(agent_dir: Path) -> list[tuple[str, str]]:
     tools = strawpot_meta.get("tools", {})
     for tool_name, tool_meta in tools.items():
         if shutil.which(tool_name) is None:
+            # Guard against YAML null values (e.g. "tools:\n  npm:")
+            if not isinstance(tool_meta, dict):
+                tool_meta = {}
             desc = tool_meta.get("description", "")
             install_hints = tool_meta.get("install", {})
             hint = install_hints.get(_current_os(), "")
