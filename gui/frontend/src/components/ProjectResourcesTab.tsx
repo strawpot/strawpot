@@ -55,10 +55,17 @@ export default function ProjectResourcesTab({
   const [internalInstallOpen, setInternalInstallOpen] = useState(false);
 
   const [updateAllOpen, setUpdateAllOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("all");
   const updateAll = useUpdateAllProjectResources(projectId);
 
   const installOpen = externalInstallOpen ?? internalInstallOpen;
   const setInstallOpen = externalOnInstallOpenChange ?? setInternalInstallOpen;
+
+  // Determine the resource type for scoped updates (undefined = all types)
+  const activeResourceType = RESOURCE_TYPES.includes(activeTab as typeof RESOURCE_TYPES[number])
+    ? activeTab
+    : undefined;
+  const updateLabel = activeResourceType ? TYPE_LABELS[activeResourceType] ?? activeResourceType : "All";
 
   const { data: detail } = useProjectResourceDetail(
     projectId,
@@ -82,7 +89,7 @@ export default function ProjectResourcesTab({
         <div className="flex gap-2">
           <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
             <RefreshCw className="mr-2 h-4 w-4" />
-            Update All
+            Update All {updateLabel}
           </Button>
           <Button onClick={() => setInstallOpen(true)} size="sm">
             <Download className="mr-2 h-4 w-4" />
@@ -102,7 +109,7 @@ export default function ProjectResourcesTab({
           No resources available yet.
         </div>
       ) : (
-        <Tabs defaultValue={resources.length > 0 ? "all" : "integrations"}>
+        <Tabs defaultValue={resources.length > 0 ? "all" : "integrations"} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
             {RESOURCE_TYPES.map((t) => {
@@ -158,8 +165,9 @@ export default function ProjectResourcesTab({
       <UpdateAllDialog
         open={updateAllOpen}
         onOpenChange={setUpdateAllOpen}
-        onUpdate={() => updateAll.mutateAsync()}
+        onUpdate={() => updateAll.mutateAsync(activeResourceType)}
         scope="project"
+        resourceType={activeResourceType}
       />
     </div>
   );
