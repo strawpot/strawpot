@@ -32,6 +32,7 @@ export function useStopSession() {
     mutationFn: (runId: string) => api.post(`/sessions/${runId}/stop`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
 }

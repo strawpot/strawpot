@@ -657,13 +657,7 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
         # Race: died between check and kill
         return _mark_stopped_and_drain()
 
-    conn.execute(
-        "UPDATE sessions SET status = 'stopped' WHERE run_id = ?",
-        (run_id,),
-    )
-    _drain_pending_task(conn, conversation_id)
-    event_bus.publish(SessionEvent(kind="session_stopped", run_id=run_id, project_id=project_id))
-    return {"run_id": run_id, "status": "stopped"}
+    return _mark_stopped_and_drain()
 
 
 @router.delete("/sessions/{run_id}")

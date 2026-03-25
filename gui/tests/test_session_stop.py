@@ -42,6 +42,14 @@ class TestStopSession:
         import signal
         mock_kill.assert_any_call(os.getpid(), signal.SIGTERM)
 
+        # Verify summary is set to "Interrupted" (COALESCE behavior)
+        with get_db(client.app.state.db_path) as conn:
+            row = conn.execute(
+                "SELECT summary FROM sessions WHERE run_id = ?",
+                ("run_stop",),
+            ).fetchone()
+        assert row["summary"] == "Interrupted"
+
     def test_stop_nonexistent_returns_404(self, client):
         """Unknown run_id returns 404."""
         resp = client.post("/api/sessions/run_nope/stop")
