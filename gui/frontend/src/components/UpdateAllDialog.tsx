@@ -19,12 +19,14 @@ interface UpdateLine {
   updated: boolean;
 }
 
+const INFO_LINE_RE = /^No\b.*\bpackages to update/;
+
 function parseOutput(stdout: string): { lines: UpdateLine[]; updated: number; upToDate: number } {
   const lines: UpdateLine[] = stdout
     .split("\n")
     .map((raw) => raw.trim())
     .filter(Boolean)
-    .filter((text) => !text.match(/^No\b.*\bpackages to update/))
+    .filter((text) => !INFO_LINE_RE.test(text))
     .map((text) => ({ text, updated: !text.includes("already up to date") }));
 
   const updated = lines.filter((l) => l.updated).length;
@@ -52,6 +54,9 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, r
 
   const parsed = result ? parseOutput(result.stdout) : null;
   const errorOutput = result?.stderr?.trim() || result?.stdout?.trim() || "Unknown error";
+
+  const typeLabel = resourceType ? (TYPE_LABELS[resourceType] ?? resourceType) : null;
+  const typeLabelLower = typeLabel?.toLowerCase() ?? "resources";
 
   const handleUpdate = async () => {
     setStatus("running");
@@ -81,16 +86,16 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, r
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Update All {resourceType ? TYPE_LABELS[resourceType] ?? resourceType : "Resources"}
+            Update All {typeLabel ?? "Resources"}
           </DialogTitle>
           <DialogDescription>
             {status === "idle" &&
-              `Update all installed ${resourceType ? (TYPE_LABELS[resourceType] ?? resourceType).toLowerCase() : "resources"} (${scope}) to their latest versions.`}
+              `Update all installed ${typeLabelLower} (${scope}) to their latest versions.`}
             {status === "running" && "Updating resources..."}
             {status === "done" &&
               parsed &&
               (parsed.updated === 0 && parsed.upToDate === 0
-                ? `No ${resourceType ? (TYPE_LABELS[resourceType] ?? resourceType).toLowerCase() : "resources"} packages to update.`
+                ? `No ${typeLabelLower} packages to update.`
                 : `${parsed.updated} updated, ${parsed.upToDate} already up to date.`)}
             {status === "error" && "Update failed."}
           </DialogDescription>
@@ -138,7 +143,7 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, r
               </Button>
               <Button onClick={handleUpdate}>
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Update All{resourceType ? ` ${TYPE_LABELS[resourceType] ?? resourceType}` : ""}
+                Update All{typeLabel ? ` ${typeLabel}` : ""}
               </Button>
             </>
           )}
