@@ -752,6 +752,10 @@ def _bootstrap_default_resources(config, working_dir: str) -> None:
             try:
                 _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
             except Exception:
+                click.echo(
+                    f"Warning: failed to install orchestrator role '{config.orchestrator_role}', skipping.",
+                    err=True,
+                )
                 logger.warning(
                     "Failed to bootstrap orchestrator role '%s'",
                     config.orchestrator_role,
@@ -761,9 +765,17 @@ def _bootstrap_default_resources(config, working_dir: str) -> None:
             try:
                 install_fn(name, working_dir, auto_setup=True)
             except Exception:
+                click.echo(f"Warning: failed to install default {resource_type} '{name}', skipping.", err=True)
                 logger.warning("Failed to bootstrap %s '%s'", resource_type, name, exc_info=True)
     if config.memory:
-        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
+        try:
+            _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
+        except Exception:
+            click.echo(
+                f"Warning: failed to install memory provider '{config.memory}', skipping.",
+                err=True,
+            )
+            logger.warning("Failed to bootstrap memory provider '%s'", config.memory, exc_info=True)
 
 
 def _resolve_progress_renderer(progress_mode: str, task: str | None):

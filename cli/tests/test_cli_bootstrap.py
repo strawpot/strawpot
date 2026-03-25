@@ -13,6 +13,7 @@ from strawpot.cli import (
     _DEFAULT_SKILLS,
     _SEEDED_AGENTS,
     _authenticate_agent,
+    _bootstrap_default_resources,
     _download_script,
     _ensure_agent_installed,
     _ensure_integration_installed,
@@ -1107,3 +1108,100 @@ def test_bootstrap_loop_continues_after_failure():
     # All three were attempted, two succeeded
     assert call_count == len(_DEFAULT_INTEGRATIONS)
     assert len(results) == len(_DEFAULT_INTEGRATIONS) - 1
+
+
+# ---------------------------------------------------------------------------
+# _bootstrap_default_resources (direct tests)
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_calls_all_install_fns(
+    mock_skill, mock_role, mock_integ, mock_memory
+):
+    """_bootstrap_default_resources calls install for each default resource."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    skill_names = [call.args[0] for call in mock_skill.call_args_list]
+    assert skill_names == list(_DEFAULT_SKILLS)
+
+    # Orchestrator role + each default role
+    role_names = [call.args[0] for call in mock_role.call_args_list]
+    assert role_names[0] == "orchestrator"
+    assert role_names[1:] == list(_DEFAULT_ROLES)
+
+    integ_names = [call.args[0] for call in mock_integ.call_args_list]
+    assert integ_names == list(_DEFAULT_INTEGRATIONS)
+
+    mock_memory.assert_called_once_with("semantic", "/tmp/project", auto_setup=True)
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_skips_memory_when_falsy(
+    mock_skill, mock_role, mock_integ, mock_memory
+):
+    """_bootstrap_default_resources skips memory install when config.memory is falsy."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = None
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    mock_memory.assert_not_called()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed", side_effect=RuntimeError("boom"))
+def test_bootstrap_default_resources_continues_on_skill_failure(
+    mock_skill, mock_role, mock_integ, mock_memory, mock_echo
+):
+    """A skill install failure doesn't block roles, integrations, or memory."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    # Skills all failed, but roles, integrations, and memory still called
+    assert mock_skill.call_count == len(_DEFAULT_SKILLS)
+    assert mock_role.call_count == 1 + len(_DEFAULT_ROLES)  # orchestrator + defaults
+    assert mock_integ.call_count == len(_DEFAULT_INTEGRATIONS)
+    mock_memory.assert_called_once()
+
+    # Verify user-visible warning was printed to stderr
+    echo_calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Warning:" in c and "skill" in c for c in echo_calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli._ensure_memory_installed", side_effect=OSError("disk full"))
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_handles_memory_failure(
+    mock_skill, mock_role, mock_integ, mock_memory, mock_echo
+):
+    """Memory install failure is caught and does not crash the bootstrap."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    # Should not raise
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    mock_memory.assert_called_once()
+    echo_calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Warning:" in c and "memory" in c for c in echo_calls)
