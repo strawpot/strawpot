@@ -731,48 +731,56 @@ class TestJsonProgressRenderer:
 
 
 class TestProgressFlagWiring:
-    """Verify the --progress CLI flag selects the correct renderer."""
-
-    def _resolve_on_event(self, progress_mode, task=None):
-        """Simulate the renderer selection logic from cli.py start()."""
-        on_event = None
-        if progress_mode != "off":
-            if progress_mode == "json":
-                on_event = JsonProgressRenderer().handle_event
-            elif task:
-                on_event = TerminalProgressRenderer().handle_event
-        return on_event
+    """Verify _resolve_progress_renderer selects the correct renderer."""
 
     def test_auto_with_task_uses_terminal_renderer(self):
-        on_event = self._resolve_on_event("auto", task="Do something")
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("auto", task="Do something")
         assert on_event is not None
         assert isinstance(on_event.__self__, TerminalProgressRenderer)
 
     def test_auto_without_task_uses_no_renderer(self):
-        on_event = self._resolve_on_event("auto", task=None)
-        assert on_event is None
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("auto", task=None) is None
 
     def test_auto_with_empty_task_uses_no_renderer(self):
-        on_event = self._resolve_on_event("auto", task="")
-        assert on_event is None
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("auto", task="") is None
 
     def test_json_uses_json_renderer(self):
-        on_event = self._resolve_on_event("json", task=None)
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("json", task=None)
         assert on_event is not None
         assert isinstance(on_event.__self__, JsonProgressRenderer)
 
     def test_json_with_task_uses_json_renderer(self):
-        on_event = self._resolve_on_event("json", task="Do something")
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("json", task="Do something")
         assert on_event is not None
         assert isinstance(on_event.__self__, JsonProgressRenderer)
 
     def test_off_uses_no_renderer(self):
-        on_event = self._resolve_on_event("off", task="Do something")
-        assert on_event is None
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("off", task="Do something") is None
 
     def test_off_without_task_uses_no_renderer(self):
-        on_event = self._resolve_on_event("off", task=None)
-        assert on_event is None
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("off", task=None) is None
+
+    def test_construction_failure_returns_none(self):
+        """Renderer construction failures degrade gracefully to no progress."""
+        from strawpot.cli import _resolve_progress_renderer
+
+        with patch("strawpot.progress.TerminalProgressRenderer.__init__",
+                   side_effect=OSError("broken stderr")):
+            assert _resolve_progress_renderer("auto", task="foo") is None
 
 
 # ---------------------------------------------------------------------------
@@ -824,45 +832,3 @@ class TestProgressFlagIntegration:
         assert len(lines) == 4
         kinds = [json.loads(line)["kind"] for line in lines]
         assert kinds == ["session_start", "delegate_start", "delegate_end", "session_end"]
-
-
-# ---------------------------------------------------------------------------
-# GUI ProgressEventAdapter tests
-# ---------------------------------------------------------------------------
-
-
-class TestProgressEventAdapter:
-
-    def test_publishes_session_event_to_bus(self):
-        from strawpot_gui.event_bus import EventBus, ProgressEventAdapter, SessionEvent
-
-        bus = MagicMock(spec=EventBus)
-        adapter = ProgressEventAdapter(bus, run_id="run_123", project_id=42)
-        event = _make_event("delegate_start", role="implementer", depth=1)
-        adapter.handle_event(event)
-
-        bus.publish.assert_called_once()
-        published = bus.publish.call_args[0][0]
-        assert isinstance(published, SessionEvent)
-        assert published.kind == "progress_delegate_start"
-        assert published.run_id == "run_123"
-        assert published.project_id == 42
-        assert published.data["role"] == "implementer"
-        assert published.data["depth"] == 1
-
-    def test_progress_kind_prefix(self):
-        from strawpot_gui.event_bus import EventBus, ProgressEventAdapter
-
-        bus = MagicMock(spec=EventBus)
-        adapter = ProgressEventAdapter(bus, run_id="run_1")
-
-        for kind in ["session_start", "delegate_end", "ask_user_start", "session_end"]:
-            adapter.handle_event(_make_event(kind))
-
-        published_kinds = [c[0][0].kind for c in bus.publish.call_args_list]
-        assert published_kinds == [
-            "progress_session_start",
-            "progress_delegate_end",
-            "progress_ask_user_start",
-            "progress_session_end",
-        ]

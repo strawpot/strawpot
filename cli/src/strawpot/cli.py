@@ -700,6 +700,26 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 # ---------------------------------------------------------------------------
 
 
+def _resolve_progress_renderer(progress_mode: str, task: str | None):
+    """Select the progress event callback based on ``--progress`` mode.
+
+    Returns a callable for ``Session.on_event``, or ``None`` to disable.
+    """
+    if progress_mode == "off":
+        return None
+    try:
+        if progress_mode == "json":
+            from strawpot.progress import JsonProgressRenderer
+            return JsonProgressRenderer().handle_event
+        if task:  # auto mode + task mode = terminal renderer
+            from strawpot.progress import TerminalProgressRenderer
+            return TerminalProgressRenderer().handle_event
+    except Exception:
+        logger.warning("Failed to initialize progress renderer", exc_info=True)
+    # auto mode + interactive mode = no renderer (user sees agent output)
+    return None
+
+
 @cli.command()
 @click.option("--role", default=None, help="Orchestrator role slug from strawhub.")
 @click.option("--runtime", default=None, help="Agent runtime (any registry-resolvable name).")
@@ -1028,15 +1048,7 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
             return None
 
     # 6. Determine progress renderer
-    on_event = None
-    if progress_mode != "off":
-        if progress_mode == "json":
-            from strawpot.progress import JsonProgressRenderer
-            on_event = JsonProgressRenderer().handle_event
-        elif task:  # auto mode + task mode = terminal renderer
-            from strawpot.progress import TerminalProgressRenderer
-            on_event = TerminalProgressRenderer().handle_event
-        # auto mode + interactive mode = no renderer (user sees agent output)
+    on_event = _resolve_progress_renderer(progress_mode, task)
 
     # 7. Create and run session
     session = Session(
