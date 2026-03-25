@@ -380,6 +380,7 @@ class Session:
             self._ask_user_handler = make_file_bridge_handler(self._session_dir())
 
         # Initialize tracer (before try block so session_dir exists)
+        self._session_start_time = time.monotonic()
         if self.config.trace:
             self._tracer = Tracer(self._session_dir(), self._run_id)
             self._session_span_id = self._tracer.session_start(
@@ -389,7 +390,6 @@ class Session:
                 isolation=self.config.isolation,
                 task=self.task or "",
             )
-            self._session_start_time = time.monotonic()
 
         original_sigint = signal.getsignal(signal.SIGINT)
         try:
@@ -536,6 +536,10 @@ class Session:
                 )
                 self._agent_spans[agent_id] = self._session_span_id
 
+            self._emit(
+                "session_start", self.config.orchestrator_role,
+            )
+
             # 6. Write session state file
             self._write_session_file()
 
@@ -595,22 +599,29 @@ class Session:
                         group_id=self._group_id,
                     )
 
-        # 0b. Emit session_end trace event before cleanup that might fail
+        # 0b. Emit session_end trace + progress events before cleanup
+        end_duration_ms = self._elapsed_ms(self._session_start_time)
+        files_changed = self._detect_files_changed()
+
         if self._tracer is not None and self._session_span_id is not None:
-            duration_ms = int(
-                (time.monotonic() - self._session_start_time) * 1000
-            )
             result = self._orchestrator_result
             exit_code = result.exit_code if result else 0
-            files_changed = self._detect_files_changed()
             self._tracer.session_end(
                 span_id=self._session_span_id,
                 merge_action="pending",
-                duration_ms=duration_ms,
+                duration_ms=end_duration_ms,
                 output=result.output if result else "",
                 exit_code=exit_code,
                 files_changed=files_changed,
             )
+
+        orch_result = self._orchestrator_result
+        end_status = "ok" if (orch_result is None or orch_result.exit_code == 0) else "error"
+        files_detail = f"{len(files_changed)} files changed" if files_changed else ""
+        self._emit(
+            "session_end", self.config.orchestrator_role,
+            detail=files_detail, duration_ms=end_duration_ms, status=end_status,
+        )
 
         # 1. Kill remaining sub-agents
         for agent_id, handle in self._agents.items():
@@ -1031,6 +1042,11 @@ class Session:
                 time.monotonic(),
             )
 
+    @staticmethod
+    def _elapsed_ms(t0: float) -> int:
+        """Milliseconds elapsed since *t0* (from ``time.monotonic()``)."""
+        return int((time.monotonic() - t0) * 1000)
+
     def _emit_event(self, event: ProgressEvent) -> None:
         """Emit a progress event to the registered callback.
 
@@ -1045,6 +1061,22 @@ class Session:
         except Exception:
             logger.warning("Event callback failed; progress output disabled", exc_info=True)
             self._on_event = None
+
+    def _emit(
+        self,
+        kind: str,
+        role: str,
+        detail: str = "",
+        duration_ms: int = 0,
+        status: str = "",
+        depth: int = 0,
+    ) -> None:
+        """Construct a :class:`ProgressEvent` with an auto-generated timestamp and emit it."""
+        self._emit_event(ProgressEvent(
+            kind=kind, role=role, detail=detail,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            duration_ms=duration_ms, status=status, depth=depth,
+        ))
 
     def _handle_delegate(
         self, request: denden_pb2.DenDenRequest
@@ -1083,23 +1115,32 @@ class Session:
         )
 
         # --- Max delegations check (before cache — cache hits count too) ---
+        _denied_for_limit = False
         with self._delegation_lock:
             max_del = self.config.max_num_delegations
             if max_del > 0 and self._delegation_count >= max_del:
-                reason = "DENY_DELEGATIONS_LIMIT"
-                if self._tracer is not None:
-                    self._tracer.delegate_denied(
-                        role=delegate_req.role_slug,
-                        parent_span=requester_span,
-                        reason=reason,
-                        depth=delegate_req.depth,
-                    )
-                return denied_response(
-                    request.request_id,
-                    reason,
-                    f"Session delegation limit reached ({max_del})",
+                _denied_for_limit = True
+            else:
+                self._delegation_count += 1
+        if _denied_for_limit:
+            reason = "DENY_DELEGATIONS_LIMIT"
+            if self._tracer is not None:
+                self._tracer.delegate_denied(
+                    role=delegate_req.role_slug,
+                    parent_span=requester_span,
+                    reason=reason,
+                    depth=delegate_req.depth,
                 )
-            self._delegation_count += 1
+            self._emit(
+                "delegate_denied", delegate_req.role_slug,
+                detail="DENY_DELEGATIONS_LIMIT", status="denied",
+                depth=delegate_req.depth,
+            )
+            return denied_response(
+                request.request_id,
+                reason,
+                f"Session delegation limit reached ({max_del})",
+            )
 
         # --- Cache check (fast path) ---
         cache_key: str | None = None
@@ -1137,6 +1178,10 @@ class Session:
                         role=delegate_req.role_slug,
                         cache_hit=True,
                     )
+                self._emit(
+                    "delegate_cached", delegate_req.role_slug,
+                    status="cached", depth=delegate_req.depth,
+                )
                 return ok_response(
                     request.request_id,
                     delegate_result=cached_delegate_res,
@@ -1152,6 +1197,7 @@ class Session:
         if key_lock is not None:
             key_lock.acquire()
         try:
+            t0 = time.monotonic()
             # Re-check cache after acquiring per-key lock (another
             # thread may have populated it while we were waiting).
             if cache_key is not None:
@@ -1179,11 +1225,19 @@ class Session:
                             role=delegate_req.role_slug,
                             cache_hit=True,
                         )
+                    self._emit(
+                        "delegate_cached", delegate_req.role_slug,
+                        status="cached", depth=delegate_req.depth,
+                    )
                     return ok_response(
                         request.request_id,
                         delegate_result=cached_delegate_res,
                     )
 
+            self._emit(
+                "delegate_start", delegate_req.role_slug,
+                detail=delegate_req.task_text[:60], depth=delegate_req.depth,
+            )
             result = handle_delegate(
                 request=delegate_req,
                 config=self.config,
@@ -1202,6 +1256,11 @@ class Session:
                 group_id=self._group_id,
             )
             if result.exit_code != 0:
+                self._emit(
+                    "delegate_end", delegate_req.role_slug,
+                    duration_ms=self._elapsed_ms(t0), status="error",
+                    depth=delegate_req.depth,
+                )
                 msg = f"Sub-agent exited with code {result.exit_code}"
                 if result.output:
                     tail = result.output[-2000:] if len(result.output) > 2000 else result.output
@@ -1218,6 +1277,11 @@ class Session:
             # Cache successful results with non-empty output
             if cache_key is not None and result.output:
                 self._cache_store(cache_key, result.output, delegate_res)
+            self._emit(
+                "delegate_end", delegate_req.role_slug,
+                duration_ms=self._elapsed_ms(t0), status="ok",
+                depth=delegate_req.depth,
+            )
             return ok_response(
                 request.request_id,
                 delegate_result=delegate_res,
@@ -1230,11 +1294,21 @@ class Session:
                     reason=exc.reason,
                     depth=delegate_req.depth,
                 )
+            self._emit(
+                "delegate_denied", delegate_req.role_slug,
+                detail=exc.reason, duration_ms=self._elapsed_ms(t0),
+                status="denied", depth=delegate_req.depth,
+            )
             return denied_response(
                 request.request_id, exc.reason, str(exc)
             )
         except Exception as exc:
             logger.exception("Delegation failed for %s", request.request_id)
+            self._emit(
+                "delegate_end", delegate_req.role_slug,
+                detail=str(exc), duration_ms=self._elapsed_ms(t0),
+                status="error", depth=delegate_req.depth,
+            )
             return error_response(
                 request.request_id,
                 "ERR_SUBAGENT_FAILURE",
@@ -1283,21 +1357,29 @@ class Session:
                 session_id=self._run_id,
             )
         t0 = time.monotonic()
+        depth = self._agent_depth(agent_id)
+        self._emit(
+            "ask_user_start", role,
+            detail=ask.question[:60], depth=depth,
+        )
 
         try:
             resp = self._ask_user_handler(req)
         except Exception as exc:
             if self._tracer is not None and ask_span is not None:
-                duration_ms = int((time.monotonic() - t0) * 1000)
                 self._tracer.ask_user_end(
                     span_id=ask_span,
                     request_id=request.request_id,
                     answer=f"ERROR: {exc}",
-                    duration_ms=duration_ms,
+                    duration_ms=self._elapsed_ms(t0),
                     agent_id=agent_id,
                     role=role,
                     session_id=self._run_id,
                 )
+            self._emit(
+                "ask_user_end", role, detail=str(exc),
+                duration_ms=self._elapsed_ms(t0), status="error", depth=depth,
+            )
             logger.exception("ask_user handler failed")
             return error_response(
                 request.request_id,
@@ -1306,16 +1388,19 @@ class Session:
             )
 
         if self._tracer is not None and ask_span is not None:
-            duration_ms = int((time.monotonic() - t0) * 1000)
             self._tracer.ask_user_end(
                 span_id=ask_span,
                 request_id=request.request_id,
                 answer=resp.text,
-                duration_ms=duration_ms,
+                duration_ms=self._elapsed_ms(t0),
                 agent_id=agent_id,
                 role=role,
                 session_id=self._run_id,
             )
+        self._emit(
+            "ask_user_end", role,
+            duration_ms=self._elapsed_ms(t0), status="ok", depth=depth,
+        )
 
         result = denden_pb2.AskUserResult(text=resp.text)
         if resp.json:
