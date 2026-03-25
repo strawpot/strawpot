@@ -65,8 +65,8 @@ class _BaseRenderer:
         with self._lock:
             try:
                 self._render(event)
-            except Exception:
-                logger.debug("Renderer failed, disabling", exc_info=True)
+            except (BrokenPipeError, OSError):
+                logger.debug("Renderer I/O failed, disabling", exc_info=True)
                 self._disabled = True
 
     def _render(self, event: ProgressEvent) -> None:

@@ -657,13 +657,17 @@ class TestJsonProgressRenderer:
         }
 
     def test_compact_separators(self):
-        """No spaces after : or ,"""
+        """Output uses compact JSON separators (no spaces after : or ,)."""
         r = JsonProgressRenderer()
-        output = self._capture_stderr(r, _make_event("session_start"))
-        # Compact JSON should not have ": " or ", "
+        event = _make_event("session_start")
+        output = self._capture_stderr(r, event)
         line = output.strip()
-        assert ": " not in line
-        assert ", " not in line
+        expected = json.dumps(
+            {"kind": "session_start", "role": "implementer", "detail": "",
+             "timestamp": _FIXED_TS, "duration_ms": 0, "status": "", "depth": 0},
+            separators=(",", ":"),
+        )
+        assert line == expected
 
     def test_one_line_per_event(self):
         r = JsonProgressRenderer()
