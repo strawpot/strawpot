@@ -19,6 +19,7 @@ interface UpdateLine {
   updated: boolean;
 }
 
+// Must match CLI output from _update_all_impl in strawhub/commands/update.py
 const INFO_LINE_RE = /^No\b.*\bpackages to update/;
 
 function parseOutput(stdout: string): { lines: UpdateLine[]; updated: number; upToDate: number } {
@@ -95,7 +96,7 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, r
             {status === "done" &&
               parsed &&
               (parsed.updated === 0 && parsed.upToDate === 0
-                ? `No ${typeLabelLower} packages to update.`
+                ? `No ${typeLabelLower} to update.`
                 : `${parsed.updated} updated, ${parsed.upToDate} already up to date.`)}
             {status === "error" && "Update failed."}
           </DialogDescription>
