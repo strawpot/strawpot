@@ -578,6 +578,22 @@ def _ensure_agent_installed(name: str, working_dir: str, *, auto_setup: bool = F
     _run_install_for_agent(global_agent_dir, name, loud=False)
 
 
+def _run_strawhub_install(install_cmd: list[str], *, resource_type: str, name: str) -> None:
+    """Run a strawhub install command, handling OSError and non-zero exit."""
+    try:
+        result = subprocess.run(
+            install_cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    except OSError as exc:
+        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
+        return
+    if result.returncode != 0:
+        click.echo(f"Failed to install {resource_type} '{name}'.", err=True)
+
+
 def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
     """Prompt to install a skill from StrawHub if it is not found locally."""
     candidates = [
@@ -609,18 +625,7 @@ def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = F
     install_cmd = [*cmd, "install", "skill", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    try:
-        result = subprocess.run(
-            install_cmd,
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-    except OSError as exc:
-        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
-        return
-    if result.returncode != 0:
-        click.echo(f"Failed to install skill '{name}'.", err=True)
+    _run_strawhub_install(install_cmd, resource_type="skill", name=name)
 
 
 def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
@@ -648,14 +653,7 @@ def _ensure_memory_installed(name: str, working_dir: str, *, auto_setup: bool = 
     install_cmd = [*cmd, "install", "memory", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    result = subprocess.run(
-        install_cmd,
-        stdin=sys.stdin,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
-    if result.returncode != 0:
-        click.echo(f"Failed to install memory provider '{name}'.", err=True)
+    _run_strawhub_install(install_cmd, resource_type="memory provider", name=name)
 
 
 def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
@@ -689,18 +687,7 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
     install_cmd = [*cmd, "install", "role", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    try:
-        result = subprocess.run(
-            install_cmd,
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-    except OSError as exc:
-        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
-        return
-    if result.returncode != 0:
-        click.echo(f"Failed to install role '{name}'.", err=True)
+    _run_strawhub_install(install_cmd, resource_type="role", name=name)
 
 
 def _ensure_integration_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
@@ -734,18 +721,7 @@ def _ensure_integration_installed(name: str, working_dir: str, *, auto_setup: bo
     install_cmd = [*cmd, "install", "integration", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    try:
-        result = subprocess.run(
-            install_cmd,
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-    except OSError as exc:
-        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
-        return
-    if result.returncode != 0:
-        click.echo(f"Failed to install integration '{name}'.", err=True)
+    _run_strawhub_install(install_cmd, resource_type="integration", name=name)
 
 
 # ---------------------------------------------------------------------------
@@ -758,9 +734,36 @@ _DEFAULT_ROLES = ["ai-employee", "gstack-ceo", "skill-creator", "skill-evaluator
 _DEFAULT_INTEGRATIONS = ["telegram", "discord", "slack"]
 
 
-# ---------------------------------------------------------------------------
-# Session commands
-# ---------------------------------------------------------------------------
+def _bootstrap_default_resources(config, working_dir: str) -> None:
+    """Install default skills, roles, integrations, and memory if missing.
+
+    Each default install is wrapped in try/except so one failure does not
+    block the rest.  The orchestrator role is installed before other defaults
+    because downstream roles may depend on it.
+    """
+    bootstrap_steps = [
+        ("skill", _DEFAULT_SKILLS, _ensure_skill_installed),
+        ("role", _DEFAULT_ROLES, _ensure_role_installed),
+        ("integration", _DEFAULT_INTEGRATIONS, _ensure_integration_installed),
+    ]
+    for resource_type, defaults, install_fn in bootstrap_steps:
+        # The orchestrator role must be installed before other default roles.
+        if resource_type == "role":
+            try:
+                _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
+            except Exception:
+                logger.warning(
+                    "Failed to bootstrap orchestrator role '%s'",
+                    config.orchestrator_role,
+                    exc_info=True,
+                )
+        for name in defaults:
+            try:
+                install_fn(name, working_dir, auto_setup=True)
+            except Exception:
+                logger.warning("Failed to bootstrap %s '%s'", resource_type, name, exc_info=True)
+    if config.memory:
+        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
 
 def _resolve_progress_renderer(progress_mode: str, task: str | None):
@@ -906,24 +909,7 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
 
     # 0c. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=auto_accept)
-    for default_skill in _DEFAULT_SKILLS:
-        try:
-            _ensure_skill_installed(default_skill, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap skill '%s'", default_skill, exc_info=True)
-    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    for default_role in _DEFAULT_ROLES:
-        try:
-            _ensure_role_installed(default_role, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap role '%s'", default_role, exc_info=True)
-    for default_integration in _DEFAULT_INTEGRATIONS:
-        try:
-            _ensure_integration_installed(default_integration, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap integration '%s'", default_integration, exc_info=True)
-    if config.memory:
-        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
+    _bootstrap_default_resources(config, working_dir)
 
     # 1. Resolve agent spec
     try:
@@ -1289,24 +1275,7 @@ def gui(port, skip_update_check):
 
     # Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=True)
-    for default_skill in _DEFAULT_SKILLS:
-        try:
-            _ensure_skill_installed(default_skill, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap skill '%s'", default_skill, exc_info=True)
-    _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    for default_role in _DEFAULT_ROLES:
-        try:
-            _ensure_role_installed(default_role, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap role '%s'", default_role, exc_info=True)
-    for default_integration in _DEFAULT_INTEGRATIONS:
-        try:
-            _ensure_integration_installed(default_integration, working_dir, auto_setup=True)
-        except Exception:
-            logger.warning("Failed to bootstrap integration '%s'", default_integration, exc_info=True)
-    if config.memory:
-        _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
+    _bootstrap_default_resources(config, working_dir)
 
     try:
         from strawpot_gui.server import DEFAULT_PORT, main as gui_main
