@@ -695,6 +695,57 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
         click.echo(f"Failed to install role '{name}'.", err=True)
 
 
+def _ensure_integration_installed(name: str, working_dir: str, *, auto_setup: bool = False) -> None:
+    """Prompt to install an integration from StrawHub if it is not found locally."""
+    candidates = [
+        Path(working_dir) / ".strawpot" / "integrations" / name,
+        get_strawpot_home() / "integrations" / name,
+    ]
+    for candidate in candidates:
+        if (candidate / "INTEGRATION.md").is_file():
+            return  # already installed
+
+    if not auto_setup:
+        if not click.confirm(
+            f"Integration '{name}' is not installed. Install from StrawHub?", default=True
+        ):
+            return
+
+    logger.warning(
+        "Integration '%s' not found locally (checked %s), installing from StrawHub",
+        name,
+        [str(c) for c in candidates],
+    )
+
+    cmd = _strawhub_cmd()
+    if cmd is None:
+        click.echo("Error: strawhub CLI not found.", err=True)
+        click.echo("Install it with: pip install strawhub", err=True)
+        return
+
+    install_cmd = [*cmd, "install", "integration", name, "--global"]
+    if auto_setup:
+        install_cmd.append("--yes")
+    result = subprocess.run(
+        install_cmd,
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    if result.returncode != 0:
+        click.echo(f"Failed to install integration '{name}'.", err=True)
+
+
+# ---------------------------------------------------------------------------
+# Default resources — installed automatically on first run.
+# These are NOT protected (can be uninstalled); they simply ship pre-installed.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_SKILLS = ["denden", "strawpot-session-recap", "notify-telegram", "notify-slack", "notify-discord"]
+_DEFAULT_ROLES = ["ai-employee", "gstack-ceo", "skill-creator", "skill-evaluator", "role-creator", "role-evaluator"]
+_DEFAULT_INTEGRATIONS = ["telegram", "discord", "slack"]
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
@@ -843,10 +894,13 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
 
     # 0c. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=auto_accept)
-    _ensure_skill_installed("denden", working_dir, auto_setup=True)
-    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
+    for skill in _DEFAULT_SKILLS:
+        _ensure_skill_installed(skill, working_dir, auto_setup=True)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    _ensure_role_installed("ai-employee", working_dir, auto_setup=True)
+    for role in _DEFAULT_ROLES:
+        _ensure_role_installed(role, working_dir, auto_setup=True)
+    for integration in _DEFAULT_INTEGRATIONS:
+        _ensure_integration_installed(integration, working_dir, auto_setup=True)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
@@ -1214,10 +1268,13 @@ def gui(port, skip_update_check):
 
     # Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=True)
-    _ensure_skill_installed("denden", working_dir, auto_setup=True)
-    _ensure_skill_installed("strawpot-session-recap", working_dir, auto_setup=True)
+    for skill in _DEFAULT_SKILLS:
+        _ensure_skill_installed(skill, working_dir, auto_setup=True)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    _ensure_role_installed("ai-employee", working_dir, auto_setup=True)
+    for role in _DEFAULT_ROLES:
+        _ensure_role_installed(role, working_dir, auto_setup=True)
+    for integration in _DEFAULT_INTEGRATIONS:
+        _ensure_integration_installed(integration, working_dir, auto_setup=True)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 

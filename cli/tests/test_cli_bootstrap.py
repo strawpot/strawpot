@@ -1,4 +1,4 @@
-"""Tests for strawpot.cli bootstrap helpers (_ensure_agent_installed, _ensure_skill_installed)."""
+"""Tests for strawpot.cli bootstrap helpers (_ensure_agent_installed, _ensure_skill_installed, etc.)."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,10 +8,14 @@ from click.testing import CliRunner
 
 from strawpot.cli import (
     _CURL_PIPE_SH_RE,
+    _DEFAULT_INTEGRATIONS,
+    _DEFAULT_ROLES,
+    _DEFAULT_SKILLS,
     _SEEDED_AGENTS,
     _authenticate_agent,
     _download_script,
     _ensure_agent_installed,
+    _ensure_integration_installed,
     _ensure_memory_installed,
     _ensure_role_installed,
     _ensure_skill_installed,
@@ -561,6 +565,123 @@ def test_ensure_role_install_fails(mock_confirm, mock_which, mock_run, mock_echo
 
 
 # ---------------------------------------------------------------------------
+# _ensure_integration_installed
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_integration_already_installed_project_local(tmp_path):
+    """No prompt when the integration exists in project-local .strawpot/integrations/."""
+    integ_dir = tmp_path / ".strawpot" / "integrations" / "telegram"
+    integ_dir.mkdir(parents=True)
+    (integ_dir / "INTEGRATION.md").write_text("---\nname: telegram\n---")
+
+    with patch("strawpot.cli.click.confirm") as mock_confirm:
+        _ensure_integration_installed("telegram", str(tmp_path))
+        mock_confirm.assert_not_called()
+
+
+def test_ensure_integration_already_installed_global(tmp_path, monkeypatch):
+    """No prompt when the integration exists in global ~/.strawpot/integrations/."""
+    global_home = tmp_path / "global_home"
+    integ_dir = global_home / "integrations" / "telegram"
+    integ_dir.mkdir(parents=True)
+    (integ_dir / "INTEGRATION.md").write_text("---\nname: telegram\n---")
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+    with patch("strawpot.cli.click.confirm") as mock_confirm:
+        _ensure_integration_installed("telegram", str(tmp_path / "project"))
+        mock_confirm.assert_not_called()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_installs_on_confirm(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """Installs integration via strawhub when user confirms."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    mock_confirm.assert_called_once()
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["/usr/bin/strawhub", "install", "integration", "telegram", "--global"]
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=False)
+def test_ensure_integration_skips_on_decline(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """Does nothing when user declines install."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    mock_confirm.assert_called_once()
+    mock_run.assert_not_called()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.shutil.which", return_value=None)
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_strawhub_not_found(mock_confirm, mock_which, mock_echo, tmp_path, monkeypatch):
+    """Shows error when strawhub CLI is not on PATH."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("strawhub CLI not found" in c for c in calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_install_fails(mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch):
+    """Shows error when install command fails."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=1)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to install integration" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# Default resource lists
+# ---------------------------------------------------------------------------
+
+
+def test_default_skills_contains_required():
+    """Default skills list includes core and notification skills."""
+    assert "denden" in _DEFAULT_SKILLS
+    assert "strawpot-session-recap" in _DEFAULT_SKILLS
+    assert "notify-telegram" in _DEFAULT_SKILLS
+    assert "notify-slack" in _DEFAULT_SKILLS
+    assert "notify-discord" in _DEFAULT_SKILLS
+
+
+def test_default_roles_contains_required():
+    """Default roles list includes management and creator roles."""
+    assert "ai-employee" in _DEFAULT_ROLES
+    assert "gstack-ceo" in _DEFAULT_ROLES
+    assert "skill-creator" in _DEFAULT_ROLES
+    assert "skill-evaluator" in _DEFAULT_ROLES
+    assert "role-creator" in _DEFAULT_ROLES
+    assert "role-evaluator" in _DEFAULT_ROLES
+
+
+def test_default_integrations_contains_required():
+    """Default integrations list includes messaging platforms."""
+    assert "telegram" in _DEFAULT_INTEGRATIONS
+    assert "discord" in _DEFAULT_INTEGRATIONS
+    assert "slack" in _DEFAULT_INTEGRATIONS
+
+
+# ---------------------------------------------------------------------------
 # auto_setup=True (headless mode)
 # ---------------------------------------------------------------------------
 
@@ -620,6 +741,22 @@ def test_ensure_memory_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock
 
     mock_confirm.assert_not_called()
     mock_run.assert_called_once()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm")
+def test_ensure_integration_auto_setup_skips_confirm(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """auto_setup=True installs integration without prompting."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"), auto_setup=True)
+
+    mock_confirm.assert_not_called()
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["/usr/bin/strawhub", "install", "integration", "telegram", "--global", "--yes"]
 
 
 # ---------------------------------------------------------------------------
