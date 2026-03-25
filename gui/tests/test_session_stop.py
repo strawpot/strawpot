@@ -42,13 +42,37 @@ class TestStopSession:
         import signal
         mock_kill.assert_any_call(os.getpid(), signal.SIGTERM)
 
-        # Verify summary is set to "Interrupted" (COALESCE behavior)
+        # Verify summary defaults to "Interrupted" when not already set
         with get_db(client.app.state.db_path) as conn:
             row = conn.execute(
                 "SELECT summary FROM sessions WHERE run_id = ?",
                 ("run_stop",),
             ).fetchone()
         assert row["summary"] == "Interrupted"
+
+    def test_stop_preserves_existing_summary(self, client, tmp_path):
+        """Stopping a session with an existing summary doesn't overwrite it."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        _, session_dir = _insert_session(client, project_dir, "run_summary")
+
+        # Pre-set a summary before stopping
+        with get_db(client.app.state.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET summary = 'Task completed' WHERE run_id = ?",
+                ("run_summary",),
+            )
+
+        with patch("strawpot_gui.routers.sessions.os.kill"):
+            resp = client.post("/api/sessions/run_summary/stop")
+
+        assert resp.status_code == 200
+        with get_db(client.app.state.db_path) as conn:
+            row = conn.execute(
+                "SELECT summary FROM sessions WHERE run_id = ?",
+                ("run_summary",),
+            ).fetchone()
+        assert row["summary"] == "Task completed"  # Not overwritten
 
     def test_stop_nonexistent_returns_404(self, client):
         """Unknown run_id returns 404."""
