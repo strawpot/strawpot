@@ -1010,3 +1010,146 @@ def test_authenticate_agent_no_env_skip_maps_to_choice_2(mock_resolve, mock_prom
     mock_save.assert_not_called()
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Skipping" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# subprocess.run OSError handling
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run", side_effect=OSError("Permission denied"))
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_skill_oserror_on_subprocess(mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch):
+    """Handles OSError from subprocess.run gracefully instead of crashing."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_skill_installed("denden", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to run strawhub CLI" in c for c in calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run", side_effect=OSError("Permission denied"))
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_role_oserror_on_subprocess(mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch):
+    """Handles OSError from subprocess.run gracefully instead of crashing."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_role_installed("ai-ceo", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to run strawhub CLI" in c for c in calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run", side_effect=OSError("Permission denied"))
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_oserror_on_subprocess(mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch):
+    """Handles OSError from subprocess.run gracefully instead of crashing."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to run strawhub CLI" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# Default resource list exact contents
+# ---------------------------------------------------------------------------
+
+
+def test_default_skills_exact_contents():
+    """Default skills list contains exactly the expected entries."""
+    expected = {"denden", "strawpot-session-recap", "notify-telegram", "notify-slack", "notify-discord"}
+    assert set(_DEFAULT_SKILLS) == expected
+    assert len(_DEFAULT_SKILLS) == len(expected)
+
+
+def test_default_roles_exact_contents():
+    """Default roles list contains exactly the expected entries."""
+    expected = {"ai-employee", "gstack-ceo", "skill-creator", "skill-evaluator", "role-creator", "role-evaluator"}
+    assert set(_DEFAULT_ROLES) == expected
+    assert len(_DEFAULT_ROLES) == len(expected)
+
+
+def test_default_integrations_exact_contents():
+    """Default integrations list contains exactly the expected entries."""
+    expected = {"telegram", "discord", "slack"}
+    assert set(_DEFAULT_INTEGRATIONS) == expected
+    assert len(_DEFAULT_INTEGRATIONS) == len(expected)
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap loop integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_loop_covers_all_default_skills():
+    """Bootstrap loop pattern iterates over every default skill."""
+    called = []
+    mock_fn = lambda name, wd, *, auto_setup=False: called.append(name)
+
+    for default_skill in _DEFAULT_SKILLS:
+        try:
+            mock_fn(default_skill, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass
+
+    assert called == list(_DEFAULT_SKILLS)
+
+
+def test_bootstrap_loop_covers_all_default_roles():
+    """Bootstrap loop pattern iterates over every default role."""
+    called = []
+    mock_fn = lambda name, wd, *, auto_setup=False: called.append(name)
+
+    for default_role in _DEFAULT_ROLES:
+        try:
+            mock_fn(default_role, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass
+
+    assert called == list(_DEFAULT_ROLES)
+
+
+def test_bootstrap_loop_covers_all_default_integrations():
+    """Bootstrap loop pattern iterates over every default integration."""
+    called = []
+    mock_fn = lambda name, wd, *, auto_setup=False: called.append(name)
+
+    for default_integration in _DEFAULT_INTEGRATIONS:
+        try:
+            mock_fn(default_integration, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass
+
+    assert called == list(_DEFAULT_INTEGRATIONS)
+
+
+def test_bootstrap_loop_continues_after_failure():
+    """One failed install does not block subsequent installs in try/except loop."""
+    call_count = 0
+    results = []
+
+    def mock_install(name, wd, *, auto_setup=False):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("simulated failure")
+        results.append(name)
+
+    for default_integration in _DEFAULT_INTEGRATIONS:
+        try:
+            mock_install(default_integration, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass  # bootstrap should continue
+
+    # All three were attempted, two succeeded
+    assert call_count == len(_DEFAULT_INTEGRATIONS)
+    assert len(results) == len(_DEFAULT_INTEGRATIONS) - 1

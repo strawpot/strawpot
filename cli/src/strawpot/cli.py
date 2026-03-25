@@ -609,12 +609,16 @@ def _ensure_skill_installed(name: str, working_dir: str, *, auto_setup: bool = F
     install_cmd = [*cmd, "install", "skill", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    result = subprocess.run(
-        install_cmd,
-        stdin=sys.stdin,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    try:
+        result = subprocess.run(
+            install_cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    except OSError as exc:
+        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
+        return
     if result.returncode != 0:
         click.echo(f"Failed to install skill '{name}'.", err=True)
 
@@ -685,12 +689,16 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
     install_cmd = [*cmd, "install", "role", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    result = subprocess.run(
-        install_cmd,
-        stdin=sys.stdin,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    try:
+        result = subprocess.run(
+            install_cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    except OSError as exc:
+        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
+        return
     if result.returncode != 0:
         click.echo(f"Failed to install role '{name}'.", err=True)
 
@@ -726,12 +734,16 @@ def _ensure_integration_installed(name: str, working_dir: str, *, auto_setup: bo
     install_cmd = [*cmd, "install", "integration", name, "--global"]
     if auto_setup:
         install_cmd.append("--yes")
-    result = subprocess.run(
-        install_cmd,
-        stdin=sys.stdin,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    try:
+        result = subprocess.run(
+            install_cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    except OSError as exc:
+        click.echo(f"Failed to run strawhub CLI: {exc}", err=True)
+        return
     if result.returncode != 0:
         click.echo(f"Failed to install integration '{name}'.", err=True)
 
@@ -894,13 +906,22 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
 
     # 0c. Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=auto_accept)
-    for skill in _DEFAULT_SKILLS:
-        _ensure_skill_installed(skill, working_dir, auto_setup=True)
+    for default_skill in _DEFAULT_SKILLS:
+        try:
+            _ensure_skill_installed(default_skill, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap skill '%s'", default_skill, exc_info=True)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    for role in _DEFAULT_ROLES:
-        _ensure_role_installed(role, working_dir, auto_setup=True)
-    for integration in _DEFAULT_INTEGRATIONS:
-        _ensure_integration_installed(integration, working_dir, auto_setup=True)
+    for default_role in _DEFAULT_ROLES:
+        try:
+            _ensure_role_installed(default_role, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap role '%s'", default_role, exc_info=True)
+    for default_integration in _DEFAULT_INTEGRATIONS:
+        try:
+            _ensure_integration_installed(default_integration, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap integration '%s'", default_integration, exc_info=True)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
@@ -1268,13 +1289,22 @@ def gui(port, skip_update_check):
 
     # Auto-install default dependencies if not found
     _ensure_agent_installed(config.runtime, working_dir, auto_setup=True)
-    for skill in _DEFAULT_SKILLS:
-        _ensure_skill_installed(skill, working_dir, auto_setup=True)
+    for default_skill in _DEFAULT_SKILLS:
+        try:
+            _ensure_skill_installed(default_skill, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap skill '%s'", default_skill, exc_info=True)
     _ensure_role_installed(config.orchestrator_role, working_dir, auto_setup=True)
-    for role in _DEFAULT_ROLES:
-        _ensure_role_installed(role, working_dir, auto_setup=True)
-    for integration in _DEFAULT_INTEGRATIONS:
-        _ensure_integration_installed(integration, working_dir, auto_setup=True)
+    for default_role in _DEFAULT_ROLES:
+        try:
+            _ensure_role_installed(default_role, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap role '%s'", default_role, exc_info=True)
+    for default_integration in _DEFAULT_INTEGRATIONS:
+        try:
+            _ensure_integration_installed(default_integration, working_dir, auto_setup=True)
+        except Exception:
+            logger.warning("Failed to bootstrap integration '%s'", default_integration, exc_info=True)
     if config.memory:
         _ensure_memory_installed(config.memory, working_dir, auto_setup=True)
 
