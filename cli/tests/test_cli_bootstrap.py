@@ -1,4 +1,4 @@
-"""Tests for strawpot.cli bootstrap helpers (_ensure_agent_installed, _ensure_skill_installed)."""
+"""Tests for strawpot.cli bootstrap helpers (_ensure_agent_installed, _ensure_skill_installed, etc.)."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,10 +8,15 @@ from click.testing import CliRunner
 
 from strawpot.cli import (
     _CURL_PIPE_SH_RE,
+    _DEFAULT_INTEGRATIONS,
+    _DEFAULT_ROLES,
+    _DEFAULT_SKILLS,
     _SEEDED_AGENTS,
     _authenticate_agent,
+    _bootstrap_default_resources,
     _download_script,
     _ensure_agent_installed,
+    _ensure_integration_installed,
     _ensure_memory_installed,
     _ensure_role_installed,
     _ensure_skill_installed,
@@ -561,6 +566,123 @@ def test_ensure_role_install_fails(mock_confirm, mock_which, mock_run, mock_echo
 
 
 # ---------------------------------------------------------------------------
+# _ensure_integration_installed
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_integration_already_installed_project_local(tmp_path):
+    """No prompt when the integration exists in project-local .strawpot/integrations/."""
+    integ_dir = tmp_path / ".strawpot" / "integrations" / "telegram"
+    integ_dir.mkdir(parents=True)
+    (integ_dir / "INTEGRATION.md").write_text("---\nname: telegram\n---")
+
+    with patch("strawpot.cli.click.confirm") as mock_confirm:
+        _ensure_integration_installed("telegram", str(tmp_path))
+        mock_confirm.assert_not_called()
+
+
+def test_ensure_integration_already_installed_global(tmp_path, monkeypatch):
+    """No prompt when the integration exists in global ~/.strawpot/integrations/."""
+    global_home = tmp_path / "global_home"
+    integ_dir = global_home / "integrations" / "telegram"
+    integ_dir.mkdir(parents=True)
+    (integ_dir / "INTEGRATION.md").write_text("---\nname: telegram\n---")
+    monkeypatch.setenv("STRAWPOT_HOME", str(global_home))
+
+    with patch("strawpot.cli.click.confirm") as mock_confirm:
+        _ensure_integration_installed("telegram", str(tmp_path / "project"))
+        mock_confirm.assert_not_called()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_installs_on_confirm(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """Installs integration via strawhub when user confirms."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    mock_confirm.assert_called_once()
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["/usr/bin/strawhub", "install", "integration", "telegram", "--global"]
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=False)
+def test_ensure_integration_skips_on_decline(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """Does nothing when user declines install."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    mock_confirm.assert_called_once()
+    mock_run.assert_not_called()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.shutil.which", return_value=None)
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_strawhub_not_found(mock_confirm, mock_which, mock_echo, tmp_path, monkeypatch):
+    """Shows error when strawhub CLI is not on PATH."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("strawhub CLI not found" in c for c in calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_integration_install_fails(mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch):
+    """Shows error when install command fails."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=1)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to install integration" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# Default resource lists
+# ---------------------------------------------------------------------------
+
+
+def test_default_skills_contains_required():
+    """Default skills list includes core and notification skills."""
+    assert "denden" in _DEFAULT_SKILLS
+    assert "strawpot-session-recap" in _DEFAULT_SKILLS
+    assert "notify-telegram" in _DEFAULT_SKILLS
+    assert "notify-slack" in _DEFAULT_SKILLS
+    assert "notify-discord" in _DEFAULT_SKILLS
+
+
+def test_default_roles_contains_required():
+    """Default roles list includes management and creator roles."""
+    assert "ai-employee" in _DEFAULT_ROLES
+    assert "gstack-ceo" in _DEFAULT_ROLES
+    assert "skill-creator" in _DEFAULT_ROLES
+    assert "skill-evaluator" in _DEFAULT_ROLES
+    assert "role-creator" in _DEFAULT_ROLES
+    assert "role-evaluator" in _DEFAULT_ROLES
+
+
+def test_default_integrations_contains_required():
+    """Default integrations list includes messaging platforms."""
+    assert "telegram" in _DEFAULT_INTEGRATIONS
+    assert "discord" in _DEFAULT_INTEGRATIONS
+    assert "slack" in _DEFAULT_INTEGRATIONS
+
+
+# ---------------------------------------------------------------------------
 # auto_setup=True (headless mode)
 # ---------------------------------------------------------------------------
 
@@ -620,6 +742,22 @@ def test_ensure_memory_auto_setup_skips_confirm(mock_resolve, mock_confirm, mock
 
     mock_confirm.assert_not_called()
     mock_run.assert_called_once()
+
+
+@patch("strawpot.cli.subprocess.run")
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm")
+def test_ensure_integration_auto_setup_skips_confirm(mock_confirm, mock_which, mock_run, tmp_path, monkeypatch):
+    """auto_setup=True installs integration without prompting."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+    mock_run.return_value = MagicMock(returncode=0)
+
+    _ensure_integration_installed("telegram", str(tmp_path / "project"), auto_setup=True)
+
+    mock_confirm.assert_not_called()
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["/usr/bin/strawhub", "install", "integration", "telegram", "--global", "--yes"]
 
 
 # ---------------------------------------------------------------------------
@@ -873,3 +1011,197 @@ def test_authenticate_agent_no_env_skip_maps_to_choice_2(mock_resolve, mock_prom
     mock_save.assert_not_called()
     calls = [str(c) for c in mock_echo.call_args_list]
     assert any("Skipping" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# subprocess.run OSError handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "install_fn, resource_name",
+    [
+        (_ensure_skill_installed, "denden"),
+        (_ensure_role_installed, "ai-ceo"),
+        (_ensure_integration_installed, "telegram"),
+    ],
+    ids=["skill", "role", "integration"],
+)
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli.subprocess.run", side_effect=OSError("Permission denied"))
+@patch("strawpot.cli.shutil.which", return_value="/usr/bin/strawhub")
+@patch("strawpot.cli.click.confirm", return_value=True)
+def test_ensure_resource_oserror_on_subprocess(
+    mock_confirm, mock_which, mock_run, mock_echo, tmp_path, monkeypatch, install_fn, resource_name
+):
+    """Handles OSError from subprocess.run gracefully instead of crashing."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "global_home"))
+
+    install_fn(resource_name, str(tmp_path / "project"))
+
+    calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Failed to run strawhub CLI" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# Default resource list exact contents
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "defaults, expected",
+    [
+        (_DEFAULT_SKILLS, {"denden", "strawpot-session-recap", "notify-telegram", "notify-slack", "notify-discord"}),
+        (_DEFAULT_ROLES, {"ai-employee", "gstack-ceo", "skill-creator", "skill-evaluator", "role-creator", "role-evaluator"}),
+        (_DEFAULT_INTEGRATIONS, {"telegram", "discord", "slack"}),
+    ],
+    ids=["skills", "roles", "integrations"],
+)
+def test_default_resource_list_exact_contents(defaults, expected):
+    """Each default resource list contains exactly the expected entries with no duplicates."""
+    assert set(defaults) == expected
+    assert len(defaults) == len(expected)
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap loop integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "defaults",
+    [_DEFAULT_SKILLS, _DEFAULT_ROLES, _DEFAULT_INTEGRATIONS],
+    ids=["skills", "roles", "integrations"],
+)
+def test_bootstrap_loop_covers_all_defaults(defaults):
+    """Bootstrap loop pattern iterates over every entry in the defaults list."""
+    called = []
+    mock_fn = lambda name, wd, *, auto_setup=False: called.append(name)
+
+    for item in defaults:
+        try:
+            mock_fn(item, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass
+
+    assert called == list(defaults)
+
+
+def test_bootstrap_loop_continues_after_failure():
+    """One failed install does not block subsequent installs in try/except loop."""
+    call_count = 0
+    results = []
+
+    def mock_install(name, wd, *, auto_setup=False):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("simulated failure")
+        results.append(name)
+
+    for name in _DEFAULT_INTEGRATIONS:
+        try:
+            mock_install(name, "/tmp/project", auto_setup=True)
+        except Exception:
+            pass  # bootstrap should continue
+
+    # All three were attempted, two succeeded
+    assert call_count == len(_DEFAULT_INTEGRATIONS)
+    assert len(results) == len(_DEFAULT_INTEGRATIONS) - 1
+
+
+# ---------------------------------------------------------------------------
+# _bootstrap_default_resources (direct tests)
+# ---------------------------------------------------------------------------
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_calls_all_install_fns(
+    mock_skill, mock_role, mock_integ, mock_memory
+):
+    """_bootstrap_default_resources calls install for each default resource."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    skill_names = [call.args[0] for call in mock_skill.call_args_list]
+    assert skill_names == list(_DEFAULT_SKILLS)
+
+    # Orchestrator role + each default role
+    role_names = [call.args[0] for call in mock_role.call_args_list]
+    assert role_names[0] == "orchestrator"
+    assert role_names[1:] == list(_DEFAULT_ROLES)
+
+    integ_names = [call.args[0] for call in mock_integ.call_args_list]
+    assert integ_names == list(_DEFAULT_INTEGRATIONS)
+
+    mock_memory.assert_called_once_with("semantic", "/tmp/project", auto_setup=True)
+
+
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_skips_memory_when_falsy(
+    mock_skill, mock_role, mock_integ, mock_memory
+):
+    """_bootstrap_default_resources skips memory install when config.memory is falsy."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = None
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    mock_memory.assert_not_called()
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli._ensure_memory_installed")
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed", side_effect=RuntimeError("boom"))
+def test_bootstrap_default_resources_continues_on_skill_failure(
+    mock_skill, mock_role, mock_integ, mock_memory, mock_echo
+):
+    """A skill install failure doesn't block roles, integrations, or memory."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    # Skills all failed, but roles, integrations, and memory still called
+    assert mock_skill.call_count == len(_DEFAULT_SKILLS)
+    assert mock_role.call_count == 1 + len(_DEFAULT_ROLES)  # orchestrator + defaults
+    assert mock_integ.call_count == len(_DEFAULT_INTEGRATIONS)
+    mock_memory.assert_called_once()
+
+    # Verify user-visible warning was printed to stderr
+    echo_calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Warning:" in c and "skill" in c for c in echo_calls)
+
+
+@patch("strawpot.cli.click.echo")
+@patch("strawpot.cli._ensure_memory_installed", side_effect=OSError("disk full"))
+@patch("strawpot.cli._ensure_integration_installed")
+@patch("strawpot.cli._ensure_role_installed")
+@patch("strawpot.cli._ensure_skill_installed")
+def test_bootstrap_default_resources_handles_memory_failure(
+    mock_skill, mock_role, mock_integ, mock_memory, mock_echo
+):
+    """Memory install failure is caught and does not crash the bootstrap."""
+    config = MagicMock()
+    config.orchestrator_role = "orchestrator"
+    config.memory = "semantic"
+
+    # Should not raise
+    _bootstrap_default_resources(config, "/tmp/project")
+
+    mock_memory.assert_called_once()
+    echo_calls = [str(c) for c in mock_echo.call_args_list]
+    assert any("Warning:" in c and "memory" in c for c in echo_calls)
