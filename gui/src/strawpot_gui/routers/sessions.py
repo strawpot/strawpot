@@ -402,12 +402,12 @@ def launch_session_subprocess(
             stdin=subprocess.DEVNULL,
             env=env,
         )
-        stderr_fh.close()
     except OSError:
-        if stderr_fh is not None:
-            stderr_fh.close()
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
         raise RuntimeError("Failed to start session subprocess")
+    finally:
+        if stderr_fh is not None:
+            stderr_fh.close()
 
     event_bus.publish(SessionEvent(
         kind="session_started",
