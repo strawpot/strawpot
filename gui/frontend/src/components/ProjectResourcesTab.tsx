@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import type { ProjectResource } from "@/api/types";
 
 const RESOURCE_TYPES = ["roles", "skills", "agents", "memories"] as const;
+const UPDATABLE_TYPES: readonly string[] = [...RESOURCE_TYPES, "integrations"];
 
 const TYPE_LABELS: Record<string, string> = {
   roles: "Roles",
@@ -63,7 +64,6 @@ export default function ProjectResourcesTab({
   const setInstallOpen = externalOnInstallOpenChange ?? setInternalInstallOpen;
 
   // Determine the resource type for scoped updates (undefined = all types)
-  const UPDATABLE_TYPES: readonly string[] = [...RESOURCE_TYPES, "integrations"];
   const activeResourceType = UPDATABLE_TYPES.includes(activeTab)
     ? activeTab
     : undefined;
