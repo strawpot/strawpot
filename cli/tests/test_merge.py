@@ -292,7 +292,6 @@ class TestMergeLocal:
 
         assert result.success
         assert "No changes" in result.message
-        assert result.success
 
     def test_clean_apply(self, tmp_path):
         """Patch with no conflicts is applied cleanly."""

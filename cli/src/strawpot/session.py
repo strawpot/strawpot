@@ -762,20 +762,19 @@ class Session:
                 )
                 return MergeOutcome.KEPT_FOR_PR
 
-            merge_kwargs: dict = {}
-            if self._headless:
-                # Headless mode: save a .patch file on conflict instead
-                # of prompting (which would hang) or discarding silently.
-                merge_kwargs["patch_save_dir"] = os.path.join(
-                    self._working_dir, ".strawpot", "patches"
-                )
-                merge_kwargs["session_id"] = self._run_id
+            # Headless mode: save a .patch file on conflict instead
+            # of prompting (which would hang) or discarding silently.
             result = merge_local(
                 base_branch=base_branch,
                 session_branch=session_branch,
                 worktree_dir=self._env.path,
                 base_dir=self._working_dir,
-                **merge_kwargs,
+                patch_save_dir=(
+                    os.path.join(self._working_dir, ".strawpot", "patches")
+                    if self._headless
+                    else None
+                ),
+                session_id=self._run_id if self._headless else None,
             )
             logger.info("Local merge: %s", result.message)
             if not result.success:
