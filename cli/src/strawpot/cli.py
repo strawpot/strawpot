@@ -700,6 +700,26 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 # ---------------------------------------------------------------------------
 
 
+def _resolve_progress_renderer(progress_mode: str, task: str | None):
+    """Select the progress event callback based on ``--progress`` mode.
+
+    Returns a callable for ``Session.on_event``, or ``None`` to disable.
+    """
+    if progress_mode == "off":
+        return None
+    try:
+        if progress_mode == "json":
+            from strawpot.progress import JsonProgressRenderer
+            return JsonProgressRenderer().handle_event
+        if task:  # auto mode + task mode = terminal renderer
+            from strawpot.progress import TerminalProgressRenderer
+            return TerminalProgressRenderer().handle_event
+    except Exception:
+        logger.warning("Failed to initialize progress renderer", exc_info=True)
+    # auto mode + interactive mode = no renderer (user sees agent output)
+    return None
+
+
 @cli.command()
 @click.option("--role", default=None, help="Orchestrator role slug from strawhub.")
 @click.option("--runtime", default=None, help="Agent runtime (any registry-resolvable name).")
@@ -737,7 +757,14 @@ def _ensure_role_installed(name: str, working_dir: str, *, auto_setup: bool = Fa
 @click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config).")
 @click.option("--yes", "-y", "yes_flag", is_flag=True, default=False, help="Auto-accept all install prompts (tools, agents, etc.).")
 @click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely.")
-def start(role, runtime, isolation, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools):
+@click.option(
+    "--progress",
+    "progress_mode",
+    type=click.Choice(["auto", "json", "off"], case_sensitive=False),
+    default="auto",
+    help="Progress output mode (auto=terminal for --task, json=JSONL, off=disabled).",
+)
+def start(role, runtime, isolation, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools, progress_mode):
     """Start an orchestration session.
 
     Runs in the foreground — creates an isolated environment (if configured),
@@ -1020,7 +1047,10 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         except Exception:
             return None
 
-    # 6. Create and run session
+    # 6. Determine progress renderer
+    on_event = _resolve_progress_renderer(progress_mode, task)
+
+    # 7. Create and run session
     session = Session(
         config=config,
         wrapper=wrapper,
@@ -1035,6 +1065,7 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         memory_task=memory_task or "",
         group_id=group_id,
         keep_branch=keep_branch,
+        on_event=on_event,
     )
     session.start(working_dir)
 

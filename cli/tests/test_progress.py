@@ -723,3 +723,112 @@ class TestJsonProgressRenderer:
         for t in threads:
             t.join()
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# CLI --progress flag wiring tests
+# ---------------------------------------------------------------------------
+
+
+class TestProgressFlagWiring:
+    """Verify _resolve_progress_renderer selects the correct renderer."""
+
+    def test_auto_with_task_uses_terminal_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("auto", task="Do something")
+        assert on_event is not None
+        assert isinstance(on_event.__self__, TerminalProgressRenderer)
+
+    def test_auto_without_task_uses_no_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("auto", task=None) is None
+
+    def test_auto_with_empty_task_uses_no_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("auto", task="") is None
+
+    def test_json_uses_json_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("json", task=None)
+        assert on_event is not None
+        assert isinstance(on_event.__self__, JsonProgressRenderer)
+
+    def test_json_with_task_uses_json_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        on_event = _resolve_progress_renderer("json", task="Do something")
+        assert on_event is not None
+        assert isinstance(on_event.__self__, JsonProgressRenderer)
+
+    def test_off_uses_no_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("off", task="Do something") is None
+
+    def test_off_without_task_uses_no_renderer(self):
+        from strawpot.cli import _resolve_progress_renderer
+
+        assert _resolve_progress_renderer("off", task=None) is None
+
+    def test_construction_failure_returns_none(self):
+        """Renderer construction failures degrade gracefully to no progress."""
+        from strawpot.cli import _resolve_progress_renderer
+
+        with patch("strawpot.progress.TerminalProgressRenderer.__init__",
+                   side_effect=OSError("broken stderr")):
+            assert _resolve_progress_renderer("auto", task="foo") is None
+
+
+# ---------------------------------------------------------------------------
+# Integration tests
+# ---------------------------------------------------------------------------
+
+
+def _session_sequence():
+    """A typical session event sequence for integration tests."""
+    return [
+        _make_event("session_start", role="ai-ceo"),
+        _make_event("delegate_start", role="implementer", depth=1),
+        _make_event("delegate_end", role="implementer", status="ok",
+                    duration_ms=5000, depth=1),
+        _make_event("session_end", role="ai-ceo", status="ok",
+                    duration_ms=10000),
+    ]
+
+
+class TestProgressFlagIntegration:
+    """Integration test: full event sequence through a renderer."""
+
+    def test_full_sequence_through_terminal_renderer(self):
+        r = TerminalProgressRenderer()
+        buf = io.StringIO()
+
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            mock_sys.stderr.isatty = lambda: False
+            r._is_tty = False
+            for event in _session_sequence():
+                r.handle_event(event)
+
+        output = buf.getvalue()
+        assert "Session started" in output
+        assert "implementer" in output
+        assert "Session complete" in output
+
+    def test_full_sequence_through_json_renderer(self):
+        r = JsonProgressRenderer()
+        buf = io.StringIO()
+
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            for event in _session_sequence():
+                r.handle_event(event)
+
+        lines = buf.getvalue().strip().split("\n")
+        assert len(lines) == 4
+        kinds = [json.loads(line)["kind"] for line in lines]
+        assert kinds == ["session_start", "delegate_start", "delegate_end", "session_end"]

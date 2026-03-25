@@ -103,3 +103,131 @@ class TestEventBus:
         bus.publish(SessionEvent(kind="session_started", run_id="run_3"))
 
         assert q.qsize() == 2
+
+
+# ---------------------------------------------------------------------------
+# ProgressEventAdapter tests
+# ---------------------------------------------------------------------------
+
+
+class TestProgressEventAdapter:
+    """Tests for the ProgressEventAdapter bridge."""
+
+    def _make_progress_event(self, kind="delegate_start", role="implementer",
+                             detail="", duration_ms=0, status="", depth=0):
+        """Create a mock ProgressEvent-like dataclass."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class FakeProgressEvent:
+            kind: str
+            role: str
+            detail: str
+            timestamp: str
+            duration_ms: int
+            status: str
+            depth: int
+
+        return FakeProgressEvent(
+            kind=kind, role=role, detail=detail,
+            timestamp="2026-03-24T10:00:00+00:00",
+            duration_ms=duration_ms, status=status, depth=depth,
+        )
+
+    def test_publishes_session_event_with_progress_prefix(self, bus):
+        from strawpot_gui.event_bus import ProgressEventAdapter
+
+        published = []
+        bus.publish = lambda e: published.append(e)
+
+        adapter = ProgressEventAdapter(bus, run_id="run_42", project_id=7)
+        adapter.handle_event(self._make_progress_event("delegate_start"))
+
+        assert len(published) == 1
+        event = published[0]
+        assert event.kind == "progress_delegate_start"
+        assert event.run_id == "run_42"
+        assert event.project_id == 7
+
+    def test_data_contains_all_progress_fields(self, bus):
+        from strawpot_gui.event_bus import ProgressEventAdapter
+
+        published = []
+        bus.publish = lambda e: published.append(e)
+
+        adapter = ProgressEventAdapter(bus, run_id="run_1")
+        adapter.handle_event(self._make_progress_event(
+            kind="delegate_end", role="code-reviewer",
+            detail="done", duration_ms=5000, status="ok", depth=2,
+        ))
+
+        data = published[0].data
+        assert data["kind"] == "delegate_end"
+        assert data["role"] == "code-reviewer"
+        assert data["detail"] == "done"
+        assert data["duration_ms"] == 5000
+        assert data["status"] == "ok"
+        assert data["depth"] == 2
+        assert "timestamp" in data
+
+    def test_project_id_defaults_to_none(self, bus):
+        from strawpot_gui.event_bus import ProgressEventAdapter
+
+        published = []
+        bus.publish = lambda e: published.append(e)
+
+        adapter = ProgressEventAdapter(bus, run_id="run_1")
+        adapter.handle_event(self._make_progress_event())
+
+        assert published[0].project_id is None
+
+    def test_multiple_events_published(self, bus):
+        from strawpot_gui.event_bus import ProgressEventAdapter
+
+        published = []
+        bus.publish = lambda e: published.append(e)
+
+        adapter = ProgressEventAdapter(bus, run_id="run_1")
+        adapter.handle_event(self._make_progress_event("session_start"))
+        adapter.handle_event(self._make_progress_event("delegate_start"))
+        adapter.handle_event(self._make_progress_event("session_end"))
+
+        assert len(published) == 3
+        kinds = [e.kind for e in published]
+        assert kinds == [
+            "progress_session_start",
+            "progress_delegate_start",
+            "progress_session_end",
+        ]
+
+    def test_full_sequence_publishes_to_real_bus(self, bus):
+        """Integration: adapter publishes to real EventBus, subscriber receives."""
+        from strawpot_gui.event_bus import ProgressEventAdapter
+
+        adapter = ProgressEventAdapter(bus, run_id="run_1", project_id=3)
+
+        async def _run():
+            received = []
+
+            async def consumer():
+                async for event in bus.subscribe():
+                    if event is not None:
+                        received.append(event)
+                        if len(received) >= 3:
+                            break
+
+            task = asyncio.create_task(consumer())
+            await asyncio.sleep(0.01)
+
+            adapter.handle_event(self._make_progress_event("session_start"))
+            adapter.handle_event(self._make_progress_event("delegate_start"))
+            adapter.handle_event(self._make_progress_event("session_end"))
+
+            await asyncio.wait_for(task, timeout=2.0)
+
+            assert len(received) == 3
+            assert received[0].kind == "progress_session_start"
+            assert received[0].run_id == "run_1"
+            assert received[0].project_id == 3
+
+        asyncio.run(_run())
