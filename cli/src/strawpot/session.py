@@ -45,6 +45,7 @@ from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 from strawpot.isolation.worktree import WorktreeIsolator, _git
+from strawpot.progress import ProgressEvent
 from strawpot.trace import Tracer
 
 logger = logging.getLogger(__name__)
@@ -309,6 +310,7 @@ class Session:
         memory_task: str = "",
         group_id: str | None = None,
         keep_branch: bool = False,
+        on_event: Callable[[ProgressEvent], None] | None = None,
     ) -> None:
         self.config = config
         self.wrapper = wrapper
@@ -324,6 +326,7 @@ class Session:
         self._headless = headless
         self._group_id: str | None = group_id
         self._keep_branch: bool = keep_branch
+        self._on_event = on_event
 
         self._run_id: str | None = None
         self._env: IsolatedEnv | None = None
@@ -1027,6 +1030,21 @@ class Session:
                 delegate_res,
                 time.monotonic(),
             )
+
+    def _emit_event(self, event: ProgressEvent) -> None:
+        """Emit a progress event to the registered callback.
+
+        Swallows ``Exception`` subclasses -- ``BaseException`` (KeyboardInterrupt,
+        SystemExit) still propagates.  On the first failure the callback is
+        disabled for the rest of the session (circuit-breaker).
+        """
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(event)
+        except Exception:
+            logger.warning("Event callback failed; progress output disabled", exc_info=True)
+            self._on_event = None
 
     def _handle_delegate(
         self, request: denden_pb2.DenDenRequest
