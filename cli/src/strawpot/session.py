@@ -215,9 +215,9 @@ def _recover_merge(
             return False  # keep branch for manual recovery
         return True
     except Exception:
-        logger.debug("Recovery merge failed", exc_info=True)
+        logger.warning("Recovery merge failed", exc_info=True)
 
-    return True
+    return False  # keep branch on failure so user can recover
 
 
 # ------------------------------------------------------------------
@@ -785,7 +785,7 @@ class Session:
             return MergeOutcome.MERGED
 
         except Exception:
-            logger.debug("Merge failed", exc_info=True)
+            logger.warning("Merge failed", exc_info=True)
             return MergeOutcome.FAILED
 
     # ------------------------------------------------------------------

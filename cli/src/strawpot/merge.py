@@ -400,10 +400,32 @@ def merge_local(
     # Conflicts detected
     # ------------------------------------------------------------------
 
+    if bool(patch_save_dir) != bool(session_id):
+        raise ValueError(
+            "patch_save_dir and session_id must both be set or both be None"
+        )
+
     # Headless mode: save patch file instead of prompting
     if patch_save_dir and session_id:
-        patch_path = save_patch_file(patch, patch_save_dir, session_id)
         conflict_list = ", ".join(conflicts)
+        try:
+            patch_path = save_patch_file(patch, patch_save_dir, session_id)
+        except OSError:
+            logger.error(
+                "Failed to save patch file to %s/%s.patch — "
+                "changes exist on branch but patch could not be written",
+                patch_save_dir,
+                session_id,
+                exc_info=True,
+            )
+            return MergeResult(
+                success=False,
+                message=(
+                    f"Merge conflict: {len(conflicts)} file(s). "
+                    f"Patch save FAILED — recover changes from the "
+                    f"session branch manually."
+                ),
+            )
         logger.warning(
             "Merge conflict — patch saved to %s (conflicts: %s)",
             patch_path,

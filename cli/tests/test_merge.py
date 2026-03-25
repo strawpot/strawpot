@@ -626,3 +626,87 @@ class TestMergeLocalHeadlessConflict:
 
         assert result.success
         assert "No changes" in result.message
+
+    def test_param_mismatch_raises(self, tmp_path):
+        """ValueError when only one of patch_save_dir/session_id is set."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_mismatch")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_mismatch" / "README.md").write_text(
+            "# Changed\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Create a conflict so we reach the validation
+        (tmp_path / "README.md").write_text("# Main committed\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted\n")
+
+        with pytest.raises(ValueError, match="both be set or both be None"):
+            merge_local(
+                base_branch="main",
+                session_branch=branch,
+                worktree_dir=wt_path,
+                base_dir=str(tmp_path),
+                patch_save_dir=str(tmp_path / "patches"),
+                # session_id omitted
+            )
+
+    @patch("strawpot.merge.save_patch_file", side_effect=OSError("disk full"))
+    def test_save_failure_returns_error_result(self, _mock, tmp_path):
+        """OSError during patch save returns failure with descriptive message."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_savefail")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_savefail" / "README.md").write_text(
+            "# Changed\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Create a conflict
+        (tmp_path / "README.md").write_text("# Main committed\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted\n")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=str(tmp_path / "patches"),
+            session_id="run_savefail",
+        )
+
+        assert not result.success
+        assert "FAILED" in result.message
+        assert "manually" in result.message
