@@ -33,6 +33,7 @@ const TYPE_LABELS: Record<string, string> = {
   skills: "Skills",
   agents: "Agents",
   memories: "Memories",
+  integrations: "Integrations",
 };
 
 interface Props {
@@ -62,10 +63,11 @@ export default function ProjectResourcesTab({
   const setInstallOpen = externalOnInstallOpenChange ?? setInternalInstallOpen;
 
   // Determine the resource type for scoped updates (undefined = all types)
-  const activeResourceType = RESOURCE_TYPES.includes(activeTab as typeof RESOURCE_TYPES[number])
+  const UPDATABLE_TYPES: readonly string[] = [...RESOURCE_TYPES, "integrations"];
+  const activeResourceType = UPDATABLE_TYPES.includes(activeTab)
     ? activeTab
     : undefined;
-  const updateLabel = activeResourceType ? TYPE_LABELS[activeResourceType] ?? activeResourceType : "All";
+  const updateLabel = activeResourceType ? (TYPE_LABELS[activeResourceType] ?? activeResourceType) : null;
 
   const { data: detail } = useProjectResourceDetail(
     projectId,
@@ -89,7 +91,7 @@ export default function ProjectResourcesTab({
         <div className="flex gap-2">
           <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
             <RefreshCw className="mr-2 h-4 w-4" />
-            Update All {updateLabel}
+            Update All{updateLabel ? ` ${updateLabel}` : ""}
           </Button>
           <Button onClick={() => setInstallOpen(true)} size="sm">
             <Download className="mr-2 h-4 w-4" />

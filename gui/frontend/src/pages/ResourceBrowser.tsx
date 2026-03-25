@@ -34,6 +34,7 @@ const TYPE_LABELS: Record<string, string> = {
   skills: "Skills",
   agents: "Agents",
   memories: "Memory Providers",
+  integrations: "Integrations",
 };
 
 export default function ResourceBrowser() {
