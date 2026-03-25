@@ -87,6 +87,19 @@ def _drain_pending_task(conn, conversation_id: int | None) -> None:
         )
 
 
+def _read_startup_error(run_id: str) -> str | None:
+    """Read the stderr log captured during session launch."""
+    log_path = Path.home() / ".strawpot" / "logs" / f"{run_id}.log"
+    try:
+        text = log_path.read_text(encoding="utf-8").strip()
+        return text if text else None
+    except FileNotFoundError:
+        return None
+    except OSError:
+        _logger.warning("Could not read startup error log %s", log_path, exc_info=True)
+        return None
+
+
 def _refresh_session_status(conn, run_id: str) -> None:
     """Re-check status for a starting/running session from disk.
 
@@ -113,9 +126,10 @@ def _refresh_session_status(conn, run_id: str) -> None:
                 - datetime.fromisoformat(started_at)
             ).total_seconds()
             if age > 15:
+                error = _read_startup_error(run_id)
                 conn.execute(
-                    "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
-                    (run_id,),
+                    "UPDATE sessions SET status = 'failed', summary = ? WHERE run_id = ?",
+                    (error, run_id),
                 )
                 _drain_pending_task(conn, row["conversation_id"])
         return
@@ -137,9 +151,10 @@ def _refresh_session_status(conn, run_id: str) -> None:
                 - datetime.fromisoformat(started_at)
             ).total_seconds()
             if age > 15:
+                error = _read_startup_error(run_id)
                 conn.execute(
-                    "UPDATE sessions SET status = 'failed' WHERE run_id = ?",
-                    (run_id,),
+                    "UPDATE sessions SET status = 'failed', summary = ? WHERE run_id = ?",
+                    (error, run_id),
                 )
                 _drain_pending_task(conn, row["conversation_id"])
         return
@@ -369,19 +384,30 @@ def launch_session_subprocess(
     if interactive:
         env["STRAWPOT_ASK_USER_BRIDGE"] = "file"
 
+    # Write stderr to a log file so errors are captured even if the session
+    # dir is never created (e.g. config validation failure on startup).
+    log_dir = Path(home) / ".strawpot" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stderr_log = log_dir / f"{run_id}.log"
+
+    stderr_fh = None
     try:
+        stderr_fh = open(stderr_log, "w")
         subprocess.Popen(
             cmd,
             cwd=working_dir,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_fh,
             stdin=subprocess.DEVNULL,
             env=env,
         )
     except OSError:
         conn.execute("DELETE FROM sessions WHERE run_id = ?", (run_id,))
         raise RuntimeError("Failed to start session subprocess")
+    finally:
+        if stderr_fh is not None:
+            stderr_fh.close()
 
     event_bus.publish(SessionEvent(
         kind="session_started",

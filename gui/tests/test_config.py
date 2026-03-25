@@ -110,3 +110,61 @@ class TestProjectConfig:
     def test_put_project_not_found(self, client):
         resp = client.put("/api/projects/999/config", json={"runtime": "x"})
         assert resp.status_code == 404
+
+    def test_put_preserves_skills_and_roles(self, client, tmp_path, monkeypatch):
+        """Saving config form should not wipe skills/roles env values."""
+        monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "home"))
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        pid = self._create_project(client, project_dir)
+
+        # Pre-populate toml with skills env values
+        import tomli_w
+        existing = {
+            "runtime": "old-rt",
+            "skills": {
+                "notify-telegram": {"env": {"TOKEN": "secret"}},
+                "browse": "*",
+            },
+            "roles": {"my-role": "*"},
+        }
+        with open(project_dir / "strawpot.toml", "wb") as f:
+            tomli_w.dump(existing, f)
+
+        # Save config form (only has runtime, no skills/roles)
+        resp = client.put(f"/api/projects/{pid}/config", json={"runtime": "new-rt"})
+        assert resp.status_code == 200
+
+        # Verify skills and roles survived
+        import tomllib
+        with open(project_dir / "strawpot.toml", "rb") as f:
+            written = tomllib.load(f)
+        assert written["runtime"] == "new-rt"
+        assert written["skills"]["notify-telegram"]["env"]["TOKEN"] == "secret"
+        assert written["skills"]["browse"] == "*"
+        assert written["roles"]["my-role"] == "*"
+
+    def test_put_global_preserves_skills(self, client, tmp_path, monkeypatch):
+        """Saving global config form should not wipe skills env values."""
+        home = tmp_path / "home"
+        monkeypatch.setenv("STRAWPOT_HOME", str(home))
+
+        # Pre-populate global toml
+        import tomli_w
+        home.mkdir(parents=True, exist_ok=True)
+        existing = {
+            "runtime": "old",
+            "agents": {"my-agent": {"env": {"KEY": "val"}}},
+        }
+        with open(home / "strawpot.toml", "wb") as f:
+            tomli_w.dump(existing, f)
+
+        # Save form data without agents section
+        resp = client.put("/api/config/global", json={"runtime": "new"})
+        assert resp.status_code == 200
+
+        import tomllib
+        with open(home / "strawpot.toml", "rb") as f:
+            written = tomllib.load(f)
+        assert written["runtime"] == "new"
+        assert written["agents"]["my-agent"]["env"]["KEY"] == "val"
