@@ -1,8 +1,12 @@
 """Progress event types and renderers for real-time session feedback."""
 
+import json
+import logging
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,31 +48,37 @@ def _format_duration(ms: int) -> str:
     return f"{minutes}m {remaining}s"
 
 
-class TerminalProgressRenderer:
-    """Renders ProgressEvents as checkmark lines to stderr.
+class _BaseRenderer:
+    """Thread-safe, BrokenPipeError-safe base for progress renderers.
 
-    Thread-safe: all writes serialized through an internal lock.
-    BrokenPipeError-safe: disables on pipe error without crash.
+    Subclasses implement ``_render(event)`` to produce output.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._disabled = False
-        self._is_tty = sys.stderr.isatty()
 
     def handle_event(self, event: ProgressEvent) -> None:
-        """Callback for ``Session.on_event``. Renders the event to stderr."""
+        """Callback for ``Session.on_event``."""
         if self._disabled:
             return
         with self._lock:
             try:
                 self._render(event)
-            except (BrokenPipeError, OSError):
+            except Exception:
+                logger.debug("Renderer failed, disabling", exc_info=True)
                 self._disabled = True
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
+    def _render(self, event: ProgressEvent) -> None:
+        raise NotImplementedError
+
+
+class TerminalProgressRenderer(_BaseRenderer):
+    """Renders ProgressEvents as checkmark lines to stderr."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._is_tty = sys.stderr.isatty()
 
     def _render(self, event: ProgressEvent) -> None:
         ok = "\u2713" if self._is_tty else "[ok]"
@@ -113,3 +123,15 @@ class TerminalProgressRenderer:
 
     def _clear_terminal_title(self) -> None:
         self._set_terminal_title("")
+
+
+class JsonProgressRenderer(_BaseRenderer):
+    """Renders ProgressEvents as JSONL to stderr.
+
+    Each event is one JSON object per line.
+    """
+
+    def _render(self, event: ProgressEvent) -> None:
+        line = json.dumps(asdict(event), separators=(",", ":"))
+        sys.stderr.write(line + "\n")
+        sys.stderr.flush()

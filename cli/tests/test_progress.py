@@ -1,11 +1,13 @@
 """Tests for progress event types and Session event emission."""
 
 import io
+import json
 import logging
 import threading
 from unittest.mock import MagicMock, patch
 
 from strawpot.progress import (
+    JsonProgressRenderer,
     ProgressEvent,
     TerminalProgressRenderer,
     _format_duration,
@@ -608,6 +610,110 @@ class TestTerminalProgressRenderer:
                 errors.append(exc)
 
         threads = [threading.Thread(target=fire, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# JsonProgressRenderer tests
+# ---------------------------------------------------------------------------
+
+
+class TestJsonProgressRenderer:
+    """Tests for JsonProgressRenderer."""
+
+    def _capture_stderr(self, renderer, event):
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            renderer.handle_event(event)
+        return buf.getvalue()
+
+    def test_outputs_valid_json(self):
+        r = JsonProgressRenderer()
+        output = self._capture_stderr(r, _make_event("delegate_start"))
+        parsed = json.loads(output.strip())
+        assert parsed["kind"] == "delegate_start"
+
+    def test_contains_all_fields(self):
+        r = JsonProgressRenderer()
+        event = _make_event(
+            "delegate_end", role="code-reviewer", detail="done",
+            duration_ms=5000, status="ok", depth=2,
+        )
+        output = self._capture_stderr(r, event)
+        parsed = json.loads(output.strip())
+        assert parsed == {
+            "kind": "delegate_end",
+            "role": "code-reviewer",
+            "detail": "done",
+            "timestamp": _FIXED_TS,
+            "duration_ms": 5000,
+            "status": "ok",
+            "depth": 2,
+        }
+
+    def test_compact_separators(self):
+        """No spaces after : or ,"""
+        r = JsonProgressRenderer()
+        output = self._capture_stderr(r, _make_event("session_start"))
+        # Compact JSON should not have ": " or ", "
+        line = output.strip()
+        assert ": " not in line
+        assert ", " not in line
+
+    def test_one_line_per_event(self):
+        r = JsonProgressRenderer()
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            r.handle_event(_make_event("session_start"))
+            r.handle_event(_make_event("delegate_start"))
+            r.handle_event(_make_event("session_end"))
+        lines = buf.getvalue().strip().split("\n")
+        assert len(lines) == 3
+        for line in lines:
+            json.loads(line)  # each line is valid JSON
+
+    def test_flushes_after_each_write(self):
+        r = JsonProgressRenderer()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = MagicMock()
+            r.handle_event(_make_event("delegate_start"))
+            mock_sys.stderr.flush.assert_called()
+
+    def test_broken_pipe_disables(self):
+        r = JsonProgressRenderer()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr.write.side_effect = BrokenPipeError()
+            r.handle_event(_make_event("delegate_start"))
+        assert r._disabled is True
+
+    def test_oserror_disables(self):
+        r = JsonProgressRenderer()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr.write.side_effect = OSError("pipe gone")
+            r.handle_event(_make_event("delegate_start"))
+        assert r._disabled is True
+
+    def test_thread_safe(self):
+        r = JsonProgressRenderer()
+        buf = io.StringIO()
+        errors = []
+
+        def fire():
+            try:
+                for _ in range(10):
+                    with patch("strawpot.progress.sys") as mock_sys:
+                        mock_sys.stderr = buf
+                        r.handle_event(_make_event("delegate_cached"))
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=fire) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:
