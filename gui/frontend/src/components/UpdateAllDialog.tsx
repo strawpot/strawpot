@@ -24,6 +24,7 @@ function parseOutput(stdout: string): { lines: UpdateLine[]; updated: number; up
     .split("\n")
     .map((raw) => raw.trim())
     .filter(Boolean)
+    .filter((text) => !text.match(/^No\b.*\bpackages to update/))
     .map((text) => ({ text, updated: !text.includes("already up to date") }));
 
   const updated = lines.filter((l) => l.updated).length;
@@ -86,7 +87,11 @@ export default function UpdateAllDialog({ open, onOpenChange, onUpdate, scope, r
             {status === "idle" &&
               `Update all installed ${resourceType ? (TYPE_LABELS[resourceType] ?? resourceType).toLowerCase() : "resources"} (${scope}) to their latest versions.`}
             {status === "running" && "Updating resources..."}
-            {status === "done" && parsed && `${parsed.updated} updated, ${parsed.upToDate} already up to date.`}
+            {status === "done" &&
+              parsed &&
+              (parsed.updated === 0 && parsed.upToDate === 0
+                ? `No ${resourceType ? (TYPE_LABELS[resourceType] ?? resourceType).toLowerCase() : "resources"} packages to update.`
+                : `${parsed.updated} updated, ${parsed.upToDate} already up to date.`)}
             {status === "error" && "Update failed."}
           </DialogDescription>
         </DialogHeader>
