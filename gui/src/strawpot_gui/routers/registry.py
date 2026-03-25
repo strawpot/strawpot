@@ -25,6 +25,7 @@ RESOURCE_TYPES: dict[str, tuple[str, str]] = {
     "skills": ("skills", "SKILL.md"),
     "agents": ("agents", "AGENT.md"),
     "memories": ("memories", "MEMORY.md"),
+    "integrations": ("integrations", "INTEGRATION.md"),
 }
 
 

@@ -40,6 +40,25 @@ def _config_to_nested(config: StrawPotConfig) -> dict:
     }
     return result
 
+# Sections managed by the resource detail sheet, not the config form.
+# These must be preserved when the config form saves.
+_RESOURCE_SECTIONS = {"skills", "roles", "agents", "memories", "memory_config"}
+
+
+def _merge_config_form(existing: dict, form_data: dict) -> dict:
+    """Merge config form data into an existing toml dict.
+
+    Overwrites form-managed keys (runtime, policy, session, etc.) while
+    preserving resource sections (skills, roles, agents, memories,
+    memory_config) that are managed separately by the resource detail sheet.
+    """
+    merged = dict(form_data)
+    for key in _RESOURCE_SECTIONS:
+        if key in existing:
+            merged[key] = existing[key]  # Always preserve — resource sheet manages these
+    return merged
+
+
 from strawpot_gui.db import get_db_conn
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -84,12 +103,19 @@ def get_global_config():
 
 @router.put("/config/global")
 def put_global_config(data: dict = Body(...)):
-    """Write the global strawpot.toml (full replacement)."""
+    """Merge config form fields into the global strawpot.toml.
+
+    Preserves sections not managed by the config form (skills, roles,
+    agents, memories, memory_config) so saving settings doesn't wipe
+    env values or version constraints.
+    """
     path = get_strawpot_home() / "strawpot.toml"
+    existing = _read_toml(path)
+    merged = _merge_config_form(existing, data)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
-        tomli_w.dump(data, f)
-    return data
+        tomli_w.dump(merged, f)
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +155,16 @@ def get_project_config(project_id: int, conn=Depends(get_db_conn)):
 def put_project_config(
     project_id: int, data: dict = Body(...), conn=Depends(get_db_conn)
 ):
-    """Write the project strawpot.toml (full replacement)."""
+    """Merge config form fields into the project strawpot.toml.
+
+    Preserves sections not managed by the config form (skills, roles,
+    agents, memories, memory_config).
+    """
     working_dir = _get_working_dir(project_id, conn)
     path = Path(working_dir) / "strawpot.toml"
+    existing = _read_toml(path)
+    merged = _merge_config_form(existing, data)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
-        tomli_w.dump(data, f)
-    return data
+        tomli_w.dump(merged, f)
+    return merged
