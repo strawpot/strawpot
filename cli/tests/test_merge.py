@@ -18,6 +18,7 @@ from strawpot.merge import (
     _prompt_conflict_resolution,
     detect_pr_created,
     merge_local,
+    save_patch_file,
 )
 
 
@@ -483,3 +484,146 @@ class TestEnsurePatchAvailable:
                 worktree_dir="/fake/wt",
                 base_dir="/fake/base",
             )
+
+
+# ---------------------------------------------------------------------------
+# save_patch_file
+# ---------------------------------------------------------------------------
+
+
+class TestSavePatchFile:
+    def test_creates_dir_and_file(self, tmp_path):
+        """Creates the patches directory and writes the .patch file."""
+        patch_dir = str(tmp_path / "patches")
+        patch_content = "diff --git a/foo.py b/foo.py\n+hello\n"
+
+        path = save_patch_file(patch_content, patch_dir, "run_abc")
+
+        assert os.path.isdir(patch_dir)
+        assert os.path.isfile(path)
+        assert path.endswith("run_abc.patch")
+        with open(path) as f:
+            assert f.read() == patch_content
+
+    def test_existing_dir(self, tmp_path):
+        """Works when the directory already exists."""
+        patch_dir = str(tmp_path / "patches")
+        os.makedirs(patch_dir)
+
+        path = save_patch_file("diff\n", patch_dir, "run_xyz")
+        assert os.path.isfile(path)
+
+    def test_overwrites_existing_file(self, tmp_path):
+        """Overwrites an existing patch for the same session."""
+        patch_dir = str(tmp_path / "patches")
+        save_patch_file("old\n", patch_dir, "run_1")
+        path = save_patch_file("new\n", patch_dir, "run_1")
+
+        with open(path) as f:
+            assert f.read() == "new\n"
+
+
+# ---------------------------------------------------------------------------
+# merge_local — headless conflict (patch-file preservation)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeLocalHeadlessConflict:
+    def test_conflict_saves_patch_file(self, tmp_path):
+        """Headless mode saves a .patch file on conflict instead of discarding."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_headless")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_headless" / "README.md").write_text(
+            "# Worktree version\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Commit on main then leave uncommitted edit (creates conflict)
+        (tmp_path / "README.md").write_text("# Committed on main\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted local\n")
+
+        patch_dir = str(tmp_path / ".strawpot" / "patches")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=patch_dir,
+            session_id="run_headless",
+        )
+
+        assert not result.success
+        assert "Patch saved" in result.message
+        assert "run_headless" in result.message
+
+        # Verify patch file was written and contains the diff
+        patch_path = os.path.join(patch_dir, "run_headless.patch")
+        assert os.path.isfile(patch_path)
+        with open(patch_path) as f:
+            patch_content = f.read()
+        assert "README.md" in patch_content
+
+    def test_clean_merge_ignores_patch_save(self, tmp_path):
+        """When merge is clean, patch_save_dir is not used."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_clean_hl")
+
+        # Add a new file (no conflict)
+        (tmp_path / "worktrees" / "run_clean_hl" / "new.txt").write_text("x\n")
+        subprocess.run(
+            ["git", "add", "new.txt"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add"], cwd=wt_path, capture_output=True
+        )
+
+        patch_dir = str(tmp_path / ".strawpot" / "patches")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=patch_dir,
+            session_id="run_clean_hl",
+        )
+
+        assert result.success
+        assert "cleanly" in result.message
+        # No patch file should exist
+        assert not os.path.exists(patch_dir)
+
+    def test_no_changes_ignores_patch_save(self, tmp_path):
+        """Empty diff with patch_save_dir still returns 'No changes'."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_empty_hl")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=str(tmp_path / ".strawpot" / "patches"),
+            session_id="run_empty_hl",
+        )
+
+        assert result.success
+        assert "No changes" in result.message

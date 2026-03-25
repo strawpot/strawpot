@@ -200,13 +200,19 @@ def _recover_merge(
             logger.info("Recovery: PR exists for %s — cleanup only", session_branch)
             return False  # keep remote branch for the PR
 
+        run_id = data.get("run_id", "unknown")
         result = merge_local(
             base_branch=base_branch,
             session_branch=session_branch,
             worktree_dir=worktree_dir,
             base_dir=working_dir,
+            patch_save_dir=os.path.join(working_dir, ".strawpot", "patches"),
+            session_id=run_id,
         )
         logger.info("Recovery merge (local): %s", result.message)
+        if not result.success:
+            logger.warning("Recovery merge had conflicts — %s", result.message)
+            return False  # keep branch for manual recovery
         return True
     except Exception:
         logger.debug("Recovery merge failed", exc_info=True)
@@ -756,15 +762,27 @@ class Session:
                 )
                 return MergeOutcome.KEPT_FOR_PR
 
-            prompt_fn = (lambda *a, **kw: "d") if self._headless else None
+            merge_kwargs: dict = {}
+            if self._headless:
+                # Headless mode: save a .patch file on conflict instead
+                # of prompting (which would hang) or discarding silently.
+                merge_kwargs["patch_save_dir"] = os.path.join(
+                    self._working_dir, ".strawpot", "patches"
+                )
+                merge_kwargs["session_id"] = self._run_id
             result = merge_local(
                 base_branch=base_branch,
                 session_branch=session_branch,
                 worktree_dir=self._env.path,
                 base_dir=self._working_dir,
-                prompt=prompt_fn,
+                **merge_kwargs,
             )
             logger.info("Local merge: %s", result.message)
+            if not result.success:
+                logger.warning(
+                    "Merge had conflicts — %s", result.message
+                )
+                return MergeOutcome.FAILED
             return MergeOutcome.MERGED
 
         except Exception:

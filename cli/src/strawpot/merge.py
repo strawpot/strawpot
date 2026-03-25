@@ -4,9 +4,11 @@ Detects what the agent actually did and acts accordingly:
 
 - **PR created** — the work product is the PR; nothing to merge locally,
   just clean up the worktree.
-- **No PR** — generate a unified diff patch from the session branch and
-  apply it to the base branch as unstaged changes.  Conflicts are detected
-  and the user is prompted for resolution.
+- **No PR, clean merge** — generate a unified diff patch from the session
+  branch and apply it to the base branch as unstaged changes.
+- **No PR, conflicts** — in interactive mode, prompt the user for
+  resolution.  In headless mode, export the diff as a ``.patch`` file
+  under ``.strawpot/patches/`` so no work is silently lost.
 
 Called from ``Session.stop()`` for worktree isolation.
 """
@@ -268,6 +270,24 @@ def _apply_patch_skip(patch: str, cwd: str) -> bool:
 
 
 # ------------------------------------------------------------------
+# Patch-file preservation (headless conflict fallback)
+# ------------------------------------------------------------------
+
+
+def save_patch_file(patch: str, patch_dir: str, session_id: str) -> str:
+    """Write *patch* to ``<patch_dir>/<session_id>.patch``.
+
+    Creates *patch_dir* if it does not exist.  Returns the absolute path
+    to the saved file.
+    """
+    os.makedirs(patch_dir, exist_ok=True)
+    patch_path = os.path.join(patch_dir, f"{session_id}.patch")
+    with open(patch_path, "w", encoding="utf-8") as f:
+        f.write(patch)
+    return patch_path
+
+
+# ------------------------------------------------------------------
 # Conflict resolution prompt
 # ------------------------------------------------------------------
 
@@ -327,12 +347,19 @@ def merge_local(
     base_dir: str,
     echo=None,
     prompt=None,
+    patch_save_dir: str | None = None,
+    session_id: str | None = None,
 ) -> MergeResult:
     """Patch-apply session changes as unstaged changes to *base_dir*.
 
     Generates a patch from *session_branch* vs *base_branch* (run in
     *worktree_dir* which has access to both), then applies it to
     *base_dir*.
+
+    When *patch_save_dir* and *session_id* are provided and conflicts
+    are detected, the diff is saved as a ``.patch`` file instead of
+    prompting the user.  This is the headless/agent-mode fallback that
+    prevents silent data loss.
 
     Args:
         base_branch: Branch the session diverged from.
@@ -341,6 +368,11 @@ def merge_local(
         base_dir: Project root where the patch is applied.
         echo: Output callable (for testing).
         prompt: Input callable (for testing).
+        patch_save_dir: Directory to save ``.patch`` files on conflict
+            (headless mode).  When ``None``, falls back to interactive
+            prompt.
+        session_id: Session identifier used as the patch filename.
+            Required when *patch_save_dir* is set.
     """
     patch = _generate_patch(base_branch, session_branch, cwd=worktree_dir)
 
@@ -364,7 +396,28 @@ def merge_local(
             else "Patch apply failed.",
         )
 
-    # Conflicts — ask the user
+    # ------------------------------------------------------------------
+    # Conflicts detected
+    # ------------------------------------------------------------------
+
+    # Headless mode: save patch file instead of prompting
+    if patch_save_dir and session_id:
+        patch_path = save_patch_file(patch, patch_save_dir, session_id)
+        conflict_list = ", ".join(conflicts)
+        logger.warning(
+            "Merge conflict — patch saved to %s (conflicts: %s)",
+            patch_path,
+            conflict_list,
+        )
+        return MergeResult(
+            success=False,
+            message=(
+                f"Merge conflict: {len(conflicts)} file(s). "
+                f"Patch saved to {patch_path}"
+            ),
+        )
+
+    # Interactive mode: ask the user
     choice = _prompt_conflict_resolution(conflicts, echo=echo, prompt=prompt)
 
     if choice == "a":
