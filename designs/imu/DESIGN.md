@@ -378,9 +378,6 @@ max_delegate_retries = 0
 # Memory provider
 memory = "dial"
 
-# Merge strategy: "auto", "local", "pr"
-merge_strategy = "auto"
-
 # Agent-specific config
 [agents.strawpot-claude-code]
 model = "claude-opus-4-6"

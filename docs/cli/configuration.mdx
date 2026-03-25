@@ -68,16 +68,9 @@ max_num_delegations = 0
 
 # ── Session ──────────────────────────────────────────────
 [session]
-# How to merge session changes back
-# Options: auto, local, pr
-merge_strategy = "auto"
-
 # Whether to pull latest before creating a worktree
 # Options: prompt, auto, always, never
 pull_before_session = "prompt"
-
-# Command to create PRs (supports {base_branch} and {session_branch} placeholders)
-pr_command = "gh pr create --base {base_branch} --head {session_branch}"
 
 # ── Memory ───────────────────────────────────────────────
 [memory]

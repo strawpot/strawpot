@@ -17,9 +17,6 @@ def get_strawpot_home() -> Path:
     return Path.home() / ".strawpot"
 
 
-_DEFAULT_PR_COMMAND = "gh pr create --base {base_branch} --head {session_branch}"
-
-
 @dataclass
 class StrawPotConfig:
     runtime: str = "strawpot-claude-code"
@@ -39,9 +36,7 @@ class StrawPotConfig:
     roles: dict[str, dict] = field(default_factory=dict)
     memory: str = "dial"
     memory_config: dict[str, str] = field(default_factory=dict)
-    merge_strategy: str = "auto"
     pull_before_session: str = "prompt"
-    pr_command: str = _DEFAULT_PR_COMMAND
     cleanup_branches: bool = True
     cleanup_remote: bool = True
     trace: bool = True
@@ -114,12 +109,8 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
         config.memory_config[key] = value
 
     session = data.get("session", {})
-    if "merge_strategy" in session:
-        config.merge_strategy = session["merge_strategy"]
     if "pull_before_session" in session:
         config.pull_before_session = session["pull_before_session"]
-    if "pr_command" in session:
-        config.pr_command = session["pr_command"]
     if "cleanup_branches" in session:
         config.cleanup_branches = session["cleanup_branches"]
     if "cleanup_remote" in session:

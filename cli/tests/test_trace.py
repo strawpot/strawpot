@@ -202,13 +202,13 @@ class TestSessionEvents:
             run_id="r", role="o", runtime="r", isolation="n",
         )
         tracer.session_end(
-            span_id=span_id, merge_strategy="local", duration_ms=5000,
+            span_id=span_id, merge_action="local", duration_ms=5000,
             output="Task completed successfully.",
         )
         events = _read_events(session_dir)
         assert events[1]["event"] == "session_end"
         assert events[1]["data"]["duration_ms"] == 5000
-        assert events[1]["data"]["merge_strategy"] == "local"
+        assert events[1]["data"]["merge_action"] == "local"
         assert events[1]["data"]["output_ref"] is not None
         artifact_path = Path(session_dir) / "artifacts" / events[1]["data"]["output_ref"]
         assert artifact_path.read_text() == "Task completed successfully."

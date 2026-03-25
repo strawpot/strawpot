@@ -85,7 +85,7 @@ class TestParseTrace:
                 "event": "session_end",
                 "trace_id": "run_x",
                 "span_id": "span1",
-                "data": {"merge_strategy": "auto", "duration_ms": 300000},
+                "data": {"merge_action": "pending", "duration_ms": 300000},
             }
         ])
         result = _parse_trace(os.path.join(str(tmp_path), "trace.jsonl"))
@@ -180,7 +180,7 @@ class TestSyncSessions:
                 "event": "session_end",
                 "trace_id": "run_traced",
                 "span_id": "s1",
-                "data": {"merge_strategy": "auto", "duration_ms": 300100, "exit_code": 0},
+                "data": {"merge_action": "pending", "duration_ms": 300100, "exit_code": 0},
             },
         ])
 

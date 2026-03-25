@@ -16,9 +16,9 @@ from strawpot.merge import (
     _ensure_patch_available,
     _generate_patch,
     _prompt_conflict_resolution,
+    detect_pr_created,
     merge_local,
-    merge_pr,
-    resolve_strategy,
+    save_patch_file,
 )
 
 
@@ -84,24 +84,43 @@ def _create_worktree(base_path, session_id):
 
 
 # ---------------------------------------------------------------------------
-# resolve_strategy
+# detect_pr_created
 # ---------------------------------------------------------------------------
 
 
-class TestResolveStrategy:
-    @patch("strawpot.merge._has_remote", return_value=True)
-    def test_auto_with_remote_returns_pr(self, _mock):
-        assert resolve_strategy("auto", "/fake") == "pr"
+class TestDetectPrCreated:
+    @patch("strawpot.merge.shutil.which", return_value=None)
+    def test_no_gh_returns_false(self, _mock):
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
-    @patch("strawpot.merge._has_remote", return_value=False)
-    def test_auto_without_remote_returns_local(self, _mock):
-        assert resolve_strategy("auto", "/fake") == "local"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_pr_exists(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='[{"number":42}]', stderr=""
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is True
 
-    def test_local_passthrough(self):
-        assert resolve_strategy("local", "/fake") == "local"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_no_pr(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="[]", stderr=""
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
-    def test_pr_passthrough(self):
-        assert resolve_strategy("pr", "/fake") == "pr"
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run")
+    def test_gh_fails_returns_false(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="error"
+        )
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
+
+    @patch("strawpot.merge.shutil.which", return_value="/usr/bin/gh")
+    @patch("strawpot.merge.subprocess.run", side_effect=Exception("timeout"))
+    def test_exception_returns_false(self, _mock_run, _mock_which):
+        assert detect_pr_created("strawpot/run_x", "/fake") is False
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +194,7 @@ class TestCheckPatch:
         assert conflicts == []
 
     def test_conflicting_patch(self, tmp_path):
-        """Working tree differs from patch context → conflict detected.
+        """Working tree differs from patch context — conflict detected.
 
         git apply --check fails when the working tree has modifications
         that don't match the patch's expected ``-`` lines.
@@ -273,7 +292,6 @@ class TestMergeLocal:
 
         assert result.success
         assert "No changes" in result.message
-        assert result.strategy == "local"
 
     def test_clean_apply(self, tmp_path):
         """Patch with no conflicts is applied cleanly."""
@@ -344,7 +362,7 @@ class TestMergeLocal:
             prompt=lambda *a, **kw: "a",
         )
 
-        assert result.strategy == "local"
+        # --3way may fail on some git versions; verify the code path runs
         assert "override" in result.message.lower() or "applied" in result.message.lower()
 
     def test_conflict_discard(self, tmp_path):
@@ -437,172 +455,6 @@ class TestMergeLocal:
 
 
 # ---------------------------------------------------------------------------
-# merge_pr
-# ---------------------------------------------------------------------------
-
-
-class TestMergePR:
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_push_and_create_pr(self, mock_run, mock_git):
-        """Successful push + PR creation."""
-        # status --porcelain: no uncommitted changes
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        # pr_command
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://github.com/pr/1\n", stderr=""
-        )
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_abc",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create --base {base_branch} --head {session_branch}",
-            echo=lambda x: None,
-        )
-
-        assert result.success
-        assert result.pr_url == "https://github.com/pr/1"
-        assert result.strategy == "pr"
-
-        # PR command should be tokenized via shlex (no shell=True)
-        mock_run.assert_called_once()
-        call_args, call_kwargs = mock_run.call_args
-        assert call_args[0] == [
-            "gh", "pr", "create",
-            "--base", "main",
-            "--head", "strawpot/run_abc",
-        ]
-        assert "shell" not in call_kwargs
-
-    @patch("strawpot.merge._git")
-    def test_push_fails(self, mock_git):
-        """Push failure returns error."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=1, stderr="permission denied"),  # push
-        ]
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_fail",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        assert not result.success
-        assert "permission denied" in result.message
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_push_ok_pr_fails(self, mock_run, mock_git):
-        """Push succeeds but PR creation fails — partial success."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="gh: not found"
-        )
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_partial",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        assert result.success  # branch pushed
-        assert result.pr_url is None
-        assert "PR creation failed" in result.message
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_commits_uncommitted_changes(self, mock_run, mock_git):
-        """Uncommitted changes are committed before push."""
-        mock_git.side_effect = [
-            MagicMock(stdout="M file.py\n", returncode=0),  # status (dirty)
-            MagicMock(returncode=0),  # add -A
-            MagicMock(returncode=0),  # commit
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://pr/1\n", stderr=""
-        )
-
-        merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_dirty",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="gh pr create",
-            echo=lambda x: None,
-        )
-
-        # Check add -A and commit were called
-        calls = mock_git.call_args_list
-        assert calls[1][0][0] == ["add", "-A"]
-        assert calls[2][0][0][0] == "commit"
-
-    @patch("strawpot.merge._git")
-    def test_empty_pr_command(self, mock_git):
-        """Empty pr_command skips PR creation."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-
-        result = merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_noPR",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command="",
-            echo=lambda x: None,
-        )
-
-        assert result.success
-        assert result.pr_url is None
-
-    @patch("strawpot.merge._git")
-    @patch("strawpot.merge.subprocess.run")
-    def test_pr_command_shlex_tokenization(self, mock_run, mock_git):
-        """Complex pr_command with quoted args is tokenized correctly."""
-        mock_git.side_effect = [
-            MagicMock(stdout="", returncode=0),  # status
-            MagicMock(returncode=0, stderr=""),  # push
-        ]
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="https://pr/2\n", stderr=""
-        )
-
-        merge_pr(
-            base_branch="main",
-            session_branch="strawpot/run_x",
-            worktree_dir="/fake/wt",
-            base_dir="/fake/base",
-            pr_command='my-tool --title "PR for {session_branch}" --base {base_branch}',
-            echo=lambda x: None,
-        )
-
-        call_args = mock_run.call_args[0][0]
-        assert call_args == [
-            "my-tool",
-            "--title", "PR for strawpot/run_x",
-            "--base", "main",
-        ]
-
-
-
-# ---------------------------------------------------------------------------
 # _ensure_patch_available
 # ---------------------------------------------------------------------------
 
@@ -631,3 +483,230 @@ class TestEnsurePatchAvailable:
                 worktree_dir="/fake/wt",
                 base_dir="/fake/base",
             )
+
+
+# ---------------------------------------------------------------------------
+# save_patch_file
+# ---------------------------------------------------------------------------
+
+
+class TestSavePatchFile:
+    def test_creates_dir_and_file(self, tmp_path):
+        """Creates the patches directory and writes the .patch file."""
+        patch_dir = str(tmp_path / "patches")
+        patch_content = "diff --git a/foo.py b/foo.py\n+hello\n"
+
+        path = save_patch_file(patch_content, patch_dir, "run_abc")
+
+        assert os.path.isdir(patch_dir)
+        assert os.path.isfile(path)
+        assert path.endswith("run_abc.patch")
+        with open(path) as f:
+            assert f.read() == patch_content
+
+    def test_existing_dir(self, tmp_path):
+        """Works when the directory already exists."""
+        patch_dir = str(tmp_path / "patches")
+        os.makedirs(patch_dir)
+
+        path = save_patch_file("diff\n", patch_dir, "run_xyz")
+        assert os.path.isfile(path)
+
+    def test_overwrites_existing_file(self, tmp_path):
+        """Overwrites an existing patch for the same session."""
+        patch_dir = str(tmp_path / "patches")
+        save_patch_file("old\n", patch_dir, "run_1")
+        path = save_patch_file("new\n", patch_dir, "run_1")
+
+        with open(path) as f:
+            assert f.read() == "new\n"
+
+
+# ---------------------------------------------------------------------------
+# merge_local — headless conflict (patch-file preservation)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeLocalHeadlessConflict:
+    def test_conflict_saves_patch_file(self, tmp_path):
+        """Headless mode saves a .patch file on conflict instead of discarding."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_headless")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_headless" / "README.md").write_text(
+            "# Worktree version\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Commit on main then leave uncommitted edit (creates conflict)
+        (tmp_path / "README.md").write_text("# Committed on main\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted local\n")
+
+        patch_dir = str(tmp_path / ".strawpot" / "patches")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=patch_dir,
+            session_id="run_headless",
+        )
+
+        assert not result.success
+        assert "Patch saved" in result.message
+        assert "run_headless" in result.message
+
+        # Verify patch file was written and contains the diff
+        patch_path = os.path.join(patch_dir, "run_headless.patch")
+        assert os.path.isfile(patch_path)
+        with open(patch_path) as f:
+            patch_content = f.read()
+        assert "README.md" in patch_content
+
+    def test_clean_merge_ignores_patch_save(self, tmp_path):
+        """When merge is clean, patch_save_dir is not used."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_clean_hl")
+
+        # Add a new file (no conflict)
+        (tmp_path / "worktrees" / "run_clean_hl" / "new.txt").write_text("x\n")
+        subprocess.run(
+            ["git", "add", "new.txt"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add"], cwd=wt_path, capture_output=True
+        )
+
+        patch_dir = str(tmp_path / ".strawpot" / "patches")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=patch_dir,
+            session_id="run_clean_hl",
+        )
+
+        assert result.success
+        assert "cleanly" in result.message
+        # No patch file should exist
+        assert not os.path.exists(patch_dir)
+
+    def test_no_changes_ignores_patch_save(self, tmp_path):
+        """Empty diff with patch_save_dir still returns 'No changes'."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_empty_hl")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=str(tmp_path / ".strawpot" / "patches"),
+            session_id="run_empty_hl",
+        )
+
+        assert result.success
+        assert "No changes" in result.message
+
+    def test_param_mismatch_raises(self, tmp_path):
+        """ValueError when only one of patch_save_dir/session_id is set."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_mismatch")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_mismatch" / "README.md").write_text(
+            "# Changed\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Create a conflict so we reach the validation
+        (tmp_path / "README.md").write_text("# Main committed\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted\n")
+
+        with pytest.raises(ValueError, match="both be set or both be None"):
+            merge_local(
+                base_branch="main",
+                session_branch=branch,
+                worktree_dir=wt_path,
+                base_dir=str(tmp_path),
+                patch_save_dir=str(tmp_path / "patches"),
+                # session_id omitted
+            )
+
+    @patch("strawpot.merge.save_patch_file", side_effect=OSError("disk full"))
+    def test_save_failure_returns_error_result(self, _mock, tmp_path):
+        """OSError during patch save returns failure with descriptive message."""
+        _init_repo(tmp_path)
+        wt_path, branch = _create_worktree(tmp_path, "run_savefail")
+
+        # Modify README on worktree branch
+        (tmp_path / "worktrees" / "run_savefail" / "README.md").write_text(
+            "# Changed\n"
+        )
+        subprocess.run(
+            ["git", "add", "README.md"], cwd=wt_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "wt"], cwd=wt_path, capture_output=True
+        )
+
+        # Create a conflict
+        (tmp_path / "README.md").write_text("# Main committed\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        (tmp_path / "README.md").write_text("# Uncommitted\n")
+
+        result = merge_local(
+            base_branch="main",
+            session_branch=branch,
+            worktree_dir=wt_path,
+            base_dir=str(tmp_path),
+            patch_save_dir=str(tmp_path / "patches"),
+            session_id="run_savefail",
+        )
+
+        assert not result.success
+        assert "FAILED" in result.message
+        assert "manually" in result.message

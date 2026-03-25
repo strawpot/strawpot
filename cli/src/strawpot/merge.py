@@ -1,23 +1,20 @@
-"""Merge strategies — apply session changes at cleanup time.
+"""Merge — apply worktree session changes at cleanup time.
 
-Handles local patch application, PR creation, and auto-detection of the
-appropriate strategy.  Called from ``Session.stop()`` for worktree (and
-future docker) isolation modes.
+Detects what the agent actually did and acts accordingly:
 
-Strategies
-----------
-- ``local`` — generate a unified diff patch from the session branch, apply
-  it to the base branch in the project directory.  Conflicts are detected
-  and the user is prompted for resolution.
-- ``pr`` — push the session branch to the remote and create a pull request
-  using the configured ``pr_command`` template.
-- ``auto`` — detect a remote (``git remote get-url origin``): use ``pr``
-  if a remote exists, otherwise fall back to ``local``.
+- **PR created** — the work product is the PR; nothing to merge locally,
+  just clean up the worktree.
+- **No PR, clean merge** — generate a unified diff patch from the session
+  branch and apply it to the base branch as unstaged changes.
+- **No PR, conflicts** — in interactive mode, prompt the user for
+  resolution.  In headless mode, export the diff as a ``.patch`` file
+  under ``.strawpot/patches/`` so no work is silently lost.
+
+Called from ``Session.stop()`` for worktree isolation.
 """
 
 import logging
 import os
-import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -34,10 +31,8 @@ logger = logging.getLogger(__name__)
 class MergeResult:
     """Outcome of a merge operation."""
 
-    strategy: str  # "local", "pr", or "none"
     success: bool
     message: str  # human-readable summary
-    pr_url: str | None = None
 
 
 # ------------------------------------------------------------------
@@ -57,12 +52,6 @@ def _git(args: list[str], cwd: str, **kwargs) -> subprocess.CompletedProcess:
     )
 
 
-def _has_remote(cwd: str) -> bool:
-    """Return ``True`` if the repo at *cwd* has an ``origin`` remote."""
-    result = _git(["remote", "get-url", "origin"], cwd=cwd)
-    return result.returncode == 0
-
-
 def _is_git_repo(path: str) -> bool:
     """Return ``True`` if *path* is inside a git repository."""
     result = _git(["rev-parse", "--git-dir"], cwd=path)
@@ -70,23 +59,40 @@ def _is_git_repo(path: str) -> bool:
 
 
 # ------------------------------------------------------------------
-# Strategy resolution
+# PR detection
 # ------------------------------------------------------------------
 
 
-def resolve_strategy(strategy: str, base_dir: str) -> str:
-    """Resolve ``"auto"`` to ``"local"`` or ``"pr"``.
+def detect_pr_created(session_branch: str, base_dir: str) -> bool:
+    """Return ``True`` if *session_branch* has an open pull request.
 
-    Args:
-        strategy: One of ``"auto"``, ``"local"``, ``"pr"``.
-        base_dir: Project root directory.
-
-    Returns:
-        ``"local"`` or ``"pr"``.
+    Uses ``gh pr list`` when available.  Returns ``False`` when ``gh``
+    is not installed or the check fails — the safe default is to
+    patch-apply changes rather than silently discard them.
     """
-    if strategy == "auto":
-        return "pr" if _has_remote(base_dir) else "local"
-    return strategy
+    if not shutil.which("gh"):
+        logger.debug("gh CLI not found — assuming no PR created")
+        return False
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "list", "--head", session_branch, "--state", "open",
+             "--json", "number", "--limit", "1"],
+            cwd=base_dir,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() not in ("", "[]")
+        logger.debug(
+            "gh pr list failed (exit %d) for %s",
+            result.returncode,
+            session_branch,
+        )
+        return False
+    except Exception:
+        logger.debug("gh pr list check failed for %s", session_branch, exc_info=True)
+        return False
 
 
 # ------------------------------------------------------------------
@@ -264,6 +270,24 @@ def _apply_patch_skip(patch: str, cwd: str) -> bool:
 
 
 # ------------------------------------------------------------------
+# Patch-file preservation (headless conflict fallback)
+# ------------------------------------------------------------------
+
+
+def save_patch_file(patch: str, patch_dir: str, session_id: str) -> str:
+    """Write *patch* to ``<patch_dir>/<session_id>.patch``.
+
+    Creates *patch_dir* if it does not exist.  Returns the absolute path
+    to the saved file.
+    """
+    os.makedirs(patch_dir, exist_ok=True)
+    patch_path = os.path.join(patch_dir, f"{session_id}.patch")
+    with open(patch_path, "w", encoding="utf-8") as f:
+        f.write(patch)
+    return patch_path
+
+
+# ------------------------------------------------------------------
 # Conflict resolution prompt
 # ------------------------------------------------------------------
 
@@ -311,7 +335,7 @@ def _prompt_conflict_resolution(
 
 
 # ------------------------------------------------------------------
-# Public: local strategy
+# Public: local patch-apply
 # ------------------------------------------------------------------
 
 
@@ -323,12 +347,19 @@ def merge_local(
     base_dir: str,
     echo=None,
     prompt=None,
+    patch_save_dir: str | None = None,
+    session_id: str | None = None,
 ) -> MergeResult:
-    """Execute the **local** merge strategy.
+    """Patch-apply session changes as unstaged changes to *base_dir*.
 
     Generates a patch from *session_branch* vs *base_branch* (run in
     *worktree_dir* which has access to both), then applies it to
     *base_dir*.
+
+    When *patch_save_dir* and *session_id* are provided and conflicts
+    are detected, the diff is saved as a ``.patch`` file instead of
+    prompting the user.  This is the headless/agent-mode fallback that
+    prevents silent data loss.
 
     Args:
         base_branch: Branch the session diverged from.
@@ -337,12 +368,16 @@ def merge_local(
         base_dir: Project root where the patch is applied.
         echo: Output callable (for testing).
         prompt: Input callable (for testing).
+        patch_save_dir: Directory to save ``.patch`` files on conflict
+            (headless mode).  When ``None``, falls back to interactive
+            prompt.
+        session_id: Session identifier used as the patch filename.
+            Required when *patch_save_dir* is set.
     """
     patch = _generate_patch(base_branch, session_branch, cwd=worktree_dir)
 
     if not patch.strip():
         return MergeResult(
-            strategy="local",
             success=True,
             message="No changes to apply.",
         )
@@ -355,124 +390,72 @@ def merge_local(
     if not conflicts:
         ok = _apply_patch(patch, cwd=base_dir)
         return MergeResult(
-            strategy="local",
             success=ok,
             message="Changes applied cleanly."
             if ok
             else "Patch apply failed.",
         )
 
-    # Conflicts — ask the user
+    # ------------------------------------------------------------------
+    # Conflicts detected
+    # ------------------------------------------------------------------
+
+    if bool(patch_save_dir) != bool(session_id):
+        raise ValueError(
+            "patch_save_dir and session_id must both be set or both be None"
+        )
+
+    # Headless mode: save patch file instead of prompting
+    if patch_save_dir and session_id:
+        conflict_list = ", ".join(conflicts)
+        try:
+            patch_path = save_patch_file(patch, patch_save_dir, session_id)
+        except OSError:
+            logger.error(
+                "Failed to save patch file to %s/%s.patch — "
+                "changes exist on branch but patch could not be written",
+                patch_save_dir,
+                session_id,
+                exc_info=True,
+            )
+            return MergeResult(
+                success=False,
+                message=(
+                    f"Merge conflict: {len(conflicts)} file(s). "
+                    f"Patch save FAILED — recover changes from the "
+                    f"session branch manually."
+                ),
+            )
+        logger.warning(
+            "Merge conflict — patch saved to %s (conflicts: %s)",
+            patch_path,
+            conflict_list,
+        )
+        return MergeResult(
+            success=False,
+            message=(
+                f"Merge conflict: {len(conflicts)} file(s). "
+                f"Patch saved to {patch_path}"
+            ),
+        )
+
+    # Interactive mode: ask the user
     choice = _prompt_conflict_resolution(conflicts, echo=echo, prompt=prompt)
 
     if choice == "a":
         ok = _apply_patch_all(patch, base_dir)
         return MergeResult(
-            strategy="local",
             success=ok,
             message="All changes applied (conflicts overridden).",
         )
     if choice == "s":
         _apply_patch_skip(patch, base_dir)
         return MergeResult(
-            strategy="local",
             success=True,
             message="Non-conflicting changes applied, conflicts skipped.",
         )
     # "d"
     return MergeResult(
-        strategy="local",
         success=True,
         message="All session changes discarded.",
-    )
-
-
-# ------------------------------------------------------------------
-# Public: PR strategy
-# ------------------------------------------------------------------
-
-
-def merge_pr(
-    *,
-    base_branch: str,
-    session_branch: str,
-    worktree_dir: str,
-    base_dir: str,
-    pr_command: str,
-    echo=None,
-) -> MergeResult:
-    """Execute the **PR** merge strategy.
-
-    Commits any uncommitted changes in the worktree, pushes the branch
-    to the remote, and creates a PR using the configured *pr_command*
-    template.
-
-    Args:
-        base_branch: Branch the session diverged from.
-        session_branch: The session's worktree branch.
-        worktree_dir: Path to the worktree.
-        base_dir: Project root.
-        pr_command: PR creation command template with ``{base_branch}``
-            and ``{session_branch}`` placeholders.
-        echo: Output callable (for testing).
-    """
-    import click as _click
-
-    _echo = echo or _click.echo
-
-    # 1. Commit any uncommitted changes
-    status = _git(["status", "--porcelain"], cwd=worktree_dir)
-    if status.stdout.strip():
-        _git(["add", "-A"], cwd=worktree_dir)
-        _git(
-            ["commit", "-m", "strawpot: uncommitted changes from session"],
-            cwd=worktree_dir,
-        )
-
-    # 2. Push branch
-    push = _git(
-        ["push", "-u", "origin", session_branch],
-        cwd=worktree_dir,
-    )
-    if push.returncode != 0:
-        return MergeResult(
-            strategy="pr",
-            success=False,
-            message=f"Failed to push branch: {push.stderr.strip()}",
-        )
-
-    # 3. Create PR (if command is non-empty)
-    pr_url = None
-    if pr_command.strip():
-        cmd = pr_command.format(
-            base_branch=base_branch,
-            session_branch=session_branch,
-        )
-        tokens = shlex.split(cmd)
-        pr_result = subprocess.run(
-            tokens,
-            cwd=base_dir,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        if pr_result.returncode == 0:
-            pr_url = pr_result.stdout.strip()
-            _echo(f"PR created: {pr_url}")
-        else:
-            _echo(f"PR creation failed: {pr_result.stderr.strip()}")
-            return MergeResult(
-                strategy="pr",
-                success=True,
-                message=(
-                    "Branch pushed but PR creation failed: "
-                    f"{pr_result.stderr.strip()}"
-                ),
-            )
-
-    return MergeResult(
-        strategy="pr",
-        success=True,
-        message="Branch pushed and PR created.",
-        pr_url=pr_url,
     )

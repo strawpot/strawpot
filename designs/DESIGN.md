@@ -49,7 +49,7 @@ src/strawpot/
   session.py               # Session lifecycle — owns denden server + agent registry
   delegation.py            # Delegate handler — policy → resolve → spawn → wait
   context.py               # Build system prompt from resolved role + skills
-  merge.py                 # Merge strategies (local patch, PR)
+  merge.py                 # Worktree merge (PR detection, patch-apply)
   _process.py              # Cross-platform process utilities (is_pid_alive)
   agents/
     protocol.py            # AgentRuntime protocol, AgentHandle, AgentResult
@@ -420,9 +420,7 @@ class StrawPotConfig:
     roles: dict[str, dict] = field(default_factory=dict)   # role overrides (default_agent, etc.)
     memory: str = "dial"               # memory provider name
     memory_config: dict[str, str] = field(default_factory=dict)  # provider-specific params
-    merge_strategy: str = "auto"       # auto | local | pr
     pull_before_session: str = "prompt" # auto | always | never | prompt
-    pr_command: str = "gh pr create --base {base_branch} --head {session_branch}"
     trace: bool = True                 # emit JSONL trace events per session
 ```
 
@@ -438,10 +436,10 @@ Resolution order: `os.environ` > saved config > interactive prompt.
 `roles` holds user overrides for role settings. Currently supports
 `default_agent` to override the agent specified in ROLE.md frontmatter.
 
-`merge_strategy` controls how session changes are applied at cleanup:
-- `auto` — detect remote (`git remote get-url origin`): PR if remote exists, local otherwise
-- `local` — always apply patch locally (conflict resolution prompt)
-- `pr` — always push branch + create PR (fail if no remote)
+Worktree merge behavior is automatic — no configuration needed. On session
+end, StrawPot detects whether the agent created a PR. If a PR exists, the
+worktree is cleaned up (the PR is the work product). If no PR, changes are
+patch-applied as unstaged changes to the original working directory.
 
 `pull_before_session` controls whether to pull latest from remote before
 creating a worktree or docker session:
@@ -452,10 +450,6 @@ creating a worktree or docker session:
 
 `trace` enables the two-tier tracing system (JSONL events + content-addressed
 artifacts). Default on. Disable with `[trace] enabled = false` in config.
-
-`pr_command` is the command template for creating PRs. Supports `{base_branch}`
-and `{session_branch}` placeholders. Set to empty string to push without
-creating a PR. Users can swap `gh` for `glab`, a custom script, etc.
 
 Loaded from (later overrides earlier):
 1. Built-in defaults
@@ -503,7 +497,7 @@ Convenience methods (each calls `emit` + `store_artifact` as needed):
 | Method | Returns | Stores artifact |
 |--------|---------|-----------------|
 | `session_start(run_id, role, runtime, isolation, task="")` | span_id | task → `task_ref` |
-| `session_end(span_id, merge_strategy, duration_ms, output="")` | — | output → `output_ref` |
+| `session_end(span_id, merge_action, duration_ms, output="")` | — | output → `output_ref` |
 | `delegate_start(role, parent_span, context, depth=0, session_id="", parent_agent_id=None)` | span_id | context → `context_ref` |
 | `delegate_end(span_id, exit_code, summary, duration_ms, output="", role="", session_id="", agent_id="")` | — | output → `output_ref` |
 | `delegate_denied(role, parent_span, reason, depth=0)` | — | — |
@@ -557,9 +551,7 @@ cache_ttl_seconds = 0        # max cache age in seconds (0 = unlimited)
 max_num_delegations = 0      # max delegation calls per session (0 = unlimited)
 
 [session]
-merge_strategy = "auto"          # auto | local | pr
 pull_before_session = "prompt"   # auto | always | never | prompt
-pr_command = "gh pr create --base {base_branch} --head {session_branch}"
 
 # Agent-specific extras — keyed by agent name.
 # Only for config beyond the standard protocol args.
@@ -1212,12 +1204,12 @@ create(session_id, base_dir):
   return IsolatedEnv(path, branch)
 
 cleanup(env, base_dir):
-  # see Session Cleanup below — strategy determines local merge vs PR
+  # see Session Cleanup below — action-based merge
   git worktree remove <path> --force
-  git branch -D <branch>   # only if local strategy + user chose discard
+  git branch -D <branch>   # only if no PR was created
 ```
 
-Pull-before-session and merge strategy are handled by session.py, not here.
+Pull-before-session and merge behavior are handled by session.py, not here.
 The isolator only manages worktree creation and removal.
 
 ### DockerIsolator (future)
@@ -1273,79 +1265,42 @@ session.stop():
 
 ### `isolation = worktree`
 
-Cleanup strategy is determined by `merge_strategy` config:
-- `auto` — detect remote: PR if remote exists, local otherwise
-- `local` — always apply patch locally
-- `pr` — always push + create PR
-
-**Local strategy** (no remote, or `merge_strategy = "local"`):
-
-Changes live on a local branch. StrawPot generates a patch from the
-session branch against the base branch and applies it.
+Cleanup is action-based — no configuration needed. StrawPot detects
+what the agent actually did:
 
 ```
 session.stop():
   1. Kill remaining sub-agents
   2. Stop denden server
-  3. Generate patch: git diff <base_branch>..strawpot/<run_id>
-  4. Apply patch to base_branch: git apply --check <patch>
-     → no conflicts: apply, remove worktree + delete branch
-     → conflicts detected: show conflicting files, prompt user (see below)
-  5. Remove session directory
-```
-
-**PR strategy** (remote detected, or `merge_strategy = "pr"`):
-
-Changes are pushed to remote and a PR is created. No local merge.
-
-```
-session.stop():
-  1. Kill remaining sub-agents
-  2. Stop denden server
-  3. Commit any uncommitted changes in worktree
-  4. Push branch: git push -u origin strawpot/<run_id>
-  5. Create PR: <pr_command> with {base_branch} and {session_branch} expanded
-     e.g. gh pr create --base main --head strawpot/run_abc123
-  6. Remove worktree (keep branch — it's on remote)
-  7. Remove session directory
-  → User reviews & merges PR on GitHub/GitLab
-  → User pulls main when ready
+  3. Check: did the agent create a PR for this branch?
+     → YES (PR exists): clean up worktree, keep remote branch for PR
+     → NO (no PR): generate patch, apply as unstaged changes to base dir
+       - git diff <base_branch>..strawpot/<run_id>
+       - git apply --check <patch>
+         → no conflicts: apply, remove worktree + delete branch
+         → conflicts: show conflicting files, prompt user (see below)
+  4. Remove session directory
 ```
 
 ### `isolation = docker` (future)
 
 The container has git initialized inside it at `create()` time purely for
 diff tracking. The container's `.git` never touches the host — it dies
-with `docker rm`. Cleanup depends on the merge strategy.
-
-**Local strategy**:
-
-```
-session.stop():
-  1. Kill remaining sub-agents (inside container)
-  2. Stop denden server
-  3. Generate patch: docker exec <container> git diff HEAD
-  4. Apply patch to host dir (see Patch Application below)
-     → no conflicts: apply, remove container
-     → conflicts detected: show conflicting files, prompt user (see below)
-  5. docker rm <container>
-  6. Remove session directory
-```
-
-**PR strategy** (host has remote):
+with `docker rm`. Cleanup follows the same action-based approach as
+worktree isolation:
 
 ```
 session.stop():
   1. Kill remaining sub-agents (inside container)
   2. Stop denden server
-  3. Generate patch: docker exec <container> git diff HEAD
-  4. On host: git checkout -b strawpot/<run_id>
-  5. Apply patch, commit
-  6. Push branch: git push -u origin strawpot/<run_id>
-  7. Create PR: <pr_command>
-  8. git checkout <base_branch>   # return to original branch
-  9. docker rm <container>
-  10. Remove session directory
+  3. Check: did the agent create a PR?
+     → YES (PR exists): docker rm <container>, done
+     → NO (no PR): generate patch, apply as unstaged changes to host dir
+       - docker exec <container> git diff HEAD
+       - Apply patch to host dir (see Patch Application below)
+         → no conflicts: apply, docker rm <container>
+         → conflicts: show conflicting files, prompt user (see below)
+  4. Remove session directory
 ```
 
 ### Patch Application
@@ -1362,11 +1317,11 @@ else:
 The `patch` fallback means docker isolation works on non-git host
 directories without creating a `.git` on the host.
 
-### Conflict Resolution (Local Strategy Only)
+### Conflict Resolution
 
-When using the **local** merge strategy, both `worktree` and `docker` use
-the same conflict resolution flow. (PR strategy has no local conflicts —
-they're handled through the PR review process.)
+When no PR was created, both `worktree` and `docker` use the same
+conflict resolution flow for patch-apply. (If a PR exists, there are
+no local conflicts — they're handled through the PR review process.)
 
 Conflicts are detected before applying — if the patch doesn't apply
 cleanly, strawpot lists the conflicting files and prompts:
@@ -1500,7 +1455,7 @@ Each line is a JSON object:
 | `delegate_denied` | warn | Policy denied delegation (role/depth) |
 | `delegate_result` | info | Delegation completed with result |
 | `cleanup_started` | info | Session cleanup in progress |
-| `cleanup_merge` | info | Merge strategy applied (local/pr) |
+| `cleanup_merge` | info | Merge action applied (patch-apply or PR cleanup) |
 | `cleanup_conflict` | warn | Patch conflicts detected |
 | `crash_recovery` | warn | Stale session detected and cleaned up |
 
@@ -1592,7 +1547,6 @@ expands this wildcard to all globally installed roles.
 ```
 strawpot start  [--role SLUG] [--runtime NAME]
                 [--isolation none|worktree|docker]
-                [--merge-strategy auto|local|pr]
                 [--pull auto|always|never|prompt]
                 [--host HOST] [--port PORT]
 strawpot sessions                    # list all running sessions
@@ -1618,14 +1572,13 @@ strawpot whoami [...]            # show current user
 `--runtime NAME` accepts any agent name resolvable by the registry (project-local,
 global install). Not limited to a hardcoded list.
 
-`--merge-strategy` and `--pull` override the `[session]` config values for
-this run. Useful for one-off runs: e.g. `strawpot start --pull never` to
-skip pulling when you want to work on the current HEAD.
+`--pull` overrides the `[session]` config value for this run. Useful for
+one-off runs: e.g. `strawpot start --pull never` to skip pulling when you
+want to work on the current HEAD.
 
 `start` runs in the foreground — on exit (Ctrl+C or agent quit), the session
-runs the cleanup flow (see Session Cleanup). For local strategy, the user is
-prompted for conflict resolution. For PR strategy, the branch is pushed and
-a PR is created automatically.
+runs the cleanup flow (see Session Cleanup). If no PR was created, the user
+is prompted for conflict resolution when patch-applying changes.
 
 `sessions` reads all session directories from `.strawpot/sessions/`,
 loads `session.json` from each, checks if each process is still alive (via
@@ -1657,8 +1610,8 @@ alive.
 
 ### Phase 2 — Session Lifecycle (complete)
 
-11. `session.py` cleanup — worktree merge strategies (local/pr/auto), patch
-    application (`git apply` vs `patch`), conflict resolution prompts
+11. `session.py` cleanup — worktree merge (PR detection, patch-apply),
+    conflict resolution prompts
 12. `session.py` crash recovery — detect stale sessions on `strawpot start`,
     run cleanup for dead-pid sessions before starting new one
 13. `cli.py` signal handling — single Ctrl+C cancels current task and kills
@@ -1696,8 +1649,8 @@ alive.
 
 23. `isolation/docker.py` — `DockerIsolator` implementing `Isolator` protocol
     (container create, patch export, cleanup)
-24. `session.py` cleanup — docker merge strategies (local/pr), patch
-    extraction from container via `docker exec git diff`
+24. `session.py` cleanup — docker merge (PR detection, patch-apply),
+    patch extraction from container via `docker exec git diff`
 
 ---
 
