@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import AsyncIterator
 
 
@@ -47,6 +47,28 @@ class EventBus:
                     yield None
         finally:
             self._subscribers.remove(q)
+
+
+class ProgressEventAdapter:
+    """Bridges CLI ProgressEvent to GUI EventBus.
+
+    Maps ProgressEvent kinds to SessionEvent, preserving data
+    for the GUI frontend to consume when ready.
+    """
+
+    def __init__(self, event_bus: EventBus, run_id: str, project_id: int | None = None) -> None:
+        self._event_bus = event_bus
+        self._run_id = run_id
+        self._project_id = project_id
+
+    def handle_event(self, event) -> None:
+        """Callback for ``Session.on_event``."""
+        self._event_bus.publish(SessionEvent(
+            kind=f"progress_{event.kind}",
+            run_id=self._run_id,
+            project_id=self._project_id,
+            data=asdict(event),
+        ))
 
 
 # Singleton instance, attached to app.state in lifespan
