@@ -1,5 +1,7 @@
-"""Progress event types for real-time session feedback."""
+"""Progress event types and renderers for real-time session feedback."""
 
+import sys
+import threading
 from dataclasses import dataclass
 
 
@@ -27,3 +29,87 @@ class ProgressEvent:
     duration_ms: int  # 0 for start events, elapsed for end events
     status: str
     depth: int  # delegation depth (0 = orchestrator)
+
+
+def _format_duration(ms: int) -> str:
+    """Format milliseconds as a human-readable duration string.
+
+    Returns e.g. ``"12s"`` for < 60 s, ``"2m 47s"`` for >= 60 s.
+    """
+    seconds = ms // 1000
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    remaining = seconds % 60
+    return f"{minutes}m {remaining}s"
+
+
+class TerminalProgressRenderer:
+    """Renders ProgressEvents as checkmark lines to stderr.
+
+    Thread-safe: all writes serialized through an internal lock.
+    BrokenPipeError-safe: disables on pipe error without crash.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._disabled = False
+        self._is_tty = sys.stderr.isatty()
+
+    def handle_event(self, event: ProgressEvent) -> None:
+        """Callback for ``Session.on_event``. Renders the event to stderr."""
+        if self._disabled:
+            return
+        with self._lock:
+            try:
+                self._render(event)
+            except (BrokenPipeError, OSError):
+                self._disabled = True
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _render(self, event: ProgressEvent) -> None:
+        ok = "\u2713" if self._is_tty else "[ok]"
+        fail = "\u2717" if self._is_tty else "[FAIL]"
+        indent = "  " + "  " * event.depth
+
+        kind = event.kind
+        if kind == "session_start":
+            line = f"\n{indent}Session started (orchestrator: {event.role})\n"
+        elif kind == "delegate_start":
+            line = f"\n{indent}> Delegating to {event.role}..."
+            self._set_terminal_title(f"StrawPot: {event.role}")
+        elif kind == "delegate_end":
+            dur = _format_duration(event.duration_ms)
+            if event.status == "ok":
+                line = f"{indent}{ok} {event.role} completed ({dur})"
+            else:
+                line = f"{indent}{fail} {event.role} failed ({dur})"
+        elif kind == "delegate_denied":
+            line = f"{indent}{fail} {event.role} denied: {event.detail}"
+        elif kind == "delegate_cached":
+            line = f"{indent}{ok} {event.role} (cached)"
+        elif kind == "ask_user_start":
+            line = f"{indent}? Waiting for user input ({event.role})..."
+        elif kind == "ask_user_end":
+            dur = _format_duration(event.duration_ms)
+            line = f"{indent}{ok} User responded ({dur})"
+        elif kind == "session_end":
+            dur = _format_duration(event.duration_ms)
+            detail_suffix = f" - {event.detail}" if event.detail else ""
+            line = f"\n{indent}{ok} Session complete ({dur}){detail_suffix}\n"
+            self._clear_terminal_title()
+        else:
+            return  # unknown event kind — skip silently
+
+        sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+
+    def _set_terminal_title(self, title: str) -> None:
+        if self._is_tty:
+            sys.stderr.write(f"\033]0;{title}\007")
+
+    def _clear_terminal_title(self) -> None:
+        self._set_terminal_title("")

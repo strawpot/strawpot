@@ -1,9 +1,15 @@
 """Tests for progress event types and Session event emission."""
 
+import io
 import logging
+import threading
 from unittest.mock import MagicMock, patch
 
-from strawpot.progress import ProgressEvent
+from strawpot.progress import (
+    ProgressEvent,
+    TerminalProgressRenderer,
+    _format_duration,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -394,3 +400,216 @@ class TestSessionLifecycleEvents:
         assert len(end_events) == 1
         assert end_events[0].status == "ok"
         assert end_events[0].duration_ms >= 1000
+
+
+# ---------------------------------------------------------------------------
+# _format_duration tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDuration:
+    def test_zero(self):
+        assert _format_duration(0) == "0s"
+
+    def test_seconds(self):
+        assert _format_duration(5000) == "5s"
+
+    def test_under_one_minute(self):
+        assert _format_duration(59000) == "59s"
+
+    def test_exactly_one_minute(self):
+        assert _format_duration(60000) == "1m 0s"
+
+    def test_minutes_and_seconds(self):
+        assert _format_duration(125000) == "2m 5s"
+
+    def test_large_duration(self):
+        assert _format_duration(3661000) == "61m 1s"
+
+
+# ---------------------------------------------------------------------------
+# TerminalProgressRenderer tests
+# ---------------------------------------------------------------------------
+
+
+def _make_event(kind, role="implementer", detail="", duration_ms=0,
+                status="", depth=0):
+    return ProgressEvent(
+        kind=kind, role=role, detail=detail,
+        timestamp=_FIXED_TS, duration_ms=duration_ms,
+        status=status, depth=depth,
+    )
+
+
+class TestTerminalProgressRenderer:
+    """Tests for TerminalProgressRenderer."""
+
+    def _capture_stderr(self, renderer, event):
+        """Render an event and return what was written to stderr."""
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            mock_sys.stderr.isatty = lambda: False
+            renderer._is_tty = False
+            renderer.handle_event(event)
+        return buf.getvalue()
+
+    def test_delegate_start_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(r, _make_event("delegate_start", depth=1))
+        assert "> Delegating to implementer..." in output
+
+    def test_delegate_end_ok_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("delegate_end", status="ok", duration_ms=12000)
+        )
+        assert "[ok] implementer completed (12s)" in output
+
+    def test_delegate_end_error_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("delegate_end", status="error", duration_ms=5000)
+        )
+        assert "[FAIL] implementer failed (5s)" in output
+
+    def test_delegate_denied_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("delegate_denied", detail="DENY_ROLE_NOT_ALLOWED")
+        )
+        assert "[FAIL] implementer denied: DENY_ROLE_NOT_ALLOWED" in output
+
+    def test_delegate_cached_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(r, _make_event("delegate_cached"))
+        assert "[ok] implementer (cached)" in output
+
+    def test_session_start_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("session_start", role="ai-ceo")
+        )
+        assert "Session started (orchestrator: ai-ceo)" in output
+
+    def test_session_end_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("session_end", role="ai-ceo", detail="3 files changed",
+                           duration_ms=125000, status="ok")
+        )
+        assert "[ok] Session complete (2m 5s) - 3 files changed" in output
+
+    def test_ask_user_start_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(r, _make_event("ask_user_start"))
+        assert "? Waiting for user input" in output
+
+    def test_ask_user_end_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("ask_user_end", status="ok", duration_ms=3000)
+        )
+        assert "[ok] User responded (3s)" in output
+
+    def test_indentation_by_depth(self):
+        r = TerminalProgressRenderer()
+        # depth=0 → 2 spaces base
+        out0 = self._capture_stderr(
+            r, _make_event("delegate_cached", depth=0)
+        )
+        # depth=2 → 2 + 4 = 6 spaces
+        out2 = self._capture_stderr(
+            r, _make_event("delegate_cached", depth=2)
+        )
+        # depth=2 should have more leading spaces than depth=0
+        leading0 = len(out0) - len(out0.lstrip())
+        leading2 = len(out2) - len(out2.lstrip())
+        assert leading2 > leading0
+
+    def test_unicode_symbols_when_tty(self):
+        """When isatty, uses Unicode checkmarks."""
+        r = TerminalProgressRenderer()
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            mock_sys.stderr.isatty = lambda: True
+            r._is_tty = True
+            r.handle_event(_make_event("delegate_cached"))
+        output = buf.getvalue()
+        assert "\u2713" in output  # ✓
+
+    def test_ascii_fallback_when_not_tty(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(r, _make_event("delegate_cached"))
+        assert "[ok]" in output
+        assert "\u2713" not in output
+
+    def test_terminal_title_set_on_delegate_start(self):
+        """delegate_start sets terminal title when TTY."""
+        r = TerminalProgressRenderer()
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            mock_sys.stderr.isatty = lambda: True
+            r._is_tty = True
+            r.handle_event(_make_event("delegate_start"))
+        output = buf.getvalue()
+        assert "\033]0;StrawPot: implementer\007" in output
+
+    def test_terminal_title_cleared_on_session_end(self):
+        """session_end clears terminal title when TTY."""
+        r = TerminalProgressRenderer()
+        buf = io.StringIO()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr = buf
+            mock_sys.stderr.isatty = lambda: True
+            r._is_tty = True
+            r.handle_event(_make_event("session_end", role="ai-ceo",
+                                       duration_ms=1000, status="ok"))
+        output = buf.getvalue()
+        assert "\033]0;\007" in output
+
+    def test_broken_pipe_disables(self):
+        """BrokenPipeError disables renderer without crash."""
+        r = TerminalProgressRenderer()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr.write.side_effect = BrokenPipeError()
+            mock_sys.stderr.isatty.return_value = False
+            r._is_tty = False
+            r.handle_event(_make_event("delegate_start"))
+        assert r._disabled is True
+
+    def test_oserror_disables(self):
+        """OSError disables renderer without crash."""
+        r = TerminalProgressRenderer()
+        with patch("strawpot.progress.sys") as mock_sys:
+            mock_sys.stderr.write.side_effect = OSError("pipe gone")
+            mock_sys.stderr.isatty.return_value = False
+            r._is_tty = False
+            r.handle_event(_make_event("delegate_start"))
+        assert r._disabled is True
+
+    def test_thread_safety(self):
+        """Concurrent events don't crash or garble (smoke test)."""
+        r = TerminalProgressRenderer()
+        buf = io.StringIO()
+        errors = []
+
+        def fire(n):
+            try:
+                for _ in range(10):
+                    with patch("strawpot.progress.sys") as mock_sys:
+                        mock_sys.stderr = buf
+                        mock_sys.stderr.isatty = lambda: False
+                        r._is_tty = False
+                        r.handle_event(_make_event("delegate_cached", depth=n))
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=fire, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
