@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
-    ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
+    ("Getting Started", ["start", "run", "quickstart", "doctor", "gui"]),
     ("Sessions", ["sessions", "agents", "config"]),
     ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
     ("Discovery", ["search", "list", "info", "resolve"]),
@@ -157,7 +157,7 @@ _QUICKSTART_TEXT = """\
    or Codex), install it, and start an interactive session.
 
 {step3}  Run a task non-interactively
-   Pass a task string to skip the interactive prompt:
+   Use the shorthand {run_cmd} or the full form:
    {task_example}
 
 {step4}  Open the web dashboard
@@ -190,6 +190,7 @@ def quickstart():
             step6=click.style("6.", bold=True),
             doctor=click.style("strawpot doctor", bold=True),
             start=click.style("strawpot start", bold=True),
+            run_cmd=click.style('strawpot run "Fix the login bug"', bold=True),
             task_example=click.style('strawpot start --task "Fix the login bug"', bold=True),
             gui=click.style("strawpot gui", bold=True),
             search_example=click.style("strawpot search role", bold=True),
@@ -798,50 +799,60 @@ def _resolve_progress_renderer(progress_mode: str, task: str | None):
     return None
 
 
+def _shared_session_options(func):
+    """Apply session options shared by ``start`` and ``run``."""
+    options = [
+        click.option("--role", default=None, help="Orchestrator role slug from strawhub."),
+        click.option("--runtime", default=None, help="Agent runtime (any registry-resolvable name)."),
+        click.option(
+            "--isolation",
+            default=None,
+            type=click.Choice(["none", "worktree", "docker"]),
+            help="Isolation method.",
+        ),
+        click.option(
+            "--pull",
+            default=None,
+            type=click.Choice(["auto", "always", "never", "prompt"]),
+            help="Whether to pull latest before creating a session.",
+        ),
+        click.option("--host", default=None, help="Denden server host."),
+        click.option("--port", default=None, type=int, help="Denden server port."),
+        click.option(
+            "--headless",
+            is_flag=True,
+            default=False,
+            help="Run detached with output to log file (requires --task).",
+        ),
+        click.option("--run-id", "run_id", default=None, help="Pre-assigned run ID (used by GUI)."),
+        click.option("--system-prompt", "system_prompt", default=None, help="Custom system prompt appended to role instructions."),
+        click.option("--no-cache-delegations", "no_cache_delegations", is_flag=True, default=False, help="Disable caching of delegation results within the session."),
+        click.option("--cache-max-entries", "cache_max_entries", type=int, default=None, help="Max cached delegation results (0 = unlimited)."),
+        click.option("--cache-ttl-seconds", "cache_ttl_seconds", type=int, default=None, help="Max age in seconds for cached results (0 = unlimited)."),
+        click.option("--memory", "memory_override", default=None, help="Memory provider to use (overrides config)."),
+        click.option("--max-num-delegations", "max_num_delegations", type=int, default=None, help="Max delegation calls per session (0 = unlimited)."),
+        click.option("--memory-task", "memory_task", default=None, help="Original task string for memory scoring (defaults to --task if not set)."),
+        click.option("--group-id", "group_id", default=None, help="Group ID for memory scoping (e.g. conversation ID from the GUI)."),
+        click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup."),
+        click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config)."),
+        click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely."),
+        click.option(
+            "--progress",
+            "progress_mode",
+            type=click.Choice(["auto", "json", "off"], case_sensitive=False),
+            default="auto",
+            help="Progress output mode (auto=terminal for --task, json=JSONL, off=disabled).",
+        ),
+    ]
+    for option in reversed(options):
+        func = option(func)
+    return func
+
+
 @cli.command()
-@click.option("--role", default=None, help="Orchestrator role slug from strawhub.")
-@click.option("--runtime", default=None, help="Agent runtime (any registry-resolvable name).")
-@click.option(
-    "--isolation",
-    default=None,
-    type=click.Choice(["none", "worktree", "docker"]),
-    help="Isolation method.",
-)
-@click.option(
-    "--pull",
-    default=None,
-    type=click.Choice(["auto", "always", "never", "prompt"]),
-    help="Whether to pull latest before creating a session.",
-)
-@click.option("--host", default=None, help="Denden server host.")
-@click.option("--port", default=None, type=int, help="Denden server port.")
+@_shared_session_options
 @click.option("--task", default=None, help="Run noninteractively with a task string.")
-@click.option(
-    "--headless",
-    is_flag=True,
-    default=False,
-    help="Run detached with output to log file (requires --task).",
-)
-@click.option("--run-id", "run_id", default=None, help="Pre-assigned run ID (used by GUI).")
-@click.option("--system-prompt", "system_prompt", default=None, help="Custom system prompt appended to role instructions.")
-@click.option("--no-cache-delegations", "no_cache_delegations", is_flag=True, default=False, help="Disable caching of delegation results within the session.")
-@click.option("--cache-max-entries", "cache_max_entries", type=int, default=None, help="Max cached delegation results (0 = unlimited).")
-@click.option("--cache-ttl-seconds", "cache_ttl_seconds", type=int, default=None, help="Max age in seconds for cached results (0 = unlimited).")
-@click.option("--memory", "memory_override", default=None, help="Memory provider to use (overrides config).")
-@click.option("--max-num-delegations", "max_num_delegations", type=int, default=None, help="Max delegation calls per session (0 = unlimited).")
-@click.option("--memory-task", "memory_task", default=None, help="Original task string for memory scoring (defaults to --task if not set).")
-@click.option("--group-id", "group_id", default=None, help="Group ID for memory scoping (e.g. conversation ID from the GUI).")
-@click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup.")
-@click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config).")
 @click.option("--yes", "-y", "yes_flag", is_flag=True, default=False, help="Auto-accept all install prompts (tools, agents, etc.).")
-@click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely.")
-@click.option(
-    "--progress",
-    "progress_mode",
-    type=click.Choice(["auto", "json", "off"], case_sensitive=False),
-    default="auto",
-    help="Progress output mode (auto=terminal for --task, json=JSONL, off=disabled).",
-)
 def start(role, runtime, isolation, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools, progress_mode):
     """Start an orchestration session.
 
@@ -1141,6 +1152,20 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         on_event=on_event,
     )
     session.start(working_dir)
+
+
+@cli.command()
+@click.argument("task")
+@_shared_session_options
+@click.pass_context
+def run(ctx, task, **kwargs):
+    """Run a task non-interactively (shorthand for ``start --task``).
+
+    Equivalent to ``strawpot start --task TASK --yes``.  Accepts the same
+    options as ``start`` except ``--task`` (positional) and ``--yes``
+    (implied).
+    """
+    ctx.invoke(start, task=task, yes_flag=True, **kwargs)
 
 
 @cli.command(name="config")
