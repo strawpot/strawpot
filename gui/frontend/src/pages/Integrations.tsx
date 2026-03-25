@@ -23,11 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Download, XCircle } from "lucide-react";
+import { CheckCircle2, Download, RefreshCw, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { Integration } from "@/api/types";
 import IntegrationDetailSheet from "@/components/IntegrationDetailSheet";
 import IntegrationLogSheet from "@/components/IntegrationLogSheet";
+import UpdateAllDialog from "@/components/UpdateAllDialog";
+import { useUpdateAllResources } from "@/hooks/mutations/use-registry";
 
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
@@ -46,6 +48,8 @@ export default function Integrations() {
   const [logName, setLogName] = useState<string | null>(null);
   const [logProjectId, setLogProjectId] = useState<number | undefined>(undefined);
   const [installOpen, setInstallOpen] = useState(false);
+  const [updateAllOpen, setUpdateAllOpen] = useState(false);
+  const updateAll = useUpdateAllResources();
 
   // Keep selected integration up-to-date from the list query
   const currentSelected = selected
@@ -63,10 +67,16 @@ export default function Integrations() {
             Chat and community platform adapters
           </p>
         </div>
-        <Button onClick={() => setInstallOpen(true)} size="sm">
-          <Download className="mr-2 h-4 w-4" />
-          Install
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setUpdateAllOpen(true)} size="sm" variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Update All Integrations
+          </Button>
+          <Button onClick={() => setInstallOpen(true)} size="sm">
+            <Download className="mr-2 h-4 w-4" />
+            Install
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -140,6 +150,14 @@ export default function Integrations() {
       <InstallIntegrationDialog
         open={installOpen}
         onOpenChange={setInstallOpen}
+      />
+
+      <UpdateAllDialog
+        open={updateAllOpen}
+        onOpenChange={setUpdateAllOpen}
+        onUpdate={() => updateAll.mutateAsync("integrations")}
+        scope="global"
+        resourceType="integrations"
       />
     </div>
   );
