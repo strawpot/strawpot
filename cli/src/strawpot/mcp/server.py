@@ -134,6 +134,48 @@ _TOOLS = [
             },
         },
     ),
+    Tool(
+        name="schedule_create",
+        description="Create a new scheduled workflow.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Schedule name."},
+                "task": {"type": "string", "description": "Task to execute."},
+                "cron": {"type": "string", "description": "Cron expression (e.g. '0 8 * * *')."},
+                "description": {"type": "string", "description": "Optional description."},
+                "role": {"type": "string", "description": "Role to execute as (optional)."},
+            },
+            "required": ["name", "task", "cron"],
+        },
+    ),
+    Tool(
+        name="schedule_list",
+        description="List all active schedules.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="schedule_delete",
+        description="Remove a scheduled workflow.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "schedule_id": {"type": "string", "description": "Schedule ID to delete."},
+            },
+            "required": ["schedule_id"],
+        },
+    ),
+    Tool(
+        name="schedule_run",
+        description="Trigger a schedule to run immediately.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "schedule_id": {"type": "string", "description": "Schedule ID to run."},
+            },
+            "required": ["schedule_id"],
+        },
+    ),
 ]
 
 
@@ -213,6 +255,77 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
             return _text_result(
                 f"{result.total_count} memories.\n" + json.dumps(entries, indent=2)
             )
+
+        elif name == "schedule_create":
+            from strawpot.scheduler.store import ScheduleStore
+
+            store = ScheduleStore()
+            schedule = store.create(
+                name=arguments["name"],
+                task=arguments["task"],
+                cron=arguments["cron"],
+                description=arguments.get("description", ""),
+                role=arguments.get("role", ""),
+            )
+            text = (
+                f"Schedule created. ID: {schedule.schedule_id}\n"
+                f"Name: {schedule.name}\n"
+                f"Cron: {schedule.cron}\n"
+                f"Next run: {schedule.next_run()}"
+            )
+            return CallToolResult(content=[TextContent(type="text", text=text)])
+
+        elif name == "schedule_list":
+            from strawpot.scheduler.store import ScheduleStore
+
+            store = ScheduleStore()
+            schedules = store.list_schedules()
+            if not schedules:
+                return CallToolResult(
+                    content=[TextContent(type="text", text="No schedules configured.")]
+                )
+            entries = [
+                {
+                    "schedule_id": s.schedule_id,
+                    "name": s.name,
+                    "cron": s.cron,
+                    "task": s.task,
+                    "role": s.role,
+                    "next_run": s.next_run(),
+                    "last_status": s.last_status,
+                }
+                for s in schedules
+            ]
+            return CallToolResult(
+                content=[TextContent(type="text", text=json.dumps(entries, indent=2))]
+            )
+
+        elif name == "schedule_delete":
+            from strawpot.scheduler.store import ScheduleStore
+
+            store = ScheduleStore()
+            deleted = store.delete(arguments["schedule_id"])
+            if deleted:
+                text = f"Deleted schedule {arguments['schedule_id']}."
+            else:
+                text = f"Schedule {arguments['schedule_id']} not found."
+            return CallToolResult(content=[TextContent(type="text", text=text)])
+
+        elif name == "schedule_run":
+            # Execution is out of scope — mark as triggered
+            from strawpot.scheduler.store import ScheduleStore
+
+            store = ScheduleStore()
+            schedule = store.get(arguments["schedule_id"])
+            if schedule is None:
+                text = f"Schedule {arguments['schedule_id']} not found."
+            else:
+                store.update_status(arguments["schedule_id"], "triggered")
+                text = (
+                    f"Triggered schedule '{schedule.name}' ({arguments['schedule_id']}).\n"
+                    "Note: Schedule daemon must be running for actual execution."
+                )
+            return CallToolResult(content=[TextContent(type="text", text=text)])
 
         else:
             return _text_result(f"Unknown tool: {name}", is_error=True)
