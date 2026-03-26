@@ -4,7 +4,9 @@ from strawpot_memory.memory_protocol import (
     ContextCard,
     ControlSignal,
     DumpReceipt,
+    ForgetResult,
     GetResult,
+    ListResult,
     MemoryKind,
     MemoryProvider,
     RecallEntry,
@@ -219,6 +221,24 @@ class _MinimalProvider:
         max_results: int = 10,
     ) -> RecallResult:
         return RecallResult()
+
+    def forget(
+        self,
+        *,
+        entry_id: str,
+        scope: str = "",
+    ) -> ForgetResult:
+        return ForgetResult()
+
+    def list_entries(
+        self,
+        *,
+        scope: str = "",
+        role: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> ListResult:
+        return ListResult()
 
 
 def test_provider_protocol_satisfied():

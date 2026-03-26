@@ -1606,6 +1606,11 @@ def mcp_serve():
 # ---------------------------------------------------------------------------
 
 
+def _pluralize_memory(count: int) -> str:
+    """Return 'memory' or 'memories' based on *count*."""
+    return "memory" if count == 1 else "memories"
+
+
 @cli.command()
 @click.argument("fact")
 @click.option("--scope", "-s", default="project", type=click.Choice(["project", "global", "role"]),
@@ -1694,7 +1699,7 @@ def recall(query, scope, max_results, as_json):
 
     click.echo(
         click.style("🔍 ", fg="cyan")
-        + f'Found {len(result.entries)} memor{"y" if len(result.entries) == 1 else "ies"} matching "{query}":'
+        + f'Found {len(result.entries)} {_pluralize_memory(len(result.entries))} matching "{query}":'
     )
     click.echo()
     for i, entry in enumerate(result.entries, 1):
@@ -1706,6 +1711,93 @@ def recall(query, scope, max_results, as_json):
         click.echo(f"     {entry.content}")
         if i < len(result.entries):
             click.echo()
+
+
+@cli.command()
+@click.argument("entry_id")
+def forget(entry_id):
+    """Delete a specific memory by ID."""
+    from strawpot.memory.standalone import get_standalone_provider
+
+    provider = get_standalone_provider()
+    result = provider.forget(entry_id=entry_id)
+    if result.status == "deleted":
+        click.echo(f"🗑️  Deleted memory {entry_id}")
+    else:
+        click.echo(click.style(f"❌ Memory {entry_id} not found", fg="red"), err=True)
+        raise SystemExit(1)
+
+
+@cli.group()
+def memory():
+    """Manage stored memories."""
+    pass
+
+
+@memory.command(name="list")
+@click.option("--scope", "-s", default="", help="Filter by scope (project, global, role).")
+@click.option("--all", "show_all", is_flag=True, help="Show all entries (default: first 20).")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def memory_list(scope, show_all, as_json):
+    """List all stored memories."""
+    from strawpot.memory.standalone import get_standalone_provider
+
+    provider = get_standalone_provider()
+    limit = 10000 if show_all else 20
+    result = provider.list_entries(scope=scope, limit=limit)
+
+    if as_json:
+        entries = [
+            {
+                "entry_id": e.entry_id,
+                "content": e.content,
+                "keywords": e.keywords,
+                "scope": e.scope,
+                "ts": e.ts,
+            }
+            for e in result.entries
+        ]
+        click.echo(json.dumps(entries, indent=2))
+        return
+
+    if not result.entries:
+        click.echo("No memories stored yet.")
+        click.echo(
+            "Run "
+            + click.style('strawpot remember "fact"', bold=True)
+            + " to add your first."
+        )
+        return
+
+    click.echo(
+        click.style("📝 ", fg="cyan")
+        + f"{result.total_count} {_pluralize_memory(result.total_count)} stored:"
+    )
+    click.echo()
+
+    for entry in result.entries:
+        date_str = entry.ts[:10] if entry.ts else ""
+        content_display = (entry.content[:100] + "…") if len(entry.content) > 100 else entry.content
+
+        click.echo(
+            "  "
+            + click.style(f"[{entry.entry_id}]", fg="bright_black")
+            + f" ({entry.scope}, {date_str})"
+        )
+        click.echo(f"     {content_display}")
+        if entry.keywords:
+            click.echo(
+                "     Keywords: "
+                + click.style(", ".join(entry.keywords), fg="cyan")
+            )
+        click.echo()
+
+    if len(result.entries) < result.total_count:
+        remaining = result.total_count - len(result.entries)
+        msg = f"  ...showing {len(result.entries)} of {result.total_count} ({remaining} more)."
+        if not show_all:
+            msg += " Use --all to see all."
+        click.echo(msg)
 
 
 def _strawhub(*args: str) -> None:
