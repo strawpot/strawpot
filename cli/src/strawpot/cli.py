@@ -1582,6 +1582,11 @@ def doctor():
 # ---------------------------------------------------------------------------
 
 
+def _pluralize_memory(count: int) -> str:
+    """Return 'memory' or 'memories' based on *count*."""
+    return "memory" if count == 1 else "memories"
+
+
 @cli.command()
 @click.argument("fact")
 @click.option("--scope", "-s", default="project", type=click.Choice(["project", "global", "role"]),
@@ -1670,7 +1675,7 @@ def recall(query, scope, max_results, as_json):
 
     click.echo(
         click.style("🔍 ", fg="cyan")
-        + f'Found {len(result.entries)} memor{"y" if len(result.entries) == 1 else "ies"} matching "{query}":'
+        + f'Found {len(result.entries)} {_pluralize_memory(len(result.entries))} matching "{query}":'
     )
     click.echo()
     for i, entry in enumerate(result.entries, 1):
@@ -1714,7 +1719,7 @@ def memory_list(scope, show_all, as_json):
     from strawpot.memory.standalone import get_standalone_provider
 
     provider = get_standalone_provider()
-    limit = 100 if show_all else 20
+    limit = 10000 if show_all else 20
     result = provider.list_entries(scope=scope, limit=limit)
 
     if as_json:
@@ -1742,14 +1747,13 @@ def memory_list(scope, show_all, as_json):
 
     click.echo(
         click.style("📝 ", fg="cyan")
-        + f"{result.total_count} memor{'y' if result.total_count == 1 else 'ies'} stored:"
+        + f"{result.total_count} {_pluralize_memory(result.total_count)} stored:"
     )
     click.echo()
 
     for entry in result.entries:
-        # Parse date from ISO timestamp
         date_str = entry.ts[:10] if entry.ts else ""
-        content_display = entry.content[:100] + "…" if len(entry.content) > 100 else entry.content
+        content_display = (entry.content[:100] + "…") if len(entry.content) > 100 else entry.content
 
         click.echo(
             "  "
@@ -1764,11 +1768,12 @@ def memory_list(scope, show_all, as_json):
             )
         click.echo()
 
-    if not show_all and len(result.entries) < result.total_count:
-        click.echo(
-            f"  ...showing {len(result.entries)} of {result.total_count}."
-            " Use --all to see all."
-        )
+    if len(result.entries) < result.total_count:
+        remaining = result.total_count - len(result.entries)
+        msg = f"  ...showing {len(result.entries)} of {result.total_count} ({remaining} more)."
+        if not show_all:
+            msg += " Use --all to see all."
+        click.echo(msg)
 
 
 def _strawhub(*args: str) -> None:

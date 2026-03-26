@@ -155,7 +155,7 @@ class TestMemoryListCommand:
         provider.list_entries.return_value = ListResult(entries=[], total_count=0)
         _invoke(["memory", "list", "--all"], provider=provider)
         call_kwargs = provider.list_entries.call_args.kwargs
-        assert call_kwargs["limit"] == 100
+        assert call_kwargs["limit"] == 10000
 
     def test_list_truncation_footer(self):
         """Shows 'showing X of Y' when there are more entries than displayed."""
