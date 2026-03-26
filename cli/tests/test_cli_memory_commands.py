@@ -9,38 +9,17 @@ from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberR
 from strawpot.cli import cli
 
 
-@patch("strawpot.cli.get_standalone_provider", create=True)
-def _invoke_remember(args, mock_provider_fn, *, provider=None):
-    """Helper — invoke `remember` with a mocked provider."""
+def _invoke(args, *, provider=None):
+    """Invoke CLI with a mocked standalone provider."""
     if provider is None:
         provider = MagicMock()
-        provider.remember.return_value = RememberResult(
-            status="accepted", entry_id="k_test1234"
-        )
-    mock_provider_fn.return_value = provider
 
     with patch(
         "strawpot.memory.standalone.get_standalone_provider",
         return_value=provider,
     ):
         runner = CliRunner()
-        return runner.invoke(cli, ["remember", *args])
-
-
-@patch("strawpot.cli.get_standalone_provider", create=True)
-def _invoke_recall(args, mock_provider_fn, *, provider=None):
-    """Helper — invoke `recall` with a mocked provider."""
-    if provider is None:
-        provider = MagicMock()
-        provider.recall.return_value = RecallResult(entries=[])
-    mock_provider_fn.return_value = provider
-
-    with patch(
-        "strawpot.memory.standalone.get_standalone_provider",
-        return_value=provider,
-    ):
-        runner = CliRunner()
-        return runner.invoke(cli, ["recall", *args])
+        return runner.invoke(cli, args)
 
 
 # -- remember -----------------------------------------------------------------
@@ -52,7 +31,7 @@ class TestRememberCommand:
         provider.remember.return_value = RememberResult(
             status="accepted", entry_id="k_abc12345"
         )
-        result = _invoke_remember(["My project uses pytest"], provider=provider)
+        result = _invoke(["remember", "My project uses pytest"], provider=provider)
         assert result.exit_code == 0
         assert "Remembered" in result.output
         assert "k_abc12345" in result.output
@@ -63,7 +42,7 @@ class TestRememberCommand:
         provider.remember.return_value = RememberResult(
             status="duplicate", entry_id=""
         )
-        result = _invoke_remember(["Already known fact"], provider=provider)
+        result = _invoke(["remember", "Already known fact"], provider=provider)
         assert result.exit_code == 0
         assert "Already remembered" in result.output
         assert "duplicate" in result.output
@@ -73,8 +52,8 @@ class TestRememberCommand:
         provider.remember.return_value = RememberResult(
             status="accepted", entry_id="k_glob1234"
         )
-        result = _invoke_remember(
-            ["--scope", "global", "Global fact"], provider=provider
+        result = _invoke(
+            ["remember", "--scope", "global", "Global fact"], provider=provider
         )
         assert result.exit_code == 0
         assert "global" in result.output
@@ -87,8 +66,8 @@ class TestRememberCommand:
         provider.remember.return_value = RememberResult(
             status="accepted", entry_id="k_kw123456"
         )
-        result = _invoke_remember(
-            ["-k", "auth,jwt", "Uses JWT for auth"], provider=provider
+        result = _invoke(
+            ["remember", "-k", "auth,jwt", "Uses JWT for auth"], provider=provider
         )
         assert result.exit_code == 0
         call_kwargs = provider.remember.call_args.kwargs
@@ -99,7 +78,7 @@ class TestRememberCommand:
         provider.remember.return_value = RememberResult(
             status="accepted", entry_id="k_test1234"
         )
-        result = _invoke_remember(["Some fact"], provider=provider)
+        result = _invoke(["remember", "Some fact"], provider=provider)
         assert "strawpot mcp setup" in result.output
 
 
@@ -110,7 +89,7 @@ class TestRecallCommand:
     def test_recall_empty(self):
         provider = MagicMock()
         provider.recall.return_value = RecallResult(entries=[])
-        result = _invoke_recall(["authentication"], provider=provider)
+        result = _invoke(["recall", "authentication"], provider=provider)
         assert result.exit_code == 0
         assert "No memories found" in result.output
         assert "strawpot remember" in result.output
@@ -135,7 +114,7 @@ class TestRecallCommand:
                 ),
             ]
         )
-        result = _invoke_recall(["authentication"], provider=provider)
+        result = _invoke(["recall", "authentication"], provider=provider)
         assert result.exit_code == 0
         assert "Found 2 memories" in result.output
         assert "k_abc12345" in result.output
@@ -156,7 +135,7 @@ class TestRecallCommand:
                 ),
             ]
         )
-        result = _invoke_recall(["query"], provider=provider)
+        result = _invoke(["recall", "query"], provider=provider)
         assert "Found 1 memory" in result.output
 
     def test_recall_json_output(self):
@@ -172,7 +151,7 @@ class TestRecallCommand:
                 ),
             ]
         )
-        result = _invoke_recall(["--json", "test"], provider=provider)
+        result = _invoke(["recall", "--json", "test"], provider=provider)
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert len(data) == 1
@@ -182,14 +161,14 @@ class TestRecallCommand:
     def test_recall_with_scope_filter(self):
         provider = MagicMock()
         provider.recall.return_value = RecallResult(entries=[])
-        _invoke_recall(["--scope", "global", "query"], provider=provider)
+        _invoke(["recall", "--scope", "global", "query"], provider=provider)
         call_kwargs = provider.recall.call_args.kwargs
         assert call_kwargs["scope"] == "global"
 
     def test_recall_with_max_results(self):
         provider = MagicMock()
         provider.recall.return_value = RecallResult(entries=[])
-        _invoke_recall(["-n", "5", "query"], provider=provider)
+        _invoke(["recall", "-n", "5", "query"], provider=provider)
         call_kwargs = provider.recall.call_args.kwargs
         assert call_kwargs["max_results"] == 5
 
