@@ -62,29 +62,45 @@ def _read_config(path: Path) -> dict:
     if not path.is_file():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"Cannot read config at {path}: {exc}")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
         # Backup corrupt file and start fresh
         backup = path.with_suffix(".json.bak")
         try:
             path.rename(backup)
             log.warning("Backed up corrupt config to %s", backup)
+            click.echo(
+                click.style("⚠️  ", fg="yellow")
+                + f"Existing config was corrupt — backed up to {backup}"
+            )
         except OSError:
-            pass
-        click.echo(
-            click.style("⚠️  ", fg="yellow")
-            + f"Existing config was corrupt — backed up to {backup}"
-        )
+            click.echo(
+                click.style("⚠️  ", fg="yellow")
+                + f"Existing config was corrupt (backup failed)"
+            )
         return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def _write_config(path: Path, data: dict) -> None:
     """Write JSON config with pretty formatting."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise click.ClickException(
+            f"Cannot write config to {path}: {exc}\n"
+            "Check file permissions and try again."
+        )
 
 
 def configure_mcp(project: bool = False) -> None:
@@ -121,17 +137,19 @@ def configure_mcp(project: bool = False) -> None:
     existing = _SERVER_NAME in config.get("mcpServers", {})
 
     config.setdefault("mcpServers", {})
-    config["mcpServers"][_SERVER_NAME] = _build_server_entry()
+    server_entry = _build_server_entry()
+    config["mcpServers"][_SERVER_NAME] = server_entry
     _write_config(config_path, config)
 
     # Print confirmation
     action = "updated" if existing else "configured"
+    cmd_display = f"{server_entry['command']} {' '.join(server_entry['args'])}"
     click.echo(
         click.style(f"✅ Claude Code MCP {action}!", fg="green")
     )
     click.echo()
     click.echo(f"   Server: {_SERVER_NAME}")
-    click.echo(f"   Command: strawpot mcp serve")
+    click.echo(f"   Command: {cmd_display}")
     click.echo(f"   Config: {config_path}")
     click.echo()
     click.echo("   Next: Restart Claude Code to activate memory.")
