@@ -1573,6 +1573,30 @@ def doctor():
 
 
 # ---------------------------------------------------------------------------
+# MCP commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def mcp():
+    """MCP server for Claude Code memory integration."""
+    pass
+
+
+@mcp.command(name="serve")
+def mcp_serve():
+    """Start the MCP memory server (stdio transport)."""
+    try:
+        from strawpot.mcp.server import main as serve_main
+    except ImportError:
+        raise click.ClickException(
+            "MCP server requires the 'mcp' package. "
+            "Install it with: pip install strawpot[mcp]"
+        )
+    serve_main()
+
+
+# ---------------------------------------------------------------------------
 # Strawhub passthrough
 # ---------------------------------------------------------------------------
 
