@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
-    ("Memory", ["remember", "recall", "forget", "memory"]),
+    ("Memory", ["remember", "recall", "forget", "memory", "mcp"]),
     ("Sessions", ["sessions", "agents", "config"]),
     ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
     ("Discovery", ["search", "list", "info", "resolve"]),
@@ -1594,6 +1594,15 @@ def mcp_serve():
             "Install it with: pip install strawpot[mcp]"
         )
     serve_main()
+
+
+@mcp.command(name="setup")
+@click.option("--project", is_flag=True, help="Configure per-project instead of global.")
+def mcp_setup(project):
+    """Auto-configure Claude Code to use StrawPot memory."""
+    from strawpot.mcp.setup import configure_mcp
+
+    configure_mcp(project=project)
 
 
 # ---------------------------------------------------------------------------
