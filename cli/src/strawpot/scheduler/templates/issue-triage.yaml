@@ -1,0 +1,16 @@
+name: Weekly Issue Triage
+description: Scans untriaged issues and applies priority/type labels
+default_cron: "0 9 * * 1"
+role: github-triager
+task: |
+  Triage all open issues without labels in this repository.
+  For each issue:
+  1. Read the issue title and body
+  2. Apply type label (bug, feature, enhancement, question)
+  3. Apply priority label (critical, high, medium, low)
+  4. Post a triage summary comment
+requires:
+  tools:
+    - gh
+  env:
+    - GITHUB_TOKEN
