@@ -43,6 +43,7 @@ gui = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "pytest-cov>=6.0",
     "pytest-timeout>=2.0",
     "pyinstaller>=6.0",
@@ -52,6 +53,7 @@ dev = [
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 timeout = 30
+asyncio_mode = "strict"
 markers = [
     "e2e: End-to-end tests (may be slower, require git)",
 ]
