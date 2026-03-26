@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.1",
+    "mcp>=1.0",
     "pyyaml>=6.0",
     "tomli_w>=1.0",
     "strawhub",
@@ -34,6 +35,7 @@ Issues = "https://github.com/strawpot/strawpot/issues"
 
 [project.scripts]
 strawpot = "strawpot.cli:cli"
+strawpot-mcp = "strawpot.mcp.server:main"
 
 [project.optional-dependencies]
 gui = [

@@ -1573,6 +1573,27 @@ def doctor():
 
 
 # ---------------------------------------------------------------------------
+# MCP commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def mcp():
+    """MCP server for Claude Code memory integration."""
+    pass
+
+
+@mcp.command(name="serve")
+def mcp_serve():
+    """Start the MCP memory server (stdio transport)."""
+    import asyncio
+
+    from strawpot.mcp.server import run_server
+
+    asyncio.run(run_server())
+
+
+# ---------------------------------------------------------------------------
 # Strawhub passthrough
 # ---------------------------------------------------------------------------
 
