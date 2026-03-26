@@ -296,7 +296,10 @@ def load_provider(spec: MemorySpec) -> MemoryProvider:
                     instance = attr()
                 except TypeError:
                     continue
-            if isinstance(instance, MemoryProvider):
+            if all(
+                hasattr(instance, a)
+                for a in ("name", "get", "dump", "remember", "recall")
+            ):
                 return instance
 
     raise ValueError(
