@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
+    ("Memory", ["remember", "recall", "forget", "memory"]),
     ("Sessions", ["sessions", "agents", "config"]),
     ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
     ("Discovery", ["search", "list", "info", "resolve"]),
@@ -1574,6 +1575,113 @@ def doctor():
 # ---------------------------------------------------------------------------
 # Strawhub passthrough
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Memory commands
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("fact")
+@click.option("--scope", "-s", default="project", type=click.Choice(["project", "global", "role"]),
+              help="Storage scope.")
+@click.option("--keywords", "-k", default="", help="Comma-separated keywords for retrieval matching.")
+def remember(fact, scope, keywords):
+    """Store a fact in memory for AI agents to recall later."""
+    from strawpot.memory.standalone import (
+        CLI_AGENT_ID,
+        CLI_ROLE,
+        CLI_SESSION_ID,
+        get_standalone_provider,
+    )
+
+    provider = get_standalone_provider()
+    kw = [k.strip() for k in keywords.split(",") if k.strip()] if keywords else None
+    result = provider.remember(
+        session_id=CLI_SESSION_ID,
+        agent_id=CLI_AGENT_ID,
+        role=CLI_ROLE,
+        content=fact,
+        keywords=kw,
+        scope=scope,
+    )
+    if result.status == "duplicate":
+        click.echo(click.style("⚠️  Already remembered", fg="yellow") + " (near-duplicate detected)")
+    else:
+        click.echo(click.style("✅ Remembered: ", fg="green") + f'"{fact}"')
+        click.echo(f"   ID: {result.entry_id}")
+        click.echo(f"   Scope: {scope}")
+    click.echo()
+    click.echo(
+        click.style("💡 Tip: ", fg="cyan")
+        + "Run "
+        + click.style("strawpot mcp setup", bold=True)
+        + " to make Claude Code see your memories automatically."
+    )
+
+
+@cli.command()
+@click.argument("query")
+@click.option("--scope", "-s", default="", help="Filter to specific scope (project, global, role).")
+@click.option("--max", "-n", "max_results", default=10, help="Max results to return.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def recall(query, scope, max_results, as_json):
+    """Search stored memories matching a query."""
+    from strawpot.memory.standalone import (
+        CLI_AGENT_ID,
+        CLI_ROLE,
+        CLI_SESSION_ID,
+        get_standalone_provider,
+    )
+
+    provider = get_standalone_provider()
+    result = provider.recall(
+        session_id=CLI_SESSION_ID,
+        agent_id=CLI_AGENT_ID,
+        role=CLI_ROLE,
+        query=query,
+        scope=scope,
+        max_results=max_results,
+    )
+
+    if as_json:
+        entries = [
+            {
+                "entry_id": e.entry_id,
+                "content": e.content,
+                "keywords": e.keywords,
+                "scope": e.scope,
+                "score": round(e.score, 2),
+            }
+            for e in result.entries
+        ]
+        click.echo(json.dumps(entries, indent=2))
+        return
+
+    if not result.entries:
+        click.echo(f'No memories found matching "{query}".')
+        click.echo(
+            "Try "
+            + click.style("strawpot remember", bold=True)
+            + " to add some."
+        )
+        return
+
+    click.echo(
+        click.style("🔍 ", fg="cyan")
+        + f'Found {len(result.entries)} memor{"y" if len(result.entries) == 1 else "ies"} matching "{query}":'
+    )
+    click.echo()
+    for i, entry in enumerate(result.entries, 1):
+        click.echo(
+            f"  {i}. "
+            + click.style(f"[{entry.entry_id}]", fg="bright_black")
+            + f" (score: {entry.score:.2f}, scope: {entry.scope})"
+        )
+        click.echo(f"     {entry.content}")
+        if i < len(result.entries):
+            click.echo()
 
 
 def _strawhub(*args: str) -> None:
