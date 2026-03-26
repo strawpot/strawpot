@@ -1586,11 +1586,14 @@ def mcp():
 @mcp.command(name="serve")
 def mcp_serve():
     """Start the MCP memory server (stdio transport)."""
-    import asyncio
-
-    from strawpot.mcp.server import run_server
-
-    asyncio.run(run_server())
+    try:
+        from strawpot.mcp.server import main as serve_main
+    except ImportError:
+        raise click.ClickException(
+            "MCP server requires the 'mcp' package. "
+            "Install it with: pip install strawpot[mcp]"
+        )
+    serve_main()
 
 
 # ---------------------------------------------------------------------------

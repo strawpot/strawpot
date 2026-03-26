@@ -30,6 +30,15 @@ log = logging.getLogger(__name__)
 
 app = Server("strawpot-memory")
 
+
+def _text_result(text: str, *, is_error: bool = False) -> CallToolResult:
+    """Build a CallToolResult with a single text content block."""
+    return CallToolResult(
+        content=[TextContent(type="text", text=text)],
+        isError=is_error,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Lazy provider — instantiated once on first use
 # ---------------------------------------------------------------------------
@@ -151,7 +160,7 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 text = "Already remembered (near-duplicate detected)."
             else:
                 text = f"Remembered. ID: {result.entry_id}, scope: {arguments.get('scope', 'project')}"
-            return CallToolResult(content=[TextContent(type="text", text=text)])
+            return _text_result(text)
 
         elif name == "memory_recall":
             result = provider.recall(
@@ -163,9 +172,7 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 max_results=arguments.get("max_results", 10),
             )
             if not result.entries:
-                return CallToolResult(
-                    content=[TextContent(type="text", text="No memories found.")]
-                )
+                return _text_result("No memories found.")
             entries = [
                 {
                     "entry_id": e.entry_id,
@@ -176,9 +183,7 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 }
                 for e in result.entries
             ]
-            return CallToolResult(
-                content=[TextContent(type="text", text=json.dumps(entries, indent=2))]
-            )
+            return _text_result(json.dumps(entries, indent=2))
 
         elif name == "memory_forget":
             result = provider.forget(entry_id=arguments["entry_id"])
@@ -186,7 +191,7 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 text = f"Deleted memory {arguments['entry_id']}."
             else:
                 text = f"Memory {arguments['entry_id']} not found."
-            return CallToolResult(content=[TextContent(type="text", text=text)])
+            return _text_result(text)
 
         elif name == "memory_list":
             result = provider.list_entries(
@@ -194,9 +199,7 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 limit=arguments.get("limit", 50),
             )
             if not result.entries:
-                return CallToolResult(
-                    content=[TextContent(type="text", text="No memories stored.")]
-                )
+                return _text_result("No memories stored.")
             entries = [
                 {
                     "entry_id": e.entry_id,
@@ -207,28 +210,18 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
                 }
                 for e in result.entries
             ]
-            return CallToolResult(
-                content=[
-                    TextContent(
-                        type="text",
-                        text=f"{result.total_count} memories.\n"
-                        + json.dumps(entries, indent=2),
-                    )
-                ]
+            return _text_result(
+                f"{result.total_count} memories.\n" + json.dumps(entries, indent=2)
             )
 
         else:
-            return CallToolResult(
-                content=[TextContent(type="text", text=f"Unknown tool: {name}")],
-                isError=True,
-            )
+            return _text_result(f"Unknown tool: {name}", is_error=True)
 
+    except KeyError as exc:
+        return _text_result(f"Missing required argument: {exc}", is_error=True)
     except Exception as exc:
         log.exception("Tool %s failed", name)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Error: {exc}")],
-            isError=True,
-        )
+        return _text_result(f"Error: {exc}", is_error=True)
 
 
 # ---------------------------------------------------------------------------
@@ -274,13 +267,7 @@ async def read_resource(uri) -> ReadResourceResult:
             )
         except Exception as exc:
             log.exception("Failed to read resource %s", uri_str)
-            return ReadResourceResult(
-                contents=[
-                    TextResourceContents(
-                        uri=uri, text=f"Error loading memories: {exc}", mimeType="text/plain"
-                    )
-                ]
-            )
+            raise
 
     raise ValueError(f"Unknown resource: {uri_str}")
 
