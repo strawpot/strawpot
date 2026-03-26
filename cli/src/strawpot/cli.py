@@ -1650,13 +1650,12 @@ def remember(fact, scope, keywords):
         click.echo(click.style("✅ Remembered: ", fg="green") + f'"{fact}"')
         click.echo(f"   ID: {result.entry_id}")
         click.echo(f"   Scope: {scope}")
-    click.echo()
-    click.echo(
-        click.style("💡 Tip: ", fg="cyan")
-        + "Run "
-        + click.style("strawpot mcp setup", bold=True)
-        + " to make Claude Code see your memories automatically."
-    )
+
+    from strawpot.mcp.status import check_mcp_status
+    from strawpot.memory.breadcrumbs import remember_breadcrumb
+
+    mcp_configured, _ = check_mcp_status()
+    remember_breadcrumb(mcp_configured)
 
 
 @cli.command()
@@ -1721,6 +1720,10 @@ def recall(query, scope, max_results, as_json):
         if i < len(result.entries):
             click.echo()
 
+    from strawpot.memory.breadcrumbs import recall_breadcrumb
+
+    recall_breadcrumb()
+
 
 @cli.command()
 @click.argument("entry_id")
@@ -1732,6 +1735,10 @@ def forget(entry_id):
     result = provider.forget(entry_id=entry_id)
     if result.status == "deleted":
         click.echo(f"🗑️  Deleted memory {entry_id}")
+
+        from strawpot.memory.breadcrumbs import forget_breadcrumb
+
+        forget_breadcrumb()
     else:
         click.echo(click.style(f"❌ Memory {entry_id} not found", fg="red"), err=True)
         raise SystemExit(1)
@@ -1807,6 +1814,10 @@ def memory_list(scope, show_all, as_json):
         if not show_all:
             msg += " Use --all to see all."
         click.echo(msg)
+
+    from strawpot.memory.breadcrumbs import list_breadcrumb
+
+    list_breadcrumb()
 
 
 def _strawhub(*args: str) -> None:
