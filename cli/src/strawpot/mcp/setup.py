@@ -43,20 +43,16 @@ def _project_config_path() -> Path:
 
 def _build_server_entry() -> dict:
     """Build the MCP server config entry for strawpot-memory."""
-    cmd = shutil.which("strawpot")
-    if cmd:
-        command = "strawpot"
-    else:
-        # Fall back to running as a Python module
-        command = sys.executable
+    if shutil.which("strawpot"):
         return {
-            "command": command,
-            "args": ["-m", "strawpot.mcp.server"],
+            "command": "strawpot",
+            "args": ["mcp", "serve"],
             "env": {},
         }
+    # Fall back to running as a Python module
     return {
-        "command": command,
-        "args": ["mcp", "serve"],
+        "command": sys.executable,
+        "args": ["-m", "strawpot.mcp.server"],
         "env": {},
     }
 
@@ -67,7 +63,7 @@ def _read_config(path: Path) -> dict:
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError):
         # Backup corrupt file and start fresh
         backup = path.with_suffix(".json.bak")
         try:
@@ -129,9 +125,9 @@ def configure_mcp(project: bool = False) -> None:
     _write_config(config_path, config)
 
     # Print confirmation
-    action = "Updated" if existing else "Configured"
+    action = "updated" if existing else "configured"
     click.echo(
-        click.style(f"✅ Claude Code MCP {action.lower()}!", fg="green")
+        click.style(f"✅ Claude Code MCP {action}!", fg="green")
     )
     click.echo()
     click.echo(f"   Server: {_SERVER_NAME}")
