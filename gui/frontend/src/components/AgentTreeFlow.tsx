@@ -64,7 +64,7 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
     : `agent-flow-node ${nodeStatusClass(data.status)}`;
 
   return (
-    <div className={`${cls} group relative`}>
+    <div className={`${cls} relative`}>
       <Handle type="target" position={Position.Top} />
       <div className="agent-flow-role">
         {data.pending ? `[pending: ${data.role}]` : data.role}
