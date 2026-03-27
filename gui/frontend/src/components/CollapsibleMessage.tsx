@@ -2,10 +2,10 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-/** Rendered pixel height above which messages auto-collapse. */
+/** Rendered pixel height above which messages auto-collapse.
+ *  The collapsed preview shows this same height — i.e., exactly the
+ *  threshold amount of content is visible before the "Show more" toggle. */
 const COLLAPSE_THRESHOLD_PX = 500;
-/** Collapsed preview height in pixels (~6-8 lines of text). */
-const PREVIEW_HEIGHT_PX = 160;
 
 /**
  * Wraps a message balloon's content and auto-collapses it when the
@@ -31,7 +31,7 @@ export default function CollapsibleMessage({
 
   const needsCollapse = contentHeight > COLLAPSE_THRESHOLD_PX;
   const extraLines = needsCollapse
-    ? Math.max(0, Math.round((contentHeight - PREVIEW_HEIGHT_PX) / 20))
+    ? Math.max(0, Math.round((contentHeight - COLLAPSE_THRESHOLD_PX) / 20))
     : 0;
 
   // Measure content height after render and track resize.
@@ -69,7 +69,7 @@ export default function CollapsibleMessage({
         )}
         style={
           needsCollapse
-            ? { maxHeight: collapsed ? `${PREVIEW_HEIGHT_PX}px` : `${contentHeight}px` }
+            ? { maxHeight: collapsed ? `${COLLAPSE_THRESHOLD_PX}px` : `${contentHeight}px` }
             : undefined
         }
       >

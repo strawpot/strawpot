@@ -131,7 +131,9 @@ function UserMessage({ task }: { task: string }) {
     <div className="flex flex-col gap-1.5 items-end">
       <span className="text-xs font-medium text-muted-foreground">You</span>
       <div className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-        <p className="whitespace-pre-wrap">{task}</p>
+        <CollapsibleMessage gradientColor="var(--color-primary)">
+          <p className="whitespace-pre-wrap">{task}</p>
+        </CollapsibleMessage>
       </div>
     </div>
   );

@@ -97,8 +97,8 @@ describe("CollapsibleMessage", () => {
     expect(btn).toBeInTheDocument();
     expect(btn).toHaveTextContent(/show more/i);
 
-    // Collapsed preview height is 160px
-    expect(getContentEl(container).style.maxHeight).toBe("160px");
+    // Collapsed preview height equals threshold (500px)
+    expect(getContentEl(container).style.maxHeight).toBe("500px");
   });
 
   it("renders gradient overlay when collapsed", () => {
@@ -116,7 +116,7 @@ describe("CollapsibleMessage", () => {
   });
 
   it("displays approximate extra-lines count", () => {
-    // contentHeight=800, preview=160 → (800-160)/20 = 32 lines
+    // contentHeight=800, threshold=500 → (800-500)/20 = 15 lines
     mockContentHeight(800);
 
     render(
@@ -125,7 +125,7 @@ describe("CollapsibleMessage", () => {
       </CollapsibleMessage>,
     );
 
-    expect(screen.getByText(/~32 more lines/)).toBeInTheDocument();
+    expect(screen.getByText(/~15 more lines/)).toBeInTheDocument();
   });
 
   // ---- Toggle expand / collapse ----
@@ -161,7 +161,7 @@ describe("CollapsibleMessage", () => {
     await user.click(screen.getByRole("button"));
     await user.click(screen.getByRole("button"));
 
-    expect(getContentEl(container).style.maxHeight).toBe("160px");
+    expect(getContentEl(container).style.maxHeight).toBe("500px");
     expect(screen.getByRole("button")).toHaveTextContent(/show more/i);
   });
 
@@ -320,7 +320,7 @@ describe("CollapsibleMessage", () => {
 
     // Now collapse UI should appear
     expect(screen.getByRole("button")).toBeInTheDocument();
-    expect(getContentEl(container).style.maxHeight).toBe("160px");
+    expect(getContentEl(container).style.maxHeight).toBe("500px");
   });
 
   it("removes collapse UI when content shrinks below threshold", () => {
