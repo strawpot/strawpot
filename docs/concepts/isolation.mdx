@@ -10,18 +10,18 @@ StrawPot creates one isolated environment per session. All agents in a session �
 | Strategy | Description | When to Use |
 |----------|-------------|-------------|
 | `none` | Work directly in the project directory | Quick tasks, no isolation needed |
-| `worktree` | Create a git worktree per session | Recommended for most workflows |
+| `worktree` | Create a git worktree per session | **Deprecated** — use the [worktree skill](/skills/worktree) instead |
 | `docker` | Container-based isolation | Planned (not yet implemented) |
 
 Set the strategy in your config or via CLI flag:
 
 ```toml
 # strawpot.toml (project root)
-isolation = "worktree"
+isolation = "worktree"  # deprecated — use the worktree skill instead
 ```
 
 ```bash
-strawpot start --isolation worktree
+strawpot start --isolation worktree  # deprecated
 ```
 
 ## None Isolation
@@ -34,6 +34,8 @@ The simplest mode — agents work directly in your project directory.
 - Risk: agents modify your working files directly
 
 ## Worktree Isolation
+
+> **Deprecated.** Session-level worktree isolation is deprecated and will be removed in a future version. Use the [worktree skill](/skills/worktree) for agent-controlled isolation instead.
 
 Creates a git worktree per session, giving agents a separate working copy of your repository.
 
