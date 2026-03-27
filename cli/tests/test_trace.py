@@ -558,3 +558,60 @@ class TestIOResilience:
         finally:
             # Restore permissions for cleanup
             os.chmod(session_dir, stat.S_IRWXU)
+
+
+# ---------------------------------------------------------------------------
+# Cancel trace events
+# ---------------------------------------------------------------------------
+
+
+class TestCancelTraceEvents:
+    def test_agent_cancel_start(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.agent_cancel_start(
+            span_id="span_1",
+            agent_id="agent_a",
+            reason="user",
+            force=False,
+            descendants=["agent_b", "agent_c"],
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        e = events[0]
+        assert e["event"] == "agent_cancel_start"
+        assert e["span_id"] == "span_1"
+        assert e["data"]["agent_id"] == "agent_a"
+        assert e["data"]["reason"] == "user"
+        assert e["data"]["force"] is False
+        assert e["data"]["descendants"] == ["agent_b", "agent_c"]
+        assert e["data"]["descendant_count"] == 2
+
+    def test_agent_cancel_complete(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.agent_cancel_complete(
+            span_id="span_1",
+            agent_id="agent_a",
+            cancelled_agents=["agent_c", "agent_b", "agent_a"],
+            duration_ms=1500,
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        e = events[0]
+        assert e["event"] == "agent_cancel_complete"
+        assert e["data"]["agent_id"] == "agent_a"
+        assert e["data"]["cancelled_agents"] == ["agent_c", "agent_b", "agent_a"]
+        assert e["data"]["cancelled_count"] == 3
+        assert e["data"]["duration_ms"] == 1500
+
+    def test_cancel_start_empty_descendants(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.agent_cancel_start(
+            span_id="span_1",
+            agent_id="agent_a",
+            reason="timeout",
+            force=True,
+            descendants=[],
+        )
+        events = _read_events(session_dir)
+        assert events[0]["data"]["descendant_count"] == 0
+        assert events[0]["data"]["force"] is True

@@ -448,3 +448,41 @@ class Tracer:
             role=role,
             session_id=session_id,
         )
+
+    def agent_cancel_start(
+        self,
+        *,
+        span_id: str,
+        agent_id: str,
+        reason: str,
+        force: bool,
+        descendants: list[str],
+    ) -> None:
+        """Emit ``agent_cancel_start`` when a cancel operation begins."""
+        self.emit(
+            "agent_cancel_start",
+            span_id,
+            agent_id=agent_id,
+            reason=reason,
+            force=force,
+            descendants=descendants,
+            descendant_count=len(descendants),
+        )
+
+    def agent_cancel_complete(
+        self,
+        *,
+        span_id: str,
+        agent_id: str,
+        cancelled_agents: list[str],
+        duration_ms: int,
+    ) -> None:
+        """Emit ``agent_cancel_complete`` when a cancel operation finishes."""
+        self.emit(
+            "agent_cancel_complete",
+            span_id,
+            agent_id=agent_id,
+            cancelled_agents=cancelled_agents,
+            cancelled_count=len(cancelled_agents),
+            duration_ms=duration_ms,
+        )

@@ -1806,6 +1806,28 @@ class Session:
         subtree = get_subtree_bottom_up(agent_id, self._agent_info)
         cancel_order = subtree + [agent_id]
 
+        # Emit cancel_start trace event.
+        cancel_start_time = time.monotonic()
+        if self._tracer is not None and self._session_span_id is not None:
+            self._tracer.agent_cancel_start(
+                span_id=self._session_span_id,
+                agent_id=agent_id,
+                reason=str(reason),
+                force=force,
+                descendants=subtree,
+            )
+
+        # Emit cancel_start progress event.
+        info = self._agent_info.get(agent_id)
+        role = info.get("role", "unknown") if info else "unknown"
+        desc_count = len(subtree)
+        desc_detail = f" + {desc_count} descendants" if desc_count > 0 else ""
+        self._emit(
+            "cancel_start", role,
+            detail=f"{agent_id[:8]}{desc_detail}",
+            depth=self._agent_depth(agent_id),
+        )
+
         cancelled: list[str] = []
         for i, aid in enumerate(cancel_order):
             info = self._agent_info.get(aid)
@@ -1861,6 +1883,24 @@ class Session:
 
             self._update_agent_state(aid, AgentState.CANCELLED, agent_reason)
             cancelled.append(aid)
+
+        # Emit cancel_complete trace event.
+        cancel_duration_ms = int((time.monotonic() - cancel_start_time) * 1000)
+        if self._tracer is not None and self._session_span_id is not None:
+            self._tracer.agent_cancel_complete(
+                span_id=self._session_span_id,
+                agent_id=agent_id,
+                cancelled_agents=cancelled,
+                duration_ms=cancel_duration_ms,
+            )
+
+        # Emit cancel_complete progress event.
+        self._emit(
+            "cancel_complete", role,
+            detail=f"{len(cancelled)} agents",
+            duration_ms=cancel_duration_ms,
+            depth=self._agent_depth(agent_id),
+        )
 
         return cancelled
 

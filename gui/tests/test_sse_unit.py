@@ -293,3 +293,53 @@ class TestTreeStateFullLifecycle:
         assert result["denied_delegations"][0]["role"] == "admin"
 
         assert state.is_terminal
+
+
+class TestTreeStateCancelEvents:
+    """Tests for cancel event processing in TreeState."""
+
+    def test_cancel_start_sets_cancelling(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {
+                "a1": {"role": "orch", "runtime": "cc", "parent": None},
+                "a2": {"role": "worker", "runtime": "cc", "parent": "a1"},
+            }
+        })
+        state.process_event({
+            "event": "agent_cancel_start",
+            "span_id": "s0",
+            "data": {"agent_id": "a1", "descendants": ["a2"]},
+        })
+        assert state.nodes["a1"].status == "cancelling"
+        assert state.nodes["a2"].status == "cancelling"
+
+    def test_cancel_complete_sets_cancelled(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {
+                "a1": {"role": "orch", "runtime": "cc", "parent": None},
+                "a2": {"role": "worker", "runtime": "cc", "parent": "a1"},
+            }
+        })
+        state.process_event({
+            "event": "agent_cancel_complete",
+            "span_id": "s0",
+            "data": {"cancelled_agents": ["a2", "a1"]},
+        })
+        assert state.nodes["a1"].status == "cancelled"
+        assert state.nodes["a2"].status == "cancelled"
+
+    def test_cancel_unknown_agents_ignored(self):
+        state = TreeState()
+        # Should not raise on unknown agent IDs
+        state.process_event({
+            "event": "agent_cancel_start",
+            "span_id": "s0",
+            "data": {"agent_id": "unknown", "descendants": ["also_unknown"]},
+        })
+        state.process_event({
+            "event": "agent_cancel_complete",
+            "span_id": "s0",
+            "data": {"cancelled_agents": ["unknown"]},
+        })

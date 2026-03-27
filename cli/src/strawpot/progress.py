@@ -19,7 +19,9 @@ class ProgressEvent:
 
         session_start, delegate_start, delegate_end,
         delegate_denied, delegate_cached,
-        ask_user_start, ask_user_end, session_end
+        ask_user_start, ask_user_end,
+        cancel_start, cancel_complete,
+        session_end
 
     Valid ``status`` values::
 
@@ -106,6 +108,13 @@ class TerminalProgressRenderer(_BaseRenderer):
         elif kind == "ask_user_end":
             dur = _format_duration(event.duration_ms)
             line = f"{indent}{ok} User responded ({dur})"
+        elif kind == "cancel_start":
+            cancel_sym = "\u2298" if self._is_tty else "[X]"
+            line = f"{indent}{cancel_sym} Cancelling {event.role} {event.detail}..."
+        elif kind == "cancel_complete":
+            cancel_sym = "\u2298" if self._is_tty else "[X]"
+            dur = _format_duration(event.duration_ms)
+            line = f"{indent}{cancel_sym} Cancelled {event.detail} ({dur})"
         elif kind == "session_end":
             dur = _format_duration(event.duration_ms)
             detail_suffix = f" - {event.detail}" if event.detail else ""
