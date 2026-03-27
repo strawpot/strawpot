@@ -1,7 +1,15 @@
-"""Agent cancellation types and tree traversal utilities."""
+"""Agent cancellation types, tree traversal utilities, and file-based cancel signals."""
 
+import json
+import logging
+import os
+import tempfile
 from collections import deque
+from datetime import datetime, timezone
 from enum import StrEnum
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class AgentState(StrEnum):
@@ -92,3 +100,100 @@ def is_ancestor_of(
             return True
         current = parent
     return False
+
+
+# ------------------------------------------------------------------
+# File-based cancel signal protocol
+# ------------------------------------------------------------------
+# Cancel requests are written as JSON files to
+# ``.strawpot/sessions/<run_id>/cancel/<agent_id>.json``
+# (or ``_run.json`` for run-level cancel).  The session's cancel
+# watcher thread picks them up, triggers ``cancel_agent()``, and
+# renames them to ``.done``.
+
+
+def cancel_dir(session_dir: str) -> str:
+    """Return the cancel signal directory for a session."""
+    return os.path.join(session_dir, "cancel")
+
+
+def write_cancel_signal(
+    session_dir: str,
+    agent_id: str | None,
+    *,
+    force: bool = False,
+    requested_by: str = "cli",
+) -> Path:
+    """Write a cancel signal file for the session watcher to pick up.
+
+    Args:
+        session_dir: Path to ``.strawpot/sessions/<run_id>/``.
+        agent_id: Agent to cancel, or ``None`` to cancel the entire run.
+        force: Skip graceful shutdown.
+        requested_by: Origin of the cancel request (``"cli"`` or ``"gui"``).
+
+    Returns:
+        Path to the written signal file.
+    """
+    cdir = cancel_dir(session_dir)
+    os.makedirs(cdir, exist_ok=True)
+
+    filename = f"{agent_id}.json" if agent_id else "_run.json"
+    signal_path = os.path.join(cdir, filename)
+
+    data = {
+        "agent_id": agent_id,
+        "force": force,
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+        "requested_by": requested_by,
+    }
+
+    # Atomic write: write to temp file, then rename.
+    fd, tmp_path = tempfile.mkstemp(dir=cdir, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp_path, signal_path)
+    except Exception:
+        # Clean up temp file on failure.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    return Path(signal_path)
+
+
+def read_cancel_signals(session_dir: str) -> list[dict]:
+    """Read pending cancel signal files from the cancel directory.
+
+    Returns a list of parsed signal dicts.  Each dict includes
+    ``"_path"`` with the file path for renaming after processing.
+    """
+    cdir = cancel_dir(session_dir)
+    if not os.path.isdir(cdir):
+        return []
+
+    signals: list[dict] = []
+    for entry in os.listdir(cdir):
+        if not entry.endswith(".json"):
+            continue
+        path = os.path.join(cdir, entry)
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            data["_path"] = path
+            signals.append(data)
+        except (json.JSONDecodeError, OSError):
+            logger.debug("Skipping malformed cancel signal: %s", path)
+    return signals
+
+
+def mark_signal_done(signal_path: str) -> None:
+    """Rename a processed signal file to ``.done``."""
+    done_path = signal_path.replace(".json", ".done")
+    try:
+        os.replace(signal_path, done_path)
+    except OSError:
+        logger.debug("Failed to rename signal to .done: %s", signal_path)
