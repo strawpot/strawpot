@@ -5,11 +5,13 @@ These tests use real git repos (via tmp_path) — no mocking of git commands.
 
 import os
 import subprocess
+import warnings
 
 import pytest
 
 from strawpot.isolation.protocol import IsolatedEnv, Isolator
 from strawpot.isolation.worktree import WorktreeIsolator, _project_hash
+from strawpot.session import resolve_isolator
 
 
 def _init_repo(path):
@@ -214,3 +216,32 @@ def test_cleanup_delete_branch_true(tmp_path, monkeypatch):
 
     assert not os.path.isdir(env.path)
     assert env.branch not in _branches(tmp_path)
+
+
+# --- deprecation warning ---
+
+
+def test_resolve_isolator_worktree_emits_deprecation_warning():
+    """resolve_isolator('worktree') should emit a DeprecationWarning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        isolator = resolve_isolator("worktree")
+
+    assert isinstance(isolator, WorktreeIsolator)
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
+    assert len(deprecation_warnings) == 1
+    assert "deprecated" in str(deprecation_warnings[0].message).lower()
+
+
+def test_resolve_isolator_none_no_deprecation_warning():
+    """resolve_isolator('none') should not emit any deprecation warning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        resolve_isolator("none")
+
+    deprecation_warnings = [
+        w for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
+    assert not deprecation_warnings

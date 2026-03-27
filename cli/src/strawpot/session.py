@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
@@ -262,6 +263,13 @@ def resolve_isolator(isolation: str) -> Isolator:
     if isolation == "none":
         return NoneIsolator()
     if isolation == "worktree":
+        msg = (
+            "Session-level worktree isolation is deprecated. "
+            "Use the worktree skill for agent-controlled isolation instead. "
+            "This flag will be removed in a future version."
+        )
+        warnings.warn(msg, DeprecationWarning, stacklevel=2)
+        logger.warning("%s", msg)
         return WorktreeIsolator()
     raise ValueError(f"Unknown isolation mode: {isolation}")
 
