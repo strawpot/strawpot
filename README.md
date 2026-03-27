@@ -26,7 +26,7 @@ StrawPot lets agents figure out how to solve the task.
 
 - Agents compose other agents dynamically, with no fixed pipelines
   or hardcoded flows
-- Concurrent execution with isolation, memory, and full traceability
+- Concurrent execution with memory and full traceability
 - Outputs vary. Infrastructure does not.
 
 ## Example: how agents coordinate
@@ -64,7 +64,7 @@ Workflows improve over time as roles are reused and refined.
 
 - Python 3.11 or later
 - [Node.js 18+](https://nodejs.org) (required by Claude Code agent)
-- [Git](https://git-scm.com) (required for worktree isolation)
+- [Git](https://git-scm.com) (required for worktree skill)
 - [GitHub CLI](https://cli.github.com) (`gh`) — optional, for PR workflows
 
 Run `strawpot doctor` after install to verify your setup.
@@ -123,11 +123,11 @@ OpenHands, Pi, or your own, assigned per role, mixed in the same
 session. Adding a new runtime means implementing two commands:
 `setup` and `build`.
 
-**Git worktree isolation**
-Every session gets its own git branch in an isolated worktree.
-Multiple sessions run concurrently without conflicts. Crash recovery
-is automatic. Changes merge back via configurable strategies (local
-patch, PR, or auto-detect).
+**Agent-controlled worktree isolation**
+Agents decide when to use isolation via the worktree skill. When
+an agent needs an isolated working copy, it creates a git worktree
+on demand. Changes merge back automatically (local patch or PR).
+No user configuration needed.
 
 **Persistent memory across sessions**
 Three-tier context cards: semantic (always included), retrieval
@@ -154,7 +154,7 @@ code.
 - Not deterministic: same input may produce different artifacts
 - Not autonomous: agents need well-defined roles to be effective
 
-The orchestration, isolation, tracing, and memory systems are solid.
+The orchestration, tracing, and memory systems are solid.
 The AI output quality improves through better roles, skills, and
 community iteration.
 
@@ -172,13 +172,12 @@ User task → StrawPot → Role (ai-ceo)
 
 When you run `strawpot start`:
 
-1. Creates an isolated environment (worktree or project dir)
-2. Starts the Denden gRPC server for agent communication
-3. Retrieves memory context from past sessions
-4. Launches the orchestrator agent (e.g. ai-ceo)
-5. Agents delegate tasks to sub-roles automatically
-6. Required roles and skills are resolved from StrawHub
-7. On exit, records results to memory and cleans up
+1. Starts the Denden gRPC server for agent communication
+2. Retrieves memory context from past sessions
+3. Launches the orchestrator agent (e.g. ai-ceo)
+4. Agents delegate tasks to sub-roles automatically
+5. Required roles and skills are resolved from StrawHub
+6. On exit, records results to memory and cleans up
 
 ## Core Concepts
 
@@ -259,7 +258,6 @@ Project: `strawpot.toml` (project root)
 
 ```toml
 runtime = "strawpot-claude-code"
-isolation = "none"                      # none | worktree
 memory = "dial"                         # memory provider; "" to disable
 
 [denden]

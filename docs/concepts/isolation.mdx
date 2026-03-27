@@ -1,14 +1,63 @@
 ---
 title: Isolation
-description: Environment strategies for agent sessions
+description: How agents use worktree isolation on demand
 ---
 
-StrawPot agents work directly in your project directory. All agents in a session — orchestrator and sub-agents — share the same working directory.
+StrawPot agents work directly in your project directory. All
+agents in a session — orchestrator and sub-agents — share the
+same working directory.
 
-## Agent-Controlled Isolation
+## Agent-Controlled Worktree Isolation
 
-For tasks that need isolated working copies (e.g., multi-file refactors, risky changes), agents can use the [worktree skill](/skills/worktree) to create and manage git worktrees on demand. This gives agents fine-grained control over when and how isolation is used, rather than applying it to the entire session.
+Isolation is not a session-level setting. Instead, agents decide
+when to use isolation based on the task at hand.
+
+For tasks that need isolated working copies (e.g., multi-file
+refactors, risky changes), agents use the
+[worktree skill](/skills/worktree) to create and manage git
+worktrees on demand. The worktree skill:
+
+- Creates a temporary git worktree with its own branch
+- Lets the agent work without affecting the main working
+  directory
+- Merges changes back (or opens a PR) when the agent is done
+- Cleans up the worktree automatically
+
+This gives agents fine-grained control over when and how
+isolation is used, rather than applying it blanket to every
+session. Most tasks run directly in the project directory;
+only tasks that benefit from isolation use it.
+
+### Example
+
+An agent with the worktree skill attached can create an
+isolated environment mid-task:
+
+```
+Agent decides to refactor auth module
+  → enters worktree (new branch: strawpot/refactor-auth)
+  → makes changes in isolation
+  → opens PR from the worktree branch
+  → exits worktree (cleanup automatic)
+```
+
+No user configuration is required. The agent's role determines
+whether the worktree skill is available.
+
+## Previous Behavior
+
+Earlier versions of StrawPot supported a session-level
+`isolation` setting (`none`, `worktree`) in `strawpot.toml` and
+a `--isolation` CLI flag. This has been removed. Agents now
+control isolation themselves via the worktree skill, which is
+more flexible — a single session can use isolation for some
+tasks and not others.
+
+If your `strawpot.toml` still contains an `isolation` key, it
+is ignored. You can safely remove it.
 
 ## Docker Isolation
 
-Container-based isolation is planned but not yet implemented. It will provide full environment isolation including system dependencies, network, and filesystem.
+Container-based isolation is planned but not yet implemented. It
+will provide full environment isolation including system
+dependencies, network, and filesystem.

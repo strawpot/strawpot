@@ -31,10 +31,14 @@ strawpot start          ← CLI entry point, CWD = working dir
       └─ Sub-agent B (same worktree, reviewer role)
 ```
 
-All agents in a session share the same working directory. With `isolation=none`
-(default), agents work directly in the project dir. With `isolation=worktree`,
-a git worktree is created per session — agents see each other's changes and
-cleanup is a single `git worktree remove`.
+All agents in a session share the same working directory (the project
+directory). When an agent needs an isolated working copy, it uses the
+worktree skill to create a git worktree on demand.
+
+> **Note:** Session-level `isolation` config was removed in epic #568.
+> Agents now control worktree isolation themselves via the worktree
+> skill. The `Isolator` protocol and `NoneIsolator` remain as internal
+> plumbing (sessions always use `NoneIsolator`).
 
 ---
 
@@ -393,10 +397,13 @@ class Isolator(Protocol):
 
 Implementations:
 - `NoneIsolator` — returns `base_dir` as-is, cleanup is a no-op.
-  Agents work directly in the project directory.
-- `WorktreeIsolator` — creates a worktree per session. Raises `ValueError`
-  if the project is not already a git repo.
-- Future: `DockerIsolator`.
+  Agents work directly in the project directory. This is the only
+  isolator used at session level since session-level isolation was
+  removed (epic #568).
+
+> **Historical note:** `WorktreeIsolator` previously created a
+> worktree per session. This has been replaced by agent-controlled
+> worktree isolation via the worktree skill.
 
 ### Config (`config.py`)
 
@@ -404,7 +411,6 @@ Implementations:
 @dataclass
 class StrawPotConfig:
     runtime: str = "strawpot-claude-code"
-    isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "ai-ceo"
     max_depth: int = 3
@@ -496,7 +502,7 @@ Convenience methods (each calls `emit` + `store_artifact` as needed):
 
 | Method | Returns | Stores artifact |
 |--------|---------|-----------------|
-| `session_start(run_id, role, runtime, isolation, task="")` | span_id | task → `task_ref` |
+| `session_start(run_id, role, runtime, task="")` | span_id | task → `task_ref` |
 | `session_end(span_id, merge_action, duration_ms, output="")` | — | output → `output_ref` |
 | `delegate_start(role, parent_span, context, depth=0, session_id="", parent_agent_id=None)` | span_id | context → `context_ref` |
 | `delegate_end(span_id, exit_code, summary, duration_ms, output="", role="", session_id="", agent_id="")` | — | output → `output_ref` |
@@ -532,7 +538,6 @@ The span tree enables call-tree reconstruction:
 ```toml
 # strawpot.toml (project root)
 runtime = "strawpot-claude-code"
-isolation = "none"               # none | worktree | docker
 
 [denden]
 addr = "127.0.0.1:9700"
@@ -601,16 +606,13 @@ enabled = true
      runtime = InteractiveWrapperRuntime(wrapper)            # interactive → tmux session
    else:
      runtime = DirectWrapperRuntime(wrapper)                 # fallback → direct terminal attach
-5. isolator = resolve_isolator(config.isolation)             # none | worktree | docker
+5. isolator = NoneIsolator()  # agents control worktree isolation via skill
 6. session = Session(config, wrapper, runtime, isolator)
 7. session.start():
    a. run_id = "run_" + uuid4()
       → if config.trace: create Tracer(session_dir, run_id), emit session_start
-   b. Create isolated env (or use CWD directly):
-      env = isolator.create(session_id=run_id, base_dir=working_dir)
-      → isolation=none:     env.path = working_dir (no-op)
-      → isolation=worktree: git worktree add <STRAWPOT_HOME>/worktrees/<hash>/<run_id> ...
-      All agents will work in env.path from here on.
+   b. env = isolator.create(session_id=run_id, base_dir=working_dir)
+      → env.path = working_dir (agents work directly in project dir)
    c. Start DenDenServer(addr=config.denden_addr)
       - If port was explicitly provided (--port flag): fail with error if taken
       - Otherwise (default from config): try configured port, if taken bind to
@@ -1183,78 +1185,27 @@ cleanup(env, base_dir):
   pass  # no-op
 ```
 
-Simplest option — good for single-agent sessions, non-coding workflows,
-or when the user manages their own branching.
+Only implementation currently used. Sessions always run in the project
+directory. Agents that need isolation use the worktree skill on demand.
 
-### WorktreeIsolator (`isolation/worktree.py`)
-
-Creates one git worktree per session. Multiple concurrent sessions are
-safe — each gets its own branch.
-
-Worktrees are stored outside the project tree under `STRAWPOT_HOME` to
-avoid interfering with IDEs, file watchers, and gitignore.
-
-```
-create(session_id, base_dir):
-  if not is_git_repo(base_dir): raise ValueError
-
-  path = <STRAWPOT_HOME>/worktrees/<project_hash>/<session_id>
-  branch = strawpot/<session_id>
-  git worktree add <path> -b <branch>
-  return IsolatedEnv(path, branch)
-
-cleanup(env, base_dir):
-  # see Session Cleanup below — action-based merge
-  git worktree remove <path> --force
-  git branch -D <branch>   # only if no PR was created
-```
-
-Pull-before-session and merge behavior are handled by session.py, not here.
-The isolator only manages worktree creation and removal.
-
-### DockerIsolator (future)
-
-Runs agents inside a container. The container gets a copy of the working
-directory (not a bind-mount — true isolation). Multiple concurrent sessions
-are safe — each gets its own container.
-
-Git is initialized inside the container at create time purely for patch
-generation — it never leaks to the host. Changes are exported as a unified
-diff patch, not via `docker cp` (which would copy the `.git` directory).
-
-```
-create(session_id, base_dir):
-  container_id = docker run ... -v <base_dir>:/src:ro  # read-only mount for initial copy
-  # copy base_dir into container working dir
-  docker exec <container> git init && git add -A && git commit -m "initial"
-  return IsolatedEnv(path="/workspace", container_id=container_id)
-
-cleanup(env):
-  # see Session Cleanup below — extract patch, apply to host, remove container
-  patch = docker exec <container> git diff HEAD
-  apply_patch(patch, host_dir)   # uses git apply or patch (see below)
-  docker rm <container>          # .git inside container dies here
-```
+> **Historical note:** `WorktreeIsolator` previously created a
+> session-level worktree. This was removed in epic #568 in favor of
+> agent-controlled worktree isolation via the worktree skill.
 
 ---
 
 ## Session Tracking
 
 `.strawpot/sessions/<run_id>/` holds one directory per active session,
-with `session.json` inside. Multiple concurrent sessions are allowed for
-all isolation modes. For `none`, concurrent sessions write to the same
-directory — overlapping changes are the user's responsibility.
+with `session.json` inside. Multiple concurrent sessions are allowed —
+concurrent sessions write to the same directory, so overlapping changes
+are the user's responsibility.
 
 ---
 
 ## Session Cleanup
 
-When a session ends (Ctrl+C, agent quit, or crash recovery), cleanup
-depends on the isolation mode.
-
-### `isolation = none`
-
-Nothing to do. Changes are already in the project directory.
+When a session ends (Ctrl+C, agent quit, or crash recovery):
 
 ```
 session.stop():
@@ -1263,92 +1214,10 @@ session.stop():
   3. Remove session directory
 ```
 
-### `isolation = worktree`
-
-Cleanup is action-based — no configuration needed. StrawPot detects
-what the agent actually did:
-
-```
-session.stop():
-  1. Kill remaining sub-agents
-  2. Stop denden server
-  3. Check: did the agent create a PR for this branch?
-     → YES (PR exists): clean up worktree, keep remote branch for PR
-     → NO (no PR): generate patch, apply as unstaged changes to base dir
-       - git diff <base_branch>..strawpot/<run_id>
-       - git apply --check <patch>
-         → no conflicts: apply, remove worktree + delete branch
-         → conflicts: show conflicting files, prompt user (see below)
-  4. Remove session directory
-```
-
-### `isolation = docker` (future)
-
-The container has git initialized inside it at `create()` time purely for
-diff tracking. The container's `.git` never touches the host — it dies
-with `docker rm`. Cleanup follows the same action-based approach as
-worktree isolation:
-
-```
-session.stop():
-  1. Kill remaining sub-agents (inside container)
-  2. Stop denden server
-  3. Check: did the agent create a PR?
-     → YES (PR exists): docker rm <container>, done
-     → NO (no PR): generate patch, apply as unstaged changes to host dir
-       - docker exec <container> git diff HEAD
-       - Apply patch to host dir (see Patch Application below)
-         → no conflicts: apply, docker rm <container>
-         → conflicts: show conflicting files, prompt user (see below)
-  4. Remove session directory
-```
-
-### Patch Application
-
-StrawPot picks the right tool based on the host directory:
-
-```
-if is_git_repo(host_dir):
-    use git apply          # better 3-way merge support
-else:
-    use patch              # POSIX standard, no git needed, no side effects
-```
-
-The `patch` fallback means docker isolation works on non-git host
-directories without creating a `.git` on the host.
-
-### Conflict Resolution
-
-When no PR was created, both `worktree` and `docker` use the same
-conflict resolution flow for patch-apply. (If a PR exists, there are
-no local conflicts — they're handled through the PR review process.)
-
-Conflicts are detected before applying — if the patch doesn't apply
-cleanly, strawpot lists the conflicting files and prompts:
-
-```
-Conflict: 2 files changed on both sides since session started.
-  src/auth.py
-  src/config.py
-
-  [a] Apply all — override conflicts with session's changes
-  [s] Skip conflicts — apply only non-conflicting changes
-  [d] Discard all — drop all session changes
-```
-
-| Option | git host (`git apply`) | non-git host (`patch`) |
-|---|---|---|
-| Detect conflicts | `git apply --check` | `patch --dry-run` |
-| Apply all (override) | `git apply --3way` | `patch --force` |
-| Skip conflicts | `git apply --reject`, drop `.rej` | `patch`, skip failed hunks |
-| Discard all | don't apply | don't apply |
-
-After any choice, the worktree is removed and the branch is deleted
-(worktree), or the container is removed (docker).
-
-StrawPot does not provide manual merge resolution. The three options
-cover the common cases; for anything more nuanced the user can use
-`isolation=none` and manage merges themselves.
+Changes are already in the project directory — no merge step needed at
+session level. If an agent used the worktree skill during the session,
+the skill handles its own worktree cleanup (merging changes back or
+preserving the branch for a PR).
 
 ### Crash Recovery
 
@@ -1385,12 +1254,8 @@ the same session directory:
 {
   "run_id": "run_abc123",
   "working_dir": "/home/user/project",
-  "isolation": "worktree",
   "runtime": "strawpot-claude-code",
   "denden_addr": "127.0.0.1:9700",
-  "worktree": "~/.strawpot/worktrees/<project_hash>/run_abc123",
-  "worktree_branch": "strawpot/run_abc123",
-  "base_branch": "main",
   "started_at": "2026-02-27T10:00:00Z",
   "pid": 54321,
   "agents": {
@@ -1433,7 +1298,7 @@ One file per session: `.strawpot/sessions/<run_id>/session.jsonl`
 Each line is a JSON object:
 
 ```json
-{"ts": "2026-02-27T10:00:00Z", "level": "info", "event": "session_started", "run_id": "run_abc123", "msg": "Session started", "data": {"isolation": "worktree", "runtime": "strawpot-claude-code"}}
+{"ts": "2026-02-27T10:00:00Z", "level": "info", "event": "session_started", "run_id": "run_abc123", "msg": "Session started", "data": {"runtime": "strawpot-claude-code"}}
 {"ts": "2026-02-27T10:00:01Z", "level": "info", "event": "agent_spawned", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Spawned orchestrator", "data": {"role": "orchestrator"}}
 {"ts": "2026-02-27T10:01:00Z", "level": "info", "event": "delegate_request", "run_id": "run_abc123", "agent_id": "agent_xyz", "msg": "Delegation requested", "data": {"role": "implementer", "task": "implement auth"}}
 {"ts": "2026-02-27T10:05:00Z", "level": "error", "event": "agent_timeout", "run_id": "run_abc123", "agent_id": "agent_abc", "msg": "Agent timed out after 300s"}
@@ -1443,7 +1308,7 @@ Each line is a JSON object:
 
 | Event | Level | Description |
 |---|---|---|
-| `session_started` | info | Session created, isolation env ready |
+| `session_started` | info | Session created and ready |
 | `session_stopped` | info | Clean shutdown completed |
 | `denden_started` | info | gRPC server bound to address |
 | `denden_stopped` | info | gRPC server shut down |
@@ -1546,7 +1411,6 @@ expands this wildcard to all globally installed roles.
 
 ```
 strawpot start  [--role SLUG] [--runtime NAME]
-                [--isolation none|worktree|docker]
                 [--pull auto|always|never|prompt]
                 [--host HOST] [--port PORT]
 strawpot sessions                    # list all running sessions
@@ -1582,7 +1446,7 @@ is prompted for conflict resolution when patch-applying changes.
 
 `sessions` reads all session directories from `.strawpot/sessions/`,
 loads `session.json` from each, checks if each process is still alive (via
-`pid`), and displays a table of running sessions with run_id, isolation mode,
+`pid`), and displays a table of running sessions with run_id,
 runtime, denden port, and uptime. Stale sessions (dead pid) are marked
 accordingly.
 

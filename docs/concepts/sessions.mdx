@@ -3,7 +3,8 @@ title: Sessions
 description: Session lifecycle, crash recovery, and worktree merge behavior
 ---
 
-A session is the unit of work in StrawPot. It encapsulates an isolated environment, a Denden server, and all spawned agents.
+A session is the unit of work in StrawPot. It encapsulates a
+working environment, a Denden server, and all spawned agents.
 
 ## Lifecycle
 
@@ -12,19 +13,20 @@ When you run `strawpot start`:
 1. **Load config** — Merge global, project, and CLI flag settings
 2. **Resolve agent** — Find the agent runtime (project-local → global), auto-install if needed
 3. **Validate** — Check required tools and environment variables
-4. **Create isolation** — Set up worktree or use project directory directly
-5. **Start Denden** — Launch gRPC server on `127.0.0.1:9700`
-6. **Resolve memory provider** — Load the configured provider (default: `dial`), auto-install if needed
-7. **Resolve orchestrator role** — Fetch from StrawHub, stage dependencies
-8. **Spawn orchestrator** — Launch the agent with role, skills, and memory context in tmux (or direct terminal)
-9. **Block** — Wait for the orchestrator to exit
-10. **Cleanup** — Kill sub-agents, stop Denden, merge changes, remove worktree
+4. **Start Denden** — Launch gRPC server on `127.0.0.1:9700`
+5. **Resolve memory provider** — Load the configured provider (default: `dial`), auto-install if needed
+6. **Resolve orchestrator role** — Fetch from StrawHub, stage dependencies
+7. **Spawn orchestrator** — Launch the agent with role, skills, and memory context in tmux (or direct terminal)
+8. **Block** — Wait for the orchestrator to exit
+9. **Cleanup** — Kill sub-agents, stop Denden
 
 Session state is tracked in `.strawpot/sessions/<session_id>/session.json`.
 
 ## Worktree Merge Behavior
 
-When a worktree session ends, StrawPot detects what the agent actually did and acts accordingly — no configuration needed:
+When an agent uses the [worktree skill](/concepts/isolation) to
+create an isolated working copy, StrawPot detects what the agent
+actually did and acts accordingly — no configuration needed:
 
 | Agent action | What happens at cleanup |
 |-------------|------------------------|
@@ -141,7 +143,7 @@ This separation keeps the event stream small and scannable while preserving full
 
 | Event | When | Key data |
 |-------|------|----------|
-| `session_start` | Session begins | role, runtime, isolation, task_ref |
+| `session_start` | Session begins | role, runtime, task_ref |
 | `session_end` | Session stops | merge_action, duration_ms, output_ref, files_changed |
 | `delegate_start` | Delegation begins | role, depth, context_ref, session_id, parent_agent_id |
 | `delegate_end` | Delegation completes | exit_code, summary, duration_ms, output_ref, role, session_id, agent_id |
