@@ -1,4 +1,4 @@
-"""Tests for strawpot.cancel — enums and state model."""
+"""Tests for strawpot.cancel — enums, state model, and tree traversal."""
 
 import json
 import os
@@ -8,7 +8,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from strawpot.cancel import AgentState, CancelReason
+from strawpot.cancel import (
+    AgentState,
+    CancelReason,
+    get_children,
+    get_descendants,
+    get_subtree_bottom_up,
+    is_ancestor_of,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -209,3 +216,193 @@ class TestBackwardCompat:
         # The CLI uses info.get("state") — should be None for old format
         status = old_info.get("state")
         assert status is None  # Falls back to PID check in CLI code
+
+
+# ---------------------------------------------------------------------------
+# Tree traversal utilities
+# ---------------------------------------------------------------------------
+
+# Test tree shapes:
+#
+# LINEAR:      A -> B -> C -> D
+# WIDE:        A -> {B, C, D}
+# MIXED:       A -> {B -> {D, E}, C -> F}
+# SINGLE:      A (no children)
+# EMPTY:       {} (empty dict)
+
+
+def _linear_tree():
+    """A -> B -> C -> D"""
+    return {
+        "A": {"parent": None},
+        "B": {"parent": "A"},
+        "C": {"parent": "B"},
+        "D": {"parent": "C"},
+    }
+
+
+def _wide_tree():
+    """A -> {B, C, D}"""
+    return {
+        "A": {"parent": None},
+        "B": {"parent": "A"},
+        "C": {"parent": "A"},
+        "D": {"parent": "A"},
+    }
+
+
+def _mixed_tree():
+    """A -> {B -> {D, E}, C -> F}"""
+    return {
+        "A": {"parent": None},
+        "B": {"parent": "A"},
+        "C": {"parent": "A"},
+        "D": {"parent": "B"},
+        "E": {"parent": "B"},
+        "F": {"parent": "C"},
+    }
+
+
+class TestGetChildren:
+    def test_linear_chain(self):
+        tree = _linear_tree()
+        assert get_children("A", tree) == ["B"]
+        assert get_children("B", tree) == ["C"]
+        assert get_children("D", tree) == []
+
+    def test_wide_tree(self):
+        tree = _wide_tree()
+        children = get_children("A", tree)
+        assert set(children) == {"B", "C", "D"}
+
+    def test_mixed_tree(self):
+        tree = _mixed_tree()
+        assert set(get_children("B", tree)) == {"D", "E"}
+        assert get_children("C", tree) == ["F"]
+
+    def test_no_children(self):
+        tree = _linear_tree()
+        assert get_children("D", tree) == []
+
+    def test_missing_agent(self):
+        tree = _linear_tree()
+        assert get_children("NONEXISTENT", tree) == []
+
+    def test_empty_tree(self):
+        assert get_children("A", {}) == []
+
+
+class TestGetDescendants:
+    def test_linear_chain(self):
+        tree = _linear_tree()
+        desc = get_descendants("A", tree)
+        assert desc == ["B", "C", "D"]
+
+    def test_wide_tree(self):
+        tree = _wide_tree()
+        desc = get_descendants("A", tree)
+        assert set(desc) == {"B", "C", "D"}
+
+    def test_mixed_tree(self):
+        tree = _mixed_tree()
+        desc = get_descendants("A", tree)
+        assert set(desc) == {"B", "C", "D", "E", "F"}
+        # BFS order: level 1 (B, C) before level 2 (D, E, F)
+        b_idx = desc.index("B")
+        d_idx = desc.index("D")
+        assert b_idx < d_idx  # Parent before child in BFS
+
+    def test_leaf_node(self):
+        tree = _linear_tree()
+        assert get_descendants("D", tree) == []
+
+    def test_missing_agent(self):
+        tree = _linear_tree()
+        assert get_descendants("NONEXISTENT", tree) == []
+
+    def test_subtree(self):
+        tree = _mixed_tree()
+        assert set(get_descendants("B", tree)) == {"D", "E"}
+
+    def test_empty_tree(self):
+        assert get_descendants("A", {}) == []
+
+
+class TestGetSubtreeBottomUp:
+    def test_linear_chain(self):
+        tree = _linear_tree()
+        bottom_up = get_subtree_bottom_up("A", tree)
+        assert bottom_up == ["D", "C", "B"]
+
+    def test_mixed_tree_leaves_first(self):
+        tree = _mixed_tree()
+        bottom_up = get_subtree_bottom_up("A", tree)
+        # Leaves (D, E, F) must come before their parents (B, C)
+        assert set(bottom_up) == {"B", "C", "D", "E", "F"}
+        for leaf in ["D", "E"]:
+            assert bottom_up.index(leaf) < bottom_up.index("B")
+        assert bottom_up.index("F") < bottom_up.index("C")
+
+    def test_wide_tree(self):
+        tree = _wide_tree()
+        bottom_up = get_subtree_bottom_up("A", tree)
+        assert set(bottom_up) == {"B", "C", "D"}
+
+    def test_does_not_include_root(self):
+        tree = _linear_tree()
+        bottom_up = get_subtree_bottom_up("A", tree)
+        assert "A" not in bottom_up
+
+    def test_leaf_returns_empty(self):
+        tree = _linear_tree()
+        assert get_subtree_bottom_up("D", tree) == []
+
+
+class TestIsAncestorOf:
+    def test_direct_parent(self):
+        tree = _linear_tree()
+        assert is_ancestor_of("A", "B", tree) is True
+
+    def test_grandparent(self):
+        tree = _linear_tree()
+        assert is_ancestor_of("A", "D", tree) is True
+
+    def test_not_ancestor(self):
+        tree = _linear_tree()
+        assert is_ancestor_of("D", "A", tree) is False
+
+    def test_self_is_not_ancestor(self):
+        tree = _linear_tree()
+        assert is_ancestor_of("A", "A", tree) is False
+
+    def test_sibling_not_ancestor(self):
+        tree = _wide_tree()
+        assert is_ancestor_of("B", "C", tree) is False
+
+    def test_missing_agent(self):
+        tree = _linear_tree()
+        assert is_ancestor_of("NONEXISTENT", "A", tree) is False
+        assert is_ancestor_of("A", "NONEXISTENT", tree) is False
+
+    def test_mixed_tree(self):
+        tree = _mixed_tree()
+        assert is_ancestor_of("A", "F", tree) is True
+        assert is_ancestor_of("C", "F", tree) is True
+        assert is_ancestor_of("B", "F", tree) is False
+
+    def test_cycle_protection(self):
+        """Cycles in parent chain should not cause infinite loops."""
+        cyclic = {
+            "A": {"parent": "B"},
+            "B": {"parent": "A"},
+        }
+        # Should terminate (return False) rather than loop forever
+        assert is_ancestor_of("C", "A", cyclic) is False
+
+    def test_missing_parent_ref(self):
+        """Missing parent reference should be treated as root."""
+        tree = {
+            "A": {},  # No 'parent' key at all
+            "B": {"parent": "A"},
+        }
+        assert is_ancestor_of("A", "B", tree) is True
