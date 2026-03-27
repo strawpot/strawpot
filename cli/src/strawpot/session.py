@@ -139,6 +139,22 @@ def recover_stale_sessions(
         run_id = data.get("run_id", entry)
         logger.info("Recovering stale session: %s", run_id)
 
+        # --- Kill remaining agent PIDs ---
+        for agent_id, agent_info in data.get("agents", {}).items():
+            agent_pid = agent_info.get("pid")
+            if agent_pid and is_pid_alive(agent_pid):
+                try:
+                    kill_process_tree(agent_pid)
+                    logger.info(
+                        "Killed stale agent %s (pid=%s) in session %s",
+                        agent_id, agent_pid, run_id,
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to kill stale agent %s (pid=%s)",
+                        agent_id, agent_pid,
+                    )
+
         # --- Merge (worktree isolation only) ---
         delete_branch = True
         isolation = data.get("isolation", "none")
@@ -700,12 +716,12 @@ class Session:
             sys.stderr.write("\nForce quit.\n")
             os._exit(1)
 
-        # Level 2: second Ctrl+C within window → shutdown
+        # Level 2: second Ctrl+C within window → force shutdown
         if (
             self._interrupted
             and (now - self._last_sigint_time) < self._SIGINT_ESCALATION_WINDOW
         ):
-            self._shutdown_orchestrator()
+            self._shutdown_orchestrator(force=True)
             return
 
         # Level 1: first Ctrl+C (or re-interrupt after window expired)
@@ -728,12 +744,38 @@ class Session:
             # Direct mode: agent already got SIGINT, escalate to shutdown
             self._shutdown_orchestrator()
 
-    def _shutdown_orchestrator(self) -> None:
-        """Kill the orchestrator and mark session as shutting down."""
+    def _shutdown_orchestrator(self, *, force: bool = False) -> None:
+        """Cancel all agents via cascading cancel and mark session as shutting down.
+
+        Uses ``cancel_agent()`` starting from the orchestrator so
+        sub-agents are terminated in bottom-up order before the
+        orchestrator itself.  Falls back to a flat kill if cancel
+        fails or if there is no tracked orchestrator agent.
+        """
         self._shutting_down = True
-        sys.stderr.write(
-            "\nShutting down... press Ctrl+C again to force quit.\n"
+        if force:
+            sys.stderr.write("\nForce shutting down...\n")
+        else:
+            sys.stderr.write(
+                "\nShutting down... press Ctrl+C again to force quit.\n"
+            )
+        orch_id = (
+            self._orchestrator_handle.agent_id
+            if self._orchestrator_handle
+            else None
         )
+        if orch_id and orch_id in self._agent_info:
+            try:
+                self.cancel_agent(
+                    orch_id,
+                    reason=CancelReason.USER,
+                    force=force,
+                    timeout=5.0,
+                )
+                return
+            except Exception:
+                logger.debug("Cascading cancel failed, falling back to kill", exc_info=True)
+        # Fallback: no agent tracking or cancel failed — flat kill.
         if self._orchestrator_handle:
             try:
                 self.runtime.kill(self._orchestrator_handle)

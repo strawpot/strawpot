@@ -403,6 +403,140 @@ class TestCancelAgent:
 
 
 # ---------------------------------------------------------------------------
+# Shutdown cascade
+# ---------------------------------------------------------------------------
+
+
+class TestShutdownCascade:
+    """Tests for _shutdown_orchestrator using cascading cancel."""
+
+    def _make_session(self, tmp_path):
+        from strawpot.agents.protocol import AgentHandle, AgentResult
+        from strawpot.config import StrawPotConfig
+        from strawpot.isolation.protocol import NoneIsolator
+        from strawpot.session import Session
+
+        config = StrawPotConfig(memory="")
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        handle = AgentHandle(agent_id="orch-1", runtime_name="mock_runtime", pid=999)
+        runtime.spawn.return_value = handle
+        runtime.wait.return_value = AgentResult(summary="Done")
+        wrapper = MagicMock()
+        wrapper.name = "mock_wrapper"
+
+        session = Session(
+            config=config,
+            runtime=runtime,
+            wrapper=wrapper,
+            isolator=NoneIsolator(),
+            resolve_role=MagicMock(return_value={}),
+            resolve_role_dirs=MagicMock(return_value=None),
+            task="test task",
+        )
+        session._run_id = "test-run-id"
+        session._working_dir = str(tmp_path)
+        session._orchestrator_handle = handle
+        os.makedirs(
+            os.path.join(str(tmp_path), ".strawpot", "sessions", "test-run-id"),
+            exist_ok=True,
+        )
+        return session, runtime
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_shutdown_uses_cascading_cancel(self, mock_kill, mock_alive, tmp_path):
+        """Shutdown with registered agents uses cancel_agent, not runtime.kill."""
+        session, runtime = self._make_session(tmp_path)
+        session._register_agent("orch-1", "orchestrator", parent_id=None, pid=999)
+        session._register_agent("sub-1", "worker", parent_id="orch-1", pid=888)
+
+        session._shutdown_orchestrator()
+
+        assert session._shutting_down is True
+        # cancel_agent was used — not runtime.kill
+        runtime.kill.assert_not_called()
+        # Both agents should be cancelled
+        assert session._agent_info["orch-1"]["state"] == AgentState.CANCELLED
+        assert session._agent_info["sub-1"]["state"] == AgentState.CANCELLED
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_shutdown_force_mode(self, mock_kill, mock_alive, tmp_path):
+        """Force shutdown skips graceful interrupt."""
+        session, runtime = self._make_session(tmp_path)
+        session._register_agent("orch-1", "orchestrator", parent_id=None, pid=999)
+
+        session._shutdown_orchestrator(force=True)
+
+        assert session._shutting_down is True
+        assert session._agent_info["orch-1"]["state"] == AgentState.CANCELLED
+
+    def test_shutdown_falls_back_to_kill(self, tmp_path):
+        """Without agent tracking, falls back to runtime.kill."""
+        session, runtime = self._make_session(tmp_path)
+        # Don't register any agents — orch_id not in _agent_info
+
+        session._shutdown_orchestrator()
+
+        assert session._shutting_down is True
+        runtime.kill.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Stale session recovery with agent PIDs
+# ---------------------------------------------------------------------------
+
+
+class TestStaleRecoveryAgents:
+    """Tests for stale session recovery killing remaining agent PIDs."""
+
+    @patch("strawpot.session.kill_process_tree")
+    @patch("strawpot.session.is_pid_alive")
+    def test_stale_recovery_kills_agent_pids(self, mock_alive, mock_kill, tmp_path):
+        """Stale session recovery should kill agent PIDs that are still alive."""
+        from strawpot.config import StrawPotConfig
+        from strawpot.session import recover_stale_sessions
+
+        run_id = "run_test123"
+        sessions_dir = tmp_path / ".strawpot" / "sessions" / run_id
+        running_dir = tmp_path / ".strawpot" / "running"
+        sessions_dir.mkdir(parents=True)
+        running_dir.mkdir(parents=True)
+        # Create symlink
+        os.symlink(str(sessions_dir), str(running_dir / run_id))
+
+        session_data = {
+            "run_id": run_id,
+            "working_dir": str(tmp_path),
+            "pid": 11111,
+            "isolation": "none",
+            "agents": {
+                "agent-a": {"pid": 22222, "role": "worker"},
+                "agent-b": {"pid": 33333, "role": "reviewer"},
+                "agent-c": {"pid": None, "role": "planner"},
+            },
+        }
+        with open(sessions_dir / "session.json", "w") as f:
+            json.dump(session_data, f)
+
+        # Session PID is dead, agent PIDs are alive
+        def pid_alive(pid):
+            return pid in (22222, 33333)
+
+        mock_alive.side_effect = pid_alive
+
+        config = StrawPotConfig(memory="")
+        recovered = recover_stale_sessions(str(tmp_path), config)
+
+        assert run_id in recovered
+        # Should have tried to kill the two alive agent PIDs
+        mock_kill.assert_any_call(22222)
+        mock_kill.assert_any_call(33333)
+        assert mock_kill.call_count == 2
+
+
+# ---------------------------------------------------------------------------
 # Tree traversal utilities
 # ---------------------------------------------------------------------------
 
