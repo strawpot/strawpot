@@ -27,7 +27,12 @@ from denden.gen import denden_pb2
 
 from strawpot.agents.protocol import AgentHandle
 from strawpot.agents.wrapper import WrapperRuntime
-from strawpot.cancel import AgentState, CancelReason
+from strawpot.cancel import (
+    AgentState,
+    CancelReason,
+    get_children,
+    get_subtree_bottom_up,
+)
 from strawpot.config import StrawPotConfig
 from strawpot.context import build_prompt
 from strawpot.delegation import (
@@ -44,6 +49,7 @@ from strawpot.delegation import (
 )
 from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
+from strawpot._process import is_pid_alive, kill_process_tree
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
 from strawpot.isolation.worktree import WorktreeIsolator, _git
 from strawpot.progress import ProgressEvent
@@ -94,8 +100,6 @@ def recover_stale_sessions(
     Returns:
         List of recovered ``run_id`` strings.
     """
-    from strawpot._process import is_pid_alive
-
     strawpot_dir = os.path.join(working_dir, ".strawpot")
     sessions_dir = os.path.join(strawpot_dir, "sessions")
     running_dir = os.path.join(strawpot_dir, "running")
@@ -1731,6 +1735,92 @@ class Session:
             if cancel_reason is not None:
                 info["cancel_reason"] = cancel_reason
             self._write_session_file()
+
+    def cancel_agent(
+        self,
+        agent_id: str,
+        *,
+        reason: CancelReason = CancelReason.USER,
+        force: bool = False,
+        timeout: float = 10.0,
+    ) -> list[str]:
+        """Cancel an agent and all its descendants (cascading).
+
+        Descendants are cancelled in bottom-up order (leaves first) to
+        prevent orphaned sub-agents.  Each agent goes through a graceful
+        phase (SIGINT) followed by a force kill (SIGKILL) if it does not
+        exit within *timeout* seconds.
+
+        Args:
+            agent_id: The agent to cancel.
+            reason: Why the agent is being cancelled.
+            force: Skip graceful interrupt and kill immediately.
+            timeout: Seconds to wait for graceful shutdown before force kill.
+
+        Returns:
+            List of agent IDs that were cancelled (including *agent_id*).
+        """
+        # Build the cancel order: descendants bottom-up, then the target.
+        subtree = get_subtree_bottom_up(agent_id, self._agent_info)
+        cancel_order = subtree + [agent_id]
+
+        cancelled: list[str] = []
+        for i, aid in enumerate(cancel_order):
+            info = self._agent_info.get(aid)
+            if info is None:
+                continue
+
+            # Determine the cancel reason for this agent.
+            if aid == agent_id:
+                agent_reason = reason
+            elif info.get("parent") == agent_id:
+                agent_reason = CancelReason.PARENT
+            else:
+                agent_reason = CancelReason.ANCESTOR
+
+            # Skip agents that already finished.
+            current_state = info.get("state")
+            if current_state in (
+                AgentState.COMPLETED,
+                AgentState.FAILED,
+                AgentState.CANCELLED,
+            ):
+                cancelled.append(aid)
+                continue
+
+            # Mark as CANCELLING.
+            self._update_agent_state(aid, AgentState.CANCELLING, agent_reason)
+
+            pid = info.get("pid")
+            if pid is None or not is_pid_alive(pid):
+                # No live process — just mark as cancelled.
+                self._update_agent_state(aid, AgentState.CANCELLED, agent_reason)
+                cancelled.append(aid)
+                continue
+
+            if not force:
+                # Graceful interrupt: send SIGINT.
+                try:
+                    os.kill(pid, signal.SIGINT)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+
+                # Wait for graceful shutdown.
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline and is_pid_alive(pid):
+                    time.sleep(0.1)
+
+            # Force kill if still alive (or if force=True).
+            if is_pid_alive(pid):
+                try:
+                    kill_process_tree(pid)
+                except Exception:
+                    logger.debug("Failed to kill agent %s (pid=%s)", aid, pid)
+
+            self._update_agent_state(aid, AgentState.CANCELLED, agent_reason)
+            cancelled.append(aid)
+
+        return cancelled
 
     def _agent_role(self, agent_id: str) -> str:
         """Return the role of a registered agent."""
