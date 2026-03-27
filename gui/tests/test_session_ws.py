@@ -115,6 +115,42 @@ class TestSessionWSTerminalSession:
         assert impl["status"] == "completed"
         assert impl["parent"] == "agent_abc"
 
+    def test_tree_snapshot_includes_current_activity_field(self, client, tmp_path):
+        """Tree nodes include current_activity (null for terminal sessions)."""
+        _register_project(client, tmp_path)
+        session_dir = _write_session(tmp_path, "run_ws_act", archived=True)
+        _write_trace(session_dir, [
+            {"ts": "T1", "event": "session_start", "trace_id": "run_ws_act",
+             "span_id": "s0", "data": {}},
+            {"ts": "T2", "event": "delegate_start", "trace_id": "run_ws_act",
+             "span_id": "s1", "parent_span": "s0",
+             "data": {"role": "implementer"}},
+            {"ts": "T3", "event": "agent_spawn", "trace_id": "run_ws_act",
+             "span_id": "s1",
+             "data": {"agent_id": "agent_impl", "runtime": "cc", "pid": 1}},
+            {"ts": "T4", "event": "tool_start", "trace_id": "run_ws_act",
+             "span_id": "s2",
+             "data": {"agent_id": "agent_impl", "tool": "Bash", "summary": "Running npm build"}},
+            {"ts": "T5", "event": "tool_end", "trace_id": "run_ws_act",
+             "span_id": "s2",
+             "data": {"agent_id": "agent_impl", "tool": "Bash", "duration_ms": 3000}},
+            {"ts": "T6", "event": "agent_end", "trace_id": "run_ws_act",
+             "span_id": "s1",
+             "data": {"exit_code": 0, "duration_ms": 5000}},
+            {"ts": "T7", "event": "session_end", "trace_id": "run_ws_act",
+             "span_id": "s0", "data": {"duration_ms": 6000}},
+        ])
+        sync_sessions(client.app.state.db_path)
+
+        with client.websocket_connect("/ws/sessions/run_ws_act") as ws:
+            messages = _collect_until(ws, "stream_complete")
+
+        tree = next(m for m in messages if m["type"] == "tree_snapshot")
+        impl = next(n for n in tree["nodes"] if n["agent_id"] == "agent_impl")
+        # After tool_end, current_activity should be cleared
+        assert "current_activity" in impl
+        assert impl["current_activity"] is None
+
     def test_denied_delegations_in_tree_snapshot(self, client, tmp_path):
         """Denied delegations appear in tree_snapshot."""
         _register_project(client, tmp_path)
@@ -338,3 +374,132 @@ class TestGlobalEventsWS:
         assert events[0]["run_id"] == "r1"
         assert events[1]["type"] == "session_completed"
         assert events[1]["run_id"] == "r2"
+
+
+# ---------------------------------------------------------------------------
+# Agent log activity helpers
+# ---------------------------------------------------------------------------
+
+
+class TestReadLastLogLine:
+    """Tests for _read_last_log_line used in log-based activity fallback."""
+
+    def test_reads_last_line_from_file(self, tmp_path):
+        from strawpot_gui.routers.ws import _read_last_log_line
+
+        log = tmp_path / "agent.log"
+        log.write_text("first\nsecond\nthird\n")
+        assert _read_last_log_line(str(log)) == "third"
+
+    def test_returns_none_for_empty_file(self, tmp_path):
+        from strawpot_gui.routers.ws import _read_last_log_line
+
+        log = tmp_path / "agent.log"
+        log.write_text("")
+        assert _read_last_log_line(str(log)) is None
+
+    def test_returns_none_for_missing_file(self, tmp_path):
+        from strawpot_gui.routers.ws import _read_last_log_line
+
+        assert _read_last_log_line(str(tmp_path / "does_not_exist.log")) is None
+
+    def test_handles_trailing_whitespace(self, tmp_path):
+        from strawpot_gui.routers.ws import _read_last_log_line
+
+        log = tmp_path / "agent.log"
+        log.write_text("line1\nline2  \n\n")
+        assert _read_last_log_line(str(log)) == "line2"
+
+    def test_single_line_file(self, tmp_path):
+        from strawpot_gui.routers.ws import _read_last_log_line
+
+        log = tmp_path / "agent.log"
+        log.write_text("only one line")
+        assert _read_last_log_line(str(log)) == "only one line"
+
+
+class TestParseActivityFromLogLine:
+    """Tests for _parse_activity_from_log_line used in log-based activity fallback."""
+
+    def test_plain_text(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        assert _parse_activity_from_log_line("Running tests") == "Running tests"
+
+    def test_strips_ansi_codes(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        line = "\x1b[32mRunning tests\x1b[0m"
+        assert _parse_activity_from_log_line(line) == "Running tests"
+
+    def test_strips_spinner_characters(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        line = "⠋ Installing dependencies"
+        assert _parse_activity_from_log_line(line) == "Installing dependencies"
+
+    def test_returns_none_for_empty_string(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        assert _parse_activity_from_log_line("") is None
+
+    def test_returns_none_for_whitespace_only(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        assert _parse_activity_from_log_line("   ") is None
+
+    def test_returns_none_for_spinner_only(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        assert _parse_activity_from_log_line("⠋⠙⠹") is None
+
+    def test_truncates_long_lines(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        long_line = "x" * 200
+        result = _parse_activity_from_log_line(long_line)
+        assert len(result) == 118  # 117 chars + "…" (single char)
+        assert result.endswith("…")
+
+    def test_does_not_truncate_line_at_boundary(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        line_120 = "x" * 120
+        result = _parse_activity_from_log_line(line_120)
+        assert result == line_120  # exactly 120 — not truncated
+
+    def test_combined_ansi_and_spinner(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        line = "\x1b[33m⠸ \x1b[0mCompiling project"
+        assert _parse_activity_from_log_line(line) == "Compiling project"
+
+
+class TestAgentLogRegex:
+    """Tests for _AGENT_LOG_RE used to extract agent_id from file paths."""
+
+    def test_matches_standard_agent_log_path(self):
+        from strawpot_gui.routers.ws import _AGENT_LOG_RE
+
+        m = _AGENT_LOG_RE.search("/some/session/dir/agents/agent_abc123/.log")
+        assert m is not None
+        assert m.group(1) == "agent_abc123"
+
+    def test_no_match_for_non_log_file(self):
+        from strawpot_gui.routers.ws import _AGENT_LOG_RE
+
+        m = _AGENT_LOG_RE.search("/some/session/dir/agents/agent_abc123/output.txt")
+        assert m is None
+
+    def test_no_match_for_path_without_agents(self):
+        from strawpot_gui.routers.ws import _AGENT_LOG_RE
+
+        m = _AGENT_LOG_RE.search("/some/session/dir/logs/.log")
+        assert m is None
+
+    def test_does_not_overmatch_nested_slashes(self):
+        from strawpot_gui.routers.ws import _AGENT_LOG_RE
+
+        m = _AGENT_LOG_RE.search("/dir/agents/agent_a/subdir/.log")
+        # Should not match because agent_id can't contain slashes
+        assert m is None

@@ -343,3 +343,179 @@ class TestTreeStateCancelEvents:
             "span_id": "s0",
             "data": {"cancelled_agents": ["unknown"]},
         })
+
+
+class TestTreeStateToolActivity:
+    """Tests for tool_start/tool_end activity tracking in TreeState."""
+
+    def _make_state_with_running_agent(self, agent_id="a1"):
+        """Helper: create a TreeState with one running agent."""
+        state = TreeState()
+        state.process_event({
+            "event": "delegate_start", "span_id": "s1",
+            "parent_span": None, "data": {"role": "impl"},
+        })
+        state.process_event({
+            "event": "agent_spawn", "span_id": "s1", "ts": "T1",
+            "data": {"agent_id": agent_id, "runtime": "cc", "pid": 1},
+        })
+        return state
+
+    def test_tool_start_sets_current_activity_from_summary(self):
+        """tool_start with a summary sets current_activity to the summary."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Bash", "summary": "Running tests"},
+        })
+        assert state.nodes["a1"].current_activity == "Running tests"
+
+    def test_tool_start_falls_back_to_tool_name(self):
+        """tool_start without summary uses the tool name as activity."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Read", "summary": ""},
+        })
+        assert state.nodes["a1"].current_activity == "Read"
+
+    def test_tool_start_with_empty_tool_and_summary_sets_none(self):
+        """tool_start with both empty tool and summary sets None."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "", "summary": ""},
+        })
+        assert state.nodes["a1"].current_activity is None
+
+    def test_tool_end_clears_current_activity(self):
+        """tool_end resets current_activity to None."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Bash", "summary": "Running tests"},
+        })
+        assert state.nodes["a1"].current_activity == "Running tests"
+        state.process_event({
+            "event": "tool_end", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Bash", "duration_ms": 500},
+        })
+        assert state.nodes["a1"].current_activity is None
+
+    def test_tool_start_unknown_agent_ignored(self):
+        """tool_start for a non-existent agent_id does not raise."""
+        state = TreeState()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "nonexistent", "tool": "Bash"},
+        })
+        assert "nonexistent" not in state.nodes
+
+    def test_tool_end_unknown_agent_ignored(self):
+        """tool_end for a non-existent agent_id does not raise."""
+        state = TreeState()
+        state.process_event({
+            "event": "tool_end", "span_id": "s2",
+            "data": {"agent_id": "nonexistent", "tool": "Bash"},
+        })
+
+    def test_tool_start_empty_agent_id_ignored(self):
+        """tool_start with empty agent_id does nothing."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "", "tool": "Bash", "summary": "x"},
+        })
+        assert state.nodes["a1"].current_activity is None
+
+    def test_sequential_tool_starts_overwrite_activity(self):
+        """A second tool_start overwrites the activity from the first."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Bash", "summary": "First"},
+        })
+        state.process_event({
+            "event": "tool_start", "span_id": "s3",
+            "data": {"agent_id": "a1", "tool": "Read", "summary": "Second"},
+        })
+        assert state.nodes["a1"].current_activity == "Second"
+
+    def test_current_activity_included_in_to_dict(self):
+        """current_activity field appears in serialized output."""
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "tool_start", "span_id": "s2",
+            "data": {"agent_id": "a1", "tool": "Bash", "summary": "Building"},
+        })
+        result = state.to_dict()
+        node = next(n for n in result["nodes"] if n["agent_id"] == "a1")
+        assert node["current_activity"] == "Building"
+
+    def test_current_activity_null_in_to_dict_by_default(self):
+        """current_activity defaults to null in serialized output."""
+        state = self._make_state_with_running_agent()
+        result = state.to_dict()
+        node = next(n for n in result["nodes"] if n["agent_id"] == "a1")
+        assert node["current_activity"] is None
+
+    def test_tool_start_on_completed_agent_still_sets_activity(self):
+        """tool_start does not check node status — it sets activity even on completed agents.
+
+        Note: this documents current behavior. set_activity() rejects
+        non-running agents, but process_event(tool_start) does not.
+        """
+        state = self._make_state_with_running_agent()
+        # Mark agent as completed
+        state.process_event({
+            "event": "agent_end", "span_id": "s1",
+            "data": {"exit_code": 0, "duration_ms": 1000},
+        })
+        assert state.nodes["a1"].status == "completed"
+        # tool_start still modifies it
+        state.process_event({
+            "event": "tool_start", "span_id": "s3",
+            "data": {"agent_id": "a1", "tool": "Bash", "summary": "Late arrival"},
+        })
+        assert state.nodes["a1"].current_activity == "Late arrival"
+
+
+class TestTreeStateSetActivity:
+    """Tests for the set_activity() method used by log-based fallback."""
+
+    def test_set_activity_on_running_agent(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {"a1": {"role": "impl", "runtime": "cc", "parent": None}},
+        })
+        assert state.set_activity("a1", "Reading file") is True
+        assert state.nodes["a1"].current_activity == "Reading file"
+
+    def test_set_activity_returns_false_when_unchanged(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {"a1": {"role": "impl", "runtime": "cc", "parent": None}},
+        })
+        state.set_activity("a1", "Reading file")
+        assert state.set_activity("a1", "Reading file") is False
+
+    def test_set_activity_returns_false_for_unknown_agent(self):
+        state = TreeState()
+        assert state.set_activity("nonexistent", "something") is False
+
+    def test_set_activity_returns_false_for_non_running_agent(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {"a1": {"role": "impl", "runtime": "cc", "parent": None}},
+        })
+        state.nodes["a1"].status = "completed"
+        assert state.set_activity("a1", "Reading file") is False
+
+    def test_set_activity_clears_with_none(self):
+        state = TreeState()
+        state.load_session_json({
+            "agents": {"a1": {"role": "impl", "runtime": "cc", "parent": None}},
+        })
+        state.set_activity("a1", "Reading file")
+        assert state.set_activity("a1", None) is True
+        assert state.nodes["a1"].current_activity is None
