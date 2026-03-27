@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, ArrowUpRight, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
-import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile } from "@/api/types";
+import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile, TreeData } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 import CollapsibleMessage from "@/components/CollapsibleMessage";
 import { SourceBadge } from "@/components/SourceBadge";
@@ -79,11 +79,32 @@ function StatusBadge({ status }: { status: string }) {
 function AgentMessage({
   session,
   projectId,
+  treeData,
 }: {
   session: ConversationSession;
   projectId: number;
+  treeData?: TreeData | null;
 }) {
   const isActive = session.status === "running" || session.status === "starting";
+
+  // Derive a live activity label from tree nodes when available
+  const activityLabel = (() => {
+    if (!isActive || !treeData) return null;
+    const running = treeData.nodes.filter((n) => n.status === "running");
+    // Prefer the most recently active agent with an activity description
+    const withActivity = running.filter((n) => n.current_activity);
+    if (withActivity.length > 0) {
+      const node = withActivity[withActivity.length - 1];
+      const prefix = running.length > 1 ? `${node.role}: ` : "";
+      return `${prefix}${node.current_activity}`;
+    }
+    // Show delegation info if multiple agents are running
+    if (running.length > 1) {
+      const roles = running.map((n) => n.role);
+      return `Running ${roles.length} agents: ${roles.join(", ")}`;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -101,7 +122,7 @@ function AgentMessage({
         {isActive ? (
           <span className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Working…
+            <span className="truncate">{activityLabel ?? "Working…"}</span>
           </span>
         ) : session.summary ? (
           <CollapsibleMessage gradientColor="var(--color-muted)">
@@ -211,9 +232,9 @@ export default function ConversationView() {
   const cancelPending = useCancelPendingTask(cid);
   const cancelTask = useCancelQueuedTask(cid);
   const rename = useRenameConversation(pid);
-  const { pendingAskUsers, chatMessages, respond } = useSessionWS(
+  const { pendingAskUsers, chatMessages, treeData, respond } = useSessionWS(
     lastSession?.run_id ?? "",
-    hasActiveSession && interactive,
+    hasActiveSession,
     cid,
   );
 
@@ -488,7 +509,11 @@ export default function ConversationView() {
                     </div>
                   </div>
                 ))}
-                <AgentMessage session={session} projectId={pid} />
+                <AgentMessage
+                  session={session}
+                  projectId={pid}
+                  treeData={session.run_id === lastSession?.run_id ? treeData : undefined}
+                />
               </div>
             );
           })}
