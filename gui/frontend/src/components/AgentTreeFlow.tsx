@@ -368,6 +368,7 @@ function AgentTreeFlowInner({
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
+          onNodeClick={() => {}}
           proOptions={{ hideAttribution: true }}
         />
         <button className="tree-reset-btn" onClick={handleReset}>
