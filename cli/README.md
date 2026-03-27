@@ -37,7 +37,6 @@ Project: `strawpot.toml` (project root)
 
 ```toml
 runtime = "strawpot-claude-code"       # strawpot-claude-code | codex | openhands
-isolation = "none"            # none | worktree (deprecated) | docker
 
 [denden]
 addr = "127.0.0.1:9700"

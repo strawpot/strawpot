@@ -1,4 +1,4 @@
-"""Isolation protocol — environment setup shared across all isolator implementations."""
+"""Isolation protocol — environment setup for sessions."""
 
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
@@ -12,7 +12,6 @@ class IsolatedEnv:
     """
 
     path: str
-    branch: str | None = None
 
 
 @runtime_checkable

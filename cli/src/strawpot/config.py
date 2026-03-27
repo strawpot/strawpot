@@ -20,7 +20,6 @@ def get_strawpot_home() -> Path:
 @dataclass
 class StrawPotConfig:
     runtime: str = "strawpot-claude-code"
-    isolation: str = "none"
     denden_addr: str = "127.0.0.1:9700"
     orchestrator_role: str = "ai-ceo"
     max_depth: int = 3
@@ -37,8 +36,6 @@ class StrawPotConfig:
     memory: str = "dial"
     memory_config: dict[str, str] = field(default_factory=dict)
     pull_before_session: str = "prompt"
-    cleanup_branches: bool = True
-    cleanup_remote: bool = True
     trace: bool = True
     skip_update_check: bool = False
 
@@ -55,8 +52,6 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     """Apply a parsed TOML dict onto a config, mutating in place."""
     if "runtime" in data:
         config.runtime = data["runtime"]
-    if "isolation" in data:
-        config.isolation = data["isolation"]
 
     denden = data.get("denden", {})
     if "addr" in denden:
@@ -111,10 +106,6 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     session = data.get("session", {})
     if "pull_before_session" in session:
         config.pull_before_session = session["pull_before_session"]
-    if "cleanup_branches" in session:
-        config.cleanup_branches = session["cleanup_branches"]
-    if "cleanup_remote" in session:
-        config.cleanup_remote = session["cleanup_remote"]
 
     trace_section = data.get("trace", {})
     if "enabled" in trace_section:

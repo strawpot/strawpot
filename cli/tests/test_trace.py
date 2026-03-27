@@ -183,14 +183,14 @@ class TestSessionEvents:
         tracer, session_dir = _make_tracer(tmp_path)
         tracer.session_start(
             run_id="run_1", role="orchestrator",
-            runtime="strawpot-claude-code", isolation="worktree",
+            runtime="strawpot-claude-code", isolation="none",
             task="Fix the bug",
         )
         events = _read_events(session_dir)
         assert len(events) == 1
         assert events[0]["event"] == "session_start"
         assert events[0]["data"]["role"] == "orchestrator"
-        assert events[0]["data"]["isolation"] == "worktree"
+        assert events[0]["data"]["isolation"] == "none"
         assert events[0]["data"]["task_ref"] is not None
         # Verify artifact was stored
         artifact_path = Path(session_dir) / "artifacts" / events[0]["data"]["task_ref"]

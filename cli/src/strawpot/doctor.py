@@ -118,7 +118,7 @@ _PREREQUISITES: list[tuple[str, str, str, bool, str | None]] = [
     ),
     (
         "git",
-        "git (worktree isolation, PR workflows)",
+        "git (worktree skill, PR workflows)",
         "https://git-scm.com",
         True,
         None,

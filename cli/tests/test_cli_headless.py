@@ -13,7 +13,6 @@ def _make_config(**overrides):
     defaults = dict(
         orchestrator_role="orchestrator",
         runtime="strawpot-claude-code",
-        isolation="none",
         pull_before_session="never",
         denden_addr="127.0.0.1:9700",
         memory=None,
@@ -24,7 +23,6 @@ def _make_config(**overrides):
 
 
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -44,7 +42,6 @@ def test_headless_missing_env_exits(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
 ):
     """Headless mode exits with error when agent has missing env vars."""
@@ -64,7 +61,6 @@ def test_headless_missing_env_exits(
 
 
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -84,7 +80,6 @@ def test_headless_no_missing_env_proceeds(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
 ):
     """Headless mode proceeds when no env vars are missing."""
@@ -103,7 +98,6 @@ def test_headless_no_missing_env_proceeds(
 
 
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -123,7 +117,6 @@ def test_headless_unresolvable_tools_exits(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
 ):
     """Headless mode exits with error when tools cannot be installed."""
@@ -172,7 +165,6 @@ def test_auto_accept_flags_pass_auto_setup_to_bootstrap(
 
 
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -192,7 +184,6 @@ def test_yes_flag_auto_accepts_tool_install(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
 ):
     """--yes flag auto-accepts tool install prompts without click.confirm."""
@@ -219,7 +210,6 @@ def test_yes_flag_auto_accepts_tool_install(
 
 
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -239,7 +229,6 @@ def test_no_tools_skips_tool_install(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
 ):
     """--no-tools flag skips tool installation and exits with error."""
@@ -265,7 +254,6 @@ def test_no_tools_skips_tool_install(
 
 @patch("strawpot.cli.sys.stdin")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.resolve_agent")
@@ -285,7 +273,6 @@ def test_non_tty_skips_tool_install(
     mock_resolve,
     mock_validate,
     mock_wrapper,
-    mock_isolator,
     mock_session,
     mock_stdin,
 ):

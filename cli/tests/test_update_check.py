@@ -35,7 +35,6 @@ _START_CMD_PATCHES = [
     "strawpot.cli.resolve_agent",
     "strawpot.cli.validate_agent",
     "strawpot.cli.WrapperRuntime",
-    "strawpot.cli.resolve_isolator",
     "strawpot.cli.Session",
     "strawpot.cli.recover_stale_sessions",
 ]

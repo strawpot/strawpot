@@ -24,7 +24,6 @@ def _make_session(tmp_path, run_id, *, pid=99999, agents=None):
         "run_id": run_id,
         "working_dir": str(tmp_path),
         "pid": pid,
-        "isolation": "none",
         "runtime": "cc",
         "agents": agents or {},
     }
