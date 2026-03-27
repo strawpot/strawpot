@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1426,6 +1428,158 @@ def agents(session_id, session_opt, status_csv, role_filter, parent_filter, as_t
                 f"{agent['agent_id']:<20} {agent['role']:<16} "
                 f"{agent['runtime']:<14} {agent['parent']:<20} {agent['status']:<10}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Cancel
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def cancel():
+    """Cancel running agents or sessions."""
+    pass
+
+
+def _wait_for_cancel(session_file: Path, agent_ids: set[str], timeout: float = 30.0) -> bool:
+    """Poll session.json until all specified agents are in a terminal state."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        data = _load_session(session_file)
+        if data is None:
+            return False
+        agents_map = data.get("agents", {})
+        all_done = True
+        for aid in agent_ids:
+            info = agents_map.get(aid, {})
+            state = info.get("state", "")
+            if state not in ("cancelled", "completed", "failed"):
+                all_done = False
+                break
+        if all_done:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+@cancel.command("agent")
+@click.argument("agent_id")
+@click.option("--run", "run_id", required=True, help="Session run ID.")
+@click.option("--force", is_flag=True, help="Force-kill without graceful shutdown.")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+def cancel_agent_cmd(agent_id, run_id, force, yes):
+    """Cancel a specific agent and its descendants."""
+    from strawpot.cancel import get_descendants, write_cancel_signal
+
+    sessions_path = _sessions_dir()
+    session_dir = sessions_path / run_id
+    session_file = session_dir / "session.json"
+
+    if not session_file.is_file():
+        click.echo(f"Session not found: {run_id}")
+        sys.exit(1)
+
+    data = _load_session(session_file)
+    if data is None:
+        click.echo(f"Failed to read session: {run_id}")
+        sys.exit(1)
+
+    # Verify session is alive
+    pid = data.get("pid")
+    if not (pid and is_pid_alive(pid)):
+        click.echo(f"Session {run_id} is not running (stale).")
+        sys.exit(1)
+
+    agents_map = data.get("agents", {})
+    if agent_id not in agents_map:
+        click.echo(f"Agent not found: {agent_id}")
+        sys.exit(1)
+
+    # Show affected agents
+    descendants = get_descendants(agent_id, agents_map)
+    affected = [agent_id] + descendants
+    force_label = " (force)" if force else ""
+
+    if not yes:
+        click.echo(f"Will cancel {len(affected)} agent(s){force_label}:")
+        for aid in affected:
+            info = agents_map.get(aid, {})
+            role = info.get("role", "?")
+            state = info.get("state", "?")
+            click.echo(f"  {aid} ({role}) — {state}")
+        if not click.confirm("Proceed?", default=False):
+            click.echo("Cancelled.")
+            return
+
+    write_cancel_signal(str(session_dir), agent_id, force=force)
+
+    # Send SIGUSR1 to wake watcher immediately
+    try:
+        os.kill(pid, signal.SIGUSR1)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+    click.echo(f"Cancel signal sent for {agent_id}. Waiting...")
+    if _wait_for_cancel(session_file, set(affected)):
+        click.echo(f"Cancelled {len(affected)} agent(s).")
+    else:
+        click.echo("Cancel timed out — check session status.", err=True)
+        sys.exit(1)
+
+
+@cancel.command("run")
+@click.argument("run_id")
+@click.option("--force", is_flag=True, help="Force-kill without graceful shutdown.")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+def cancel_run_cmd(run_id, force, yes):
+    """Cancel all agents in a session."""
+    from strawpot.cancel import write_cancel_signal
+
+    sessions_path = _sessions_dir()
+    session_dir = sessions_path / run_id
+    session_file = session_dir / "session.json"
+
+    if not session_file.is_file():
+        click.echo(f"Session not found: {run_id}")
+        sys.exit(1)
+
+    data = _load_session(session_file)
+    if data is None:
+        click.echo(f"Failed to read session: {run_id}")
+        sys.exit(1)
+
+    pid = data.get("pid")
+    if not (pid and is_pid_alive(pid)):
+        click.echo(f"Session {run_id} is not running (stale).")
+        sys.exit(1)
+
+    agents_map = data.get("agents", {})
+    force_label = " (force)" if force else ""
+
+    if not yes:
+        click.echo(f"Will cancel {len(agents_map)} agent(s) in session {run_id}{force_label}:")
+        for aid, info in agents_map.items():
+            role = info.get("role", "?")
+            state = info.get("state", "?")
+            click.echo(f"  {aid} ({role}) — {state}")
+        if not click.confirm("Proceed?", default=False):
+            click.echo("Cancelled.")
+            return
+
+    write_cancel_signal(str(session_dir), None, force=force)
+
+    # Send SIGUSR1 to wake watcher
+    try:
+        os.kill(pid, signal.SIGUSR1)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+    click.echo(f"Cancel signal sent for session {run_id}. Waiting...")
+    if _wait_for_cancel(session_file, set(agents_map.keys())):
+        click.echo(f"Cancelled {len(agents_map)} agent(s).")
+    else:
+        click.echo("Cancel timed out — check session status.", err=True)
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
