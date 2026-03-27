@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
-import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile } from "@/api/types";
+import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile, TreeData } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
 
 const IMU_ROLE = "imu";
@@ -84,8 +84,25 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="outline">{status}</Badge>;
 }
 
-function ImuAgentMessage({ session }: { session: ConversationSession }) {
+function ImuAgentMessage({ session, treeData }: { session: ConversationSession; treeData?: TreeData | null }) {
   const isActive = session.status === "running" || session.status === "starting";
+
+  const activityLabel = (() => {
+    if (!isActive || !treeData) return null;
+    const running = treeData.nodes.filter((n) => n.status === "running");
+    const withActivity = running.filter((n) => n.current_activity);
+    if (withActivity.length > 0) {
+      const node = withActivity[withActivity.length - 1];
+      const prefix = running.length > 1 ? `${node.role}: ` : "";
+      return `${prefix}${node.current_activity}`;
+    }
+    if (running.length > 1) {
+      const roles = running.map((n) => n.role);
+      return `Running ${roles.length} agents: ${roles.join(", ")}`;
+    }
+    return null;
+  })();
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
@@ -99,7 +116,7 @@ function ImuAgentMessage({ session }: { session: ConversationSession }) {
         {isActive ? (
           <span className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Working…
+            <span className="truncate">{activityLabel ?? "Working…"}</span>
           </span>
         ) : session.summary ? (
           <MarkdownContent content={session.summary} className="text-sm text-foreground" />
@@ -256,9 +273,9 @@ function ImuConversationView({ cid }: { cid: number }) {
   const cancelPending = useCancelPendingTask(cid);
   const cancelTask = useCancelQueuedTask(cid);
   const rename = useRenameImuConversation();
-  const { pendingAskUsers, chatMessages, respond } = useSessionWS(
+  const { pendingAskUsers, chatMessages, treeData, respond } = useSessionWS(
     lastSession?.run_id ?? "",
-    hasActiveSession && interactive,
+    hasActiveSession,
     cid,
   );
 
@@ -482,7 +499,10 @@ function ImuConversationView({ cid }: { cid: number }) {
                       </div>
                     </div>
                   ))}
-                <ImuAgentMessage session={session} />
+                <ImuAgentMessage
+                  session={session}
+                  treeData={session.run_id === lastSession?.run_id ? treeData : undefined}
+                />
               </div>
             );
           })}

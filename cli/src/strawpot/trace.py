@@ -449,6 +449,40 @@ class Tracer:
             session_id=session_id,
         )
 
+    def tool_start(
+        self,
+        *,
+        span_id: str,
+        agent_id: str,
+        tool: str,
+        summary: str = "",
+    ) -> None:
+        """Emit ``tool_start`` when an agent begins using a tool."""
+        self.emit(
+            "tool_start",
+            span_id,
+            agent_id=agent_id,
+            tool=tool,
+            summary=summary,
+        )
+
+    def tool_end(
+        self,
+        *,
+        span_id: str,
+        agent_id: str,
+        tool: str,
+        duration_ms: int = 0,
+    ) -> None:
+        """Emit ``tool_end`` when an agent finishes using a tool."""
+        self.emit(
+            "tool_end",
+            span_id,
+            agent_id=agent_id,
+            tool=tool,
+            duration_ms=duration_ms,
+        )
+
     def agent_cancel_start(
         self,
         *,

@@ -84,6 +84,7 @@ class TreeNode:
     duration_ms: int | None = None
     parent: str | None = None
     cancel_reason: str | None = None
+    current_activity: str | None = None
 
 
 @dataclass
@@ -201,6 +202,18 @@ class TreeState:
                 if cancelled_id in self.nodes:
                     self.nodes[cancelled_id].status = "cancelled"
 
+        elif etype == "tool_start":
+            agent_id = data.get("agent_id", "")
+            if agent_id and agent_id in self.nodes:
+                tool = data.get("tool", "")
+                summary = data.get("summary", "")
+                self.nodes[agent_id].current_activity = summary or tool or None
+
+        elif etype == "tool_end":
+            agent_id = data.get("agent_id", "")
+            if agent_id and agent_id in self.nodes:
+                self.nodes[agent_id].current_activity = None
+
         elif etype == "session_end":
             self._session_ended = True
             for node in self.nodes.values():
@@ -221,6 +234,16 @@ class TreeState:
                     return aid
         return None
 
+    def set_activity(self, agent_id: str, activity: str | None) -> bool:
+        """Update *current_activity* for a running agent.  Returns True if changed."""
+        node = self.nodes.get(agent_id)
+        if node is None or node.status != "running":
+            return False
+        if node.current_activity == activity:
+            return False
+        node.current_activity = activity
+        return True
+
     @property
     def is_terminal(self) -> bool:
         """Whether the session has ended."""
@@ -239,6 +262,7 @@ class TreeState:
                     "started_at": n.started_at,
                     "duration_ms": n.duration_ms,
                     "parent": n.parent,
+                    "current_activity": n.current_activity,
                 }
                 for n in self.nodes.values()
             ],

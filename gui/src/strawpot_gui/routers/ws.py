@@ -50,6 +50,48 @@ from strawpot_gui.sse import (
 
 router = APIRouter(tags=["websocket"])
 
+# Regex for extracting the agents/<agent_id>/.log path component
+import re as _re
+
+_AGENT_LOG_RE = _re.compile(r"/agents/([^/]+)/\.log$")
+
+
+def _read_last_log_line(log_path: str) -> str | None:
+    """Read the last non-empty line from an agent log file."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            if size == 0:
+                return None
+            # Read up to last 4KB — enough for any single line
+            chunk_size = min(4096, size)
+            f.seek(size - chunk_size)
+            data = f.read(chunk_size).decode("utf-8", errors="replace")
+            lines = data.strip().splitlines()
+            return lines[-1].strip() if lines else None
+    except OSError:
+        return None
+
+
+def _parse_activity_from_log_line(line: str) -> str | None:
+    """Extract a human-readable activity description from an agent log line.
+
+    Returns ``None`` if the line doesn't contain recognisable activity.
+    """
+    if not line:
+        return None
+    # Strip ANSI escape codes
+    clean = _re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+    # Strip leading spinner characters (braille patterns, dots, etc.)
+    clean = clean.lstrip("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏•·…● ").strip()
+    if not clean:
+        return None
+    # Truncate to a reasonable display length
+    if len(clean) > 120:
+        clean = clean[:117] + "…"
+    return clean
+
 # Configurable drain timeouts — low defaults work for localhost; override via
 # environment for high-latency networks or to speed up test teardown.
 WS_DRAIN_TIMEOUT = float(os.environ.get("STRAWPOT_WS_DRAIN_TIMEOUT", "1.0"))
@@ -399,6 +441,17 @@ async def session_ws(websocket: WebSocket, run_id: str) -> None:
                     updated = _read_chat_messages(session_dir)
                     if updated:
                         send_queue.put_nowait({"type": "chat_history", "messages": updated})
+
+                # Parse agent log changes for activity hints (fallback when
+                # runtimes don't emit tool_start/tool_end trace events).
+                for fpath in changed_files:
+                    m = _AGENT_LOG_RE.search(fpath)
+                    if m:
+                        agent_id = m.group(1)
+                        last_line = _read_last_log_line(fpath)
+                        activity = _parse_activity_from_log_line(last_line) if last_line else None
+                        if state.set_activity(agent_id, activity):
+                            changed = True
 
                 if changed:
                     send_queue.put_nowait({"type": "tree_delta", **state.to_dict()})
