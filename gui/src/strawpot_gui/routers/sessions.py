@@ -276,7 +276,7 @@ def launch_session_subprocess(
     # Load project config for defaults
     config = load_config(Path(working_dir))
     resolved_role = role or config.orchestrator_role
-    isolation = config.isolation
+    isolation = "none"
 
     # Resolve runtime: explicit override > explicit config > role default_agent > config default
     runtime = runtime_override

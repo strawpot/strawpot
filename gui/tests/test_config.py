@@ -93,15 +93,15 @@ class TestProjectConfig:
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         pid = self._create_project(client, project_dir)
-        client.put(f"/api/projects/{pid}/config", json={"isolation": "worktree"})
+        client.put(f"/api/projects/{pid}/config", json={"memory": "local"})
 
         resp = client.get(f"/api/projects/{pid}/config")
         data = resp.json()
         assert data["global"] == {"runtime": "global_rt"}
-        assert data["project"] == {"isolation": "worktree"}
-        # Merged has global runtime + project isolation
+        assert data["project"] == {"memory": "local"}
+        # Merged has global runtime + project memory
         assert data["merged"]["runtime"] == "global_rt"
-        assert data["merged"]["isolation"] == "worktree"
+        assert data["merged"]["memory"] == "local"
 
     def test_project_not_found(self, client):
         resp = client.get("/api/projects/999/config")

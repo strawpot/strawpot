@@ -18,7 +18,6 @@ def _config_to_nested(config: StrawPotConfig) -> dict:
     """
     result: dict = {
         "runtime": config.runtime,
-        "isolation": config.isolation,
         "memory": config.memory,
         "orchestrator": {
             "role": config.orchestrator_role,
