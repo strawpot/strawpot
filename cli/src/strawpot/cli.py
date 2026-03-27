@@ -1196,55 +1196,178 @@ def _format_uptime(started_at: str) -> str:
         return "?"
 
 
-@cli.command()
-def sessions():
-    """List all running sessions on this machine."""
+def _latest_running_session() -> str | None:
+    """Return the run_id of the most recent running session, or None."""
     sessions_path = _sessions_dir()
     running_path = sessions_path.parent / "running"
     if not running_path.is_dir():
-        click.echo("No sessions found.")
-        return
+        return None
 
-    entries = sorted(running_path.iterdir())
-    if not entries:
-        click.echo("No sessions found.")
-        return
-
-    # Header
-    click.echo(f"{'RUN ID':<20} {'STATUS':<8} {'ISOLATION':<10} {'RUNTIME':<14} {'DENDEN':<20} {'UPTIME':<10}")
-    click.echo("-" * 82)
-
-    for entry in entries:
+    best_id: str | None = None
+    best_time: str = ""
+    for entry in running_path.iterdir():
         if not entry.name.startswith("run_"):
             continue
         session_file = sessions_path / entry.name / "session.json"
         data = _load_session(session_file)
         if data is None:
             continue
-        run_id = data.get("run_id", entry.name)
         pid = data.get("pid")
-        alive = is_pid_alive(pid) if pid else False
-        status = "running" if alive else "stale"
-        isolation = data.get("isolation", "?")
-        runtime = data.get("runtime", "?")
-        addr = data.get("denden_addr", "?")
-        uptime = _format_uptime(data.get("started_at", "")) if alive else "-"
-        click.echo(f"{run_id:<20} {status:<8} {isolation:<10} {runtime:<14} {addr:<20} {uptime:<10}")
+        if not (pid and is_pid_alive(pid)):
+            continue
+        started_at = data.get("started_at", "")
+        if started_at > best_time:
+            best_time = started_at
+            best_id = data.get("run_id", entry.name)
+    return best_id
+
+
+def _collect_sessions(status_filter: set[str] | None = None) -> list[dict]:
+    """Collect session data from running and archive directories."""
+    sessions_path = _sessions_dir()
+    results: list[dict] = []
+
+    # Scan running sessions
+    running_path = sessions_path.parent / "running"
+    if running_path.is_dir():
+        for entry in sorted(running_path.iterdir()):
+            if not entry.name.startswith("run_"):
+                continue
+            data = _load_session(sessions_path / entry.name / "session.json")
+            if data is None:
+                continue
+            pid = data.get("pid")
+            alive = is_pid_alive(pid) if pid else False
+            status = "running" if alive else "stale"
+            if status_filter and status not in status_filter:
+                continue
+            results.append({
+                "run_id": data.get("run_id", entry.name),
+                "status": status,
+                "isolation": data.get("isolation", "?"),
+                "runtime": data.get("runtime", "?"),
+                "denden_addr": data.get("denden_addr", "?"),
+                "started_at": data.get("started_at", ""),
+                "uptime": _format_uptime(data.get("started_at", "")) if alive else "-",
+            })
+
+    # Scan archived sessions
+    if status_filter is None or "archived" in status_filter:
+        archive_path = sessions_path.parent / "archive"
+        if archive_path.is_dir():
+            for entry in sorted(archive_path.iterdir()):
+                if not entry.name.startswith("run_"):
+                    continue
+                data = _load_session(sessions_path / entry.name / "session.json")
+                if data is None:
+                    continue
+                results.append({
+                    "run_id": data.get("run_id", entry.name),
+                    "status": "archived",
+                    "isolation": data.get("isolation", "?"),
+                    "runtime": data.get("runtime", "?"),
+                    "denden_addr": data.get("denden_addr", "?"),
+                    "started_at": data.get("started_at", ""),
+                    "uptime": "-",
+                })
+
+    return results
 
 
 @cli.command()
-@click.argument("session_id")
-def agents(session_id):
-    """List agents running in a session."""
+@click.option("--status", "status_csv", default=None,
+              help="Comma-separated status filter: running, stale, archived.")
+@click.option("--all", "show_all", is_flag=True, default=False,
+              help="Show all sessions (running + stale + archived).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Output as JSON array.")
+def sessions(status_csv, show_all, as_json):
+    """List sessions on this machine."""
+    if show_all:
+        status_filter = None  # No filter — show everything
+    elif status_csv:
+        status_filter = {s.strip() for s in status_csv.split(",")}
+    else:
+        status_filter = {"running"}  # Default: running only
+
+    results = _collect_sessions(status_filter)
+
+    if as_json:
+        click.echo(json.dumps(results, indent=2))
+        return
+
+    if not results:
+        click.echo("No sessions found.")
+        return
+
+    click.echo(f"{'RUN ID':<20} {'STATUS':<8} {'ISOLATION':<10} {'RUNTIME':<14} {'DENDEN':<20} {'UPTIME':<10}")
+    click.echo("-" * 82)
+    for r in results:
+        click.echo(
+            f"{r['run_id']:<20} {r['status']:<8} {r['isolation']:<10} "
+            f"{r['runtime']:<14} {r['denden_addr']:<20} {r['uptime']:<10}"
+        )
+
+
+def _resolve_agent_status(info: dict) -> str:
+    """Get agent status from state field with PID fallback for old sessions."""
+    status = info.get("state")
+    if status:
+        return status
+    pid = info.get("pid")
+    alive = is_pid_alive(pid) if pid else False
+    return "running" if alive else "exited"
+
+
+def _agent_depth_from_info(agent_id: str, agents_map: dict) -> int:
+    """Calculate delegation depth by traversing the parent chain."""
+    depth = 0
+    current = agent_id
+    for _ in range(100):
+        info = agents_map.get(current, {})
+        parent = info.get("parent")
+        if parent:
+            depth += 1
+            current = parent
+        else:
+            break
+    return depth
+
+
+@cli.command()
+@click.argument("session_id", required=False, default=None)
+@click.option("--session", "session_opt", default=None,
+              help="Session run_id (alternative to positional arg).")
+@click.option("--status", "status_csv", default=None,
+              help="Comma-separated status filter (e.g. running,cancelling).")
+@click.option("--role", "role_filter", default=None,
+              help="Filter by role name.")
+@click.option("--parent", "parent_filter", default=None,
+              help="Show only children of this agent.")
+@click.option("--tree", "as_tree", is_flag=True, default=False,
+              help="Display as indented tree.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Output as JSON array.")
+def agents(session_id, session_opt, status_csv, role_filter, parent_filter, as_tree, as_json):
+    """List agents in a session.
+
+    SESSION_ID is optional — defaults to the latest running session.
+    """
+    # Resolve session ID: positional arg > --session > auto-detect
+    sid = session_id or session_opt or _latest_running_session()
+    if not sid:
+        click.echo("No running session found. Specify a session ID.")
+        sys.exit(1)
+
     sessions_path = _sessions_dir()
-    session_file = sessions_path / session_id / "session.json"
+    session_file = sessions_path / sid / "session.json"
     if not session_file.is_file():
-        click.echo(f"Session not found: {session_id}")
+        click.echo(f"Session not found: {sid}")
         sys.exit(1)
 
     data = _load_session(session_file)
     if data is None:
-        click.echo(f"Failed to read session: {session_id}")
+        click.echo(f"Failed to read session: {sid}")
         sys.exit(1)
 
     agents_map = data.get("agents", {})
@@ -1252,21 +1375,57 @@ def agents(session_id):
         click.echo("No agents recorded for this session.")
         return
 
-    click.echo(f"{'AGENT ID':<20} {'ROLE':<16} {'RUNTIME':<14} {'PARENT':<20} {'STATUS':<8}")
-    click.echo("-" * 78)
+    # Parse status filter
+    status_set = {s.strip() for s in status_csv.split(",")} if status_csv else None
 
+    # Build filtered agent list
+    filtered: list[dict] = []
     for agent_id, info in agents_map.items():
+        status = _resolve_agent_status(info)
         role = info.get("role", "?")
-        runtime = info.get("runtime", "?")
-        parent = info.get("parent") or "-"
-        # Prefer explicit state field; fall back to PID liveness for
-        # old session files that lack it.
-        status = info.get("state")
-        if not status:
-            pid = info.get("pid")
-            alive = is_pid_alive(pid) if pid else False
-            status = "running" if alive else "exited"
-        click.echo(f"{agent_id:<20} {role:<16} {runtime:<14} {parent:<20} {status:<8}")
+        parent = info.get("parent")
+
+        if status_set and status not in status_set:
+            continue
+        if role_filter and role != role_filter:
+            continue
+        if parent_filter and parent != parent_filter:
+            continue
+
+        filtered.append({
+            "agent_id": agent_id,
+            "role": role,
+            "runtime": info.get("runtime", "?"),
+            "parent": parent or "-",
+            "status": status,
+            "started_at": info.get("started_at", ""),
+            "pid": info.get("pid"),
+            "cancel_reason": info.get("cancel_reason"),
+        })
+
+    if as_json:
+        click.echo(json.dumps(filtered, indent=2))
+        return
+
+    if not filtered:
+        click.echo("No agents match the specified filters.")
+        return
+
+    if as_tree:
+        # Tree view: indent based on depth
+        for agent in filtered:
+            depth = _agent_depth_from_info(agent["agent_id"], agents_map)
+            indent = "  " * depth
+            click.echo(f"{indent}{agent['agent_id']:<16} {agent['role']:<16} [{agent['status']}]")
+    else:
+        # Table view
+        click.echo(f"{'AGENT ID':<20} {'ROLE':<16} {'RUNTIME':<14} {'PARENT':<20} {'STATUS':<10}")
+        click.echo("-" * 80)
+        for agent in filtered:
+            click.echo(
+                f"{agent['agent_id']:<20} {agent['role']:<16} "
+                f"{agent['runtime']:<14} {agent['parent']:<20} {agent['status']:<10}"
+            )
 
 
 # ---------------------------------------------------------------------------
