@@ -65,6 +65,7 @@ where = ["src"]
 [tool.setuptools_scm]
 root = ".."
 tag_regex = "^v(?P<version>[\\d.]+)$"
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v*"]
 
 [build-system]
 requires = ["setuptools", "setuptools-scm>=8"]
