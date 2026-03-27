@@ -244,4 +244,4 @@ def test_resolve_isolator_none_no_deprecation_warning():
     deprecation_warnings = [
         w for w in caught if issubclass(w.category, DeprecationWarning)
     ]
-    assert len(deprecation_warnings) == 0
+    assert not deprecation_warnings
