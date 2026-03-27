@@ -64,7 +64,7 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
     : `agent-flow-node ${nodeStatusClass(data.status)}`;
 
   return (
-    <div className={`${cls} group relative`}>
+    <div className={`${cls} relative`}>
       <Handle type="target" position={Position.Top} />
       <div className="agent-flow-role">
         {data.pending ? `[pending: ${data.role}]` : data.role}
@@ -81,7 +81,7 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
       )}
       {data.status === "running" && data.onCancel && (
         <button
-          className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 group-hover:flex"
+          className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90"
           onClick={(e) => {
             e.stopPropagation();
             data.onCancel!(data.agentId, data.role);
