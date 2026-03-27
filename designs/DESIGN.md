@@ -10,7 +10,7 @@ User
  ▼
 strawpot start          ← CLI entry point, CWD = working dir
  │
- ├─ Isolate (optional)  ← none (use CWD) | worktree | docker
+ ├─ NoneIsolator        ← always uses CWD (agents isolate via worktree skill)
  │
  ├─ DenDen gRPC server  ← listens on 127.0.0.1:9700
  │
@@ -1166,31 +1166,34 @@ discovers it via `AGENT.md`.
 
 ---
 
-## Isolation Implementations
+## Isolation
 
-`none` and `docker` work with any directory. `worktree` requires a git
-repository — raises `ValueError` if the project is not a git repo.
+Session-level isolation is handled by `NoneIsolator` — a no-op stub
+that runs agents directly in the project directory. This is the only
+session-level isolator; there is no user-facing isolation configuration.
 
-### NoneIsolator (default)
+When an agent needs an isolated working copy, it uses the worktree
+skill to create a git worktree on demand and clean it up when done.
+This is agent-controlled, not session-controlled.
 
-Agents work directly in the project directory. No setup, no cleanup.
-Multiple concurrent sessions are allowed — each writes its own session file
-under `sessions/<run_id>/session.json`.
+### NoneIsolator
 
 ```
 create(session_id, base_dir):
-  return IsolatedEnv(path=base_dir, branch=None)
+  return IsolatedEnv(path=base_dir)
 
 cleanup(env, base_dir):
   pass  # no-op
 ```
 
-Only implementation currently used. Sessions always run in the project
-directory. Agents that need isolation use the worktree skill on demand.
+Multiple concurrent sessions are allowed — each writes its own
+session file under `sessions/<run_id>/session.json`.
 
-> **Historical note:** `WorktreeIsolator` previously created a
-> session-level worktree. This was removed in epic #568 in favor of
-> agent-controlled worktree isolation via the worktree skill.
+> **Historical note:** `WorktreeIsolator` and `DockerIsolator`
+> previously provided session-level worktree and container isolation
+> as user-configurable options. These were removed in epic #568 in
+> favor of agent-controlled worktree isolation via the worktree
+> skill.
 
 ---
 
