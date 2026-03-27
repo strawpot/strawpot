@@ -164,10 +164,10 @@ class TestCheckAndFire:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, schedule_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-active", project_id, sid, "running",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+                 "test", "test", "2025-01-01T00:00:00", "/tmp"),
             )
 
         launch_fn = MagicMock()
@@ -187,10 +187,10 @@ class TestCheckAndFire:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, schedule_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-active", project_id, sid, "running",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+                 "test", "test", "2025-01-01T00:00:00", "/tmp"),
             )
 
         launch_fn = MagicMock(return_value="run-new")
@@ -305,10 +305,10 @@ class TestOneTimeScheduleFire:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, schedule_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-block", project_id, sid, "running",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+                 "test", "test", "2025-01-01T00:00:00", "/tmp"),
             )
 
         launch_fn = MagicMock()
@@ -436,10 +436,10 @@ class TestConversationTargeting:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, conversation_id, status, role, runtime, "
-                " isolation, started_at, session_dir, task, summary, exit_code) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir, task, summary, exit_code) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-prior", project_id, conv_id, "completed",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "test", "test", "2025-01-01T00:00:00", "/tmp",
                  "earlier task", "did stuff", 0),
             )
 
@@ -520,10 +520,10 @@ class TestFireSchedule:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, conversation_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-busy", project_id, conv_id, "running",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+                 "test", "test", "2025-01-01T00:00:00", "/tmp"),
             )
 
         launch_fn = MagicMock()
@@ -552,10 +552,10 @@ class TestRefreshActiveSessions:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 ("run-stale", project_id, "starting",
-                 "test", "test", "none", stale_time, session_dir),
+                 "test", "test", stale_time, session_dir),
             )
 
         scheduler = Scheduler(db_path, MagicMock())
@@ -578,10 +578,10 @@ class TestRefreshActiveSessions:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 ("run-recent", project_id, "starting",
-                 "test", "test", "none", recent_time, session_dir),
+                 "test", "test", recent_time, session_dir),
             )
 
         scheduler = Scheduler(db_path, MagicMock())
@@ -600,10 +600,10 @@ class TestRefreshActiveSessions:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 ("run-nodir", project_id, "starting",
-                 "test", "test", "none", stale_time, "/nonexistent/path"),
+                 "test", "test", stale_time, "/nonexistent/path"),
             )
 
         scheduler = Scheduler(db_path, MagicMock())

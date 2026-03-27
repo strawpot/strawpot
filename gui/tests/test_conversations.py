@@ -395,11 +395,11 @@ def _insert_completed_session(
     fc_json = _json.dumps(files_changed) if files_changed else None
     conn.execute(
         "INSERT INTO sessions "
-        "(run_id, project_id, role, runtime, isolation, status, task, user_task, "
+        "(run_id, project_id, role, runtime, status, task, user_task, "
         "summary, exit_code, conversation_id, started_at, session_dir, "
         "files_changed, interactive) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (run_id, project_id, "default", "claude-code", "none", status, task,
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_id, project_id, "default", "claude-code", status, task,
          user_task, summary, exit_code, conversation_id, started_at,
          session_dir, fc_json, int(interactive)),
     )

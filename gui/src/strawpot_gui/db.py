@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role        TEXT NOT NULL,
     runtime     TEXT NOT NULL,
-    isolation   TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'starting',
     started_at  TEXT NOT NULL,
     ended_at    TEXT,
@@ -456,6 +455,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRAGMA foreign_keys=ON;
         """)
 
+    # Drop isolation column from sessions (added 2026-03-27).
+    # Isolation is now agent-controlled via the worktree skill.
+    cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+    }
+    if "isolation" in cols:
+        conn.execute("ALTER TABLE sessions DROP COLUMN isolation")
+
 
 @contextmanager
 def get_db(db_path: str):
@@ -693,7 +701,6 @@ def _upsert_session(
         role = first_agent.get("role", "unknown")
 
     runtime = data.get("runtime", "unknown")
-    isolation = data.get("isolation", "none")
     started_at = data.get("started_at", "")
 
     # Determine status and parse trace
@@ -722,15 +729,14 @@ def _upsert_session(
 
     conn.execute(
         """INSERT INTO sessions
-           (run_id, project_id, role, runtime, isolation, status,
+           (run_id, project_id, role, runtime, status,
             started_at, ended_at, duration_ms, exit_code, session_dir,
             task, summary, files_changed, interactive)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(run_id) DO UPDATE SET
              project_id  = excluded.project_id,
              role        = excluded.role,
              runtime     = excluded.runtime,
-             isolation   = excluded.isolation,
              status      = CASE WHEN sessions.status IN ('stopped', 'completed', 'failed') THEN sessions.status ELSE excluded.status END,
              started_at  = excluded.started_at,
              ended_at    = excluded.ended_at,
@@ -747,7 +753,6 @@ def _upsert_session(
             project_id,
             role,
             runtime,
-            isolation,
             status,
             started_at,
             trace_info.get("ended_at"),

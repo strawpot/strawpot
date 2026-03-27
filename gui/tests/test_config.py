@@ -16,7 +16,7 @@ class TestGlobalConfig:
 
     def test_put_and_get_global_config(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "home"))
-        data = {"runtime": "codex", "isolation": "docker"}
+        data = {"runtime": "codex"}
 
         resp = client.put("/api/config/global", json=data)
         assert resp.status_code == 200

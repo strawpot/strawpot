@@ -446,7 +446,7 @@ def schedule_history(schedule_id: int, conn=Depends(get_db_conn)):
         raise HTTPException(404, "Schedule not found")
 
     rows = conn.execute(
-        "SELECT run_id, project_id, role, runtime, isolation, status,"
+        "SELECT run_id, project_id, role, runtime, status,"
         "       started_at, ended_at, duration_ms, exit_code, task"
         "  FROM sessions WHERE schedule_id = ? ORDER BY started_at DESC"
         "  LIMIT 50",

@@ -29,7 +29,6 @@ def _write_session(base_dir, run_id, *, archived=False, **overrides):
     data = {
         "run_id": run_id,
         "working_dir": str(base_dir),
-        "isolation": "none",
         "runtime": "strawpot-claude-code",
         "denden_addr": "127.0.0.1:9700",
         "started_at": "2026-01-01T12:00:00+00:00",
@@ -156,7 +155,6 @@ class TestSyncSessions:
         assert row["project_id"] == pid
         assert row["role"] == "orchestrator"
         assert row["runtime"] == "strawpot-claude-code"
-        assert row["isolation"] == "none"
         assert row["status"] == "failed"  # no trace → failed
 
     def test_archived_session_with_trace(self, client, tmp_path):
@@ -173,7 +171,7 @@ class TestSyncSessions:
                 "trace_id": "run_traced",
                 "span_id": "s1",
                 "data": {"run_id": "run_traced", "role": "orchestrator",
-                         "runtime": "strawpot-claude-code", "isolation": "none"},
+                         "runtime": "strawpot-claude-code"},
             },
             {
                 "ts": "2026-01-01T12:05:01+00:00",
