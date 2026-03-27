@@ -154,6 +154,16 @@
   border-left-color: #e65100;
 }
 
+.agent-flow-node.cancelling {
+  border-left-color: #e65100;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.agent-flow-node.cancelled {
+  border-left-color: #e65100;
+  opacity: 0.6;
+}
+
 .agent-flow-node.pending {
   border: 1px dashed hsl(var(--border));
   border-left: 3px dashed hsl(var(--border));
@@ -197,6 +207,16 @@
 
 .status-dot.warning {
   background: #e65100;
+}
+
+.status-dot.cancelling {
+  background: #e65100;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status-dot.cancelled {
+  background: #e65100;
+  opacity: 0.6;
 }
 
 .denied-list {

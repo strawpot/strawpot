@@ -96,6 +96,8 @@ function StatusBadge({ status }: { status: string }) {
           "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400",
         variant === "error" &&
           "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400",
+        variant === "cancelling" &&
+          "animate-pulse border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400",
         variant === "warning" &&
           "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400",
         variant === "default" &&
@@ -104,6 +106,9 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status === "running" && (
         <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+      )}
+      {status === "cancelling" && (
+        <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
       )}
       {status}
     </Badge>
@@ -123,7 +128,10 @@ export function statusVariant(status: string): string {
     case "failed":
       return "error";
     case "stopped":
+    case "cancelled":
       return "warning";
+    case "cancelling":
+      return "cancelling";
     default:
       return "default";
   }
