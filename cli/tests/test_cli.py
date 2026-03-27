@@ -47,13 +47,12 @@ def test_no_args_shows_help_and_exits_zero(_mock_banner):
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_resolves_agent(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory,
     _mock_onboarding,
 ):
@@ -77,13 +76,12 @@ def test_start_resolves_agent(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_resolves_agent_with_runtime_override(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """start --runtime overrides the agent name passed to resolve_agent."""
@@ -249,13 +247,12 @@ def test_start_missing_tools_exits(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.load_config")
 def test_start_missing_env_prompts(
-    mock_load, mock_validate, mock_resolve, mock_wrapper, mock_isolator,
+    mock_load, mock_validate, mock_resolve, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """Missing env vars are prompted and set in os.environ."""
@@ -280,14 +277,13 @@ def test_start_missing_env_prompts(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.validate_agent")
 @patch("strawpot.cli.load_config")
 @patch("strawpot.config.save_resource_config")
 def test_start_missing_env_persists_to_config(
-    mock_save, mock_load, mock_validate, mock_resolve, mock_wrapper, mock_isolator,
+    mock_save, mock_load, mock_validate, mock_resolve, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """Prompted agent env vars are persisted to global config."""
@@ -321,7 +317,6 @@ def test_start_missing_env_persists_to_config(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
@@ -329,7 +324,7 @@ def test_start_missing_env_persists_to_config(
 @patch("strawpot.cli.shutil.which")
 def test_start_uses_tmux_when_available(
     mock_which, mock_load, mock_resolve, mock_validate,
-    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
+    mock_wrapper, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """InteractiveWrapperRuntime is used when tmux is on PATH."""
     from strawpot.config import StrawPotConfig
@@ -351,7 +346,6 @@ def test_start_uses_tmux_when_available(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
@@ -359,7 +353,7 @@ def test_start_uses_tmux_when_available(
 @patch("strawpot.cli.shutil.which")
 def test_start_falls_back_to_direct(
     mock_which, mock_load, mock_resolve, mock_validate,
-    mock_wrapper, mock_isolator, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
+    mock_wrapper, mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """DirectWrapperRuntime is used when tmux is not on PATH."""
     from strawpot.config import StrawPotConfig
@@ -385,13 +379,12 @@ def test_start_falls_back_to_direct(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_creates_session(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """Session is constructed with correct args and start() is called."""
@@ -425,13 +418,12 @@ def test_start_creates_session(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_role_override(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """--role overrides config.orchestrator_role."""
@@ -452,40 +444,12 @@ def test_start_role_override(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
-@patch("strawpot.cli.WrapperRuntime")
-@patch("strawpot.cli.validate_agent", return_value=ValidationResult())
-@patch("strawpot.cli.resolve_agent")
-@patch("strawpot.cli.load_config")
-def test_start_isolation_override(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
-    mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
-):
-    """--isolation overrides config.isolation."""
-    from strawpot.config import StrawPotConfig
-
-    config = StrawPotConfig()
-    mock_load.return_value = config
-    mock_resolve.return_value = _make_spec()
-
-    runner = CliRunner()
-    runner.invoke(cli, ["start", "--isolation", "worktree"])
-
-    assert config.isolation == "worktree"
-
-
-@patch("strawpot.cli._ensure_memory_installed")
-@patch("strawpot.cli._ensure_role_installed")
-@patch("strawpot.cli._ensure_skill_installed")
-@patch("strawpot.cli._ensure_agent_installed")
-@patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_host_port_override(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """--host and --port override config.denden_addr."""
@@ -511,13 +475,12 @@ def test_start_host_port_override(
 @patch("strawpot.cli._ensure_skill_installed")
 @patch("strawpot.cli._ensure_agent_installed")
 @patch("strawpot.cli.Session")
-@patch("strawpot.cli.resolve_isolator")
 @patch("strawpot.cli.WrapperRuntime")
 @patch("strawpot.cli.validate_agent", return_value=ValidationResult())
 @patch("strawpot.cli.resolve_agent")
 @patch("strawpot.cli.load_config")
 def test_start_run_id_override(
-    mock_load, mock_resolve, mock_validate, mock_wrapper, mock_isolator,
+    mock_load, mock_resolve, mock_validate, mock_wrapper,
     mock_session, mock_ensure_agent, mock_ensure_skill, mock_ensure_role, mock_ensure_memory
 ):
     """--run-id passes the pre-assigned run ID to Session constructor."""

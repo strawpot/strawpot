@@ -20,7 +20,7 @@ from strawpot.agents.registry import AgentSpec
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import StrawPotConfig
 from strawpot.isolation.protocol import NoneIsolator
-from strawpot.session import Session, resolve_isolator
+from strawpot.session import Session
 
 E2E_DIR = Path(__file__).parent
 FIXTURES_DIR = E2E_DIR / "fixtures"
@@ -143,7 +143,6 @@ def make_config():
     def _make(**overrides):
         defaults = dict(
             runtime="stub_agent",
-            isolation="none",
             denden_addr="127.0.0.1:0",
             orchestrator_role="orchestrator",
             max_depth=3,
@@ -172,7 +171,7 @@ def make_session(
     def _make(working_dir, task="", config_overrides=None, agent_script=None):
         config = make_config(**(config_overrides or {}))
         wrapper = WrapperRuntime(stub_agent_spec)
-        isolator = resolve_isolator(config.isolation)
+        isolator = NoneIsolator()
 
         # Monkeypatch resolve_agent so delegation uses our stub
         monkeypatch.setattr(

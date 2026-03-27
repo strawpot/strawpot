@@ -81,7 +81,6 @@ class TestErrorHandling:
                 {
                     "run_id": "run_stale123",
                     "working_dir": str(git_project),
-                    "isolation": "none",
                     "runtime": "stub_agent",
                     "denden_addr": "127.0.0.1:9999",
                     "pid": 999999,  # dead PID

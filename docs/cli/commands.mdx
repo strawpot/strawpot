@@ -21,7 +21,6 @@ strawpot start [options]
 |--------|-------------|---------|
 | `--role ROLE` | Orchestrator role slug | From config or `orchestrator` |
 | `--runtime RUNTIME` | Agent runtime name | From config or `strawpot-claude-code` |
-| `--isolation MODE` | Isolation strategy: `none`, `worktree` (deprecated), `docker` | From config or `none` |
 | `--task TEXT` | Task for non-interactive mode (empty = interactive) | — |
 | `--headless` | Run detached with output to log file (requires `--task`). Exits with error if not configured. | `false` |
 | `--system-prompt TEXT` | Custom system prompt appended to role instructions | — |
@@ -42,8 +41,8 @@ strawpot start [options]
 # Interactive session with defaults
 strawpot start
 
-# Custom orchestrator role with worktree isolation
-strawpot start --role team-lead --isolation worktree
+# Custom orchestrator role
+strawpot start --role team-lead
 
 # Non-interactive task
 strawpot start --task "Refactor the auth module"

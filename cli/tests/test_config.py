@@ -15,7 +15,6 @@ from strawpot.config import (
 def test_defaults():
     config = StrawPotConfig()
     assert config.runtime == "strawpot-claude-code"
-    assert config.isolation == "none"
     assert config.denden_addr == "127.0.0.1:9700"
     assert config.orchestrator_role == "ai-ceo"
     assert config.max_depth == 3
@@ -29,8 +28,6 @@ def test_defaults():
     assert config.memory_config == {}
     assert config.pull_before_session == "prompt"
     assert config.trace is True
-    assert config.cleanup_branches is True
-    assert config.cleanup_remote is True
 
 
 def test_strawpot_home_default(monkeypatch):
@@ -85,7 +82,6 @@ def test_load_config_full(tmp_path, monkeypatch):
     project_dir.mkdir(parents=True)
     (project_dir / "strawpot.toml").write_text(
         'runtime = "codex"\n'
-        'isolation = "docker"\n'
         'memory = "test-provider"\n'
         "\n"
         "[denden]\n"
@@ -112,7 +108,6 @@ def test_load_config_full(tmp_path, monkeypatch):
 
     config = load_config(project_dir)
     assert config.runtime == "codex"
-    assert config.isolation == "docker"
     assert config.denden_addr == "0.0.0.0:8080"
     assert config.orchestrator_role == "team-lead"
     assert config.max_depth == 5
@@ -132,7 +127,6 @@ def test_load_config_session_override(tmp_path, monkeypatch):
     (global_dir / "strawpot.toml").write_text(
         "[session]\n"
         'pull_before_session = "never"\n'
-        "cleanup_branches = false\n"
     )
     monkeypatch.setenv("STRAWPOT_HOME", str(global_dir))
 
@@ -145,7 +139,6 @@ def test_load_config_session_override(tmp_path, monkeypatch):
 
     config = load_config(project_dir)
     assert config.pull_before_session == "always"
-    assert config.cleanup_branches is False  # from global
 
 
 def test_load_config_agents_merge(tmp_path, monkeypatch):

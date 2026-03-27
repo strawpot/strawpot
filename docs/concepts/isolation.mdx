@@ -1,73 +1,13 @@
 ---
 title: Isolation
-description: Worktree isolation and environment strategies
+description: Environment strategies for agent sessions
 ---
 
-StrawPot creates one isolated environment per session. All agents in a session — orchestrator and sub-agents — share the same working directory.
+StrawPot agents work directly in your project directory. All agents in a session — orchestrator and sub-agents — share the same working directory.
 
-## Strategies
+## Agent-Controlled Isolation
 
-| Strategy | Description | When to Use |
-|----------|-------------|-------------|
-| `none` | Work directly in the project directory | Quick tasks, no isolation needed |
-| `worktree` | Create a git worktree per session | **Deprecated** — use the [worktree skill](/skills/worktree) instead |
-| `docker` | Container-based isolation | Planned (not yet implemented) |
-
-Set the strategy in your config or via CLI flag:
-
-```toml
-# strawpot.toml (project root)
-isolation = "worktree"  # deprecated — use the worktree skill instead
-```
-
-```bash
-strawpot start --isolation worktree  # deprecated
-```
-
-## None Isolation
-
-The simplest mode — agents work directly in your project directory.
-
-- No setup or cleanup overhead
-- Changes are made directly to your working tree
-- No merge step needed
-- Risk: agents modify your working files directly
-
-## Worktree Isolation
-
-> **Deprecated.** Session-level worktree isolation is deprecated and will be removed in a future version. Use the [worktree skill](/skills/worktree) for agent-controlled isolation instead.
-
-Creates a git worktree per session, giving agents a separate working copy of your repository.
-
-### How It Works
-
-1. **Create** — `git worktree add` creates a new worktree at `~/.strawpot/worktrees/<project_hash>/<session_id>`
-2. **Branch** — Each session gets branch `strawpot/<session_id>`
-3. **Work** — All agents operate in the worktree directory
-4. **Merge** — On session end, changes are [merged back automatically](/concepts/sessions#worktree-merge-behavior) (patch-apply if no PR, cleanup-only if PR exists)
-5. **Cleanup** — `git worktree remove` deletes the worktree
-
-### Benefits
-
-- **Safe** — Your main working tree is untouched during the session
-- **Concurrent** — Multiple sessions can run simultaneously on different worktrees
-- **Reviewable** — Changes can be reviewed as a PR before merging
-- **Recoverable** — If something goes wrong, the worktree can be discarded
-
-### Requirements
-
-- The project must be a git repository
-- Sufficient disk space for the worktree (a shallow copy, not a full clone)
-
-### Worktree Location
-
-Worktrees are stored under:
-
-```
-~/.strawpot/worktrees/<project_hash>/<session_id>/
-```
-
-The `project_hash` is derived from the project directory path, preventing collisions between projects.
+For tasks that need isolated working copies (e.g., multi-file refactors, risky changes), agents can use the [worktree skill](/skills/worktree) to create and manage git worktrees on demand. This gives agents fine-grained control over when and how isolation is used, rather than applying it to the entire session.
 
 ## Docker Isolation
 

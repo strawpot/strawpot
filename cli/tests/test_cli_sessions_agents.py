@@ -24,7 +24,6 @@ def _make_session_dir(tmp_path, run_id, *, pid=99999, alive=True, agents=None):
         "run_id": run_id,
         "working_dir": str(tmp_path),
         "pid": pid,
-        "isolation": "worktree",
         "runtime": "claude-code",
         "denden_addr": "127.0.0.1:50051",
         "started_at": "2026-03-27T00:00:00Z",

@@ -1,11 +1,9 @@
 """Session lifecycle — owns denden server, isolation, orchestrator, and delegation."""
 
-import enum
 import hashlib
 import json
 import logging
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -55,29 +53,10 @@ from strawpot_memory.memory_protocol import MemoryProvider
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot._process import is_pid_alive, kill_process_tree
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
-from strawpot.isolation.worktree import WorktreeIsolator, _git
 from strawpot.progress import ProgressEvent
 from strawpot.trace import Tracer
 
 logger = logging.getLogger(__name__)
-
-
-# ------------------------------------------------------------------
-# Merge outcome
-# ------------------------------------------------------------------
-
-
-class MergeOutcome(enum.Enum):
-    """Result of ``_merge_session_changes`` — drives branch cleanup decisions.
-
-    MERGED — changes were merged locally; safe to delete the branch.
-    KEPT_FOR_PR — a PR was created; keep remote branch, clean up local only.
-    FAILED — merge failed; keep everything so the user can recover.
-    """
-
-    MERGED = "merged"
-    KEPT_FOR_PR = "kept_for_pr"
-    FAILED = "failed"
 
 
 # ------------------------------------------------------------------
@@ -91,15 +70,14 @@ def recover_stale_sessions(
     """Detect and clean up stale sessions left behind by crashes.
 
     Scans ``.strawpot/sessions/`` for session files whose ``pid`` is no
-    longer alive.  For each stale session, changes are merged back
-    (worktree isolation only) and the session directory is removed.
+    longer alive.  For each stale session the session directory is archived.
 
-    Called at the beginning of ``strawpot start`` so orphaned worktrees
-    and session artifacts are cleaned up before a new session starts.
+    Called at the beginning of ``strawpot start`` so orphaned session
+    artifacts are cleaned up before a new session starts.
 
     Args:
         working_dir: Project directory (CWD at invocation time).
-        config: Merged StrawPot configuration (used for merge settings).
+        config: Merged StrawPot configuration.
 
     Returns:
         List of recovered ``run_id`` strings.
@@ -159,27 +137,6 @@ def recover_stale_sessions(
                         agent_id, agent_pid,
                     )
 
-        # --- Merge (worktree isolation only) ---
-        delete_branch = True
-        isolation = data.get("isolation", "none")
-        if isolation == "worktree":
-            delete_branch = _recover_merge(data, working_dir, config)
-
-        # --- Isolator cleanup ---
-        if isolation == "worktree" and data.get("worktree"):
-            try:
-                env = IsolatedEnv(
-                    path=data["worktree"],
-                    branch=data.get("worktree_branch"),
-                )
-                WorktreeIsolator().cleanup(
-                    env, base_dir=working_dir, delete_branch=delete_branch
-                )
-            except Exception:
-                logger.debug(
-                    "Isolator cleanup failed for %s", run_id, exc_info=True
-                )
-
         # --- Swap running symlink to archive ---
         if os.path.islink(link_path):
             os.unlink(link_path)
@@ -192,86 +149,6 @@ def recover_stale_sessions(
         recovered.append(run_id)
 
     return recovered
-
-
-def _recover_merge(
-    data: dict, working_dir: str, config: StrawPotConfig
-) -> bool:
-    """Recover changes from a stale worktree session.
-
-    Detects whether a PR was created.  If so, nothing to merge — just
-    clean up.  Otherwise patch-apply changes as unstaged to *working_dir*.
-
-    Returns ``True`` if the branch should be deleted, ``False`` to keep it.
-    """
-    from strawpot.merge import detect_pr_created, merge_local
-
-    base_branch = data.get("base_branch")
-    session_branch = data.get("worktree_branch")
-    worktree_dir = data.get("worktree")
-
-    if not base_branch or not session_branch or not worktree_dir:
-        logger.debug(
-            "Missing branch/worktree info, skipping merge for %s",
-            data.get("run_id"),
-        )
-        return True
-
-    if not os.path.isdir(worktree_dir):
-        logger.debug("Worktree directory missing, skipping merge")
-        return True
-
-    try:
-        if detect_pr_created(session_branch, working_dir):
-            logger.info("Recovery: PR exists for %s — cleanup only", session_branch)
-            return False  # keep remote branch for the PR
-
-        run_id = data.get("run_id", "unknown")
-        result = merge_local(
-            base_branch=base_branch,
-            session_branch=session_branch,
-            worktree_dir=worktree_dir,
-            base_dir=working_dir,
-            patch_save_dir=os.path.join(working_dir, ".strawpot", "patches"),
-            session_id=run_id,
-        )
-        logger.info("Recovery merge (local): %s", result.message)
-        if not result.success:
-            logger.warning("Recovery merge had conflicts — %s", result.message)
-            return False  # keep branch for manual recovery
-        return True
-    except Exception:
-        logger.warning("Recovery merge failed", exc_info=True)
-
-    return False  # keep branch on failure so user can recover
-
-
-# ------------------------------------------------------------------
-# Isolator resolution
-# ------------------------------------------------------------------
-
-
-def resolve_isolator(isolation: str) -> Isolator:
-    """Return an Isolator instance for the given isolation mode.
-
-    Args:
-        isolation: One of ``"none"`` or ``"worktree"``.
-
-    Raises:
-        ValueError: If the isolation mode is unknown.
-    """
-    if isolation == "none":
-        return NoneIsolator()
-    if isolation == "worktree":
-        msg = (
-            "Session-level worktree isolation is deprecated. "
-            "Use the worktree skill for agent-controlled isolation instead. "
-            "This flag will be removed in a future version."
-        )
-        warnings.warn(msg, DeprecationWarning, stacklevel=2)
-        logger.warning("%s", msg)
-        return WorktreeIsolator()
-    raise ValueError(f"Unknown isolation mode: {isolation}")
 
 
 @dataclass(frozen=True)
@@ -309,9 +186,8 @@ def _default_ask_user_handler(req: AskUserRequest) -> AskUserResponse:
 class Session:
     """Orchestration session — manages the full lifecycle.
 
-    A session creates an isolated environment, starts a denden gRPC
-    server, spawns the orchestrator agent, and handles delegation
-    requests from sub-agents.
+    A session starts a denden gRPC server, spawns the orchestrator agent,
+    and handles delegation requests from sub-agents.
 
     Args:
         config: Merged StrawPot configuration.
@@ -341,7 +217,6 @@ class Session:
         system_prompt: str = "",
         memory_task: str = "",
         group_id: str | None = None,
-        keep_branch: bool = False,
         on_event: Callable[[ProgressEvent], None] | None = None,
     ) -> None:
         self.config = config
@@ -357,7 +232,6 @@ class Session:
         self._provided_run_id = run_id
         self._headless = headless
         self._group_id: str | None = group_id
-        self._keep_branch: bool = keep_branch
         self._on_event = on_event
 
         self._run_id: str | None = None
@@ -420,7 +294,7 @@ class Session:
                 run_id=self._run_id,
                 role=self.config.orchestrator_role,
                 runtime=self.config.runtime,
-                isolation=self.config.isolation,
+                isolation="none",
                 task=self.task or "",
             )
 
@@ -596,7 +470,7 @@ class Session:
             self.stop()
 
     def stop(self) -> None:
-        """Clean up the session: kill agents, stop server, merge changes, remove isolation."""
+        """Clean up the session: kill agents, stop server, remove isolation."""
         # 0. Stop cancel watcher
         self._cancel_watcher_stop.set()
 
@@ -675,39 +549,16 @@ class Session:
         # 2. Stop denden server
         self._stop_denden_server()
 
-        # 3. Merge session changes (worktree isolation only)
-        merge_outcome = MergeOutcome.MERGED
-        if self._env and self._env.branch and self._working_dir:
-            try:
-                merge_outcome = self._merge_session_changes()
-            except Exception:
-                merge_outcome = MergeOutcome.FAILED
-                logger.debug("Merge failed", exc_info=True)
-
-        # 4. Isolator cleanup (worktree removal only — branch cleanup is separate)
+        # 3. Isolator cleanup
         if self._env and self._working_dir:
             try:
-                if isinstance(self.isolator, WorktreeIsolator):
-                    self.isolator.cleanup(
-                        self._env,
-                        base_dir=self._working_dir,
-                        delete_branch=False,
-                    )
-                else:
-                    self.isolator.cleanup(
-                        self._env, base_dir=self._working_dir
-                    )
+                self.isolator.cleanup(
+                    self._env, base_dir=self._working_dir
+                )
             except Exception:
                 logger.debug("Isolator cleanup failed", exc_info=True)
 
-        # 5. Branch cleanup (after worktree removal, before archive)
-        if self._env and self._env.branch and self._working_dir:
-            try:
-                self._cleanup_session_branch(merge_outcome=merge_outcome)
-            except Exception:
-                logger.warning("Branch cleanup failed", exc_info=True)
-
-        # 6. Archive session directory for GUI history browsing
+        # 4. Archive session directory for GUI history browsing
         self._archive_session_dir()
 
     # ------------------------------------------------------------------
@@ -868,246 +719,6 @@ class Session:
         finally:
             if signal_path:
                 mark_signal_done(signal_path)
-
-    # ------------------------------------------------------------------
-    # Merge behavior
-    # ------------------------------------------------------------------
-
-    def _merge_session_changes(self) -> MergeOutcome:
-        """Detect agent action and merge accordingly.
-
-        If the agent created a PR → nothing to merge, just clean up.
-        If no PR → patch-apply changes as unstaged to the original dir.
-
-        Must be called *before* isolator cleanup (the worktree needs to
-        exist for patch generation).
-
-        Returns:
-            A ``MergeOutcome`` indicating what happened:
-            - ``MERGED`` — local merge succeeded; branch can be deleted.
-            - ``KEPT_FOR_PR`` — a PR was created; keep remote branch.
-            - ``FAILED`` — merge failed; keep everything for recovery.
-        """
-        from strawpot.merge import detect_pr_created, merge_local
-
-        base_branch = self._session_data.get("base_branch")
-        session_branch = self._session_data.get("worktree_branch")
-
-        if not base_branch or not session_branch:
-            logger.debug(
-                "Missing branch info, skipping merge "
-                "(base=%s, session=%s)",
-                base_branch,
-                session_branch,
-            )
-            return MergeOutcome.MERGED
-
-        try:
-            if detect_pr_created(session_branch, self._working_dir):
-                logger.info(
-                    "PR detected for %s — cleanup only, no local merge",
-                    session_branch,
-                )
-                return MergeOutcome.KEPT_FOR_PR
-
-            # Headless mode: save a .patch file on conflict instead
-            # of prompting (which would hang) or discarding silently.
-            result = merge_local(
-                base_branch=base_branch,
-                session_branch=session_branch,
-                worktree_dir=self._env.path,
-                base_dir=self._working_dir,
-                patch_save_dir=(
-                    os.path.join(self._working_dir, ".strawpot", "patches")
-                    if self._headless
-                    else None
-                ),
-                session_id=self._run_id if self._headless else None,
-            )
-            logger.info("Local merge: %s", result.message)
-            if not result.success:
-                logger.warning(
-                    "Merge had conflicts — %s", result.message
-                )
-                return MergeOutcome.FAILED
-            return MergeOutcome.MERGED
-
-        except Exception:
-            logger.warning("Merge failed", exc_info=True)
-            return MergeOutcome.FAILED
-
-    # ------------------------------------------------------------------
-    # Branch cleanup
-    # ------------------------------------------------------------------
-
-    def _cleanup_session_branch(self, *, merge_outcome: MergeOutcome) -> None:
-        """Delete the session branch locally (and remotely) if safe to do so.
-
-        Skips deletion and warns when:
-        - ``--keep-branch`` was passed (CLI override)
-        - ``cleanup_branches`` is disabled in config
-        - The session was force-stopped (user may want to recover)
-        - The merge failed / there are unmerged changes
-        - The branch is checked out elsewhere (e.g. another worktree)
-
-        When ``merge_outcome`` is ``KEPT_FOR_PR``, the remote branch is
-        preserved (the PR depends on it) but the local branch is still
-        cleaned up.
-
-        Called after worktree removal but before the session is archived.
-        """
-        branch = self._env.branch
-        base_dir = self._working_dir
-
-        # --- Skip conditions (no cleanup at all) ---
-        if self._keep_branch:
-            logger.info(
-                "Keeping branch %s (--keep-branch flag)", branch
-            )
-            return
-
-        if not self.config.cleanup_branches:
-            logger.info(
-                "Keeping branch %s (cleanup_branches=false)", branch
-            )
-            return
-
-        if self._interrupted:
-            logger.warning(
-                "Keeping branch %s — session was interrupted; "
-                "branch preserved for recovery",
-                branch,
-            )
-            return
-
-        if merge_outcome is MergeOutcome.FAILED:
-            logger.warning(
-                "Keeping branch %s — merge failed or had unmerged changes",
-                branch,
-            )
-            return
-
-        if self._branch_checked_out_elsewhere(branch, base_dir):
-            logger.warning(
-                "Keeping branch %s — it is checked out in another worktree",
-                branch,
-            )
-            return
-
-        # --- PR detected: keep remote, clean up local ---
-        if merge_outcome is MergeOutcome.KEPT_FOR_PR:
-            logger.info(
-                "Keeping remote branch %s — PR depends on it; "
-                "deleting local only",
-                branch,
-            )
-            self._delete_local_branch(branch, base_dir)
-            return
-
-        # --- Merge succeeded: clean up everything ---
-        assert merge_outcome is MergeOutcome.MERGED, (
-            f"Unexpected merge outcome: {merge_outcome}"
-        )
-
-        if self._branch_has_open_pr(branch, base_dir):
-            logger.warning(
-                "Keeping branch %s — an open pull request depends on it",
-                branch,
-            )
-            return
-
-        self._delete_local_branch(branch, base_dir)
-
-        if self.config.cleanup_remote:
-            self._delete_remote_branch(branch, base_dir)
-
-    @staticmethod
-    def _branch_has_open_pr(branch: str, base_dir: str) -> bool:
-        """Check whether *branch* has an open pull request on the remote.
-
-        Returns ``True`` (safe — keep the branch) when the check cannot
-        be performed, so that a transient failure never causes deletion
-        of a PR-protected branch.
-        """
-        if not shutil.which("gh"):
-            logger.info(
-                "gh CLI not found — skipping open PR check for %s", branch
-            )
-            return False
-        try:
-            result = subprocess.run(
-                ["gh", "pr", "list", "--head", branch, "--state", "open",
-                 "--json", "number", "--limit", "1"],
-                cwd=base_dir,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip() not in ("", "[]")
-            logger.warning(
-                "gh pr list failed (exit %d) for %s — assuming open PR exists",
-                result.returncode,
-                branch,
-            )
-            return True
-        except Exception:
-            logger.warning("gh pr list check failed for %s", branch, exc_info=True)
-            return True
-
-    @staticmethod
-    def _branch_checked_out_elsewhere(branch: str, base_dir: str) -> bool:
-        """Return True if *branch* is checked out in another worktree.
-
-        Returns ``True`` (safe — keep the branch) when the check fails,
-        so that a git error never causes accidental deletion.
-        """
-        result = _git(["worktree", "list", "--porcelain"], cwd=base_dir)
-        if result.returncode != 0:
-            logger.warning(
-                "git worktree list failed — assuming %s is checked out elsewhere",
-                branch,
-            )
-            return True
-        # Parse porcelain output: look for "branch refs/heads/<branch>"
-        ref = f"refs/heads/{branch}"
-        for line in result.stdout.splitlines():
-            if line.strip() == f"branch {ref}":
-                return True
-        return False
-
-    @staticmethod
-    def _delete_local_branch(branch: str, base_dir: str) -> None:
-        """Force-delete a local branch."""
-        result = _git(["branch", "-D", branch], cwd=base_dir)
-        if result.returncode == 0:
-            logger.info("Deleted local branch %s", branch)
-        else:
-            logger.warning(
-                "Failed to delete local branch %s: %s",
-                branch,
-                result.stderr.strip(),
-            )
-
-    @staticmethod
-    def _delete_remote_branch(branch: str, base_dir: str) -> None:
-        """Delete the remote tracking branch if it was pushed."""
-        # Check if the branch exists on origin
-        result = _git(
-            ["ls-remote", "--heads", "origin", branch], cwd=base_dir
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return  # not on remote, nothing to do
-
-        result = _git(["push", "origin", "--delete", branch], cwd=base_dir)
-        if result.returncode == 0:
-            logger.info("Deleted remote branch origin/%s", branch)
-        else:
-            logger.warning(
-                "Failed to delete remote branch %s: %s",
-                branch,
-                result.stderr.strip(),
-            )
 
     # ------------------------------------------------------------------
     # Denden server
@@ -1771,60 +1382,27 @@ class Session:
         """Return the parent directory for all sessions."""
         return os.path.join(self._working_dir, ".strawpot", "sessions")
 
-    @staticmethod
-    def _detect_base_branch(working_dir: str) -> str | None:
-        """Detect the current git branch, or None if not a git repo."""
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=working_dir,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip() or None
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-        return None
-
     def _detect_files_changed(self) -> list[str]:
         """Detect files changed during this session.
 
-        For worktree sessions, diffs the session branch against the base branch.
-        For non-worktree sessions, diffs uncommitted changes against HEAD.
+        Diffs uncommitted changes against HEAD.
         Returns an empty list for non-git repos or on error.
         """
         try:
-            if self._env and self._env.branch:
-                # Worktree isolation: diff session branch vs base branch
-                base = self._session_data.get("base_branch", "main")
-                result = subprocess.run(
-                    ["git", "diff", "--name-only",
-                     f"{base}..{self._env.branch}"],
-                    cwd=self._env.path,
-                    capture_output=True, text=True, encoding="utf-8",
-                    timeout=10,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    return result.stdout.strip().splitlines()
-            else:
-                # No isolation: diff uncommitted + last commit against HEAD
-                cwd = self._working_dir
-                if not cwd:
-                    return []
-                # Uncommitted changes (staged + unstaged)
-                result = subprocess.run(
-                    ["git", "diff", "--name-only", "HEAD"],
-                    cwd=cwd,
-                    capture_output=True, text=True, encoding="utf-8",
-                    timeout=10,
-                )
-                files: set[str] = set()
-                if result.returncode == 0 and result.stdout.strip():
-                    files.update(result.stdout.strip().splitlines())
-                return sorted(files)
+            cwd = self._working_dir
+            if not cwd:
+                return []
+            # Uncommitted changes (staged + unstaged)
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=cwd,
+                capture_output=True, text=True, encoding="utf-8",
+                timeout=10,
+            )
+            files: set[str] = set()
+            if result.returncode == 0 and result.stdout.strip():
+                files.update(result.stdout.strip().splitlines())
+            return sorted(files)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         return []
@@ -1839,7 +1417,6 @@ class Session:
         self._session_data = {
             "run_id": self._run_id,
             "working_dir": self._working_dir,
-            "isolation": self.config.isolation,
             "runtime": self.config.runtime,
             "denden_addr": self._denden_addr,
             "started_at": datetime.now(timezone.utc).isoformat(),
@@ -1847,14 +1424,6 @@ class Session:
             "task": self.task or None,
             "agents": {},
         }
-
-        base_branch = self._detect_base_branch(self._working_dir)
-        if base_branch:
-            self._session_data["base_branch"] = base_branch
-
-        if self._env and self._env.branch:
-            self._session_data["worktree"] = self._env.path
-            self._session_data["worktree_branch"] = self._env.branch
 
         # Add registered agents
         for agent_id, info in self._agent_info.items():

@@ -97,7 +97,8 @@ from strawpot.agents.registry import (
 from strawpot.memory.registry import resolve_memory
 from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.config import get_strawpot_home, has_explicit_runtime, load_config
-from strawpot.session import Session, recover_stale_sessions, resolve_isolator
+from strawpot.isolation.protocol import NoneIsolator
+from strawpot.session import Session, recover_stale_sessions
 
 
 HELP_EPILOG = """\nDocs: https://docs.strawpot.com\n"""
@@ -806,12 +807,6 @@ def _resolve_progress_renderer(progress_mode: str, task: str | None):
 @click.option("--role", default=None, help="Orchestrator role slug from strawhub.")
 @click.option("--runtime", default=None, help="Agent runtime (any registry-resolvable name).")
 @click.option(
-    "--isolation",
-    default=None,
-    type=click.Choice(["none", "worktree", "docker"]),
-    help="Isolation method. 'worktree' is deprecated — use the worktree skill instead.",
-)
-@click.option(
     "--pull",
     default=None,
     type=click.Choice(["auto", "always", "never", "prompt"]),
@@ -836,7 +831,6 @@ def _resolve_progress_renderer(progress_mode: str, task: str | None):
 @click.option("--memory-task", "memory_task", default=None, help="Original task string for memory scoring (defaults to --task if not set).")
 @click.option("--group-id", "group_id", default=None, help="Group ID for memory scoping (e.g. conversation ID from the GUI).")
 @click.option("--skip-update-check", "skip_update_check", is_flag=True, default=False, help="Skip the automatic update check on startup.")
-@click.option("--keep-branch", "keep_branch", is_flag=True, default=False, help="Keep the session branch after teardown (overrides cleanup_branches config).")
 @click.option("--yes", "-y", "yes_flag", is_flag=True, default=False, help="Auto-accept all install prompts (tools, agents, etc.).")
 @click.option("--no-tools", "no_tools", is_flag=True, default=False, help="Skip tool dependency installation entirely.")
 @click.option(
@@ -846,12 +840,12 @@ def _resolve_progress_renderer(progress_mode: str, task: str | None):
     default="auto",
     help="Progress output mode (auto=terminal for --task, json=JSONL, off=disabled).",
 )
-def start(role, runtime, isolation, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, keep_branch, yes_flag, no_tools, progress_mode):
+def start(role, runtime, pull, host, port, task, headless, run_id, system_prompt, no_cache_delegations, cache_max_entries, cache_ttl_seconds, memory_override, max_num_delegations, memory_task, group_id, skip_update_check, yes_flag, no_tools, progress_mode):
     """Start an orchestration session.
 
-    Runs in the foreground — creates an isolated environment (if configured),
-    starts the denden server, spawns the orchestrator agent, and attaches you
-    to it. On exit (Ctrl+C or agent quit), cleans up automatically.
+    Runs in the foreground — starts the denden server, spawns the
+    orchestrator agent, and attaches you to it. On exit (Ctrl+C or
+    agent quit), cleans up automatically.
     """
     # Derive whether prompts should be auto-accepted (--yes / --headless).
     auto_accept = yes_flag or headless
@@ -866,8 +860,6 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         config.orchestrator_role = role
     if runtime:
         config.runtime = runtime
-    if isolation:
-        config.isolation = isolation
     if pull:
         config.pull_before_session = pull
     if no_cache_delegations:
@@ -1108,7 +1100,7 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         rt = DirectWrapperRuntime(wrapper)
 
     # 4. Isolator
-    isolator = resolve_isolator(config.isolation)
+    isolator = NoneIsolator()
 
     # 5. Resolver callables (lazy import strawhub)
     def _resolve_role(slug, kind="role"):
@@ -1141,7 +1133,6 @@ def start(role, runtime, isolation, pull, host, port, task, headless, run_id, sy
         system_prompt=system_prompt or "",
         memory_task=memory_task or "",
         group_id=group_id,
-        keep_branch=keep_branch,
         on_event=on_event,
     )
     session.start(working_dir)
@@ -1152,7 +1143,6 @@ def show_config():
     """Show merged configuration."""
     config = load_config(Path.cwd())
     click.echo(f"runtime:              {config.runtime}")
-    click.echo(f"isolation:            {config.isolation}")
     click.echo(f"denden_addr:          {config.denden_addr}")
     click.echo(f"orchestrator_role:    {config.orchestrator_role}")
     click.echo(f"permission_mode:      {config.permission_mode}")
@@ -1246,7 +1236,6 @@ def _collect_sessions(status_filter: set[str] | None = None) -> list[dict]:
             results.append({
                 "run_id": data.get("run_id", entry.name),
                 "status": status,
-                "isolation": data.get("isolation", "?"),
                 "runtime": data.get("runtime", "?"),
                 "denden_addr": data.get("denden_addr", "?"),
                 "started_at": data.get("started_at", ""),
@@ -1266,7 +1255,6 @@ def _collect_sessions(status_filter: set[str] | None = None) -> list[dict]:
                 results.append({
                     "run_id": data.get("run_id", entry.name),
                     "status": "archived",
-                    "isolation": data.get("isolation", "?"),
                     "runtime": data.get("runtime", "?"),
                     "denden_addr": data.get("denden_addr", "?"),
                     "started_at": data.get("started_at", ""),
@@ -1302,11 +1290,11 @@ def sessions(status_csv, show_all, as_json):
         click.echo("No sessions found.")
         return
 
-    click.echo(f"{'RUN ID':<20} {'STATUS':<8} {'ISOLATION':<10} {'RUNTIME':<14} {'DENDEN':<20} {'UPTIME':<10}")
-    click.echo("-" * 82)
+    click.echo(f"{'RUN ID':<20} {'STATUS':<8} {'RUNTIME':<14} {'DENDEN':<20} {'UPTIME':<10}")
+    click.echo("-" * 72)
     for r in results:
         click.echo(
-            f"{r['run_id']:<20} {r['status']:<8} {r['isolation']:<10} "
+            f"{r['run_id']:<20} {r['status']:<8} "
             f"{r['runtime']:<14} {r['denden_addr']:<20} {r['uptime']:<10}"
         )
 

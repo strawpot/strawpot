@@ -530,7 +530,6 @@ class TestStaleRecoveryAgents:
             "run_id": run_id,
             "working_dir": str(tmp_path),
             "pid": 11111,
-            "isolation": "none",
             "agents": {
                 "agent-a": {"pid": 22222, "role": "worker"},
                 "agent-b": {"pid": 33333, "role": "reviewer"},

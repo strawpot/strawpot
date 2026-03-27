@@ -15,10 +15,8 @@ from strawpot.isolation.protocol import IsolatedEnv, NoneIsolator
 from strawpot.session import (
     AskUserRequest,
     AskUserResponse,
-    MergeOutcome,
     Session,
     recover_stale_sessions,
-    resolve_isolator,
 )
 from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberResult
 
@@ -99,7 +97,6 @@ def _write_stale_session(tmp_path, run_id, **overrides):
     data = {
         "run_id": run_id,
         "working_dir": str(tmp_path),
-        "isolation": "none",
         "runtime": "strawpot-claude-code",
         "denden_addr": "127.0.0.1:9700",
         "started_at": "2026-01-01T00:00:00+00:00",
@@ -129,27 +126,6 @@ def _make_session(tmp_path, **overrides):
     }
     defaults.update(overrides)
     return Session(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# resolve_isolator
-# ---------------------------------------------------------------------------
-
-
-class TestResolveIsolator:
-    def test_none(self):
-        isolator = resolve_isolator("none")
-        assert isinstance(isolator, NoneIsolator)
-
-    def test_worktree(self):
-        from strawpot.isolation.worktree import WorktreeIsolator
-
-        isolator = resolve_isolator("worktree")
-        assert isinstance(isolator, WorktreeIsolator)
-
-    def test_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown isolation"):
-            resolve_isolator("docker")
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +215,6 @@ class TestStartFlow:
         session.start(str(tmp_path))
 
         # File is removed during stop(), so check session_data was built
-        assert session._session_data["isolation"] == "none"
         assert session._session_data["runtime"] == "strawpot-claude-code"
         assert "agents" in session._session_data
 
@@ -353,111 +328,19 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
-# Merge integration in stop()
+# stop() cleanup
 # ---------------------------------------------------------------------------
 
 
-class TestStopMerge:
-    def test_calls_merge_for_worktree(self, tmp_path):
-        """stop() calls _merge_session_changes when env has a branch."""
+class TestStopCleanup:
+    def test_stop_calls_isolator_cleanup(self, tmp_path):
+        """stop() calls isolator.cleanup when env is set."""
         session = _make_session(tmp_path)
         session._working_dir = str(tmp_path)
-        session._run_id = "run_merge_wt"
-        session._env = IsolatedEnv(
-            path=str(tmp_path / "wt"), branch="strawpot/run_merge_wt"
-        )
-        session._session_data = {
-            "base_branch": "main",
-            "worktree_branch": "strawpot/run_merge_wt",
-        }
-
-        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.MERGED) as mock_merge:
-            session.stop()
-
-        mock_merge.assert_called_once()
-
-    def test_skips_merge_for_none_isolation(self, tmp_path):
-        """stop() does not call _merge_session_changes when env has no branch."""
-        session = _make_session(tmp_path)
-        session._working_dir = str(tmp_path)
-        session._run_id = "run_merge_none"
+        session._run_id = "run_cleanup"
         session._env = IsolatedEnv(path=str(tmp_path))
 
-        with patch.object(session, "_merge_session_changes") as mock_merge:
-            session.stop()
-
-        mock_merge.assert_not_called()
-
-    def test_delete_branch_false_for_pr(self, tmp_path):
-        """When merge returns KEPT_FOR_PR, cleanup receives that outcome."""
-        from strawpot.isolation.worktree import WorktreeIsolator
-
-        wt_isolator = MagicMock(spec=WorktreeIsolator)
-        wt_isolator.cleanup.return_value = None
-        session = _make_session(tmp_path, isolator=wt_isolator)
-        session._working_dir = str(tmp_path)
-        session._run_id = "run_pr"
-        session._env = IsolatedEnv(
-            path=str(tmp_path / "wt"), branch="strawpot/run_pr"
-        )
-        session._session_data = {
-            "base_branch": "main",
-            "worktree_branch": "strawpot/run_pr",
-        }
-
-        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.KEPT_FOR_PR):
-            session.stop()
-
-        wt_isolator.cleanup.assert_called_once()
-        call_kwargs = wt_isolator.cleanup.call_args.kwargs
-        assert call_kwargs["delete_branch"] is False
-
-    def test_worktree_cleanup_always_keeps_branch(self, tmp_path):
-        """Worktree isolator cleanup always receives delete_branch=False.
-
-        Branch deletion is now handled separately by _cleanup_session_branch
-        (issue #459) rather than inside the isolator.
-        """
-        from strawpot.isolation.worktree import WorktreeIsolator
-
-        wt_isolator = MagicMock(spec=WorktreeIsolator)
-        wt_isolator.cleanup.return_value = None
-        session = _make_session(tmp_path, isolator=wt_isolator)
-        session._working_dir = str(tmp_path)
-        session._run_id = "run_local"
-        session._env = IsolatedEnv(
-            path=str(tmp_path / "wt"), branch="strawpot/run_local"
-        )
-        session._session_data = {
-            "base_branch": "main",
-            "worktree_branch": "strawpot/run_local",
-        }
-
-        with patch.object(session, "_merge_session_changes", return_value=MergeOutcome.MERGED):
-            session.stop()
-
-        wt_isolator.cleanup.assert_called_once()
-        call_kwargs = wt_isolator.cleanup.call_args.kwargs
-        assert call_kwargs["delete_branch"] is False
-
-    def test_merge_failure_still_cleans_up(self, tmp_path):
-        """If merge raises an exception, isolator.cleanup still runs."""
-        session = _make_session(tmp_path)
-        session._working_dir = str(tmp_path)
-        session._run_id = "run_fail"
-        session._env = IsolatedEnv(
-            path=str(tmp_path / "wt"), branch="strawpot/run_fail"
-        )
-        session._session_data = {
-            "base_branch": "main",
-            "worktree_branch": "strawpot/run_fail",
-        }
-
-        with patch.object(
-            session, "_merge_session_changes", side_effect=RuntimeError("boom")
-        ):
-            # Should not raise
-            session.stop()
+        session.stop()
 
         session.isolator.cleanup.assert_called_once()
 
@@ -843,7 +726,6 @@ class TestSessionStateFile:
         data = session._session_data
         assert data["run_id"] == "run_test123"
         assert data["working_dir"] == str(tmp_path)
-        assert data["isolation"] == "none"
         assert data["runtime"] == "strawpot-claude-code"
         assert "pid" in data
         assert "started_at" in data
@@ -866,21 +748,6 @@ class TestSessionStateFile:
         with open(session._session_file) as f:
             data = json.load(f)
         assert data["run_id"] == "run_disk"
-
-    def test_worktree_info_included(self, tmp_path):
-        """Worktree info is included when env has a branch."""
-        session = _make_session(tmp_path)
-        session._working_dir = str(tmp_path)
-        session._run_id = "run_wt"
-        wt_path = str(tmp_path / "worktree")
-        session._env = IsolatedEnv(
-            path=wt_path, branch="strawpot/run_wt"
-        )
-        session._write_session_file()
-
-        data = session._session_data
-        assert data["worktree"] == wt_path
-        assert data["worktree_branch"] == "strawpot/run_wt"
 
     def test_archive_session_dir(self, tmp_path):
         """_archive_session_dir swaps running symlink for archive symlink."""
@@ -925,8 +792,8 @@ class TestRecoverStaleSessions:
         result = recover_stale_sessions(str(tmp_path), _make_config())
         assert result == []
 
-    def test_stale_none_isolation(self, tmp_path):
-        """Stale session with isolation=none — swaps running→archive symlink."""
+    def test_stale_session_archived(self, tmp_path):
+        """Stale session swaps running→archive symlink."""
         session_dir = _write_stale_session(tmp_path, "run_stale1")
 
         result = recover_stale_sessions(str(tmp_path), _make_config())
@@ -992,125 +859,6 @@ class TestRecoverStaleSessions:
         archive = os.path.join(str(tmp_path), ".strawpot", "archive")
         assert os.path.islink(os.path.join(archive, "run_a"))
         assert os.path.islink(os.path.join(archive, "run_b"))
-
-    @patch("strawpot.session._recover_merge", return_value=True)
-    @patch("strawpot.session.WorktreeIsolator")
-    def test_stale_worktree_runs_merge_and_cleanup(
-        self, mock_wt_cls, mock_merge, tmp_path
-    ):
-        """Stale worktree session runs merge + isolator cleanup."""
-        wt_path = str(tmp_path / "worktrees" / "run_wt")
-        os.makedirs(wt_path)
-        session_dir = _write_stale_session(
-            tmp_path,
-            "run_wt",
-            isolation="worktree",
-            worktree=wt_path,
-            worktree_branch="strawpot/run_wt",
-            base_branch="main",
-        )
-
-        result = recover_stale_sessions(str(tmp_path), _make_config())
-
-        assert result == ["run_wt"]
-        mock_merge.assert_called_once()
-        mock_wt_cls.return_value.cleanup.assert_called_once()
-        cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
-        assert cleanup_kwargs["delete_branch"] is True
-        # Session dir stays, archive symlink created
-        assert os.path.isdir(session_dir)
-        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
-        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_wt"))
-
-    @patch("strawpot.session._recover_merge", return_value=False)
-    @patch("strawpot.session.WorktreeIsolator")
-    def test_worktree_pr_detected_keeps_branch(
-        self, mock_wt_cls, mock_merge, tmp_path
-    ):
-        """PR detected — merge returns False, branch is kept."""
-        wt_path = str(tmp_path / "worktrees" / "run_pr")
-        os.makedirs(wt_path)
-        _write_stale_session(
-            tmp_path,
-            "run_pr",
-            isolation="worktree",
-            worktree=wt_path,
-            worktree_branch="strawpot/run_pr",
-            base_branch="main",
-        )
-
-        recover_stale_sessions(str(tmp_path), _make_config())
-
-        cleanup_kwargs = mock_wt_cls.return_value.cleanup.call_args.kwargs
-        assert cleanup_kwargs["delete_branch"] is False
-
-    def test_worktree_missing_branch_info_skips_merge(self, tmp_path):
-        """Worktree session without branch info skips merge, still cleans up."""
-        wt_path = str(tmp_path / "worktrees" / "run_noinfo")
-        os.makedirs(wt_path)
-        session_dir = _write_stale_session(
-            tmp_path,
-            "run_noinfo",
-            isolation="worktree",
-            worktree=wt_path,
-            # no worktree_branch or base_branch
-        )
-
-        with patch("strawpot.session.WorktreeIsolator") as mock_wt_cls:
-            result = recover_stale_sessions(str(tmp_path), _make_config())
-
-        assert result == ["run_noinfo"]
-        mock_wt_cls.return_value.cleanup.assert_called_once()
-        # Session dir stays, archive symlink created
-        assert os.path.isdir(session_dir)
-        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
-        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_noinfo"))
-
-    def test_worktree_dir_missing_skips_merge(self, tmp_path):
-        """Worktree dir already removed — skips merge, still cleans up."""
-        session_dir = _write_stale_session(
-            tmp_path,
-            "run_gone",
-            isolation="worktree",
-            worktree=str(tmp_path / "gone"),
-            worktree_branch="strawpot/run_gone",
-            base_branch="main",
-        )
-
-        with patch("strawpot.session.WorktreeIsolator") as mock_wt_cls:
-            result = recover_stale_sessions(str(tmp_path), _make_config())
-
-        assert result == ["run_gone"]
-        # Cleanup still called even though worktree is missing (idempotent)
-        mock_wt_cls.return_value.cleanup.assert_called_once()
-        # Session dir stays, archive symlink created
-        assert os.path.isdir(session_dir)
-        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
-        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_gone"))
-
-    @patch("strawpot.session.WorktreeIsolator")
-    def test_isolator_cleanup_failure_still_archives_dir(
-        self, mock_wt_cls, tmp_path
-    ):
-        """If isolator cleanup raises, session dir is still archived."""
-        wt_path = str(tmp_path / "worktrees" / "run_fail")
-        os.makedirs(wt_path)
-        mock_wt_cls.return_value.cleanup.side_effect = RuntimeError("git fail")
-        session_dir = _write_stale_session(
-            tmp_path,
-            "run_fail",
-            isolation="worktree",
-            worktree=wt_path,
-            worktree_branch="strawpot/run_fail",
-        )
-
-        result = recover_stale_sessions(str(tmp_path), _make_config())
-
-        assert result == ["run_fail"]
-        # Session dir stays, archive symlink created
-        assert os.path.isdir(session_dir)
-        strawpot_dir = os.path.join(str(tmp_path), ".strawpot")
-        assert os.path.islink(os.path.join(strawpot_dir, "archive", "run_fail"))
 
     def test_archive_dir_skipped_during_scan(self, tmp_path):
         """Archived sessions (only in archive/) are not re-recovered."""
