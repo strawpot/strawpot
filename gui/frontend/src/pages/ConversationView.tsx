@@ -36,6 +36,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { AlertCircle, ArrowUpRight, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
+import CollapsibleMessage from "@/components/CollapsibleMessage";
 import { SourceBadge } from "@/components/SourceBadge";
 
 function formatDuration(ms: number | null): string {
@@ -103,7 +104,9 @@ function AgentMessage({
             Working…
           </span>
         ) : session.summary ? (
-          <MarkdownContent content={session.summary} className="text-sm text-foreground" />
+          <CollapsibleMessage gradientColor="var(--color-muted)">
+            <MarkdownContent content={session.summary} className="text-sm text-foreground" />
+          </CollapsibleMessage>
         ) : (
           <span className="text-muted-foreground italic">
             {session.status === "failed" ? "Session failed without output." : session.status === "stopped" ? "Interrupted." : "No summary available."}
@@ -128,7 +131,9 @@ function UserMessage({ task }: { task: string }) {
     <div className="flex flex-col gap-1.5 items-end">
       <span className="text-xs font-medium text-muted-foreground">You</span>
       <div className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-        <p className="whitespace-pre-wrap">{task}</p>
+        <CollapsibleMessage gradientColor="var(--color-primary)">
+          <p className="whitespace-pre-wrap">{task}</p>
+        </CollapsibleMessage>
       </div>
     </div>
   );
@@ -471,7 +476,15 @@ export default function ConversationView() {
                           : "bg-muted text-foreground"
                       }`}
                     >
-                      <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
+                      <CollapsibleMessage
+                        gradientColor={
+                          msg.role === "user"
+                            ? "var(--color-primary)"
+                            : "var(--color-muted)"
+                        }
+                      >
+                        <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
+                      </CollapsibleMessage>
                     </div>
                   </div>
                 ))}

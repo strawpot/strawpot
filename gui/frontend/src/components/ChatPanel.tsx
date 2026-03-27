@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import MarkdownContent from "@/components/MarkdownContent";
+import CollapsibleMessage from "@/components/CollapsibleMessage";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatPanel({
@@ -120,7 +121,15 @@ export default function ChatPanel({
                           : "bg-muted",
                       )}
                     >
-                      <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
+                      <CollapsibleMessage
+                        gradientColor={
+                          msg.role === "user"
+                            ? "var(--color-primary)"
+                            : "var(--color-muted)"
+                        }
+                      >
+                        <MarkdownContent content={msg.text} className="whitespace-pre-wrap" />
+                      </CollapsibleMessage>
                     </div>
                   </div>
                   {/* Inline choice buttons for pending questions */}
