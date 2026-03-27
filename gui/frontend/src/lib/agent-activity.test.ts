@@ -84,6 +84,24 @@ describe("getAgentActivityLabel", () => {
     const nodes = [makeNode({ agent_id: "root" })];
     expect(getAgentActivityLabel(nodes, "root")).toBeNull();
   });
+
+  it("does not aggregate grandchildren into parent count", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "child", parent: "root", status: "completed" }),
+      makeNode({ agent_id: "grandchild", parent: "child", role: "qa", current_activity: "Testing" }),
+    ];
+    expect(getAgentActivityLabel(nodes, "root")).toBeNull();
+  });
+
+  it("excludes cancelling and cancelled children from running count", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "reviewer", status: "cancelling" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "qa", status: "cancelled" }),
+    ];
+    expect(getAgentActivityLabel(nodes, "root")).toBeNull();
+  });
 });
 
 describe("getSessionActivityLabel", () => {
