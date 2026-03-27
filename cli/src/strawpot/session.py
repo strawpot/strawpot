@@ -1884,15 +1884,21 @@ class Session:
         parent_id: str | None,
         pid: int | None = None,
     ) -> None:
-        """Record an agent in the session state."""
-        self._agent_info[agent_id] = {
-            "role": role,
-            "runtime": self.config.runtime,
-            "parent": parent_id,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "pid": pid,
-            "state": AgentState.RUNNING,
-        }
+        """Record an agent in the session state (in-memory and on-disk).
+
+        Thread-safe: acquires ``_delegation_lock`` to avoid races with
+        the DenDen handler thread that may be updating agent states.
+        """
+        with self._delegation_lock:
+            self._agent_info[agent_id] = {
+                "role": role,
+                "runtime": self.config.runtime,
+                "parent": parent_id,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "pid": pid,
+                "state": AgentState.RUNNING,
+            }
+            self._write_session_file()
 
     def _update_agent_state(
         self,
