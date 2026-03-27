@@ -660,6 +660,144 @@ def stop_session(run_id: str, conn=Depends(get_db_conn)):
     return _mark_stopped_and_drain()
 
 
+class CancelRequest(BaseModel):
+    force: bool = False
+
+
+@router.post("/sessions/{run_id}/cancel", status_code=202)
+def cancel_session(run_id: str, body: CancelRequest, conn=Depends(get_db_conn)):
+    """Cancel all agents in a running session."""
+    from strawpot.cancel import write_cancel_signal
+
+    row = conn.execute(
+        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+    if row["status"] not in ("starting", "running"):
+        raise HTTPException(409, f"Session is not running (status: {row['status']})")
+
+    session_dir = row["session_dir"]
+    if not session_dir:
+        raise HTTPException(409, "Session directory not available")
+
+    write_cancel_signal(session_dir, None, force=body.force, requested_by="gui")
+
+    # Wake the cancel watcher via SIGUSR1.
+    session_json = Path(session_dir) / "session.json"
+    try:
+        data = json.loads(session_json.read_text(encoding="utf-8"))
+        pid = data.get("pid")
+        if pid:
+            os.kill(pid, signal.SIGUSR1)
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    return {"status": "accepted", "message": "Cancel signal sent for session"}
+
+
+@router.post("/sessions/{run_id}/agents/{agent_id}/cancel", status_code=202)
+def cancel_agent(run_id: str, agent_id: str, body: CancelRequest, conn=Depends(get_db_conn)):
+    """Cancel a specific agent and its descendants."""
+    from strawpot.cancel import write_cancel_signal
+
+    row = conn.execute(
+        "SELECT run_id, status, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+    if row["status"] not in ("starting", "running"):
+        raise HTTPException(409, f"Session is not running (status: {row['status']})")
+
+    session_dir = row["session_dir"]
+    if not session_dir:
+        raise HTTPException(409, "Session directory not available")
+
+    # Verify agent exists in session.json.
+    session_json = Path(session_dir) / "session.json"
+    try:
+        data = json.loads(session_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Failed to read session data")
+
+    agents_map = data.get("agents", {})
+    if agent_id not in agents_map:
+        raise HTTPException(404, f"Agent not found: {agent_id}")
+
+    write_cancel_signal(session_dir, agent_id, force=body.force, requested_by="gui")
+
+    # Wake the cancel watcher.
+    pid = data.get("pid")
+    if pid:
+        try:
+            os.kill(pid, signal.SIGUSR1)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    return {"status": "accepted", "message": f"Cancel signal sent for agent {agent_id}"}
+
+
+@router.get("/sessions/{run_id}/agents")
+def list_agents(
+    run_id: str,
+    status: str | None = Query(None, description="Comma-separated status filter"),
+    role: str | None = Query(None),
+    parent: str | None = Query(None),
+    conn=Depends(get_db_conn),
+):
+    """List agents in a session with optional filters."""
+    from strawpot._process import is_pid_alive
+
+    row = conn.execute(
+        "SELECT run_id, session_dir FROM sessions WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    session_dir = row["session_dir"]
+    session_json = Path(session_dir) / "session.json" if session_dir else None
+    if not session_json or not session_json.is_file():
+        raise HTTPException(404, "Session data not available")
+
+    try:
+        data = json.loads(session_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Failed to read session data")
+
+    agents_map = data.get("agents", {})
+    status_set = {s.strip() for s in status.split(",")} if status else None
+
+    result = []
+    for aid, info in agents_map.items():
+        agent_state = info.get("state")
+        if not agent_state:
+            pid = info.get("pid")
+            agent_state = "running" if (pid and is_pid_alive(pid)) else "exited"
+
+        if status_set and agent_state not in status_set:
+            continue
+        if role and info.get("role") != role:
+            continue
+        if parent and info.get("parent") != parent:
+            continue
+
+        result.append({
+            "agent_id": aid,
+            "role": info.get("role", "unknown"),
+            "runtime": info.get("runtime", "unknown"),
+            "parent": info.get("parent"),
+            "state": agent_state,
+            "cancel_reason": info.get("cancel_reason"),
+            "started_at": info.get("started_at"),
+            "pid": info.get("pid"),
+        })
+
+    return result
+
+
 @router.delete("/sessions/{run_id}")
 def delete_session(run_id: str, conn=Depends(get_db_conn)):
     """Delete an archived session (DB row + on-disk files)."""

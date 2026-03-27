@@ -78,11 +78,12 @@ class TreeNode:
     agent_id: str
     role: str
     runtime: str
-    status: str  # "running" | "completed" | "failed"
+    status: str  # "running" | "completed" | "failed" | "cancelling" | "cancelled"
     exit_code: int | None = None
     started_at: str | None = None
     duration_ms: int | None = None
     parent: str | None = None
+    cancel_reason: str | None = None
 
 
 @dataclass
