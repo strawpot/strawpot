@@ -12,7 +12,19 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { statusColor, formatDuration } from "@/components/SessionTable";
+import { statusColor as statusVariant, formatDuration } from "@/components/SessionTable";
+
+/** Map agent status to CSS class for tree nodes (distinct from badge variants). */
+function nodeStatusClass(status: string): string {
+  switch (status) {
+    case "cancelling":
+      return "cancelling";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return statusVariant(status);
+  }
+}
 import type { TreeData, TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
 
 const NODE_WIDTH = 180;
@@ -35,7 +47,7 @@ type AgentNodeData = {
 function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
   const cls = data.pending
     ? "agent-flow-node pending"
-    : `agent-flow-node ${statusColor(data.status)}`;
+    : `agent-flow-node ${nodeStatusClass(data.status)}`;
 
   return (
     <div className={cls}>
@@ -45,7 +57,7 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
       </div>
       {!data.pending && (
         <div className="agent-flow-meta">
-          <span className={`status-dot ${statusColor(data.status)}`} />
+          <span className={`status-dot ${nodeStatusClass(data.status)}`} />
           <span>{data.status}</span>
           {data.duration_ms != null && (
             <span>{formatDuration(data.duration_ms)}</span>

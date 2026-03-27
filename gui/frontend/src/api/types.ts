@@ -75,7 +75,7 @@ export interface TreeNode {
   agent_id: string;
   role: string;
   runtime: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelling" | "cancelled";
   exit_code: number | null;
   started_at: string | null;
   duration_ms: number | null;
