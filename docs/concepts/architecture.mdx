@@ -17,8 +17,6 @@ User
  ▼
 strawpot start              ← CLI entry point
  │
- ├─ Isolate (optional)      ← none | worktree | docker
- │
  ├─ Denden gRPC server      ← listens on 127.0.0.1:9700
  │
  └─ Orchestrator agent       ← Claude Code / Codex / OpenHands
@@ -29,7 +27,7 @@ strawpot start              ← CLI entry point
       1. Policy check (role allowed? depth limit?)
       2. Resolve role + skills from StrawHub
       3. Retrieve memory context from provider
-      4. Spawn sub-agent in session worktree
+      4. Spawn sub-agent in project directory
       5. Wait for completion, record to memory
       6. Return result to caller
       │
@@ -39,7 +37,10 @@ strawpot start              ← CLI entry point
       └─ Sub-agent B (reviewer role)
 ```
 
-All agents in a session share the same working directory. With worktree isolation, a git worktree is created per session — agents see each other's changes and cleanup is a single merge operation.
+All agents in a session share the same project directory. When an
+agent needs an isolated working copy (e.g., for a multi-file
+refactor), it uses the [worktree skill](/concepts/isolation) to
+create a git worktree on demand.
 
 ## Package Structure
 
@@ -96,7 +97,9 @@ class AgentRuntime(Protocol):
 
 ### Isolator
 
-Creates one isolated environment per session:
+Internal protocol for environment setup. Sessions run directly
+in the project directory (`NoneIsolator`). Agents that need
+isolation use the [worktree skill](/concepts/isolation) instead.
 
 ```python
 class Isolator(Protocol):

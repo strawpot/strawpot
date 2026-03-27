@@ -91,7 +91,6 @@ Create a project-level config file:
 ```toml
 # strawpot.toml (project root)
 runtime = "strawpot-claude-code"
-isolation = "worktree"
 
 [orchestrator]
 role = "team-lead"
@@ -118,7 +117,7 @@ When the orchestrator agent needs help, it delegates sub-tasks via Denden:
 4. **Agent spawn** — A sub-agent is launched with the role's instructions, skills, and memory context
 5. **Result** — The sub-agent's output is recorded to memory and returned to the caller
 
-All agents work in the same directory (worktree or project dir), so they can see each other's changes.
+All agents work in the same project directory, so they can see each other's changes. When an agent needs an isolated working copy, it uses the [worktree skill](/concepts/isolation) on demand.
 
 ## Web Dashboard
 

@@ -16,9 +16,8 @@
 
   **Why:** Phase 2 (conversation history file) covers most use cases — full
   output for last 5 turns, recap for older turns, readable on demand. The
-  service adds value mainly for worktree isolation (DB access, no file
-  coordination) and queryable search across long conversations. Not urgent —
-  the history file works well for typical conversation lengths.
+  service adds value mainly for queryable search across long conversations.
+  Not urgent — the history file works well for typical conversation lengths.
 
   **Depends on:** Wrapper protocol supporting tool registration (wrappers must
   expose conversation tools to the agent). See `designs/context/DESIGN.md`

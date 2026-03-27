@@ -244,7 +244,7 @@ Write a `.strawpot/conversations/{id}/history.md` file to the project working di
 - Zero context window cost
 - Already gitignored (`.strawpot/` is in `.gitignore`)
 
-**Limitation:** Awkward with worktree isolation — the file must be written in the worktree directory, which is created by the CLI, not the GUI. Requires coordination between the GUI (which builds context) and the CLI (which creates the worktree). This is solvable but adds coupling.
+**Limitation:** If an agent uses the worktree skill, the file must be written in the worktree directory. This is solvable but adds coupling between the GUI (which builds context) and the worktree lifecycle.
 
 **Changes required:**
 
@@ -271,7 +271,7 @@ Denden is the communication/routing layer (gRPC transport, tool dispatch). The c
 
 **Why not the history file:**
 
-- Works with worktree isolation — the service has DB access, no file coordination needed
+- Works when agents use worktree skill — the service has DB access, no file coordination needed
 - Queryable — agent can ask for specific turns or search, not read a wall of text
 - Extensible — `conversation.search()` could use embeddings; `conversation.decisions()` could filter by topic
 

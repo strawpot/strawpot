@@ -184,7 +184,7 @@ Location: `.strawpot/sessions/<run_id>/session.json`
 {
   "run_id": "a1b2c3d4e5f6",
   "working_dir": "/path/to/project",
-  "isolation": "none | worktree",
+
   "runtime": "strawpot-claude-code",
   "denden_addr": "127.0.0.1:9700",
   "started_at": "2026-01-01T12:00:00+00:00",
@@ -225,7 +225,7 @@ Event types and their `data` fields:
 
 | Event | Data fields |
 |-------|-------------|
-| `session_start` | `run_id`, `role`, `runtime`, `isolation` |
+| `session_start` | `run_id`, `role`, `runtime` |
 | `session_end` | `merge_action`, `duration_ms` |
 | `delegate_start` | `role`, `context_ref`, `parent_span` |
 | `delegate_end` | `exit_code`, `summary`, `duration_ms` |
@@ -259,7 +259,7 @@ Project: `<project>/strawpot.toml` (overrides global)
 | Field | Type | Default |
 |-------|------|---------|
 | `runtime` | str | `"strawpot-claude-code"` |
-| `isolation` | str | `"none"` |
+
 | `denden_addr` | str | `"127.0.0.1:9700"` |
 | `orchestrator_role` | str | `"ai-ceo"` |
 | `max_depth` | int | `3` |
@@ -300,8 +300,8 @@ Home page showing everything at a glance.
 
 ### 2. Project Management
 
-**Project list** — all registered projects with directory path, runtime,
-isolation mode.
+**Project list** — all registered projects with directory path and
+runtime.
 
 **Project detail page:**
 
@@ -343,7 +343,7 @@ chat panel where agents can ask the user questions via `ask_user`.
 - Context file attachment (@ button to attach project files)
 - Role selector from installed roles (datalist with validation)
 - Collapsible advanced options:
-  - Runtime and isolation overrides
+  - Runtime override
   - Custom system prompt textarea (appended to role instructions)
 - Loading state during launch, success/error toasts on completion
 - Navigation to the new session on success
@@ -371,7 +371,7 @@ duration, stop button) is always visible above the tabs.
 
 | Tab | Contents |
 |-----|----------|
-| **Overview** | Task description, summary (on completion), detail grid (status, role, runtime, isolation, started/ended, exit code) |
+| **Overview** | Task description, summary (on completion), detail grid (status, role, runtime, started/ended, exit code) |
 | **Agent Tree** | Real-time delegation tree (see [Real-Time Agent Tree](#real-time-agent-tree)) — the primary tab for active sessions |
 | **Logs** | Agent selector + terminal-style log viewer (see [Agent Log Streaming](#agent-log-streaming)) |
 | **Trace Events** | Span timeline from `trace.jsonl` with durations and clickable artifact refs |
@@ -955,7 +955,6 @@ CREATE TABLE sessions (
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     role        TEXT NOT NULL,
     runtime     TEXT NOT NULL,
-    isolation   TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'starting',  -- starting | running | completed | failed | archived
     started_at  TEXT NOT NULL,
     ended_at    TEXT,
@@ -993,7 +992,7 @@ data source.
 **Session index sync:** On GUI startup, scan all registered project
 session directories and upsert rows into the `sessions` table. For
 each session directory, read `session.json` for core fields (`run_id`,
-`role`, `runtime`, `isolation`, `started_at`, `session_dir`) and parse
+`role`, `runtime`, `started_at`, `session_dir`) and parse
 `trace.jsonl` for completion fields (`exit_code`, `summary`,
 `duration_ms`, `ended_at` from `session_end` / `delegate_end` events).
 During runtime, session rows are created on launch and updated via

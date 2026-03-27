@@ -63,11 +63,11 @@ from the CLI, sessions go under the current directory's
 `.strawpot/sessions/`. When launched from the GUI, sessions go to
 `~/.strawpot/sessions/` (working directory: `~`).
 
-### No Isolation
+### No Worktree Isolation
 
-Bot Imu always runs with `isolation: none`. It needs to read and write real
-config files, invoke real CLI commands, and manage real cron schedules.
-Worktree isolation would defeat the purpose.
+Bot Imu's agents should not use the worktree skill. They need to read
+and write real config files, invoke real CLI commands, and manage real
+cron schedules. Worktree isolation would defeat the purpose.
 
 ---
 
@@ -363,9 +363,6 @@ metadata:
 # Default agent runtime
 runtime = "strawpot-claude-code"
 
-# Isolation mode: "none" or "worktree"
-isolation = "none"
-
 # Orchestrator settings
 orchestrator_role = "orchestrator"
 permission_mode = "default"
@@ -650,7 +647,7 @@ ls <project>/.strawpot/sessions/
 cat <project>/.strawpot/sessions/<run_id>/session.json | python3 -m json.tool
 ```
 
-Key fields: `run_id`, `working_dir`, `role`, `runtime`, `isolation`,
+Key fields: `run_id`, `working_dir`, `role`, `runtime`,
 `started_at`, `pid`, `task`, `agents` (map of agent_id → agent info).
 
 ## Read Trace Events
