@@ -186,6 +186,20 @@ class TreeState:
                 span_id=span_id or "",
             ))
 
+        elif etype == "agent_cancel_start":
+            agent_id = data.get("agent_id", "")
+            if agent_id in self.nodes:
+                self.nodes[agent_id].status = "cancelling"
+            # Also mark descendants as cancelling.
+            for desc_id in data.get("descendants", []):
+                if desc_id in self.nodes:
+                    self.nodes[desc_id].status = "cancelling"
+
+        elif etype == "agent_cancel_complete":
+            for cancelled_id in data.get("cancelled_agents", []):
+                if cancelled_id in self.nodes:
+                    self.nodes[cancelled_id].status = "cancelled"
+
         elif etype == "session_end":
             self._session_ended = True
             for node in self.nodes.values():

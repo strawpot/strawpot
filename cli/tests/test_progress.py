@@ -514,6 +514,20 @@ class TestTerminalProgressRenderer:
         )
         assert "[ok] User responded (3s)" in output
 
+    def test_cancel_start_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("cancel_start", detail="agent_a + 3 descendants")
+        )
+        assert "[X] Cancelling implementer agent_a + 3 descendants..." in output
+
+    def test_cancel_complete_renders(self):
+        r = TerminalProgressRenderer()
+        output = self._capture_stderr(
+            r, _make_event("cancel_complete", detail="4 agents", duration_ms=2100)
+        )
+        assert "[X] Cancelled 4 agents (2s)" in output
+
     def test_indentation_by_depth(self):
         r = TerminalProgressRenderer()
         # depth=0 → 2 spaces base
