@@ -123,4 +123,37 @@ describe("getSessionActivityLabel", () => {
     // Root is completed so getSessionActivityLabel uses flat fallback
     expect(getSessionActivityLabel(nodes)).toBe("reviewer: Reading");
   });
+
+  it("aggregates multiple running roots", () => {
+    const nodes = [
+      makeNode({ agent_id: "root1" }),
+      makeNode({ agent_id: "root2" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBe("2 agents running");
+  });
+
+  it("uses singular 'agent' for one non-root running node in flat fallback", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "qa" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBe("1 agent running");
+  });
+
+  it("uses plural 'agents' for multiple non-root running nodes in flat fallback", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "qa" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "cr" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBe("2 agents running");
+  });
+
+  it("returns null when all nodes are terminal", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", status: "completed" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBeNull();
+  });
 });
