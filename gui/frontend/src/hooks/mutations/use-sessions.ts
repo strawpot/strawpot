@@ -47,3 +47,46 @@ export function useDeleteSession() {
     },
   });
 }
+
+export function useCancelAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      runId,
+      agentId,
+      force = false,
+    }: {
+      runId: string;
+      agentId: string;
+      force?: boolean;
+    }) =>
+      api.post<{ status: string; message: string }>(
+        `/sessions/${runId}/agents/${agentId}/cancel`,
+        { force },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
+
+export function useCancelSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      runId,
+      force = false,
+    }: {
+      runId: string;
+      force?: boolean;
+    }) =>
+      api.post<{ status: string; message: string }>(
+        `/sessions/${runId}/cancel`,
+        { force },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+}
