@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -11,8 +11,21 @@ import {
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { X } from "lucide-react";
+import { toast } from "sonner";
 
 import { statusColor as statusVariant, formatDuration } from "@/components/SessionTable";
+import { useCancelAgent } from "@/hooks/mutations/use-sessions";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { TreeData, TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
 
 /** Map agent status to CSS class for tree nodes (distinct from badge variants). */
 function nodeStatusClass(status: string): string {
@@ -25,7 +38,6 @@ function nodeStatusClass(status: string): string {
       return statusVariant(status);
   }
 }
-import type { TreeData, TreeNode, PendingDelegation, DeniedDelegation } from "@/api/types";
 
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 70;
@@ -42,6 +54,8 @@ type AgentNodeData = {
   duration_ms: number | null;
   exit_code: number | null;
   pending?: boolean;
+  agentId: string;
+  onCancel?: (agentId: string, role: string) => void;
 };
 
 function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
@@ -50,7 +64,7 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
     : `agent-flow-node ${nodeStatusClass(data.status)}`;
 
   return (
-    <div className={cls}>
+    <div className={`${cls} group relative`}>
       <Handle type="target" position={Position.Top} />
       <div className="agent-flow-role">
         {data.pending ? `[pending: ${data.role}]` : data.role}
@@ -65,12 +79,36 @@ function AgentFlowNode({ data }: NodeProps<Node<AgentNodeData>>) {
           {data.exit_code != null && <span>exit {data.exit_code}</span>}
         </div>
       )}
+      {data.status === "running" && data.onCancel && (
+        <button
+          className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 group-hover:flex"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onCancel!(data.agentId, data.role);
+          }}
+          title="Cancel agent"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      )}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }
 
 const nodeTypes = { agent: AgentFlowNode };
+
+// ---- Descendant counting ----
+
+function countRunningDescendants(nodes: TreeNode[], agentId: string): number {
+  const children = nodes.filter(
+    (n) => n.parent === agentId && n.status === "running",
+  );
+  return children.reduce(
+    (sum, c) => sum + 1 + countRunningDescendants(nodes, c.agent_id),
+    0,
+  );
+}
 
 // ---- Tree layout ----
 
@@ -148,13 +186,19 @@ function assignPositions(
 export default function AgentTreeFlow({
   treeData,
   connected,
+  runId,
 }: {
   treeData: TreeData | null;
   connected: boolean;
+  runId: string;
 }) {
   return (
     <ReactFlowProvider>
-      <AgentTreeFlowInner treeData={treeData} connected={connected} />
+      <AgentTreeFlowInner
+        treeData={treeData}
+        connected={connected}
+        runId={runId}
+      />
     </ReactFlowProvider>
   );
 }
@@ -162,11 +206,51 @@ export default function AgentTreeFlow({
 function AgentTreeFlowInner({
   treeData: tree,
   connected,
+  runId,
 }: {
   treeData: TreeData | null;
   connected: boolean;
+  runId: string;
 }) {
   const { fitView } = useReactFlow();
+  const cancelAgent = useCancelAgent();
+
+  // Cancel dialog state
+  const [cancelTarget, setCancelTarget] = useState<{
+    agentId: string;
+    role: string;
+  } | null>(null);
+  const [forceCancel, setForceCancel] = useState(false);
+
+  const descendantCount =
+    cancelTarget && tree
+      ? countRunningDescendants(tree.nodes, cancelTarget.agentId)
+      : 0;
+
+  const handleCancelRequest = useCallback(
+    (agentId: string, role: string) => {
+      setCancelTarget({ agentId, role });
+      setForceCancel(false);
+    },
+    [],
+  );
+
+  const handleCancelConfirm = useCallback(async () => {
+    if (!cancelTarget) return;
+    try {
+      await cancelAgent.mutateAsync({
+        runId,
+        agentId: cancelTarget.agentId,
+        force: forceCancel,
+      });
+      toast.success(`Cancel signal sent for ${cancelTarget.role}`);
+    } catch (err) {
+      toast.error(
+        `Failed to cancel agent: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+    }
+    setCancelTarget(null);
+  }, [cancelTarget, cancelAgent, runId, forceCancel]);
 
   const handleReset = useCallback(() => {
     fitView({ duration: 300 });
@@ -211,6 +295,8 @@ function AgentTreeFlowInner({
             runtime: agent.runtime,
             duration_ms: agent.duration_ms,
             exit_code: agent.exit_code,
+            agentId: agent.agent_id,
+            onCancel: handleCancelRequest,
           },
         });
       } else if (pend) {
@@ -226,6 +312,7 @@ function AgentTreeFlowInner({
             duration_ms: null,
             exit_code: null,
             pending: true,
+            agentId: "",
           },
         });
       }
@@ -258,7 +345,7 @@ function AgentTreeFlowInner({
     }
 
     return { flowNodes, flowEdges };
-  }, [tree]);
+  }, [tree, handleCancelRequest]);
 
   if (!tree) {
     return (
@@ -298,6 +385,57 @@ function AgentTreeFlowInner({
           ))}
         </div>
       )}
+
+      {/* Cancel confirmation dialog */}
+      <Dialog
+        open={!!cancelTarget}
+        onOpenChange={(open) => {
+          if (!open) setCancelTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Agent</DialogTitle>
+            <DialogDescription>
+              Cancel <strong>{cancelTarget?.role}</strong>?
+              {descendantCount > 0
+                ? ` This will also cancel ${descendantCount} running descendant${descendantCount === 1 ? "" : "s"}.`
+                : " This agent has no running descendants."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Agent ID: <code>{cancelTarget?.agentId.slice(0, 16)}</code>
+            </p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={forceCancel}
+                onChange={(e) => setForceCancel(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              Force cancel (skip graceful shutdown)
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTarget(null)}
+            >
+              Keep Running
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelConfirm}
+              disabled={cancelAgent.isPending}
+            >
+              {cancelAgent.isPending ? "Cancelling..." : "Cancel Agent"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

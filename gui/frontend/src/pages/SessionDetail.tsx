@@ -180,7 +180,7 @@ export default function SessionDetail() {
         )}
 
         <TabsContent value="agent-tree">
-          <AgentTreeFlow treeData={treeData} connected={connected} />
+          <AgentTreeFlow treeData={treeData} connected={connected} runId={runId ?? ""} />
         </TabsContent>
 
         <TabsContent value="logs">
