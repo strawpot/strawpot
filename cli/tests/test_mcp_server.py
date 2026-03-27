@@ -40,7 +40,10 @@ def provider():
 async def test_list_tools():
     tools = await list_tools()
     names = {t.name for t in tools}
-    assert names == {"memory_remember", "memory_recall", "memory_forget", "memory_list"}
+    assert names == {
+        "memory_remember", "memory_recall", "memory_forget", "memory_list",
+        "schedule_create", "schedule_delete", "schedule_list", "schedule_run",
+    }
 
 
 # -- memory_remember ----------------------------------------------------------

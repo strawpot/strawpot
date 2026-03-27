@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
     ("Memory", ["remember", "recall", "forget", "memory", "mcp"]),
+    ("Scheduling", ["schedule"]),
     ("Sessions", ["sessions", "agents", "config"]),
     ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
     ("Discovery", ["search", "list", "info", "resolve"]),
@@ -1603,6 +1604,115 @@ def mcp_setup(project):
     from strawpot.mcp.setup import configure_mcp
 
     configure_mcp(project=project)
+
+
+# ---------------------------------------------------------------------------
+# Schedule commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def schedule():
+    """Create and manage scheduled workflows."""
+    pass
+
+
+@schedule.command(name="create")
+@click.argument("task")
+@click.option("--name", default="", help="Schedule name (defaults to task text).")
+@click.option("--cron", required=True, help="Cron expression (e.g. '0 8 * * *').")
+@click.option("--role", default="", help="Role to execute as.")
+@click.option("--description", default="", help="Optional description.")
+def schedule_create(task, name, cron, role, description):
+    """Create a new scheduled workflow."""
+    from strawpot.scheduler.store import ScheduleStore
+
+    store = ScheduleStore()
+    try:
+        sched = store.create(
+            name=name or task[:50],
+            task=task,
+            cron=cron,
+            role=role,
+            description=description,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    click.echo(click.style("✅ Schedule created!", fg="green"))
+    click.echo(f"   ID: {sched.schedule_id}")
+    click.echo(f"   Task: {sched.task}")
+    click.echo(f"   Cron: {sched.cron}")
+    click.echo(f"   Next run: {sched.next_run()}")
+    click.echo()
+    click.echo(
+        click.style("💡 Tip: ", fg="cyan")
+        + "Run "
+        + click.style("strawpot schedule list", bold=True)
+        + " to see all schedules."
+    )
+
+
+@schedule.command(name="list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def schedule_list(as_json):
+    """List all active schedules."""
+    from strawpot.scheduler.store import ScheduleStore
+
+    store = ScheduleStore()
+    schedules = store.list_schedules()
+
+    if as_json:
+        entries = [
+            {
+                "schedule_id": s.schedule_id,
+                "name": s.name,
+                "cron": s.cron,
+                "task": s.task,
+                "role": s.role,
+                "next_run": s.next_run(),
+                "last_status": s.last_status,
+            }
+            for s in schedules
+        ]
+        click.echo(json.dumps(entries, indent=2))
+        return
+
+    if not schedules:
+        click.echo("No schedules configured yet.")
+        click.echo(
+            "Run "
+            + click.style('strawpot schedule create "task" --cron "0 8 * * *"', bold=True)
+            + " to create one."
+        )
+        return
+
+    click.echo(click.style("📅 ", fg="cyan") + f"{len(schedules)} schedule(s):")
+    click.echo()
+    for s in schedules:
+        click.echo(
+            "  "
+            + click.style(f"[{s.schedule_id}]", fg="bright_black")
+            + f" {s.name}"
+        )
+        click.echo(f"     Cron: {s.cron} | Next: {s.next_run()}")
+        if s.last_status:
+            click.echo(f"     Last: {s.last_status}")
+        click.echo()
+
+
+@schedule.command(name="delete")
+@click.argument("schedule_id")
+def schedule_delete(schedule_id):
+    """Remove a schedule by ID."""
+    from strawpot.scheduler.store import ScheduleStore
+
+    store = ScheduleStore()
+    if store.delete(schedule_id):
+        click.echo(f"🗑️  Deleted schedule {schedule_id}")
+    else:
+        click.echo(click.style(f"❌ Schedule {schedule_id} not found", fg="red"), err=True)
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
