@@ -1823,6 +1823,8 @@ class Session:
 
     def _write_session_file(self) -> None:
         """Write session state to disk."""
+        if not (self._working_dir and self._run_id):
+            return
         self._session_file = os.path.join(
             self._session_dir(), "session.json"
         )

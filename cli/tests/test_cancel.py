@@ -164,7 +164,6 @@ class TestAgentStateInSession:
     def test_state_persisted_to_session_json(self, tmp_path):
         session = self._make_session(tmp_path)
         session._register_agent("agent-1", "worker", parent_id=None)
-        session._write_session_file()
 
         session_file = os.path.join(
             str(tmp_path), ".strawpot", "sessions", "test-run-id", "session.json"
@@ -175,10 +174,27 @@ class TestAgentStateInSession:
         agent_data = data["agents"]["agent-1"]
         assert agent_data["state"] == "running"
 
+    def test_register_writes_to_disk_immediately(self, tmp_path):
+        """Regression: _register_agent must write session.json without an
+        explicit _write_session_file() call so the GUI cancel endpoint can
+        find the agent right after spawn (fixes 404 cancel error)."""
+        session = self._make_session(tmp_path)
+        session._register_agent("agent-1", "worker", parent_id=None)
+
+        # Do NOT call _write_session_file() — the point is that
+        # _register_agent writes to disk on its own.
+        session_file = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "test-run-id", "session.json"
+        )
+        with open(session_file) as f:
+            data = json.load(f)
+
+        assert "agent-1" in data["agents"]
+        assert data["agents"]["agent-1"]["state"] == "running"
+
     def test_state_update_writes_to_disk(self, tmp_path):
         session = self._make_session(tmp_path)
         session._register_agent("agent-1", "worker", parent_id=None)
-        session._write_session_file()
 
         session._update_agent_state("agent-1", AgentState.COMPLETED)
 
