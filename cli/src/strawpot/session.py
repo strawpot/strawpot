@@ -1118,6 +1118,8 @@ class Session:
         self._server.on_ask_user(self._handle_ask_user)
         self._server.on_remember(self._handle_remember)
         self._server.on_recall(self._handle_recall)
+        if hasattr(self._server, "on_cancel"):
+            self._server.on_cancel(self._handle_cancel)
         self._server.start()
 
         self._denden_addr = self._server.bound_addr
@@ -1679,6 +1681,61 @@ class Session:
             return error_response(
                 request.request_id,
                 "ERR_RECALL",
+                str(exc),
+            )
+
+    def _handle_cancel(
+        self, request: denden_pb2.DenDenRequest
+    ) -> denden_pb2.DenDenResponse:
+        """Handle a cancel request from a sub-agent.
+
+        Validates that the requesting agent has authority to cancel the
+        target (must be in the same session), then calls cancel_agent().
+        """
+        cancel = request.cancel
+        trace = request.trace
+        target_id = cancel.agent_id
+        force = cancel.force
+
+        # Validate the target agent exists.
+        if target_id not in self._agent_info:
+            return error_response(
+                request.request_id,
+                "ERR_CANCEL_AGENT_NOT_FOUND",
+                f"Agent not found: {target_id}",
+            )
+
+        # Validate the requesting agent is in the same session.
+        requester_id = trace.agent_instance_id
+        if requester_id and requester_id not in self._agent_info:
+            return error_response(
+                request.request_id,
+                "ERR_CANCEL_UNAUTHORIZED",
+                "Requesting agent not found in this session",
+            )
+
+        try:
+            cancelled = self.cancel_agent(
+                target_id,
+                reason=CancelReason.USER,
+                force=force,
+            )
+            # Use getattr to safely check for cancel_result — the proto
+            # may not have been regenerated yet in the denden package.
+            if hasattr(denden_pb2, "CancelResult"):
+                return ok_response(
+                    request.request_id,
+                    cancel_result=denden_pb2.CancelResult(
+                        cancelled_agents=cancelled,
+                    ),
+                )
+            # Fallback: return as generic OK if CancelResult not available.
+            return ok_response(request.request_id)
+        except Exception as exc:
+            logger.exception("cancel handler failed")
+            return error_response(
+                request.request_id,
+                "ERR_CANCEL",
                 str(exc),
             )
 
