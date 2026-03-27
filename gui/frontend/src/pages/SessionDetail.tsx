@@ -363,8 +363,6 @@ function SessionMetadata({ session }: { session: SessionDetailType }) {
           <dd>{session.role}</dd>
           <dt className="font-medium text-muted-foreground">Runtime</dt>
           <dd>{session.runtime}</dd>
-          <dt className="font-medium text-muted-foreground">Isolation</dt>
-          <dd>{session.isolation}</dd>
           <dt className="font-medium text-muted-foreground">Started</dt>
           <dd>{formatTime(session.started_at)}</dd>
           {session.ended_at && (

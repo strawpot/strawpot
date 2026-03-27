@@ -1,23 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useProjects } from "@/hooks/queries/use-projects";
-import { useGlobalConfig } from "@/hooks/queries/use-config";
 import { useCreateProject, useDeleteProject } from "@/hooks/mutations/use-projects";
-import { useSaveProjectConfig } from "@/hooks/mutations/use-config";
-import { api } from "@/api/client";
 import DirBrowser from "@/components/DirBrowser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -143,57 +133,17 @@ function RegisterForm({
 }) {
   const [displayName, setDisplayName] = useState("");
   const [workingDir, setWorkingDir] = useState("");
-  const [isolation, setIsolation] = useState("");
   const [showBrowser, setShowBrowser] = useState(false);
-  const [gitInitPrompt, setGitInitPrompt] = useState(false);
   const createProject = useCreateProject();
-  const saveConfig = useSaveProjectConfig();
-  const globalConfig = useGlobalConfig();
-
-  const globalDefaults = globalConfig.data?.defaults as
-    | { isolation?: string }
-    | undefined;
-  const defaultIsolation = globalDefaults?.isolation ?? "none";
-
-  const effectiveIsolation = isolation || defaultIsolation;
-
-  const doCreate = async () => {
-    const project = await createProject.mutateAsync({
-      display_name: displayName.trim(),
-      working_dir: workingDir.trim(),
-    });
-    const configData: Record<string, unknown> = {};
-    configData.isolation = effectiveIsolation;
-    await saveConfig.mutateAsync({
-      projectId: (project as { id: number }).id,
-      data: configData,
-    });
-    onDone();
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (effectiveIsolation === "worktree" && workingDir.trim()) {
-        const res = await api.get<{ is_git: boolean }>(
-          `/fs/git-check?path=${encodeURIComponent(workingDir.trim())}`,
-        );
-        if (!res.is_git) {
-          setGitInitPrompt(true);
-          return;
-        }
-      }
-      await doCreate();
-    } catch {
-      // error state handled by mutation
-    }
-  };
-
-  const handleGitInitConfirm = async () => {
-    try {
-      await api.post("/fs/git-init", { path: workingDir.trim() });
-      setGitInitPrompt(false);
-      await doCreate();
+      await createProject.mutateAsync({
+        display_name: displayName.trim(),
+        working_dir: workingDir.trim(),
+      });
+      onDone();
     } catch {
       // error state handled by mutation
     }
@@ -245,52 +195,14 @@ function RegisterForm({
               onCancel={() => setShowBrowser(false)}
             />
           )}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="isolation">Isolation</Label>
-              <Select
-                value={isolation || defaultIsolation}
-                onValueChange={setIsolation}
-              >
-                <SelectTrigger id="isolation">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">none</SelectItem>
-                  <SelectItem value="worktree">worktree</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {gitInitPrompt && (
-            <div className="rounded-md border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950">
-              <p className="text-sm">
-                The selected directory is not a git repository. Worktree isolation requires git.
-                Initialize a git repository with <code className="text-xs bg-muted px-1 py-0.5 rounded">git init</code>?
-              </p>
-              <div className="mt-2 flex gap-2">
-                <Button type="button" size="sm" onClick={handleGitInitConfirm}>
-                  Yes, initialize
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setGitInitPrompt(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-          {(createProject.error || saveConfig.error) && (
+          {createProject.error && (
             <p className="text-sm text-destructive">
-              {(createProject.error || saveConfig.error)?.message}
+              {createProject.error.message}
             </p>
           )}
           <div className="flex gap-2">
-            <Button type="submit" disabled={createProject.isPending || saveConfig.isPending}>
-              {createProject.isPending || saveConfig.isPending ? "Adding..." : "Add"}
+            <Button type="submit" disabled={createProject.isPending}>
+              {createProject.isPending ? "Adding..." : "Add"}
             </Button>
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
