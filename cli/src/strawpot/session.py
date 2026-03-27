@@ -27,6 +27,7 @@ from denden.gen import denden_pb2
 
 from strawpot.agents.protocol import AgentHandle
 from strawpot.agents.wrapper import WrapperRuntime
+from strawpot.cancel import AgentState, CancelReason
 from strawpot.config import StrawPotConfig
 from strawpot.context import build_prompt
 from strawpot.delegation import (
@@ -1238,6 +1239,18 @@ class Session:
                 "delegate_start", delegate_req.role_slug,
                 detail=delegate_req.task_text[:60], depth=delegate_req.depth,
             )
+
+            # Wrap register_agent to capture the spawned agent_id so
+            # we can update its state when delegation completes.
+            delegate_agent_id: str | None = None
+
+            def _register_and_capture(
+                agent_id: str, role: str, parent_id: str | None, pid: int | None = None,
+            ) -> None:
+                nonlocal delegate_agent_id
+                delegate_agent_id = agent_id
+                self._register_agent(agent_id, role, parent_id, pid)
+
             result = handle_delegate(
                 request=delegate_req,
                 config=self.config,
@@ -1251,10 +1264,19 @@ class Session:
                 tracer=self._tracer,
                 parent_span=requester_span,
                 agent_spans=self._agent_spans,
-                register_agent=self._register_agent,
+                register_agent=_register_and_capture,
                 files_dirs=self._files_dirs,
                 group_id=self._group_id,
             )
+
+            # Update agent state based on completion result.
+            if delegate_agent_id is not None:
+                end_state = (
+                    AgentState.FAILED if result.exit_code != 0
+                    else AgentState.COMPLETED
+                )
+                self._update_agent_state(delegate_agent_id, end_state)
+
             if result.exit_code != 0:
                 self._emit(
                     "delegate_end", delegate_req.role_slug,
@@ -1687,7 +1709,28 @@ class Session:
             "parent": parent_id,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "pid": pid,
+            "state": AgentState.RUNNING,
         }
+
+    def _update_agent_state(
+        self,
+        agent_id: str,
+        state: AgentState,
+        cancel_reason: CancelReason | None = None,
+    ) -> None:
+        """Update the state of a registered agent (in-memory and on-disk).
+
+        Thread-safe: acquires ``_delegation_lock`` to avoid races with
+        the DenDen handler thread that may be registering new agents.
+        """
+        with self._delegation_lock:
+            info = self._agent_info.get(agent_id)
+            if info is None:
+                return
+            info["state"] = state
+            if cancel_reason is not None:
+                info["cancel_reason"] = cancel_reason
+            self._write_session_file()
 
     def _agent_role(self, agent_id: str) -> str:
         """Return the role of a registered agent."""
