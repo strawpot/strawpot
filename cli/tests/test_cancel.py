@@ -2,9 +2,10 @@
 
 import json
 import os
+import signal
 import tempfile
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -216,6 +217,189 @@ class TestBackwardCompat:
         # The CLI uses info.get("state") — should be None for old format
         status = old_info.get("state")
         assert status is None  # Falls back to PID check in CLI code
+
+
+# ---------------------------------------------------------------------------
+# cancel_agent() — cascading cancellation
+# ---------------------------------------------------------------------------
+
+
+class TestCancelAgent:
+    """Tests for Session.cancel_agent() cascading cancel."""
+
+    def _make_session(self, tmp_path):
+        """Create a minimal Session for testing cancel."""
+        from strawpot.agents.protocol import AgentHandle, AgentResult
+        from strawpot.config import StrawPotConfig
+        from strawpot.isolation.protocol import NoneIsolator
+        from strawpot.session import Session
+
+        config = StrawPotConfig(memory="")
+        runtime = MagicMock()
+        runtime.name = "mock_runtime"
+        runtime.spawn.return_value = AgentHandle(
+            agent_id="orch", runtime_name="mock_runtime", pid=999
+        )
+        runtime.wait.return_value = AgentResult(summary="Done")
+        wrapper = MagicMock()
+        wrapper.name = "mock_wrapper"
+
+        session = Session(
+            config=config,
+            runtime=runtime,
+            wrapper=wrapper,
+            isolator=NoneIsolator(),
+            resolve_role=MagicMock(return_value={}),
+            resolve_role_dirs=MagicMock(return_value=None),
+            task="test task",
+        )
+        session._run_id = "test-run-id"
+        session._working_dir = str(tmp_path)
+        os.makedirs(
+            os.path.join(str(tmp_path), ".strawpot", "sessions", "test-run-id"),
+            exist_ok=True,
+        )
+        return session
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_single_agent_no_pid(self, mock_kill, mock_alive, tmp_path):
+        """Cancel an agent that has no live process."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None, pid=None)
+
+        result = session.cancel_agent("a1")
+        assert result == ["a1"]
+        assert session._agent_info["a1"]["state"] == AgentState.CANCELLED
+        assert session._agent_info["a1"]["cancel_reason"] == CancelReason.USER
+        mock_kill.assert_not_called()
+
+    @patch("strawpot.session.is_pid_alive", return_value=True)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_single_agent_force(self, mock_kill, mock_alive, tmp_path):
+        """Force cancel skips graceful interrupt."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None, pid=12345)
+
+        result = session.cancel_agent("a1", force=True)
+        assert result == ["a1"]
+        assert session._agent_info["a1"]["state"] == AgentState.CANCELLED
+        mock_kill.assert_called()
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_cascades_to_children(self, mock_kill, mock_alive, tmp_path):
+        """Cancel propagates to all descendants."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None)
+        session._register_agent("a2", "reviewer", parent_id="a1")
+        session._register_agent("a3", "coder", parent_id="a2")
+
+        result = session.cancel_agent("a1")
+        # Bottom-up order: a3 first, then a2, then a1
+        assert result == ["a3", "a2", "a1"]
+        assert session._agent_info["a1"]["state"] == AgentState.CANCELLED
+        assert session._agent_info["a2"]["state"] == AgentState.CANCELLED
+        assert session._agent_info["a3"]["state"] == AgentState.CANCELLED
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_reason_propagation(self, mock_kill, mock_alive, tmp_path):
+        """Direct children get PARENT reason, deeper get ANCESTOR."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None)
+        session._register_agent("a2", "reviewer", parent_id="a1")
+        session._register_agent("a3", "coder", parent_id="a2")
+
+        session.cancel_agent("a1", reason=CancelReason.USER)
+        assert session._agent_info["a1"]["cancel_reason"] == CancelReason.USER
+        assert session._agent_info["a2"]["cancel_reason"] == CancelReason.PARENT
+        assert session._agent_info["a3"]["cancel_reason"] == CancelReason.ANCESTOR
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_already_completed_agent_still_in_result(self, mock_kill, mock_alive, tmp_path):
+        """Agents that already exited are included but not killed."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None, pid=100)
+        session._update_agent_state("a1", AgentState.COMPLETED)
+
+        result = session.cancel_agent("a1")
+        assert result == ["a1"]
+        # State stays COMPLETED (already terminal)
+        mock_kill.assert_not_called()
+
+    @patch("strawpot.session.is_pid_alive")
+    @patch("strawpot.session.kill_process_tree")
+    @patch("os.kill")
+    def test_graceful_then_force(self, mock_os_kill, mock_tree_kill, mock_alive, tmp_path):
+        """Graceful interrupt sent first, then force kill after timeout."""
+        # is_pid_alive returns True consistently (agent doesn't exit gracefully)
+        mock_alive.return_value = True
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None, pid=12345)
+
+        result = session.cancel_agent("a1", timeout=0.2)
+        assert result == ["a1"]
+        # SIGINT should have been sent
+        mock_os_kill.assert_called_with(12345, signal.SIGINT)
+        # Force kill should follow since agent didn't exit
+        mock_tree_kill.assert_called()
+        assert session._agent_info["a1"]["state"] == AgentState.CANCELLED
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_wide_tree(self, mock_kill, mock_alive, tmp_path):
+        """Cancel a parent with multiple children."""
+        session = self._make_session(tmp_path)
+        session._register_agent("root", "orch", parent_id=None)
+        session._register_agent("c1", "worker", parent_id="root")
+        session._register_agent("c2", "worker", parent_id="root")
+        session._register_agent("c3", "worker", parent_id="root")
+
+        result = session.cancel_agent("root")
+        assert set(result) == {"root", "c1", "c2", "c3"}
+        # Root should be last
+        assert result[-1] == "root"
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_deep_tree(self, mock_kill, mock_alive, tmp_path):
+        """Cancel a deep tree (4 levels)."""
+        session = self._make_session(tmp_path)
+        session._register_agent("L0", "orch", parent_id=None)
+        session._register_agent("L1", "planner", parent_id="L0")
+        session._register_agent("L2", "executor", parent_id="L1")
+        session._register_agent("L3", "coder", parent_id="L2")
+
+        result = session.cancel_agent("L0")
+        assert result == ["L3", "L2", "L1", "L0"]
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_cancel_nonexistent_agent(self, mock_kill, mock_alive, tmp_path):
+        """Cancelling a nonexistent agent returns empty list."""
+        session = self._make_session(tmp_path)
+        result = session.cancel_agent("nonexistent")
+        assert result == []
+
+    @patch("strawpot.session.is_pid_alive", return_value=False)
+    @patch("strawpot.session.kill_process_tree")
+    def test_state_persisted_after_cancel(self, mock_kill, mock_alive, tmp_path):
+        """session.json is updated on disk after cancel."""
+        session = self._make_session(tmp_path)
+        session._register_agent("a1", "worker", parent_id=None)
+        session._write_session_file()
+
+        session.cancel_agent("a1")
+
+        session_file = os.path.join(
+            str(tmp_path), ".strawpot", "sessions", "test-run-id", "session.json"
+        )
+        with open(session_file) as f:
+            data = json.load(f)
+        assert data["agents"]["a1"]["state"] == "cancelled"
+        assert data["agents"]["a1"]["cancel_reason"] == "user"
 
 
 # ---------------------------------------------------------------------------
