@@ -544,10 +544,10 @@ class TestScheduleRuns:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, schedule_id, status, role, runtime, "
-                " isolation, started_at, session_dir) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-1", project_id, sid, "completed",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp"),
+                 "test", "test", "2025-01-01T00:00:00", "/tmp"),
             )
 
         resp = client.get("/api/schedules/runs")
@@ -630,10 +630,10 @@ class TestRerunScheduleRun:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, schedule_id, status, role, runtime, "
-                " isolation, started_at, session_dir, task, user_task) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir, task, user_task) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-orig", project_id, sid, "completed",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "test", "test", "2025-01-01T00:00:00", "/tmp",
                  "context\n---\noriginal task", "original task"),
             )
 
@@ -659,10 +659,10 @@ class TestRerunScheduleRun:
             conn.execute(
                 "INSERT INTO sessions "
                 "(run_id, project_id, status, role, runtime, "
-                " isolation, started_at, session_dir, task) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " started_at, session_dir, task) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 ("run-manual", project_id, "completed",
-                 "test", "test", "none", "2025-01-01T00:00:00", "/tmp",
+                 "test", "test", "2025-01-01T00:00:00", "/tmp",
                  "manual task"),
             )
         resp = client.post("/api/schedules/runs/run-manual/rerun")

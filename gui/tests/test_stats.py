@@ -190,10 +190,10 @@ class TestStatsEndpoint:
                 exit_code = 0 if status == "completed" else 1
                 conn.execute(
                     "INSERT INTO sessions "
-                    "(run_id, project_id, role, runtime, isolation, status, task, "
+                    "(run_id, project_id, role, runtime, status, task, "
                     "exit_code, started_at, duration_ms, session_dir) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (run_id, pid, "default", "claude-code", "none", status,
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, pid, "default", "claude-code", status,
                      "test task", exit_code, today, duration_ms, str(tmp_path)),
                 )
 
