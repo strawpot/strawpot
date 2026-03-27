@@ -16,6 +16,7 @@ from strawpot.cli import cli
 @pytest.fixture
 def memory_env(tmp_path):
     """Set up a real Dial provider backed by a temp directory."""
+    dial_memory = pytest.importorskip("dial_memory", reason="dial-memory package not installed")
     from dial_memory.provider import DialMemoryProvider
 
     provider = DialMemoryProvider(
