@@ -24,7 +24,6 @@ interface ConfigFormProps {
 
 interface FlatState {
   runtime: string;
-  isolation: string;
   memory: string;
   orchestrator_role: string;
   orchestrator_permission_mode: string;
@@ -46,7 +45,6 @@ function toFlat(v: Record<string, unknown>): FlatState {
   const trace = (v.trace ?? {}) as Record<string, unknown>;
   return {
     runtime: str(v.runtime),
-    isolation: str(v.isolation),
     memory: str(v.memory),
     orchestrator_role: str(orch.role),
     orchestrator_permission_mode: str(orch.permission_mode),
@@ -71,7 +69,6 @@ function toNested(flat: FlatState): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   if (flat.runtime) result.runtime = flat.runtime;
-  if (flat.isolation) result.isolation = flat.isolation;
   if (flat.memory) result.memory = flat.memory;
 
   const orch: Record<string, unknown> = {};
@@ -111,7 +108,6 @@ function toNested(flat: FlatState): Record<string, unknown> {
 
 // --- select field options ---
 
-const ISOLATION_OPTIONS = ["none", "worktree"];
 const PERMISSION_OPTIONS = ["default", "plan", "bypassPermissions"];
 
 const PULL_OPTIONS = ["prompt", "always", "never"];
@@ -173,7 +169,7 @@ export default function ConfigForm({
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold">General</h3>
         <Separator />
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Runtime">
             <Input
               list="cfg-dl-runtime"
@@ -192,15 +188,6 @@ export default function ConfigForm({
             {runtimeError && (
               <p className="text-xs text-destructive">{runtimeError}</p>
             )}
-          </Field>
-          <Field label="Isolation">
-            <SelectField
-              value={state.isolation}
-              onChange={set("isolation")}
-              options={ISOLATION_OPTIONS}
-              placeholder={ph?.isolation || "none"}
-              allowEmpty
-            />
           </Field>
           <Field label="Memory">
             <Input

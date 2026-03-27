@@ -11,7 +11,6 @@ export interface Session {
   project_id: number;
   role: string;
   runtime: string;
-  isolation: string;
   status: string;
   started_at: string;
   ended_at: string | null;
