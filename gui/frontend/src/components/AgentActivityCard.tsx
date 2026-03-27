@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { X } from "lucide-react";
+import { toast } from "sonner";
 import { useAgentLogSSE } from "@/hooks/useAgentLogSSE";
+import { useCancelAgent } from "@/hooks/mutations/use-sessions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
 
 const TAIL_LINES = 4;
@@ -27,6 +31,8 @@ export default function AgentActivityCard({
 }: AgentActivityCardProps) {
   const { lines, done } = useAgentLogSSE(runId, agentId, true);
   const tail = lines.slice(-TAIL_LINES);
+  const cancelAgent = useCancelAgent();
+  const [confirming, setConfirming] = useState(false);
 
   // Elapsed time counter
   const [elapsed, setElapsed] = useState("");
@@ -66,6 +72,18 @@ export default function AgentActivityCard({
     return () => clearInterval(id);
   }, []);
 
+  const handleCancel = async () => {
+    try {
+      await cancelAgent.mutateAsync({ runId, agentId });
+      toast.success(`Cancel signal sent for ${role}`);
+    } catch (err) {
+      toast.error(
+        `Failed to cancel agent: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+    }
+    setConfirming(false);
+  };
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="space-y-2 pt-4">
@@ -83,9 +101,43 @@ export default function AgentActivityCard({
             />
             <span className="font-medium text-sm">{role}</span>
           </div>
-          <Badge variant="outline" className="text-xs">
-            {runtime.replace("strawpot-", "")}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline" className="text-xs">
+              {runtime.replace("strawpot-", "")}
+            </Badge>
+            {!done &&
+              (confirming ? (
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-5 px-1.5 text-[10px]"
+                    onClick={handleCancel}
+                    disabled={cancelAgent.isPending}
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-5 px-1.5 text-[10px]"
+                    onClick={() => setConfirming(false)}
+                  >
+                    No
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setConfirming(true)}
+                  title="Cancel agent"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              ))}
+          </div>
         </div>
 
         {/* Session info */}
