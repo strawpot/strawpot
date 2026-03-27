@@ -1,0 +1,13 @@
+name: Daily PR Review
+description: Reviews all open pull requests and posts feedback
+default_cron: "0 8 * * *"
+role: pr-reviewer
+task: |
+  Review all open pull requests in this repository.
+  For each PR, post a review comment with findings.
+  Focus on: bugs, code quality, test coverage, and style.
+requires:
+  tools:
+    - gh
+  env:
+    - GITHUB_TOKEN

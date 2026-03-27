@@ -1618,14 +1618,45 @@ def schedule():
 
 
 @schedule.command(name="create")
-@click.argument("task")
+@click.argument("task", required=False, default="")
 @click.option("--name", default="", help="Schedule name (defaults to task text).")
-@click.option("--cron", required=True, help="Cron expression (e.g. '0 8 * * *').")
+@click.option("--cron", default="", help="Cron expression (e.g. '0 8 * * *').")
 @click.option("--role", default="", help="Role to execute as.")
 @click.option("--description", default="", help="Optional description.")
-def schedule_create(task, name, cron, role, description):
-    """Create a new scheduled workflow."""
+@click.option("--template", "-t", default="", help="Use a pre-built workflow template.")
+def schedule_create(task, name, cron, role, description, template):
+    """Create a new scheduled workflow (or install from --template)."""
     from strawpot.scheduler.store import ScheduleStore
+
+    if template:
+        from strawpot.scheduler.templates import (
+            load_template,
+            validate_prerequisites,
+        )
+
+        tpl = load_template(template)
+        if tpl is None:
+            raise click.ClickException(
+                f"Template '{template}' not found. "
+                "Run 'strawpot schedule templates' to see available templates."
+            )
+        issues = validate_prerequisites(tpl)
+        if issues:
+            click.echo(click.style("⚠️  Prerequisites:", fg="yellow"))
+            for issue in issues:
+                click.echo(f"   - {issue}")
+            click.echo()
+
+        task = task or tpl.task
+        cron = cron or tpl.default_cron
+        role = role or tpl.role
+        name = name or tpl.name
+        description = description or tpl.description
+
+    if not task:
+        raise click.ClickException("Task is required. Provide a task argument or use --template.")
+    if not cron:
+        raise click.ClickException("--cron is required. Provide a cron expression or use --template.")
 
     store = ScheduleStore()
     try:
@@ -1641,15 +1672,46 @@ def schedule_create(task, name, cron, role, description):
 
     click.echo(click.style("✅ Schedule created!", fg="green"))
     click.echo(f"   ID: {sched.schedule_id}")
-    click.echo(f"   Task: {sched.task}")
+    click.echo(f"   Task: {sched.task[:80]}")
     click.echo(f"   Cron: {sched.cron}")
     click.echo(f"   Next run: {sched.next_run()}")
+    if role:
+        click.echo(f"   Role: {role}")
     click.echo()
     click.echo(
         click.style("💡 Tip: ", fg="cyan")
         + "Run "
         + click.style("strawpot schedule list", bold=True)
         + " to see all schedules."
+    )
+
+
+@schedule.command(name="templates")
+def schedule_templates():
+    """List available pre-built workflow templates."""
+    from strawpot.scheduler.templates import list_templates
+
+    templates = list_templates()
+    if not templates:
+        click.echo("No templates available.")
+        return
+
+    click.echo(click.style("📋 Available workflow templates:", fg="cyan"))
+    click.echo()
+    for tpl in templates:
+        click.echo(
+            "  "
+            + click.style(tpl.slug, bold=True)
+            + click.style(f" — {tpl.description}", dim=True)
+        )
+        click.echo(f"     Cron: {tpl.default_cron}")
+        if tpl.role:
+            click.echo(f"     Role: {tpl.role}")
+        click.echo()
+    click.echo(
+        "Use: "
+        + click.style("strawpot schedule create --template <name>", bold=True)
+        + " to install."
     )
 
 

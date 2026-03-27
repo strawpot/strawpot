@@ -1,0 +1,17 @@
+name: Nightly Test Coverage
+description: Runs test suite with coverage and reports uncovered areas
+default_cron: "0 2 * * *"
+role: ""
+task: |
+  Run the project's test suite with coverage reporting.
+  Detect the test framework (pytest preferred).
+  Report:
+  1. Overall coverage percentage
+  2. Files with lowest coverage
+  3. Uncovered functions/methods
+  If coverage dropped since last run, create a GitHub issue.
+  Note: Currently supports pytest projects only.
+requires:
+  tools:
+    - pytest
+  env: []
