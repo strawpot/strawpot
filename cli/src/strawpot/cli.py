@@ -809,7 +809,7 @@ def _resolve_progress_renderer(progress_mode: str, task: str | None):
     "--isolation",
     default=None,
     type=click.Choice(["none", "worktree", "docker"]),
-    help="Isolation method.",
+    help="Isolation method. 'worktree' is deprecated — use the worktree skill instead.",
 )
 @click.option(
     "--pull",
