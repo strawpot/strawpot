@@ -12,10 +12,14 @@ import pytest
 from strawpot.cancel import (
     AgentState,
     CancelReason,
+    cancel_dir,
     get_children,
     get_descendants,
     get_subtree_bottom_up,
     is_ancestor_of,
+    mark_signal_done,
+    read_cancel_signals,
+    write_cancel_signal,
 )
 
 
@@ -724,3 +728,90 @@ class TestIsAncestorOf:
             "B": {"parent": "A"},
         }
         assert is_ancestor_of("A", "B", tree) is True
+
+
+# ---------------------------------------------------------------------------
+# File-based cancel signal protocol
+# ---------------------------------------------------------------------------
+
+
+class TestWriteCancelSignal:
+    def test_writes_agent_cancel(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        os.makedirs(session_dir)
+        path = write_cancel_signal(session_dir, "agent-abc", force=False)
+        assert path.name == "agent-abc.json"
+        with open(path) as f:
+            data = json.load(f)
+        assert data["agent_id"] == "agent-abc"
+        assert data["force"] is False
+        assert data["requested_by"] == "cli"
+        assert "requested_at" in data
+
+    def test_writes_run_cancel(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        os.makedirs(session_dir)
+        path = write_cancel_signal(session_dir, None, force=True, requested_by="gui")
+        assert path.name == "_run.json"
+        with open(path) as f:
+            data = json.load(f)
+        assert data["agent_id"] is None
+        assert data["force"] is True
+        assert data["requested_by"] == "gui"
+
+    def test_atomic_write(self, tmp_path):
+        """No partial files left behind."""
+        session_dir = str(tmp_path / "session")
+        os.makedirs(session_dir)
+        write_cancel_signal(session_dir, "a1")
+        cdir = cancel_dir(session_dir)
+        files = os.listdir(cdir)
+        assert all(not f.endswith(".tmp") for f in files)
+
+
+class TestReadCancelSignals:
+    def test_reads_pending_signals(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        write_cancel_signal(session_dir, "a1", force=False)
+        write_cancel_signal(session_dir, "a2", force=True)
+        signals = read_cancel_signals(session_dir)
+        assert len(signals) == 2
+        agent_ids = {s["agent_id"] for s in signals}
+        assert agent_ids == {"a1", "a2"}
+        # Each signal should have _path
+        assert all("_path" in s for s in signals)
+
+    def test_empty_dir_returns_empty(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        os.makedirs(cancel_dir(session_dir))
+        assert read_cancel_signals(session_dir) == []
+
+    def test_missing_dir_returns_empty(self, tmp_path):
+        assert read_cancel_signals(str(tmp_path / "nonexistent")) == []
+
+    def test_skips_done_files(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        path = write_cancel_signal(session_dir, "a1")
+        mark_signal_done(str(path))
+        # .done file should not be read
+        signals = read_cancel_signals(session_dir)
+        assert len(signals) == 0
+
+    def test_skips_malformed_files(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        cdir = cancel_dir(session_dir)
+        os.makedirs(cdir)
+        with open(os.path.join(cdir, "bad.json"), "w") as f:
+            f.write("not valid json{{{")
+        signals = read_cancel_signals(session_dir)
+        assert len(signals) == 0
+
+
+class TestMarkSignalDone:
+    def test_renames_to_done(self, tmp_path):
+        session_dir = str(tmp_path / "session")
+        path = write_cancel_signal(session_dir, "a1")
+        mark_signal_done(str(path))
+        assert not path.exists()
+        done_path = str(path).replace(".json", ".done")
+        assert os.path.exists(done_path)

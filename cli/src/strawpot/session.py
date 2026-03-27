@@ -30,8 +30,11 @@ from strawpot.agents.wrapper import WrapperRuntime
 from strawpot.cancel import (
     AgentState,
     CancelReason,
+    cancel_dir,
     get_children,
     get_subtree_bottom_up,
+    mark_signal_done,
+    read_cancel_signals,
 )
 from strawpot.config import StrawPotConfig
 from strawpot.context import build_prompt
@@ -374,6 +377,7 @@ class Session:
         self._shutting_down: bool = False
         self._interrupted: bool = False
         self._last_sigint_time: float = 0.0
+        self._cancel_watcher_stop = threading.Event()
 
     # ------------------------------------------------------------------
     # Public interface
@@ -564,6 +568,9 @@ class Session:
             # 6. Write session state file
             self._write_session_file()
 
+            # 6a. Start cancel signal watcher
+            self._start_cancel_watcher()
+
             # 7. Install signal handler before blocking attach
             signal.signal(signal.SIGINT, self._handle_sigint)
 
@@ -582,6 +589,9 @@ class Session:
 
     def stop(self) -> None:
         """Clean up the session: kill agents, stop server, merge changes, remove isolation."""
+        # 0. Stop cancel watcher
+        self._cancel_watcher_stop.set()
+
         # 0a. Memory dump for orchestrator agent
         if self._memory_provider is not None and self._run_id is not None:
             orch_agent_id = None
@@ -781,6 +791,75 @@ class Session:
                 self.runtime.kill(self._orchestrator_handle)
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------
+    # Cancel signal watcher
+    # ------------------------------------------------------------------
+
+    _CANCEL_POLL_INTERVAL = 0.5  # seconds
+
+    def _start_cancel_watcher(self) -> None:
+        """Start a daemon thread that polls for cancel signal files."""
+        session_dir = self._session_dir()
+        # Create cancel directory so writers don't need to.
+        os.makedirs(cancel_dir(session_dir), exist_ok=True)
+
+        # Install SIGUSR1 handler to wake the watcher immediately.
+        try:
+            signal.signal(signal.SIGUSR1, self._handle_sigusr1)
+        except (OSError, ValueError):
+            # SIGUSR1 not available on all platforms (e.g., Windows).
+            pass
+
+        t = threading.Thread(
+            target=self._cancel_watcher_loop,
+            name="cancel-watcher",
+            daemon=True,
+        )
+        t.start()
+
+    def _handle_sigusr1(self, signum, frame) -> None:
+        """SIGUSR1 wakes the cancel watcher by interrupting its sleep."""
+        # No-op — the signal itself interrupts Event.wait().
+        pass
+
+    def _cancel_watcher_loop(self) -> None:
+        """Poll for cancel signal files and trigger cancel_agent()."""
+        session_dir = self._session_dir()
+        while not self._cancel_watcher_stop.is_set():
+            try:
+                signals = read_cancel_signals(session_dir)
+                for sig in signals:
+                    self._process_cancel_signal(sig)
+            except Exception:
+                logger.debug("Cancel watcher error", exc_info=True)
+            # Wait for stop or SIGUSR1 wake-up.
+            self._cancel_watcher_stop.wait(timeout=self._CANCEL_POLL_INTERVAL)
+
+    def _process_cancel_signal(self, sig: dict) -> None:
+        """Process a single cancel signal from the watcher."""
+        agent_id = sig.get("agent_id")
+        force = sig.get("force", False)
+        signal_path = sig.get("_path", "")
+
+        try:
+            if agent_id:
+                # Cancel specific agent.
+                self.cancel_agent(agent_id, reason=CancelReason.USER, force=force)
+            else:
+                # Cancel entire run — find the orchestrator.
+                orch_id = None
+                for aid, info in self._agent_info.items():
+                    if info.get("parent") is None:
+                        orch_id = aid
+                        break
+                if orch_id:
+                    self.cancel_agent(orch_id, reason=CancelReason.USER, force=force)
+        except Exception:
+            logger.debug("Failed to process cancel signal: %s", signal_path, exc_info=True)
+        finally:
+            if signal_path:
+                mark_signal_done(signal_path)
 
     # ------------------------------------------------------------------
     # Merge behavior
