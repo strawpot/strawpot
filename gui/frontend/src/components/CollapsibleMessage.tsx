@@ -47,7 +47,7 @@ export default function CollapsibleMessage({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [children]);
+  }, []); // ResizeObserver handles all subsequent size changes
 
   const toggle = useCallback(() => {
     if (!collapsed && wrapperRef.current) {
@@ -62,6 +62,7 @@ export default function CollapsibleMessage({
     <div ref={wrapperRef} className={cn(needsCollapse && "relative", className)}>
       <div
         ref={contentRef}
+        data-testid="collapsible-content"
         className={cn(
           needsCollapse &&
             "overflow-hidden transition-[max-height] duration-300 ease-in-out",
@@ -77,6 +78,7 @@ export default function CollapsibleMessage({
 
       {needsCollapse && collapsed && (
         <div
+          data-testid="gradient-overlay"
           className="pointer-events-none absolute bottom-6 left-0 right-0 h-16"
           style={{
             background: `linear-gradient(to bottom, transparent, ${gradientColor})`,
