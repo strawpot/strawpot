@@ -1259,9 +1259,13 @@ def agents(session_id):
         role = info.get("role", "?")
         runtime = info.get("runtime", "?")
         parent = info.get("parent") or "-"
-        pid = info.get("pid")
-        alive = is_pid_alive(pid) if pid else False
-        status = "running" if alive else "exited"
+        # Prefer explicit state field; fall back to PID liveness for
+        # old session files that lack it.
+        status = info.get("state")
+        if not status:
+            pid = info.get("pid")
+            alive = is_pid_alive(pid) if pid else False
+            status = "running" if alive else "exited"
         click.echo(f"{agent_id:<20} {role:<16} {runtime:<14} {parent:<20} {status:<8}")
 
 
