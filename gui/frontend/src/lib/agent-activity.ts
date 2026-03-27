@@ -1,5 +1,10 @@
 import type { TreeNode } from "@/api/types";
 
+/** Format "role: activity" for a node that has current_activity. */
+function formatNodeActivity(node: TreeNode): string {
+  return `${node.role}: ${node.current_activity}`;
+}
+
 /**
  * Compute a human-readable activity label for an agent node.
  *
@@ -18,34 +23,28 @@ export function getAgentActivityLabel(
   const node = nodes.find((n) => n.agent_id === agentId);
   if (!node) return null;
 
-  // If this agent is actively doing its own work, show that directly.
   if (node.current_activity) {
     return node.current_activity;
   }
 
-  // Find running children of this agent.
   const runningChildren = nodes.filter(
     (n) => n.parent === agentId && n.status === "running",
   );
 
   if (runningChildren.length === 0) return null;
 
-  // Single running child with activity — surface it with role prefix.
   if (runningChildren.length === 1) {
     const child = runningChildren[0];
-    if (child.current_activity) {
-      return `${child.role}: ${child.current_activity}`;
-    }
-    // Single child, no activity — still mention it.
-    return `${child.role} running`;
+    return child.current_activity
+      ? formatNodeActivity(child)
+      : `${child.role} running`;
   }
 
-  // Multiple running children — show aggregate count.
-  // If any have activity, pick one to highlight.
+  // Multiple running children — show aggregate count, highlight the latest active one.
   const withActivity = runningChildren.filter((n) => n.current_activity);
-  if (withActivity.length > 0) {
-    const highlighted = withActivity[withActivity.length - 1];
-    return `${runningChildren.length} agents running · ${highlighted.role}: ${highlighted.current_activity}`;
+  const highlighted = withActivity[withActivity.length - 1];
+  if (highlighted) {
+    return `${runningChildren.length} agents running · ${formatNodeActivity(highlighted)}`;
   }
 
   return `${runningChildren.length} agents running`;
@@ -70,19 +69,19 @@ export function getSessionActivityLabel(
     return getAgentActivityLabel(nodes, roots[0].agent_id);
   }
 
-  // Multiple roots or no running root — flat fallback (shouldn't happen normally).
-  if (roots.length === 0) {
-    // All roots are done; check if any node is still running.
-    const running = nodes.filter((n) => n.status === "running");
-    if (running.length === 0) return null;
-    const withActivity = running.filter((n) => n.current_activity);
-    if (withActivity.length > 0) {
-      const node = withActivity[withActivity.length - 1];
-      return `${node.role}: ${node.current_activity}`;
-    }
-    return `${running.length} agent${running.length === 1 ? "" : "s"} running`;
+  // Multiple running roots — aggregate without detail.
+  if (roots.length > 1) {
+    return `${roots.length} agents running`;
   }
 
-  // Multiple running roots — aggregate.
-  return `${roots.length} agents running`;
+  // No running root — flat fallback over all still-running nodes.
+  const running = nodes.filter((n) => n.status === "running");
+  if (running.length === 0) return null;
+
+  const withActivity = running.filter((n) => n.current_activity);
+  const highlighted = withActivity[withActivity.length - 1];
+  if (highlighted) {
+    return formatNodeActivity(highlighted);
+  }
+  return `${running.length} agent${running.length === 1 ? "" : "s"} running`;
 }
