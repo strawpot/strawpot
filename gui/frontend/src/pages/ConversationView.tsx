@@ -33,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
+import { getSessionActivityLabel } from "@/lib/agent-activity";
 import { AlertCircle, ArrowUpRight, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Settings, Square, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ProjectFile, TreeData } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
@@ -87,24 +88,10 @@ function AgentMessage({
 }) {
   const isActive = session.status === "running" || session.status === "starting";
 
-  // Derive a live activity label from tree nodes when available
-  const activityLabel = (() => {
-    if (!isActive || !treeData) return null;
-    const running = treeData.nodes.filter((n) => n.status === "running");
-    // Prefer the most recently active agent with an activity description
-    const withActivity = running.filter((n) => n.current_activity);
-    if (withActivity.length > 0) {
-      const node = withActivity[withActivity.length - 1];
-      const prefix = running.length > 1 ? `${node.role}: ` : "";
-      return `${prefix}${node.current_activity}`;
-    }
-    // Show delegation info if multiple agents are running
-    if (running.length > 1) {
-      const roles = running.map((n) => n.role);
-      return `Running ${roles.length} agents: ${roles.join(", ")}`;
-    }
-    return null;
-  })();
+  // Derive a live activity label from tree nodes — aggregate children for parent nodes
+  const activityLabel = isActive && treeData
+    ? getSessionActivityLabel(treeData.nodes)
+    : null;
 
   return (
     <div className="flex flex-col gap-1.5">

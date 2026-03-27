@@ -11,6 +11,7 @@ import { useResources } from "@/hooks/queries/use-registry";
 import { useProjectFiles } from "@/hooks/queries/use-projects";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
+import { getSessionActivityLabel } from "@/lib/agent-activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,21 +88,10 @@ function StatusBadge({ status }: { status: string }) {
 function ImuAgentMessage({ session, treeData }: { session: ConversationSession; treeData?: TreeData | null }) {
   const isActive = session.status === "running" || session.status === "starting";
 
-  const activityLabel = (() => {
-    if (!isActive || !treeData) return null;
-    const running = treeData.nodes.filter((n) => n.status === "running");
-    const withActivity = running.filter((n) => n.current_activity);
-    if (withActivity.length > 0) {
-      const node = withActivity[withActivity.length - 1];
-      const prefix = running.length > 1 ? `${node.role}: ` : "";
-      return `${prefix}${node.current_activity}`;
-    }
-    if (running.length > 1) {
-      const roles = running.map((n) => n.role);
-      return `Running ${roles.length} agents: ${roles.join(", ")}`;
-    }
-    return null;
-  })();
+  // Derive aggregate activity label — parent nodes show child count, children show own activity
+  const activityLabel = isActive && treeData
+    ? getSessionActivityLabel(treeData.nodes)
+    : null;
 
   return (
     <div className="flex flex-col gap-1.5">
