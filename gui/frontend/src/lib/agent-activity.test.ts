@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getAgentActivityLabel, getSessionActivityLabel } from "./agent-activity";
+import {
+  getAgentActivityLabel,
+  getAgentActivityDetail,
+  getSessionActivityLabel,
+  getSessionActivityDetail,
+} from "./agent-activity";
 import type { TreeNode } from "@/api/types";
 
 function makeNode(overrides: Partial<TreeNode> & { agent_id: string }): TreeNode {
@@ -15,6 +20,8 @@ function makeNode(overrides: Partial<TreeNode> & { agent_id: string }): TreeNode
     ...overrides,
   };
 }
+
+// ---- getAgentActivityLabel (backward-compat) ----
 
 describe("getAgentActivityLabel", () => {
   it("returns null for unknown agent", () => {
@@ -104,6 +111,111 @@ describe("getAgentActivityLabel", () => {
   });
 });
 
+// ---- getAgentActivityDetail ----
+
+describe("getAgentActivityDetail", () => {
+  it("returns null for unknown agent", () => {
+    expect(getAgentActivityDetail([], "nope")).toBeNull();
+  });
+
+  it("returns own activity with empty children", () => {
+    const nodes = [makeNode({ agent_id: "root", current_activity: "Reading foo.ts" })];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail).toEqual({
+      header: "Reading foo.ts",
+      children: [],
+    });
+  });
+
+  it("prefers own activity — no child lines when parent is active", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", current_activity: "Thinking" }),
+      makeNode({ agent_id: "child", parent: "root", role: "cr", current_activity: "Reading" }),
+    ];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail?.header).toBe("Thinking");
+    expect(detail?.children).toEqual([]);
+  });
+
+  it("returns single child line for one running child with activity", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "child", parent: "root", role: "code-reviewer", current_activity: "Reading src/api.ts" }),
+    ];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail?.header).toBe("code-reviewer: Reading src/api.ts");
+    expect(detail?.children).toEqual([
+      { role: "code-reviewer", activity: "Reading src/api.ts" },
+    ]);
+  });
+
+  it("returns single child line with fallback activity for child without activity", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "child", parent: "root", role: "qa-engineer" }),
+    ];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail?.header).toBe("qa-engineer running");
+    expect(detail?.children).toEqual([
+      { role: "qa-engineer", activity: "Working…" },
+    ]);
+  });
+
+  it("returns per-child lines for multiple running children", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", current_activity: "Reading routes.ts" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer" }),
+      makeNode({ agent_id: "c3", parent: "root", role: "comment-analyzer", current_activity: "Analyzing PR" }),
+    ];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail?.header).toBe("3 agents running · comment-analyzer: Analyzing PR");
+    expect(detail?.children).toEqual([
+      { role: "code-reviewer", activity: "Reading routes.ts" },
+      { role: "qa-engineer", activity: "Working…" },
+      { role: "comment-analyzer", activity: "Analyzing PR" },
+    ]);
+  });
+
+  it("returns per-child lines with no highlighted activity", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer" }),
+    ];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail?.header).toBe("2 agents running");
+    expect(detail?.children).toEqual([
+      { role: "code-reviewer", activity: "Working…" },
+      { role: "qa-engineer", activity: "Working…" },
+    ]);
+  });
+
+  it("returns null when no children and no own activity", () => {
+    expect(getAgentActivityDetail([makeNode({ agent_id: "root" })], "root")).toBeNull();
+  });
+
+  it("does not aggregate grandchildren into parent", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "child", parent: "root", status: "completed" }),
+      makeNode({ agent_id: "grandchild", parent: "child", role: "qa", current_activity: "Testing" }),
+    ];
+    expect(getAgentActivityDetail(nodes, "root")).toBeNull();
+  });
+
+  it("excludes cancelling and cancelled children", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "reviewer", status: "cancelling" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "qa", status: "cancelled" }),
+    ];
+    expect(getAgentActivityDetail(nodes, "root")).toBeNull();
+  });
+});
+
+// ---- getSessionActivityLabel (backward-compat) ----
+
 describe("getSessionActivityLabel", () => {
   it("returns null for empty nodes", () => {
     expect(getSessionActivityLabel([])).toBeNull();
@@ -173,5 +285,66 @@ describe("getSessionActivityLabel", () => {
       makeNode({ agent_id: "c1", parent: "root", status: "completed" }),
     ];
     expect(getSessionActivityLabel(nodes)).toBeNull();
+  });
+});
+
+// ---- getSessionActivityDetail ----
+
+describe("getSessionActivityDetail", () => {
+  it("returns null for empty nodes", () => {
+    expect(getSessionActivityDetail([])).toBeNull();
+  });
+
+  it("returns detail with child lines for root with children", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", current_activity: "Reviewing" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer", current_activity: "Testing" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail?.header).toBe("2 agents running · qa-engineer: Testing");
+    expect(detail?.children).toEqual([
+      { role: "code-reviewer", activity: "Reviewing" },
+      { role: "qa-engineer", activity: "Testing" },
+    ]);
+  });
+
+  it("returns empty children for root with own activity", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", current_activity: "Writing code" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail).toEqual({ header: "Writing code", children: [] });
+  });
+
+  it("returns empty children for multiple running roots", () => {
+    const nodes = [
+      makeNode({ agent_id: "root1" }),
+      makeNode({ agent_id: "root2" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail).toEqual({ header: "2 agents running", children: [] });
+  });
+
+  it("returns child lines in flat fallback", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "qa", current_activity: "Testing" }),
+      makeNode({ agent_id: "c2", parent: "root", role: "cr" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail?.header).toBe("qa: Testing");
+    expect(detail?.children).toEqual([
+      { role: "qa", activity: "Testing" },
+      { role: "cr", activity: "Working…" },
+    ]);
+  });
+
+  it("returns null when all nodes are terminal", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", status: "completed" }),
+    ];
+    expect(getSessionActivityDetail(nodes)).toBeNull();
   });
 });

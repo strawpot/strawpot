@@ -11,7 +11,7 @@ import { useResources } from "@/hooks/queries/use-registry";
 import { useProjectFiles } from "@/hooks/queries/use-projects";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import { getSessionActivityLabel } from "@/lib/agent-activity";
+import { getSessionActivityDetail } from "@/lib/agent-activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,9 +88,9 @@ function StatusBadge({ status }: { status: string }) {
 function ImuAgentMessage({ session, treeData }: { session: ConversationSession; treeData?: TreeData | null }) {
   const isActive = session.status === "running" || session.status === "starting";
 
-  // Derive aggregate activity label — parent nodes show child count, children show own activity
-  const activityLabel = isActive && treeData
-    ? getSessionActivityLabel(treeData.nodes)
+  // Derive structured activity detail — header + per-child lines
+  const activityDetail = isActive && treeData
+    ? getSessionActivityDetail(treeData.nodes)
     : null;
 
   return (
@@ -104,10 +104,23 @@ function ImuAgentMessage({ session, treeData }: { session: ConversationSession; 
       </div>
       <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
         {isActive ? (
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span className="truncate">{activityLabel ?? "Working…"}</span>
-          </span>
+          <div className="flex flex-col gap-1 text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="truncate">{activityDetail?.header ?? "Working…"}</span>
+            </span>
+            {activityDetail && activityDetail.children.length > 1 && (
+              <div className="ml-5.5 flex flex-col gap-0.5 text-xs">
+                {activityDetail.children.map((child) => (
+                  <span key={child.role} className="flex items-center gap-1.5 truncate">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="font-medium">{child.role}</span>
+                    <span className="text-muted-foreground/70">{child.activity}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         ) : session.summary ? (
           <MarkdownContent content={session.summary} className="text-sm text-foreground" />
         ) : (

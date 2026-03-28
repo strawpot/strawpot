@@ -1,30 +1,63 @@
 import type { TreeNode } from "@/api/types";
 
+/** A single child activity line: role name + status text. */
+export interface ChildActivityLine {
+  role: string;
+  activity: string;
+}
+
+/** Structured activity detail for a node — header plus per-child lines. */
+export interface AgentActivityDetail {
+  /** Summary header (e.g. "3 agents running", or own activity). */
+  header: string;
+  /** One line per active sub-agent. Empty when the node shows its own activity. */
+  children: ChildActivityLine[];
+}
+
 /** Format "role: activity" for a node that has current_activity. */
 function formatNodeActivity(node: TreeNode): string {
   return `${node.role}: ${node.current_activity}`;
 }
 
+/** Build a ChildActivityLine for a running child node. */
+function childLine(node: TreeNode): ChildActivityLine {
+  return {
+    role: node.role,
+    activity: node.current_activity ?? "Working…",
+  };
+}
+
 /**
  * Compute a human-readable activity label for an agent node.
  *
- * - If the node has its own `current_activity` (actively using a tool), show that.
- * - If the node has running child agents, show an aggregate summary
- *   like "3 agents running" to keep parent nodes low-noise.
- * - If only one child is running with activity, surface it as
- *   "{role}: {activity}" for extra visibility.
- * - Returns `null` when there's nothing meaningful to display (caller
- *   should fall back to "Working…").
+ * Returns a single-line string for backward compatibility.
+ * Use `getAgentActivityDetail` for structured multi-line data.
  */
 export function getAgentActivityLabel(
   nodes: TreeNode[],
   agentId: string,
 ): string | null {
+  const detail = getAgentActivityDetail(nodes, agentId);
+  return detail?.header ?? null;
+}
+
+/**
+ * Compute structured activity detail for an agent node.
+ *
+ * - If the node has its own `current_activity`, returns it as header with no children.
+ * - If the node has running child agents, returns an aggregate header
+ *   ("3 agents running") plus one line per child with individual activity.
+ * - Returns `null` when there's nothing meaningful to display.
+ */
+export function getAgentActivityDetail(
+  nodes: TreeNode[],
+  agentId: string,
+): AgentActivityDetail | null {
   const node = nodes.find((n) => n.agent_id === agentId);
   if (!node) return null;
 
   if (node.current_activity) {
-    return node.current_activity;
+    return { header: node.current_activity, children: [] };
   }
 
   const runningChildren = nodes.filter(
@@ -35,43 +68,60 @@ export function getAgentActivityLabel(
 
   if (runningChildren.length === 1) {
     const child = runningChildren[0];
-    return child.current_activity
+    const header = child.current_activity
       ? formatNodeActivity(child)
       : `${child.role} running`;
+    return { header, children: [childLine(child)] };
   }
 
-  // Multiple running children — show aggregate count, highlight the latest active one.
+  // Multiple running children — aggregate header + per-child lines.
   const withActivity = runningChildren.filter((n) => n.current_activity);
   const highlighted = withActivity[withActivity.length - 1];
-  if (highlighted) {
-    return `${runningChildren.length} agents running · ${formatNodeActivity(highlighted)}`;
-  }
+  const header = highlighted
+    ? `${runningChildren.length} agents running · ${formatNodeActivity(highlighted)}`
+    : `${runningChildren.length} agents running`;
 
-  return `${runningChildren.length} agents running`;
+  return {
+    header,
+    children: runningChildren.map(childLine),
+  };
 }
 
 /**
  * Compute the top-level activity label for a session's tree.
  *
- * Finds the root agent (no parent) and computes its aggregate label,
- * considering all descendants. Falls back to a flat scan if no tree
- * structure is present.
+ * Returns a single-line string for backward compatibility.
+ * Use `getSessionActivityDetail` for structured multi-line data.
  */
 export function getSessionActivityLabel(
   nodes: TreeNode[],
 ): string | null {
+  const detail = getSessionActivityDetail(nodes);
+  return detail?.header ?? null;
+}
+
+/**
+ * Compute structured activity detail for a session's tree.
+ *
+ * Finds the root agent (no parent) and computes its aggregate detail,
+ * considering direct children. Falls back to a flat scan if no tree
+ * structure is present.
+ */
+export function getSessionActivityDetail(
+  nodes: TreeNode[],
+): AgentActivityDetail | null {
   if (nodes.length === 0) return null;
 
   // Find root node(s) — those without a parent.
   const roots = nodes.filter((n) => n.parent === null && n.status === "running");
 
   if (roots.length === 1) {
-    return getAgentActivityLabel(nodes, roots[0].agent_id);
+    return getAgentActivityDetail(nodes, roots[0].agent_id);
   }
 
   // Multiple running roots — aggregate without detail.
   if (roots.length > 1) {
-    return `${roots.length} agents running`;
+    return { header: `${roots.length} agents running`, children: [] };
   }
 
   // No running root — flat fallback over all still-running nodes.
@@ -80,8 +130,9 @@ export function getSessionActivityLabel(
 
   const withActivity = running.filter((n) => n.current_activity);
   const highlighted = withActivity[withActivity.length - 1];
-  if (highlighted) {
-    return formatNodeActivity(highlighted);
-  }
-  return `${running.length} agent${running.length === 1 ? "" : "s"} running`;
+  const header = highlighted
+    ? formatNodeActivity(highlighted)
+    : `${running.length} agent${running.length === 1 ? "" : "s"} running`;
+
+  return { header, children: running.map(childLine) };
 }
