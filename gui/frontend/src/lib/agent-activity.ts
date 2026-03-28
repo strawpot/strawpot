@@ -13,6 +13,21 @@ function formatNodeActivity(node: TreeNode): string {
   return `${node.role}: ${node.current_activity}`;
 }
 
+/** Build "N agent(s) running" header. */
+function formatRunningHeader(count: number): string {
+  return `${count} agent${count === 1 ? "" : "s"} running`;
+}
+
+/** Build detail from a set of running nodes: count header + most-recent child activity. */
+function buildRunningDetail(runningNodes: TreeNode[]): AgentActivityDetail {
+  const withActivity = runningNodes.filter((n) => n.current_activity);
+  const mostRecent = withActivity[withActivity.length - 1];
+  return {
+    header: formatRunningHeader(runningNodes.length),
+    childActivity: mostRecent ? formatNodeActivity(mostRecent) : "Working…",
+  };
+}
+
 /**
  * Compute a human-readable activity label for an agent node.
  *
@@ -52,20 +67,7 @@ export function getAgentActivityDetail(
 
   if (runningChildren.length === 0) return null;
 
-  // Find the most-recently-updated child (last with current_activity).
-  const withActivity = runningChildren.filter((n) => n.current_activity);
-  const mostRecent = withActivity[withActivity.length - 1];
-
-  const count = runningChildren.length;
-  const header =
-    count === 1
-      ? `1 agent running`
-      : `${count} agents running`;
-  const childActivity = mostRecent
-    ? formatNodeActivity(mostRecent)
-    : "Working…";
-
-  return { header, childActivity };
+  return buildRunningDetail(runningChildren);
 }
 
 /**
@@ -102,19 +104,12 @@ export function getSessionActivityDetail(
 
   // Multiple running roots — aggregate without detail.
   if (roots.length > 1) {
-    return { header: `${roots.length} agents running`, childActivity: null };
+    return { header: formatRunningHeader(roots.length), childActivity: null };
   }
 
   // No running root — flat fallback over all still-running nodes.
   const running = nodes.filter((n) => n.status === "running");
   if (running.length === 0) return null;
 
-  const withActivity = running.filter((n) => n.current_activity);
-  const mostRecent = withActivity[withActivity.length - 1];
-  const header = `${running.length} agent${running.length === 1 ? "" : "s"} running`;
-  const childActivity = mostRecent
-    ? formatNodeActivity(mostRecent)
-    : "Working…";
-
-  return { header, childActivity };
+  return buildRunningDetail(running);
 }
