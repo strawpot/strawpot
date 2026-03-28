@@ -14,8 +14,8 @@ export function AgentActivityStatus({ detail }: { detail: AgentActivityDetail | 
       </span>
       {(detail?.children.length ?? 0) > 1 && (
         <div className="ml-5.5 flex flex-col gap-0.5 text-xs">
-          {detail!.children.map((child) => (
-            <span key={child.role} className="flex items-center gap-1.5 truncate">
+          {detail!.children.map((child, i) => (
+            <span key={i} className="flex items-center gap-1.5 truncate">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
               <span className="font-medium">{child.role}</span>
               <span className="text-muted-foreground/70">{child.activity}</span>
