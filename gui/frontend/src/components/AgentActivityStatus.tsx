@@ -3,7 +3,9 @@ import type { AgentActivityDetail } from "@/lib/agent-activity";
 
 /**
  * Displays real-time agent activity: a header line with spinner,
- * plus optional per-child activity lines beneath it.
+ * plus an optional single child-activity line beneath it.
+ *
+ * Fixed 2-line footprint: header ("3 agents running") + most-recent child activity.
  */
 export function AgentActivityStatus({ detail }: { detail: AgentActivityDetail | null }) {
   return (
@@ -12,16 +14,11 @@ export function AgentActivityStatus({ detail }: { detail: AgentActivityDetail | 
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         <span className="truncate">{detail?.header ?? "Working…"}</span>
       </span>
-      {(detail?.children.length ?? 0) > 1 && (
-        <div className="ml-5.5 flex flex-col gap-0.5 text-xs">
-          {detail!.children.map((child, i) => (
-            <span key={i} className="flex items-center gap-1.5 truncate">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="font-medium">{child.role}</span>
-              <span className="text-muted-foreground/70">{child.activity}</span>
-            </span>
-          ))}
-        </div>
+      {detail?.childActivity && (
+        <span className="ml-5.5 flex items-center gap-1.5 truncate text-xs">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-muted-foreground/70">{detail.childActivity}</span>
+        </span>
       )}
     </div>
   );

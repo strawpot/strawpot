@@ -41,20 +41,20 @@ describe("getAgentActivityLabel", () => {
     expect(getAgentActivityLabel(nodes, "root")).toBe("Thinking");
   });
 
-  it("shows single running child with activity", () => {
+  it("shows count header for single running child", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "child", parent: "root", role: "code-reviewer", current_activity: "Reading src/api.ts" }),
     ];
-    expect(getAgentActivityLabel(nodes, "root")).toBe("code-reviewer: Reading src/api.ts");
+    expect(getAgentActivityLabel(nodes, "root")).toBe("1 agent running");
   });
 
-  it("shows single running child without activity", () => {
+  it("shows count header for single running child without activity", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "child", parent: "root", role: "qa-engineer" }),
     ];
-    expect(getAgentActivityLabel(nodes, "root")).toBe("qa-engineer running");
+    expect(getAgentActivityLabel(nodes, "root")).toBe("1 agent running");
   });
 
   it("shows aggregate count for multiple running children", () => {
@@ -67,15 +67,14 @@ describe("getAgentActivityLabel", () => {
     expect(getAgentActivityLabel(nodes, "root")).toBe("3 agents running");
   });
 
-  it("shows aggregate count with highlighted activity", () => {
+  it("shows aggregate count without highlighted inline activity", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", current_activity: "Reading routes.ts" }),
       makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer" }),
     ];
-    expect(getAgentActivityLabel(nodes, "root")).toBe(
-      "2 agents running · code-reviewer: Reading routes.ts",
-    );
+    // Header is just the count — activity is in childActivity, not header
+    expect(getAgentActivityLabel(nodes, "root")).toBe("2 agents running");
   });
 
   it("ignores completed children", () => {
@@ -84,7 +83,7 @@ describe("getAgentActivityLabel", () => {
       makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", status: "completed" }),
       makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer", current_activity: "Running tests" }),
     ];
-    expect(getAgentActivityLabel(nodes, "root")).toBe("qa-engineer: Running tests");
+    expect(getAgentActivityLabel(nodes, "root")).toBe("1 agent running");
   });
 
   it("returns null when no children and no own activity", () => {
@@ -118,50 +117,46 @@ describe("getAgentActivityDetail", () => {
     expect(getAgentActivityDetail([], "nope")).toBeNull();
   });
 
-  it("returns own activity with empty children", () => {
+  it("returns own activity with no child activity", () => {
     const nodes = [makeNode({ agent_id: "root", current_activity: "Reading foo.ts" })];
     const detail = getAgentActivityDetail(nodes, "root");
     expect(detail).toEqual({
       header: "Reading foo.ts",
-      children: [],
+      childActivity: null,
     });
   });
 
-  it("prefers own activity — no child lines when parent is active", () => {
+  it("prefers own activity — no child activity when parent is active", () => {
     const nodes = [
       makeNode({ agent_id: "root", current_activity: "Thinking" }),
       makeNode({ agent_id: "child", parent: "root", role: "cr", current_activity: "Reading" }),
     ];
     const detail = getAgentActivityDetail(nodes, "root");
     expect(detail?.header).toBe("Thinking");
-    expect(detail?.children).toEqual([]);
+    expect(detail?.childActivity).toBeNull();
   });
 
-  it("returns single child line for one running child with activity", () => {
+  it("returns count header + most-recent child activity for one running child", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "child", parent: "root", role: "code-reviewer", current_activity: "Reading src/api.ts" }),
     ];
     const detail = getAgentActivityDetail(nodes, "root");
-    expect(detail?.header).toBe("code-reviewer: Reading src/api.ts");
-    expect(detail?.children).toEqual([
-      { role: "code-reviewer", activity: "Reading src/api.ts" },
-    ]);
+    expect(detail?.header).toBe("1 agent running");
+    expect(detail?.childActivity).toBe("code-reviewer: Reading src/api.ts");
   });
 
-  it("returns single child line with fallback activity for child without activity", () => {
+  it("returns Working… child activity for child without activity", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "child", parent: "root", role: "qa-engineer" }),
     ];
     const detail = getAgentActivityDetail(nodes, "root");
-    expect(detail?.header).toBe("qa-engineer running");
-    expect(detail?.children).toEqual([
-      { role: "qa-engineer", activity: "Working…" },
-    ]);
+    expect(detail?.header).toBe("1 agent running");
+    expect(detail?.childActivity).toBe("Working…");
   });
 
-  it("returns per-child lines for multiple running children", () => {
+  it("returns most-recent child activity for multiple running children", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", current_activity: "Reading routes.ts" }),
@@ -169,15 +164,11 @@ describe("getAgentActivityDetail", () => {
       makeNode({ agent_id: "c3", parent: "root", role: "comment-analyzer", current_activity: "Analyzing PR" }),
     ];
     const detail = getAgentActivityDetail(nodes, "root");
-    expect(detail?.header).toBe("3 agents running · comment-analyzer: Analyzing PR");
-    expect(detail?.children).toEqual([
-      { role: "code-reviewer", activity: "Reading routes.ts" },
-      { role: "qa-engineer", activity: "Working…" },
-      { role: "comment-analyzer", activity: "Analyzing PR" },
-    ]);
+    expect(detail?.header).toBe("3 agents running");
+    expect(detail?.childActivity).toBe("comment-analyzer: Analyzing PR");
   });
 
-  it("returns per-child lines with no highlighted activity", () => {
+  it("returns Working… when no children have activity", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer" }),
@@ -185,10 +176,7 @@ describe("getAgentActivityDetail", () => {
     ];
     const detail = getAgentActivityDetail(nodes, "root");
     expect(detail?.header).toBe("2 agents running");
-    expect(detail?.children).toEqual([
-      { role: "code-reviewer", activity: "Working…" },
-      { role: "qa-engineer", activity: "Working…" },
-    ]);
+    expect(detail?.childActivity).toBe("Working…");
   });
 
   it("returns null when no children and no own activity", () => {
@@ -221,12 +209,12 @@ describe("getSessionActivityLabel", () => {
     expect(getSessionActivityLabel([])).toBeNull();
   });
 
-  it("delegates to root node", () => {
+  it("delegates to root node — shows count for single child", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "c1", parent: "root", role: "reviewer", current_activity: "Reviewing" }),
     ];
-    expect(getSessionActivityLabel(nodes)).toBe("reviewer: Reviewing");
+    expect(getSessionActivityLabel(nodes)).toBe("1 agent running");
   });
 
   it("handles root with own activity", () => {
@@ -250,8 +238,7 @@ describe("getSessionActivityLabel", () => {
       makeNode({ agent_id: "root", status: "completed" }),
       makeNode({ agent_id: "c1", parent: "root", role: "reviewer", current_activity: "Reading" }),
     ];
-    // Root is completed so getSessionActivityLabel uses flat fallback
-    expect(getSessionActivityLabel(nodes)).toBe("reviewer: Reading");
+    expect(getSessionActivityLabel(nodes)).toBe("1 agent running");
   });
 
   it("aggregates multiple running roots", () => {
@@ -295,49 +282,53 @@ describe("getSessionActivityDetail", () => {
     expect(getSessionActivityDetail([])).toBeNull();
   });
 
-  it("returns detail with child lines for root with children", () => {
+  it("returns most-recent child activity for root with children", () => {
     const nodes = [
       makeNode({ agent_id: "root" }),
       makeNode({ agent_id: "c1", parent: "root", role: "code-reviewer", current_activity: "Reviewing" }),
       makeNode({ agent_id: "c2", parent: "root", role: "qa-engineer", current_activity: "Testing" }),
     ];
     const detail = getSessionActivityDetail(nodes);
-    expect(detail?.header).toBe("2 agents running · qa-engineer: Testing");
-    expect(detail?.children).toEqual([
-      { role: "code-reviewer", activity: "Reviewing" },
-      { role: "qa-engineer", activity: "Testing" },
-    ]);
+    expect(detail?.header).toBe("2 agents running");
+    expect(detail?.childActivity).toBe("qa-engineer: Testing");
   });
 
-  it("returns empty children for root with own activity", () => {
+  it("returns no child activity for root with own activity", () => {
     const nodes = [
       makeNode({ agent_id: "root", current_activity: "Writing code" }),
     ];
     const detail = getSessionActivityDetail(nodes);
-    expect(detail).toEqual({ header: "Writing code", children: [] });
+    expect(detail).toEqual({ header: "Writing code", childActivity: null });
   });
 
-  it("returns empty children for multiple running roots", () => {
+  it("returns no child activity for multiple running roots", () => {
     const nodes = [
       makeNode({ agent_id: "root1" }),
       makeNode({ agent_id: "root2" }),
     ];
     const detail = getSessionActivityDetail(nodes);
-    expect(detail).toEqual({ header: "2 agents running", children: [] });
+    expect(detail).toEqual({ header: "2 agents running", childActivity: null });
   });
 
-  it("returns child lines in flat fallback", () => {
+  it("returns most-recent child activity in flat fallback", () => {
     const nodes = [
       makeNode({ agent_id: "root", status: "completed" }),
       makeNode({ agent_id: "c1", parent: "root", role: "qa", current_activity: "Testing" }),
       makeNode({ agent_id: "c2", parent: "root", role: "cr" }),
     ];
     const detail = getSessionActivityDetail(nodes);
-    expect(detail?.header).toBe("qa: Testing");
-    expect(detail?.children).toEqual([
-      { role: "qa", activity: "Testing" },
-      { role: "cr", activity: "Working…" },
-    ]);
+    expect(detail?.header).toBe("2 agents running");
+    expect(detail?.childActivity).toBe("qa: Testing");
+  });
+
+  it("returns Working… when flat fallback has no activity", () => {
+    const nodes = [
+      makeNode({ agent_id: "root", status: "completed" }),
+      makeNode({ agent_id: "c1", parent: "root", role: "qa" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail?.header).toBe("1 agent running");
+    expect(detail?.childActivity).toBe("Working…");
   });
 
   it("returns null when all nodes are terminal", () => {

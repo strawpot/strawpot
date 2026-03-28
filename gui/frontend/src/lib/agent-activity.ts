@@ -1,30 +1,16 @@
 import type { TreeNode } from "@/api/types";
 
-/** A single child activity line: role name + status text. */
-export interface ChildActivityLine {
-  role: string;
-  activity: string;
-}
-
-/** Structured activity detail for a node — header plus per-child lines. */
+/** Structured activity detail for a node — header plus most-recent child activity. */
 export interface AgentActivityDetail {
   /** Summary header (e.g. "3 agents running", or own activity). */
   header: string;
-  /** One line per active sub-agent. Empty when the node shows its own activity. */
-  children: ChildActivityLine[];
+  /** Most-recently-updated sub-agent activity, or null when showing own activity. */
+  childActivity: string | null;
 }
 
 /** Format "role: activity" for a node that has current_activity. */
 function formatNodeActivity(node: TreeNode): string {
   return `${node.role}: ${node.current_activity}`;
-}
-
-/** Build a ChildActivityLine for a running child node. */
-function childLine(node: TreeNode): ChildActivityLine {
-  return {
-    role: node.role,
-    activity: node.current_activity ?? "Working…",
-  };
 }
 
 /**
@@ -44,9 +30,9 @@ export function getAgentActivityLabel(
 /**
  * Compute structured activity detail for an agent node.
  *
- * - If the node has its own `current_activity`, returns it as header with no children.
+ * - If the node has its own `current_activity`, returns it as header with no child activity.
  * - If the node has running child agents, returns an aggregate header
- *   ("3 agents running") plus one line per child with individual activity.
+ *   ("3 agents running") plus the most-recently-updated child's activity.
  * - Returns `null` when there's nothing meaningful to display.
  */
 export function getAgentActivityDetail(
@@ -57,7 +43,7 @@ export function getAgentActivityDetail(
   if (!node) return null;
 
   if (node.current_activity) {
-    return { header: node.current_activity, children: [] };
+    return { header: node.current_activity, childActivity: null };
   }
 
   const runningChildren = nodes.filter(
@@ -66,25 +52,20 @@ export function getAgentActivityDetail(
 
   if (runningChildren.length === 0) return null;
 
-  if (runningChildren.length === 1) {
-    const child = runningChildren[0];
-    const header = child.current_activity
-      ? formatNodeActivity(child)
-      : `${child.role} running`;
-    return { header, children: [childLine(child)] };
-  }
-
-  // Multiple running children — aggregate header + per-child lines.
+  // Find the most-recently-updated child (last with current_activity).
   const withActivity = runningChildren.filter((n) => n.current_activity);
-  const highlighted = withActivity[withActivity.length - 1];
-  const header = highlighted
-    ? `${runningChildren.length} agents running · ${formatNodeActivity(highlighted)}`
-    : `${runningChildren.length} agents running`;
+  const mostRecent = withActivity[withActivity.length - 1];
 
-  return {
-    header,
-    children: runningChildren.map(childLine),
-  };
+  const count = runningChildren.length;
+  const header =
+    count === 1
+      ? `1 agent running`
+      : `${count} agents running`;
+  const childActivity = mostRecent
+    ? formatNodeActivity(mostRecent)
+    : "Working…";
+
+  return { header, childActivity };
 }
 
 /**
@@ -121,7 +102,7 @@ export function getSessionActivityDetail(
 
   // Multiple running roots — aggregate without detail.
   if (roots.length > 1) {
-    return { header: `${roots.length} agents running`, children: [] };
+    return { header: `${roots.length} agents running`, childActivity: null };
   }
 
   // No running root — flat fallback over all still-running nodes.
@@ -129,10 +110,11 @@ export function getSessionActivityDetail(
   if (running.length === 0) return null;
 
   const withActivity = running.filter((n) => n.current_activity);
-  const highlighted = withActivity[withActivity.length - 1];
-  const header = highlighted
-    ? formatNodeActivity(highlighted)
-    : `${running.length} agent${running.length === 1 ? "" : "s"} running`;
+  const mostRecent = withActivity[withActivity.length - 1];
+  const header = `${running.length} agent${running.length === 1 ? "" : "s"} running`;
+  const childActivity = mostRecent
+    ? formatNodeActivity(mostRecent)
+    : "Working…";
 
-  return { header, children: running.map(childLine) };
+  return { header, childActivity };
 }
