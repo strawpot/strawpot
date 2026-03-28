@@ -11,7 +11,8 @@ import { useResources } from "@/hooks/queries/use-registry";
 import { useProjectFiles } from "@/hooks/queries/use-projects";
 import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
-import { getSessionActivityLabel } from "@/lib/agent-activity";
+import { getSessionActivityDetail } from "@/lib/agent-activity";
+import { AgentActivityStatus } from "@/components/AgentActivityStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,9 +89,9 @@ function StatusBadge({ status }: { status: string }) {
 function ImuAgentMessage({ session, treeData }: { session: ConversationSession; treeData?: TreeData | null }) {
   const isActive = session.status === "running" || session.status === "starting";
 
-  // Derive aggregate activity label — parent nodes show child count, children show own activity
-  const activityLabel = isActive && treeData
-    ? getSessionActivityLabel(treeData.nodes)
+  // Derive structured activity detail — header + per-child lines
+  const activityDetail = isActive && treeData
+    ? getSessionActivityDetail(treeData.nodes)
     : null;
 
   return (
@@ -104,10 +105,7 @@ function ImuAgentMessage({ session, treeData }: { session: ConversationSession; 
       </div>
       <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
         {isActive ? (
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span className="truncate">{activityLabel ?? "Working…"}</span>
-          </span>
+          <AgentActivityStatus detail={activityDetail} />
         ) : session.summary ? (
           <MarkdownContent content={session.summary} className="text-sm text-foreground" />
         ) : (
