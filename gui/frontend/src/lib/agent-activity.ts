@@ -65,7 +65,7 @@ export function getAgentActivityLabel(
  *   ("3 agents running") plus the most-recently-updated child's activity.
  *   The count includes the parent itself (parent + children).
  * - If the node has its own `current_activity` but no running children,
- *   returns it as header with no child activity.
+ *   returns "role: activity" as header with no child activity.
  * - Returns `null` when there's nothing meaningful to display.
  */
 export function getAgentActivityDetail(
@@ -85,9 +85,9 @@ export function getAgentActivityDetail(
     return buildRunningDetail(runningChildren, runningChildren.length + 1);
   }
 
-  // No running children — fall back to own activity.
+  // No running children — fall back to own activity, prefixed with role.
   if (node.current_activity) {
-    return { header: node.current_activity, childActivity: null };
+    return { header: formatNodeActivity(node), childActivity: null };
   }
 
   return null;
