@@ -223,6 +223,28 @@ export function useSessionWS(
           case "stream_complete":
             streamDoneRef.current = true;
             setPendingAskUsers([]);
+            // Transition any still-running nodes to terminal state so the
+            // tree UI immediately reflects the session being done.
+            setTreeData((prev) => {
+              if (!prev) return prev;
+              const hasRunning = prev.nodes.some(
+                (n) => n.status === "running" || n.status === "cancelling",
+              );
+              if (!hasRunning) return prev;
+              return {
+                ...prev,
+                nodes: prev.nodes.map((n) => {
+                  if (n.status === "running") {
+                    return { ...n, status: "completed" as const, current_activity: null };
+                  }
+                  if (n.status === "cancelling") {
+                    return { ...n, status: "cancelled" as const, current_activity: null };
+                  }
+                  return n;
+                }),
+                pending_delegations: [],
+              };
+            });
             ws.close();
             wsRef.current = null;
             setConnected(false);
