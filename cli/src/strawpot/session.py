@@ -742,21 +742,22 @@ class Session:
         t.start()
 
     def _activity_watcher_loop(self) -> None:
-        """Poll agent .log files and emit tool_start/tool_end trace events.
+        """Poll agent .log files and emit tool_start/tool_end + activity_update trace events.
 
         Precondition: ``self._tracer`` is not None (checked by caller).
         """
         from strawpot.activity import (
+            ActivityInfo,
             get_agent_log_path,
-            parse_activity,
+            parse_activity_structured,
             read_last_activity_line,
         )
 
         tracer = self._tracer
         assert tracer is not None  # guaranteed by _start_activity_watcher
         session_dir = self._session_dir()
-        # Track current activity per agent: agent_id -> (tool, summary)
-        current: dict[str, tuple[str, str]] = {}
+        # Track current activity per agent: agent_id -> ActivityInfo
+        current: dict[str, ActivityInfo] = {}
 
         while not self._cancel_watcher_stop.is_set():
             try:
@@ -770,23 +771,29 @@ class Session:
                 for agent_id, span_id in running_agents:
                     log_path = get_agent_log_path(session_dir, agent_id)
                     last_line = read_last_activity_line(log_path)
-                    parsed = parse_activity(last_line) if last_line else None
+                    parsed = parse_activity_structured(last_line) if last_line else None
 
                     prev = current.get(agent_id)
 
-                    if parsed and parsed != prev:
+                    if parsed and (prev is None or parsed != prev):
                         # Activity changed — close previous, open new.
                         if prev is not None:
                             tracer.tool_end(
                                 span_id=span_id,
                                 agent_id=agent_id,
-                                tool=prev[0],
+                                tool=prev.tool,
                             )
                         tracer.tool_start(
                             span_id=span_id,
                             agent_id=agent_id,
-                            tool=parsed[0],
-                            summary=parsed[1],
+                            tool=parsed.tool,
+                            summary=parsed.summary,
+                        )
+                        tracer.activity_update(
+                            span_id=span_id,
+                            agent_id=agent_id,
+                            action=parsed.tool,
+                            target=parsed.target,
                         )
                         current[agent_id] = parsed
 
@@ -795,7 +802,7 @@ class Session:
                         tracer.tool_end(
                             span_id=span_id,
                             agent_id=agent_id,
-                            tool=prev[0],
+                            tool=prev.tool,
                         )
                         del current[agent_id]
 
@@ -806,7 +813,7 @@ class Session:
                         prev = current.pop(aid)
                         span_id = self._agent_spans.get(aid, "")
                         tracer.tool_end(
-                            span_id=span_id, agent_id=aid, tool=prev[0],
+                            span_id=span_id, agent_id=aid, tool=prev.tool,
                         )
 
             except OSError:
@@ -820,7 +827,7 @@ class Session:
         for aid, prev in current.items():
             span_id = self._agent_spans.get(aid, "")
             try:
-                tracer.tool_end(span_id=span_id, agent_id=aid, tool=prev[0])
+                tracer.tool_end(span_id=span_id, agent_id=aid, tool=prev.tool)
             except Exception:
                 logger.debug("Failed to emit final tool_end for %s", aid)
 
