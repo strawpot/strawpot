@@ -483,6 +483,25 @@ class Tracer:
             duration_ms=duration_ms,
         )
 
+    def activity_update(
+        self,
+        *,
+        span_id: str,
+        agent_id: str,
+        action: str,
+        target: str = "",
+        detail: str = "",
+    ) -> None:
+        """Emit ``activity_update`` with structured activity data."""
+        self.emit(
+            "activity_update",
+            span_id,
+            agent_id=agent_id,
+            action=action,
+            target=target,
+            detail=detail,
+        )
+
     def agent_cancel_start(
         self,
         *,
