@@ -456,17 +456,44 @@ class TestParseActivityFromLogLine:
     def test_truncates_long_lines(self):
         from strawpot_gui.routers.ws import _parse_activity_from_log_line
 
-        long_line = "x" * 200
+        # Use a recognised verb prefix so the line is accepted as activity
+        long_line = "Reading " + "x" * 200
         result = _parse_activity_from_log_line(long_line)
-        assert len(result) == 118  # 117 chars + "…" (single char)
+        assert result is not None
+        assert len(result) <= 120
         assert result.endswith("…")
 
     def test_does_not_truncate_line_at_boundary(self):
         from strawpot_gui.routers.ws import _parse_activity_from_log_line
 
-        line_120 = "x" * 120
-        result = _parse_activity_from_log_line(line_120)
-        assert result == line_120  # exactly 120 — not truncated
+        line = "Running " + "x" * 112  # exactly 120 chars
+        result = _parse_activity_from_log_line(line)
+        assert result == line  # exactly 120 — not truncated
+
+    def test_returns_none_for_unrecognised_text(self):
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        # Plain text that doesn't look like activity should be filtered
+        assert _parse_activity_from_log_line("Here is the code:") is None
+        assert _parse_activity_from_log_line("x" * 200) is None
+
+    def test_accepts_verbs_from_all_regex_groups(self):
+        """Verify verbs from each line of the keyword regex are accepted."""
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        # Sample verbs from different lines of _ACTIVITY_KEYWORDS_RE
+        assert _parse_activity_from_log_line("Installing packages") == "Installing packages"
+        assert _parse_activity_from_log_line("Deploying to staging") == "Deploying to staging"
+        assert _parse_activity_from_log_line("Rebasing branch") == "Rebasing branch"
+        assert _parse_activity_from_log_line("Fetching data") == "Fetching data"
+        assert _parse_activity_from_log_line("Analyzing code") == "Analyzing code"
+
+    def test_accepts_ellipsis_suffix_without_keyword(self):
+        """Lines ending with ... or … are accepted even without a known verb."""
+        from strawpot_gui.routers.ws import _parse_activity_from_log_line
+
+        assert _parse_activity_from_log_line("Doing something...") == "Doing something..."
+        assert _parse_activity_from_log_line("Working on it…") == "Working on it…"
 
     def test_combined_ansi_and_spinner(self):
         from strawpot_gui.routers.ws import _parse_activity_from_log_line

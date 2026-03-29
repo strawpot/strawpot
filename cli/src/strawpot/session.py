@@ -453,6 +453,10 @@ class Session:
             # 6a. Start cancel signal watcher
             self._start_cancel_watcher()
 
+            # 6b. Start activity watcher (emits tool_start/tool_end
+            #     trace events by monitoring agent log files).
+            self._start_activity_watcher()
+
             # 7. Install signal handler before blocking attach
             signal.signal(signal.SIGINT, self._handle_sigint)
 
@@ -719,6 +723,106 @@ class Session:
         finally:
             if signal_path:
                 mark_signal_done(signal_path)
+
+    # ------------------------------------------------------------------
+    # Activity watcher — emits tool_start / tool_end trace events
+    # ------------------------------------------------------------------
+
+    _ACTIVITY_POLL_INTERVAL = 1.0  # seconds
+
+    def _start_activity_watcher(self) -> None:
+        """Start a daemon thread that monitors agent logs for activity."""
+        if self._tracer is None:
+            return  # Tracing disabled — nothing to emit.
+        t = threading.Thread(
+            target=self._activity_watcher_loop,
+            name="activity-watcher",
+            daemon=True,
+        )
+        t.start()
+
+    def _activity_watcher_loop(self) -> None:
+        """Poll agent .log files and emit tool_start/tool_end trace events.
+
+        Precondition: ``self._tracer`` is not None (checked by caller).
+        """
+        from strawpot.activity import (
+            get_agent_log_path,
+            parse_activity,
+            read_last_activity_line,
+        )
+
+        tracer = self._tracer
+        assert tracer is not None  # guaranteed by _start_activity_watcher
+        session_dir = self._session_dir()
+        # Track current activity per agent: agent_id -> (tool, summary)
+        current: dict[str, tuple[str, str]] = {}
+
+        while not self._cancel_watcher_stop.is_set():
+            try:
+                # Snapshot running agents to avoid holding locks.
+                running_agents = [
+                    (aid, self._agent_spans.get(aid, ""))
+                    for aid, info in list(self._agent_info.items())
+                    if info.get("state", AgentState.RUNNING) == AgentState.RUNNING
+                ]
+
+                for agent_id, span_id in running_agents:
+                    log_path = get_agent_log_path(session_dir, agent_id)
+                    last_line = read_last_activity_line(log_path)
+                    parsed = parse_activity(last_line) if last_line else None
+
+                    prev = current.get(agent_id)
+
+                    if parsed and parsed != prev:
+                        # Activity changed — close previous, open new.
+                        if prev is not None:
+                            tracer.tool_end(
+                                span_id=span_id,
+                                agent_id=agent_id,
+                                tool=prev[0],
+                            )
+                        tracer.tool_start(
+                            span_id=span_id,
+                            agent_id=agent_id,
+                            tool=parsed[0],
+                            summary=parsed[1],
+                        )
+                        current[agent_id] = parsed
+
+                    elif parsed is None and prev is not None:
+                        # Activity cleared.
+                        tracer.tool_end(
+                            span_id=span_id,
+                            agent_id=agent_id,
+                            tool=prev[0],
+                        )
+                        del current[agent_id]
+
+                # Emit tool_end for agents that stopped while active.
+                running_ids = {aid for aid, _ in running_agents}
+                for aid in list(current):
+                    if aid not in running_ids:
+                        prev = current.pop(aid)
+                        span_id = self._agent_spans.get(aid, "")
+                        tracer.tool_end(
+                            span_id=span_id, agent_id=aid, tool=prev[0],
+                        )
+
+            except OSError:
+                logger.debug("Activity watcher I/O error", exc_info=True)
+            except Exception:
+                logger.warning("Activity watcher error", exc_info=True)
+
+            self._cancel_watcher_stop.wait(timeout=self._ACTIVITY_POLL_INTERVAL)
+
+        # Drain: emit tool_end for any activities still tracked at shutdown.
+        for aid, prev in current.items():
+            span_id = self._agent_spans.get(aid, "")
+            try:
+                tracer.tool_end(span_id=span_id, agent_id=aid, tool=prev[0])
+            except Exception:
+                logger.debug("Failed to emit final tool_end for %s", aid)
 
     # ------------------------------------------------------------------
     # Denden server
