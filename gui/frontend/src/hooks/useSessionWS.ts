@@ -48,6 +48,14 @@ export function useSessionWS(
   const traceOffsetRef = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const backoffMs = useRef(1000);
+
+  // Track the runId+scopeKey that state was last reset for.
+  // During the render where these change but before the reset effect fires,
+  // state is stale (belongs to the previous session) — return nulls to
+  // prevent cross-conversation interference.
+  const settledRunIdRef = useRef(runId);
+  const settledScopeKeyRef = useRef(scopeKey);
+  const stale = settledRunIdRef.current !== runId || settledScopeKeyRef.current !== scopeKey;
   const streamDoneRef = useRef(false);
   // Track which agents are subscribed so we can re-subscribe on reconnect
   const subscribedAgentsRef = useRef<Set<string>>(new Set());
@@ -79,6 +87,8 @@ export function useSessionWS(
 
   // Reset all session state when switching to a different session or scope
   useEffect(() => {
+    settledRunIdRef.current = runId;
+    settledScopeKeyRef.current = scopeKey;
     setPendingAskUsers([]);
     setChatMessages([]);
     setTraceEvents([]);
@@ -279,13 +289,16 @@ export function useSessionWS(
     };
   }, [runId, active]);
 
+  // When runId/scopeKey changed but the reset effect hasn't fired yet,
+  // state belongs to the previous session — return empty values to avoid
+  // cross-conversation interference.
   return {
-    pendingAskUsers,
-    chatMessages,
-    traceEvents,
-    treeData,
-    connected,
-    agentLogs,
+    pendingAskUsers: stale ? [] : pendingAskUsers,
+    chatMessages: stale ? [] : chatMessages,
+    traceEvents: stale ? [] : traceEvents,
+    treeData: stale ? null : treeData,
+    connected: stale ? false : connected,
+    agentLogs: stale ? new Map() : agentLogs,
     respond,
     subscribeLogs,
     unsubscribeLogs,

@@ -66,6 +66,7 @@ function makeNode(overrides: Partial<TreeNode> & { agent_id: string }): TreeNode
     duration_ms: null,
     parent: null,
     current_activity: null,
+    activity_action: null,
     ...overrides,
   };
 }

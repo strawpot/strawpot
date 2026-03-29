@@ -6,6 +6,8 @@ export interface AgentActivityDetail {
   header: string;
   /** Most-recently-updated sub-agent activity, or null when showing own activity. */
   childActivity: string | null;
+  /** Action type for icon rendering (e.g. "Read", "Edit", "Bash"), or null for default spinner. */
+  activityAction: string | null;
 }
 
 /** Format "role: activity" for a node that has current_activity. */
@@ -16,6 +18,20 @@ function formatNodeActivity(node: TreeNode): string {
 /** Build "N agent(s) running" header. */
 function formatRunningHeader(count: number): string {
   return `${count} agent${count === 1 ? "" : "s"} running`;
+}
+
+/**
+ * Count all running agents in the subtree rooted at `agentId`,
+ * including the root node itself.
+ */
+function countRunningSubtree(nodes: TreeNode[], agentId: string): number {
+  let count = 1; // the node itself
+  for (const n of nodes) {
+    if (n.parent === agentId && n.status === "running") {
+      count += countRunningSubtree(nodes, n.agent_id);
+    }
+  }
+  return count;
 }
 
 /**
@@ -41,6 +57,7 @@ function buildRunningDetail(
       : lastChild
         ? `${lastChild.role}: Working…`
         : "Working…",
+    activityAction: mostRecent?.activity_action ?? null,
   };
 }
 
@@ -81,13 +98,14 @@ export function getAgentActivityDetail(
   );
 
   if (runningChildren.length > 0) {
-    // +1 to include the parent node itself in the total count.
-    return buildRunningDetail(runningChildren, runningChildren.length + 1);
+    // Count entire running subtree (parent + all descendants), not just direct children.
+    const totalCount = countRunningSubtree(nodes, agentId);
+    return buildRunningDetail(runningChildren, totalCount);
   }
 
   // No running children — fall back to own activity, prefixed with role.
   if (node.current_activity) {
-    return { header: formatNodeActivity(node), childActivity: null };
+    return { header: formatNodeActivity(node), childActivity: null, activityAction: node.activity_action };
   }
 
   return null;
@@ -125,9 +143,10 @@ export function getSessionActivityDetail(
     return getAgentActivityDetail(nodes, roots[0].agent_id);
   }
 
-  // Multiple running roots — aggregate without detail.
+  // Multiple running roots — aggregate all running agents.
   if (roots.length > 1) {
-    return { header: formatRunningHeader(roots.length), childActivity: null };
+    const totalRunning = nodes.filter((n) => n.status === "running").length;
+    return { header: formatRunningHeader(totalRunning), childActivity: null, activityAction: null };
   }
 
   // No running root — flat fallback over all still-running nodes.
