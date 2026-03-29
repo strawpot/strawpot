@@ -146,6 +146,29 @@ def cli(ctx):
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
+
+# Project-scoped commands that should show the init hint
+_HINT_COMMANDS = {"start", "config", "doctor"}
+
+
+@cli.result_callback()
+@click.pass_context
+def _show_init_hint_callback(ctx, *args, **kwargs):
+    """Show init hint after project-scoped commands if no CLAUDE.md exists."""
+    parent_ctx = ctx.parent
+    if parent_ctx is None:
+        return
+    invoked = parent_ctx.invoked_subcommand
+    if invoked not in _HINT_COMMANDS:
+        return
+    try:
+        from strawpot.init.hint import should_show_init_hint, show_init_hint
+        if should_show_init_hint(Path.cwd()):
+            show_init_hint()
+    except Exception:
+        pass  # Never let hint logic break the CLI
+
+
 # ---------------------------------------------------------------------------
 # Quickstart guide
 # ---------------------------------------------------------------------------
