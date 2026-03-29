@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
@@ -85,6 +86,7 @@ class TreeNode:
     parent: str | None = None
     cancel_reason: str | None = None
     current_activity: str | None = None
+    activity_action: str | None = None
 
 
 @dataclass
@@ -101,6 +103,19 @@ class DeniedDelegation:
     span_id: str
 
 
+def _compose_activity(action: str, target: str, detail: str) -> str | None:
+    """Compose a human-readable activity string from structured fields."""
+    if not action:
+        return None
+    parts = [action]
+    if target:
+        parts.append(target)
+    if detail:
+        parts.append(f"({detail})")
+    result = " ".join(parts)
+    return result[:120] + "…" if len(result) > 120 else result
+
+
 class TreeState:
     """Accumulates agent tree state from session.json + trace.jsonl."""
 
@@ -113,6 +128,7 @@ class TreeState:
         self._span_to_parent_agent: dict[str, str | None] = {}
         self._session_span: str | None = None
         self._session_ended: bool = False
+        self._activity_debounce: dict[str, float] = {}
 
     def load_session_json(self, data: dict) -> None:
         """Merge root agent info from session.json."""
@@ -170,6 +186,7 @@ class TreeState:
                 node.exit_code = exit_code
                 node.duration_ms = data.get("duration_ms")
                 node.status = "completed" if exit_code == 0 else "failed"
+                self._activity_debounce.pop(agent_id, None)
 
         elif etype == "delegate_end":
             agent_id = self._span_to_agent.get(span_id)
@@ -179,6 +196,7 @@ class TreeState:
                 node.exit_code = exit_code
                 node.duration_ms = data.get("duration_ms")
                 node.status = "completed" if exit_code == 0 else "failed"
+                self._activity_debounce.pop(agent_id, None)
             self.pending.pop(span_id, None)
 
         elif etype == "delegate_denied":
@@ -213,6 +231,22 @@ class TreeState:
             agent_id = data.get("agent_id", "")
             if agent_id and agent_id in self.nodes:
                 self.nodes[agent_id].current_activity = None
+                self.nodes[agent_id].activity_action = None
+
+        elif etype == "activity_update":
+            agent_id = data.get("agent_id", "")
+            if agent_id and agent_id in self.nodes:
+                now = time.monotonic()
+                last = self._activity_debounce.get(agent_id, 0.0)
+                if now - last < 0.5:
+                    return
+                self._activity_debounce[agent_id] = now
+                action = data.get("action", "")
+                target = data.get("target", "")
+                detail = data.get("detail", "")
+                activity = _compose_activity(action, target, detail)
+                self.nodes[agent_id].current_activity = activity
+                self.nodes[agent_id].activity_action = action or None
 
         elif etype == "session_end":
             self._session_ended = True
@@ -242,6 +276,7 @@ class TreeState:
         if node.current_activity == activity:
             return False
         node.current_activity = activity
+        node.activity_action = None  # Log-fallback has no type info
         return True
 
     @property
@@ -263,6 +298,7 @@ class TreeState:
                     "duration_ms": n.duration_ms,
                     "parent": n.parent,
                     "current_activity": n.current_activity,
+                    "activity_action": n.activity_action,
                 }
                 for n in self.nodes.values()
             ],

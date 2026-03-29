@@ -1,6 +1,8 @@
 """Unit tests for SSE utilities and TreeState builder."""
 
-from strawpot_gui.sse import TreeState, format_sse, sse_retry
+from unittest.mock import patch
+
+from strawpot_gui.sse import TreeState, _compose_activity, format_sse, sse_retry
 
 
 class TestFormatSSE:
@@ -519,3 +521,197 @@ class TestTreeStateSetActivity:
         state.set_activity("a1", "Reading file")
         assert state.set_activity("a1", None) is True
         assert state.nodes["a1"].current_activity is None
+
+    def test_set_activity_clears_activity_action(self):
+        """set_activity (log-fallback) clears activity_action since it has no type info."""
+        state = TreeState()
+        state.load_session_json({
+            "agents": {"a1": {"role": "impl", "runtime": "cc", "parent": None}},
+        })
+        state.nodes["a1"].activity_action = "Read"
+        state.set_activity("a1", "Doing something")
+        assert state.nodes["a1"].activity_action is None
+
+
+class TestComposeActivity:
+    """Tests for the _compose_activity helper."""
+
+    def test_action_only(self):
+        assert _compose_activity("Think", "", "") == "Think"
+
+    def test_action_and_target(self):
+        assert _compose_activity("Read", "src/app.ts", "") == "Read src/app.ts"
+
+    def test_action_target_detail(self):
+        assert _compose_activity("Read", "src/app.ts", "lines 1-50") == "Read src/app.ts (lines 1-50)"
+
+    def test_empty_action_returns_none(self):
+        assert _compose_activity("", "target", "detail") is None
+
+    def test_truncates_long_result(self):
+        long_target = "x" * 200
+        result = _compose_activity("Read", long_target, "")
+        assert len(result) <= 121  # 120 + "…"
+        assert result.endswith("…")
+
+
+class TestTreeStateActivityUpdate:
+    """Tests for activity_update event handling in TreeState."""
+
+    def _make_state_with_running_agent(self, agent_id="a1"):
+        """Helper: create a TreeState with one running agent."""
+        state = TreeState()
+        state.process_event({
+            "event": "delegate_start", "span_id": "s1",
+            "parent_span": None, "data": {"role": "impl"},
+        })
+        state.process_event({
+            "event": "agent_spawn", "span_id": "s1", "ts": "T1",
+            "data": {"agent_id": agent_id, "runtime": "cc", "pid": 1},
+        })
+        return state
+
+    def test_activity_update_sets_current_activity(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "src/app.ts", "detail": ""},
+        })
+        assert state.nodes["a1"].current_activity == "Read src/app.ts"
+
+    def test_activity_update_sets_activity_action(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Bash", "target": "npm test"},
+        })
+        assert state.nodes["a1"].activity_action == "Bash"
+
+    def test_activity_update_with_detail(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "file.ts", "detail": "lines 1-50"},
+        })
+        assert state.nodes["a1"].current_activity == "Read file.ts (lines 1-50)"
+
+    def test_activity_update_action_only(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Think"},
+        })
+        assert state.nodes["a1"].current_activity == "Think"
+        assert state.nodes["a1"].activity_action == "Think"
+
+    def test_activity_update_empty_action_sets_none(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": ""},
+        })
+        assert state.nodes["a1"].current_activity is None
+        assert state.nodes["a1"].activity_action is None
+
+    @patch("strawpot_gui.sse.time")
+    def test_debounce_drops_rapid_events(self, mock_time):
+        mock_time.monotonic.side_effect = [1.0, 1.3]  # 300ms apart
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "file1.ts"},
+        })
+        state.process_event({
+            "event": "activity_update", "span_id": "s3",
+            "data": {"agent_id": "a1", "action": "Write", "target": "file2.ts"},
+        })
+        # Second event dropped — still shows first
+        assert state.nodes["a1"].current_activity == "Read file1.ts"
+        assert state.nodes["a1"].activity_action == "Read"
+
+    @patch("strawpot_gui.sse.time")
+    def test_debounce_accepts_after_threshold(self, mock_time):
+        mock_time.monotonic.side_effect = [1.0, 1.6]  # 600ms apart
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "file1.ts"},
+        })
+        state.process_event({
+            "event": "activity_update", "span_id": "s3",
+            "data": {"agent_id": "a1", "action": "Write", "target": "file2.ts"},
+        })
+        assert state.nodes["a1"].current_activity == "Write file2.ts"
+        assert state.nodes["a1"].activity_action == "Write"
+
+    def test_activity_update_unknown_agent_ignored(self):
+        state = TreeState()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "nonexistent", "action": "Read"},
+        })
+        assert "nonexistent" not in state.nodes
+
+    def test_activity_update_empty_agent_ignored(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "", "action": "Read"},
+        })
+        assert state.nodes["a1"].current_activity is None
+
+    def test_tool_end_clears_activity_action(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "file.ts"},
+        })
+        assert state.nodes["a1"].activity_action == "Read"
+        state.process_event({
+            "event": "tool_end", "span_id": "s3",
+            "data": {"agent_id": "a1", "tool": "Read"},
+        })
+        assert state.nodes["a1"].activity_action is None
+        assert state.nodes["a1"].current_activity is None
+
+    def test_activity_action_in_to_dict(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Search", "target": "handleSubmit"},
+        })
+        result = state.to_dict()
+        node = next(n for n in result["nodes"] if n["agent_id"] == "a1")
+        assert node["activity_action"] == "Search"
+
+    def test_activity_action_null_by_default(self):
+        state = self._make_state_with_running_agent()
+        result = state.to_dict()
+        node = next(n for n in result["nodes"] if n["agent_id"] == "a1")
+        assert node["activity_action"] is None
+
+    def test_debounce_cleanup_on_agent_end(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "f.ts"},
+        })
+        assert "a1" in state._activity_debounce
+        state.process_event({
+            "event": "agent_end", "span_id": "s1",
+            "data": {"exit_code": 0, "duration_ms": 1000},
+        })
+        assert "a1" not in state._activity_debounce
+
+    def test_debounce_cleanup_on_delegate_end(self):
+        state = self._make_state_with_running_agent()
+        state.process_event({
+            "event": "activity_update", "span_id": "s2",
+            "data": {"agent_id": "a1", "action": "Read", "target": "f.ts"},
+        })
+        assert "a1" in state._activity_debounce
+        state.process_event({
+            "event": "delegate_end", "span_id": "s1",
+            "data": {"exit_code": 0, "duration_ms": 1000},
+        })
+        assert "a1" not in state._activity_debounce
