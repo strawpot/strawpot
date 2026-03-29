@@ -22,14 +22,22 @@ def test_init_help(mock_home, tmp_path):
 
 
 @patch("strawpot.cli.get_strawpot_home")
-def test_init_placeholder(mock_home, tmp_path):
-    """strawpot init prints a placeholder message and exits cleanly."""
+@patch("strawpot.init.questionnaire.run_questionnaire")
+@patch("strawpot.init.generator.generate_files")
+def test_init_runs_pipeline(mock_gen, mock_quest, mock_home, tmp_path):
+    """strawpot init runs the questionnaire → generate → write pipeline."""
+    from strawpot.init.types import ProjectConfig
+
     mock_home.return_value = tmp_path
     (tmp_path / ".first_run_done").touch()
+    mock_quest.return_value = ProjectConfig(
+        project_name="test", project_type="Other", components=[],
+    )
+    mock_gen.return_value = []
 
     result = CliRunner().invoke(cli, ["init"])
     assert result.exit_code == 0
-    assert "not yet implemented" in result.output
+    assert "No files to generate" in result.output
 
 
 @patch("strawpot.cli.get_strawpot_home")
