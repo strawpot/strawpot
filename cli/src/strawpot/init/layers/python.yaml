@@ -1,0 +1,34 @@
+language: Python
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Use type hints on all public function signatures. Internal helpers should also have type hints when the types are non-obvious."
+
+    - condition: "always"
+      text: "Never use mutable default arguments (lists, dicts) in function signatures. Use None and create the mutable object inside the function."
+
+    - condition: "always"
+      text: "All exceptions must be caught specifically — never use bare 'except:' or 'except Exception:' unless re-raising. Log the exception before handling."
+
+    - condition: "always"
+      text: "Use pathlib.Path instead of os.path for all file path operations. It's more readable and cross-platform."
+
+  soft:
+    - condition: "always"
+      text: "Import order: stdlib, then third-party, then local. Use isort or ruff to enforce automatically."
+
+    - condition: "always"
+      text: "Use dataclasses or Pydantic models instead of plain dicts for structured data. Named fields catch typos, dicts don't."
+
+    - condition: "always"
+      text: "Prefer f-strings over .format() or % formatting. Use logging module format strings (lazy evaluation) in log calls."
+
+    - condition: "always"
+      text: "Use context managers (with statements) for all resource management — files, database connections, locks, temporary directories."
+
+    - condition: "always"
+      text: "Write docstrings on all public modules, classes, and functions. Use Google-style or NumPy-style docstrings consistently across the project."
+
+    - condition: "always"
+      text: "Pin all production dependencies to exact versions in requirements.txt or pyproject.toml. Use ranges only for library packages."

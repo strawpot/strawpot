@@ -1,0 +1,118 @@
+archetype: game-engine
+name: Game Engine
+languages: [cpp, c, rust]
+build_systems: [cmake, premake, meson, custom]
+
+questions:
+  - id: render_api
+    question: "Which rendering API does this engine use?"
+    choices: [Vulkan, DirectX 12, OpenGL, Metal, Custom]
+    default: Vulkan
+    affects: [hard_rules, architecture]
+
+  - id: ecs_style
+    question: "What ECS architecture does the engine use?"
+    choices: [Archetype-based, Sparse set, No ECS]
+    default: Archetype-based
+    affects: [hard_rules, architecture]
+
+  - id: threading
+    question: "What threading model does the engine use?"
+    choices: [Job system, Thread-per-subsystem, Single-threaded]
+    default: Job system
+    affects: [hard_rules, soft_rules]
+
+rules:
+  hard:
+    # Memory safety (always)
+    - condition: "always"
+      text: "No raw new/delete. Use std::unique_ptr for single ownership, std::shared_ptr only when ownership is genuinely shared."
+
+    - condition: "always"
+      text: "No heap allocations in the hot loop (update/render). Pre-allocate in init, use pool allocators for per-frame data."
+
+    - condition: "always"
+      text: "Every public header must be self-contained — including it alone must compile without errors."
+
+    - condition: "always"
+      text: "All GPU resources must have explicit lifetime management. No resource may outlive the device or context that created it."
+
+    - condition: "always"
+      text: "Fixed-point or integer math for gameplay logic that must be deterministic across platforms. Floating-point is fine for rendering, not for netcode-sensitive state."
+
+    - condition: "always"
+      text: "Never block the main thread on file I/O. Use async loading with callbacks or futures. Show placeholder assets while loading."
+
+    - condition: "always"
+      text: "All engine subsystems must support hot-reload of assets (shaders, textures, configs) in debug builds. Production builds may skip this."
+
+    # Render API specific
+    - condition: "render_api == 'Vulkan'"
+      text: "Vulkan objects must be destroyed in reverse creation order. Never destroy a VkDevice before all objects created from it. Use validation layers in debug builds."
+
+    - condition: "render_api == 'Vulkan'"
+      text: "All Vulkan API calls must check VkResult. Wrap calls in a VK_CHECK macro that logs the error code and file/line on failure."
+
+    - condition: "render_api == 'DirectX 12'"
+      text: "Use ComPtr<T> for all COM objects. Never call Release() manually. Check HRESULT with ThrowIfFailed or equivalent."
+
+    - condition: "render_api == 'DirectX 12'"
+      text: "Fence GPU work before releasing resources. Use frame-indexed deletion queues to defer resource destruction until the GPU is done with them."
+
+    - condition: "render_api == 'OpenGL'"
+      text: "Never call OpenGL functions outside the thread that owns the GL context. Use command queues for cross-thread GPU work."
+
+    - condition: "render_api == 'Metal'"
+      text: "Use autorelease pools around Metal object creation in tight loops. Prefer MTLBuffer over individual allocations for per-frame data."
+
+    # ECS specific
+    - condition: "ecs_style == 'Archetype-based'"
+      text: "ECS components must be trivially copyable (POD types). No virtual functions, no std::string, no heap-owning members. Use handles/IDs to reference complex objects."
+
+    - condition: "ecs_style == 'Archetype-based'"
+      text: "Never store pointers to components — archetype moves invalidate them. Always access components through entity queries within the current frame."
+
+    - condition: "ecs_style == 'Sparse set'"
+      text: "Sparse set component arrays may relocate on insert. Cache component indices per-frame only, never across frames."
+
+    # Threading specific
+    - condition: "threading != 'Single-threaded'"
+      text: "ECS systems may execute in parallel. Shared mutable state requires explicit synchronization — prefer lock-free queues or double-buffered data over mutexes in the hot path."
+
+    - condition: "threading == 'Job system'"
+      text: "Jobs must not allocate heap memory. Use the job system's per-thread scratch allocator. Jobs must be pure functions of their input data — no global state access."
+
+    - condition: "threading == 'Thread-per-subsystem'"
+      text: "Inter-subsystem communication must go through thread-safe message queues. Never share raw pointers between subsystem threads."
+
+  soft:
+    - condition: "always"
+      text: "Naming: PascalCase for types and namespaces, camelCase for functions and methods, snake_case for local variables, SCREAMING_SNAKE_CASE for constants and macros."
+
+    - condition: "always"
+      text: "Prefer composition over inheritance. Use ECS components and systems rather than deep class hierarchies."
+
+    - condition: "always"
+      text: "Shader source files live alongside the C++ code that uses them. Group by feature (e.g., rendering/shadows/), not by file type."
+
+    - condition: "always"
+      text: "Prefer constexpr over #define for compile-time constants. Use static_assert for compile-time validation of assumptions."
+
+    - condition: "always"
+      text: "Error handling: use error codes in the hot path (no exceptions in update/render). Exceptions are acceptable in initialization and asset loading."
+
+    - condition: "always"
+      text: "Profile before optimizing. Mark hot functions with ALWAYS_INLINE or equivalent only after profiler data confirms they're bottlenecks."
+
+    - condition: "always"
+      text: "Asset loading must be asynchronous. Never block the main thread waiting for disk I/O or network resources."
+
+cross_component:
+  - condition: "has_component('shared')"
+    text: "When modifying {{shared.path}}/*.proto or shared data definitions, regenerate C++ bindings before building the engine."
+
+  - condition: "has_component('server')"
+    text: "The server (server/) has authoritative game state. Engine-side state is for rendering and client-side prediction only — never trust it for gameplay logic."
+
+  - condition: "has_component('client')"
+    text: "The client UI layer (client/) may call engine APIs for rendering. Engine APIs exposed to the client must be thread-safe or documented as main-thread-only."

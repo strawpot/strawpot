@@ -1,0 +1,106 @@
+archetype: web-api
+name: Web API
+languages: [python, go, typescript, rust]
+build_systems: [pip, poetry, go, npm, cargo]
+
+questions:
+  - id: framework
+    question: "Which web framework does this API use?"
+    choices: [FastAPI, Django, Express, Go stdlib, Gin]
+    default: FastAPI
+    affects: [hard_rules, soft_rules]
+
+  - id: database
+    question: "What database does this API use?"
+    choices: [PostgreSQL, MySQL, MongoDB, SQLite, None]
+    default: PostgreSQL
+    affects: [hard_rules]
+
+  - id: api_style
+    question: "What API style does this service use?"
+    choices: [REST, GraphQL, gRPC]
+    default: REST
+    affects: [soft_rules]
+
+  - id: auth
+    question: "What authentication method does this API use?"
+    choices: [JWT, OAuth2, Session, None]
+    default: JWT
+    affects: [hard_rules]
+
+rules:
+  hard:
+    # Input validation (always)
+    - condition: "always"
+      text: "All user input must be validated at the API boundary. Never pass raw request data to business logic or database queries."
+
+    - condition: "always"
+      text: "Never return internal error details (stack traces, SQL errors) in API responses. Log internally, return generic error messages to clients."
+
+    - condition: "always"
+      text: "All API endpoints must have explicit rate limiting. Apply stricter limits to authentication endpoints."
+
+    # Database specific
+    - condition: "database != 'None'"
+      text: "Always use parameterized queries or ORM methods. Never construct SQL/query strings by concatenating user input."
+
+    - condition: "database != 'None'"
+      text: "Database migrations must be backward-compatible. Never drop columns or tables in the same deploy that removes the code using them — use a two-phase migration."
+
+    - condition: "database == 'PostgreSQL'"
+      text: "Use connection pooling (e.g., pgbouncer or built-in pool). Never open a new connection per request. Set statement_timeout to prevent runaway queries."
+
+    - condition: "database == 'MongoDB'"
+      text: "Always define indexes for fields used in queries. Use projection to limit returned fields. Validate document schemas at the application layer."
+
+    # Auth specific
+    - condition: "auth != 'None'"
+      text: "Authentication middleware must run before any route handler. No endpoint should be accidentally unprotected — use an allowlist for public routes."
+
+    - condition: "auth == 'JWT'"
+      text: "JWT secrets must come from environment variables, never hardcoded. Tokens must have expiration (exp claim). Validate issuer (iss) and audience (aud) claims."
+
+    - condition: "auth == 'OAuth2'"
+      text: "Store OAuth2 tokens encrypted at rest. Implement token refresh logic with proper lock/retry to prevent concurrent refresh races."
+
+    # Framework specific
+    - condition: "framework == 'FastAPI'"
+      text: "Use Pydantic models for all request/response schemas. Never use dict for API contracts — typed models catch errors at the boundary."
+
+    - condition: "framework == 'Django'"
+      text: "Use Django's ORM for database access. Enable CSRF protection for all form-based endpoints. Use Django's authentication system, not custom auth."
+
+    - condition: "framework == 'Express'"
+      text: "Use helmet middleware for security headers. Validate request bodies with a schema library (zod, joi). Never trust req.body without validation."
+
+  soft:
+    - condition: "always"
+      text: "Use structured logging (JSON format) with request ID correlation. Every log entry must include the request ID for traceability."
+
+    - condition: "always"
+      text: "Configuration must come from environment variables or config files, never hardcoded. Use a settings module that validates all config at startup."
+
+    - condition: "always"
+      text: "Every API must have a /health endpoint that checks database connectivity and returns 200/503. Use this for load balancer health checks."
+
+    - condition: "always"
+      text: "Implement graceful shutdown — finish in-flight requests, close database connections, then exit. Handle SIGTERM, not just SIGINT."
+
+    - condition: "always"
+      text: "API responses must include appropriate cache headers. Use ETag or Last-Modified for GET endpoints that serve cacheable data."
+
+    - condition: "api_style == 'REST'"
+      text: "Use consistent REST conventions: plural nouns for collections (/users), HTTP verbs for actions (POST to create, PATCH to update). Return 201 for creation, 204 for deletion."
+
+    - condition: "api_style == 'GraphQL'"
+      text: "Limit query depth and complexity to prevent abuse. Use DataLoader pattern to batch N+1 database queries. Never expose raw database fields in the schema."
+
+    - condition: "api_style == 'gRPC'"
+      text: "Define all service contracts in .proto files. Use streaming only when needed — unary RPCs are simpler to debug. Version proto packages (v1, v2)."
+
+cross_component:
+  - condition: "has_component('client')"
+    text: "API contract changes must be coordinated with the client (client/). Update OpenAPI/GraphQL schema and notify the frontend team before deploying breaking changes."
+
+  - condition: "has_component('shared')"
+    text: "Shared types and constants live in {{shared.path}}. Import from there — never duplicate type definitions between server and client."

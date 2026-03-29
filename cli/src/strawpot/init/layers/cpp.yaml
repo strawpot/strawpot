@@ -1,0 +1,34 @@
+language: C++
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Use RAII for all resource management. Every resource acquisition must happen in a constructor, every release in a destructor."
+
+    - condition: "always"
+      text: "No implicit conversions on single-argument constructors — mark them explicit unless implicit conversion is intentionally part of the API."
+
+    - condition: "always"
+      text: "Never use C-style casts. Use static_cast, dynamic_cast, reinterpret_cast, or const_cast to make intent clear."
+
+    - condition: "always"
+      text: "Include guards must use #pragma once (preferred) or unique include guard macros. Never rely on include order."
+
+  soft:
+    - condition: "always"
+      text: "Prefer std::array over C arrays, std::string_view over const char*, and std::span over pointer+size pairs."
+
+    - condition: "always"
+      text: "Use auto for complex iterator types and lambda results. Avoid auto when the type is non-obvious or when the explicit type improves readability."
+
+    - condition: "always"
+      text: "Prefer forward declarations in headers to reduce compilation dependencies. Include the full definition only in .cpp files."
+
+    - condition: "always"
+      text: "Use namespaces to avoid global scope pollution. Never use 'using namespace' in header files."
+
+    - condition: "always"
+      text: "Mark functions noexcept when they cannot throw. This enables move semantics optimizations in containers."
+
+    - condition: "always"
+      text: "Prefer [[nodiscard]] on functions where ignoring the return value is almost certainly a bug (error codes, RAII guards)."
