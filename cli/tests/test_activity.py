@@ -1,8 +1,10 @@
 """Tests for strawpot.activity — log line activity parser."""
 
 from strawpot.activity import (
+    ActivityInfo,
     get_agent_log_path,
     parse_activity,
+    parse_activity_structured,
     read_last_activity_line,
 )
 
@@ -179,6 +181,89 @@ class TestReadLastActivityLine:
 # ---------------------------------------------------------------------------
 # get_agent_log_path
 # ---------------------------------------------------------------------------
+
+
+class TestParseActivityStructured:
+    """Tests for parse_activity_structured()."""
+
+    def test_returns_activity_info(self):
+        result = parse_activity_structured("⠋ Reading src/app.ts...")
+        assert isinstance(result, ActivityInfo)
+        assert result.tool == "Read"
+        assert "Reading src/app.ts" in result.summary
+        assert result.target == "src/app.ts"
+
+    def test_edit_extracts_target(self):
+        result = parse_activity_structured("⠙ Editing src/component.tsx...")
+        assert result is not None
+        assert result.tool == "Edit"
+        assert result.target == "src/component.tsx"
+
+    def test_write_extracts_target(self):
+        result = parse_activity_structured("⠹ Writing to src/index.ts...")
+        assert result is not None
+        assert result.tool == "Write"
+        assert result.target == "src/index.ts"
+
+    def test_bash_extracts_command(self):
+        result = parse_activity_structured("⠸ Running bash command: npm test...")
+        assert result is not None
+        assert result.tool == "Bash"
+        assert result.target == "npm test"
+
+    def test_search_extracts_target(self):
+        result = parse_activity_structured("⠦ Searching for handleSubmit...")
+        assert result is not None
+        assert result.tool == "Search"
+        assert result.target == "for handleSubmit"
+
+    def test_agent_extracts_target(self):
+        result = parse_activity_structured("⠏ Launching agent code-reviewer...")
+        assert result is not None
+        assert result.tool == "Agent"
+        assert result.target == "code-reviewer"
+
+    def test_think_has_empty_target(self):
+        result = parse_activity_structured("⠧ Thinking...")
+        assert result is not None
+        assert result.tool == "Think"
+        assert result.target == ""
+
+    def test_planning_has_empty_target(self):
+        result = parse_activity_structured("⠇ Planning...")
+        assert result is not None
+        assert result.tool == "Think"
+        assert result.target == ""
+
+    def test_generic_fallback_has_empty_target(self):
+        result = parse_activity_structured("⠋ Analyzing dependencies...")
+        assert result is not None
+        assert result.tool == "Tool"
+        assert result.target == ""
+
+    def test_empty_returns_none(self):
+        assert parse_activity_structured("") is None
+
+    def test_no_activity_returns_none(self):
+        assert parse_activity_structured("Here is the implementation:") is None
+
+    def test_backward_compat_parse_activity_unchanged(self):
+        """Original parse_activity still returns (tool, summary) tuples."""
+        result = parse_activity("⠋ Reading src/app.ts...")
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert result[0] == "Read"
+
+    def test_dataclass_equality(self):
+        """ActivityInfo supports equality for dedup checks."""
+        r1 = parse_activity_structured("⠋ Reading file.py...")
+        r2 = parse_activity_structured("⠋ Reading file.py...")
+        assert r1 == r2
+
+    def test_different_activities_not_equal(self):
+        r1 = parse_activity_structured("⠋ Reading file.py...")
+        r2 = parse_activity_structured("⠋ Editing file.py...")
+        assert r1 != r2
 
 
 class TestGetAgentLogPath:

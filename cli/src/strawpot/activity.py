@@ -8,6 +8,7 @@ Used by the activity watcher thread to emit ``tool_start`` /
 
 import os
 import re
+from dataclasses import dataclass
 
 # ANSI escape sequence pattern
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -31,6 +32,24 @@ _TOOL_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 
+@dataclass
+class ActivityInfo:
+    """Structured activity parsed from a log line."""
+
+    tool: str       # "Read", "Edit", "Write", "Bash", "Search", "Agent", "Think", "Tool"
+    summary: str    # Full human-readable string (e.g. "Reading src/app.ts")
+    target: str     # Extracted target (e.g. "src/app.ts"), empty if none
+
+
+def _clean_line(line: str) -> str | None:
+    """Strip ANSI codes and spinner characters.  Returns None if empty."""
+    if not line:
+        return None
+    clean = _ANSI_RE.sub("", line).strip()
+    stripped = clean.lstrip(_SPINNER_CHARS).strip()
+    return stripped or None
+
+
 def parse_activity(line: str) -> tuple[str, str] | None:
     """Extract ``(tool, summary)`` from a single log line.
 
@@ -40,15 +59,8 @@ def parse_activity(line: str) -> tuple[str, str] | None:
     and *summary* is the cleaned human-readable description suitable
     for display in the GUI.
     """
-    if not line:
-        return None
-
-    # Strip ANSI escape codes
-    clean = _ANSI_RE.sub("", line).strip()
-
-    # Strip leading spinner characters
-    stripped = clean.lstrip(_SPINNER_CHARS).strip()
-    if not stripped:
+    stripped = _clean_line(line)
+    if stripped is None:
         return None
 
     # Try structured patterns first
@@ -67,6 +79,36 @@ def parse_activity(line: str) -> tuple[str, str] | None:
         stripped.endswith("...") or stripped.endswith("…")
     ):
         return "Tool", stripped
+
+    return None
+
+
+def parse_activity_structured(line: str) -> ActivityInfo | None:
+    """Like :func:`parse_activity` but returns structured :class:`ActivityInfo`.
+
+    The ``target`` field is extracted from regex capture groups where
+    available (e.g. ``"Reading src/app.ts"`` → ``target="src/app.ts"``).
+    Patterns without capture groups (Think, Planning) have an empty target.
+    """
+    stripped = _clean_line(line)
+    if stripped is None:
+        return None
+
+    for pattern, tool in _TOOL_PATTERNS:
+        m = pattern.search(stripped)
+        if m:
+            summary = stripped
+            if len(summary) > 120:
+                summary = summary[:117] + "..."
+            # Extract target from first capture group if present
+            target = m.group(1).strip() if m.lastindex and m.lastindex >= 1 else ""
+            return ActivityInfo(tool=tool, summary=summary, target=target)
+
+    # Fallback: generic activity
+    if len(stripped) <= 120 and (
+        stripped.endswith("...") or stripped.endswith("…")
+    ):
+        return ActivityInfo(tool="Tool", summary=stripped, target="")
 
     return None
 
