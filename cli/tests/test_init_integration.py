@@ -216,7 +216,7 @@ class TestWriteFiles:
 class TestCliIntegration:
     @patch("strawpot.cli.get_strawpot_home")
     def test_init_check_flag(self, mock_home, tmp_path):
-        """--check runs drift detection stub."""
+        """--check runs drift detection."""
         mock_home.return_value = tmp_path
         (tmp_path / ".first_run_done").touch()
 
@@ -225,7 +225,7 @@ class TestCliIntegration:
 
         result = CliRunner().invoke(cli, ["init", "--check"])
         assert result.exit_code == 0
-        assert "not yet implemented" in result.output
+        assert "No CLAUDE.md" in result.output or "No drift" in result.output
 
     @patch("strawpot.cli.get_strawpot_home")
     @patch("strawpot.init.questionnaire.run_questionnaire")

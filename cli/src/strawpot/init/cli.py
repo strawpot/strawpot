@@ -32,8 +32,8 @@ def init(dry_run: bool, check: bool, verbose: bool, non_interactive: bool) -> No
 
     if check:
         from strawpot.init.drift import check_drift
-        check_drift(project_dir, verbose=verbose)
-        return
+        warnings = check_drift(project_dir, verbose=verbose)
+        raise SystemExit(1 if warnings else 0)
 
     # Run questionnaire
     try:
