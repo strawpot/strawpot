@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
-    ("Getting Started", ["start", "quickstart", "doctor", "gui"]),
+    ("Getting Started", ["start", "quickstart", "doctor", "init", "gui"]),
     ("Memory", ["remember", "recall", "forget", "memory", "mcp"]),
     ("Scheduling", ["schedule"]),
     ("Sessions", ["sessions", "agents", "config"]),
-    ("Package Management", ["install", "uninstall", "update", "init", "install-tools"]),
+    ("Package Management", ["install", "uninstall", "update", "install-tools"]),
     ("Discovery", ["search", "list", "info", "resolve"]),
     ("Publishing", ["publish"]),
     ("Authentication", ["login", "logout", "whoami"]),
@@ -2332,7 +2332,9 @@ def _make_passthrough(strawhub_cmd: str, help_text: str):
 cli.add_command(_make_passthrough("install", "Install a skill, role, agent, or memory from StrawHub."))
 cli.add_command(_make_passthrough("uninstall", "Remove an installed skill, role, agent, or memory."))
 cli.add_command(_make_passthrough("update", "Update installed packages to latest versions."))
-cli.add_command(_make_passthrough("init", "Create strawpot.toml from installed packages."))
+# init command — auto-configuration questionnaire (replaces old strawhub passthrough)
+from strawpot.init.cli import init as init_cmd
+cli.add_command(init_cmd)
 cli.add_command(_make_passthrough("install-tools", "Install system tools declared by packages."))
 
 # Discovery
