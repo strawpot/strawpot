@@ -266,6 +266,10 @@ export function useSessionWS(
       };
 
       ws.onclose = () => {
+        // If a newer connection has already replaced this one (e.g. the user
+        // switched conversations), bail out — reconnecting would clobber the
+        // new session's WebSocket with a connection to the old session URL.
+        if (wsRef.current !== ws) return;
         wsRef.current = null;
         setConnected(false);
         if (streamDoneRef.current) return;
@@ -287,7 +291,7 @@ export function useSessionWS(
       wsRef.current = null;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     };
-  }, [runId, active]);
+  }, [runId, active, scopeKey]);
 
   // When runId/scopeKey changed but the reset effect hasn't fired yet,
   // state belongs to the previous session — return empty values to avoid

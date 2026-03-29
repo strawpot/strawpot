@@ -44,7 +44,11 @@ class FakeWebSocket {
 
   close() {
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
+    // Fire onclose asynchronously to match real browser behavior — the
+    // previous synchronous call masked the race condition where a stale
+    // WebSocket's onclose handler could clobber a newer connection.
+    const handler = this.onclose;
+    if (handler) setTimeout(() => handler(), 0);
   }
 
   /** Test helper: simulate receiving a message from the server. */
@@ -216,5 +220,73 @@ describe("useSessionWS stream_complete handling", () => {
     act(() => ws._receive({ type: "stream_complete" }));
     expect(result.current.treeData).toBeNull();
     expect(result.current.connected).toBe(false);
+  });
+});
+
+describe("useSessionWS cross-session isolation", () => {
+  it("stale WebSocket onclose does not clobber new connection", async () => {
+    const { result, rerender } = renderHook(
+      ({ runId, active, scopeKey }: { runId: string; active: boolean; scopeKey: string }) =>
+        useSessionWS(runId, active, scopeKey),
+      { initialProps: { runId: "run-A", active: true, scopeKey: "conv-1" } },
+    );
+
+    // Wait for first WS connection
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    const wsOld = fakeInstances[0];
+    expect(wsOld).toBeDefined();
+    expect(result.current.connected).toBe(true);
+
+    // Switch conversation — scopeKey changes, triggering effect cleanup + reconnect
+    rerender({ runId: "run-A", active: true, scopeKey: "conv-2" });
+
+    // Wait for new WS connection to open
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    const wsNew = fakeInstances[1];
+    expect(wsNew).toBeDefined();
+    expect(result.current.connected).toBe(true);
+
+    // Old WebSocket's async onclose fires now (after the new connection is live)
+    // Without the guard, this would null out wsRef and schedule a reconnect to the old URL
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    // The new connection should still be live — not clobbered by old onclose
+    expect(result.current.connected).toBe(true);
+    // Only 2 WebSocket instances should exist (no spurious reconnect from stale onclose)
+    expect(fakeInstances).toHaveLength(2);
+  });
+
+  it("reconnects when scopeKey changes even with same runId", async () => {
+    const { result, rerender } = renderHook(
+      ({ runId, active, scopeKey }: { runId: string; active: boolean; scopeKey: string }) =>
+        useSessionWS(runId, active, scopeKey),
+      { initialProps: { runId: "run-X", active: true, scopeKey: "scope-1" } },
+    );
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(fakeInstances).toHaveLength(1);
+    expect(result.current.connected).toBe(true);
+
+    // Change scopeKey only — should trigger a new WebSocket connection
+    rerender({ runId: "run-X", active: true, scopeKey: "scope-2" });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    // A second WebSocket should have been created
+    expect(fakeInstances).toHaveLength(2);
+    expect(result.current.connected).toBe(true);
   });
 });
