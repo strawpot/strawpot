@@ -28,9 +28,14 @@ describe("getAgentActivityLabel", () => {
     expect(getAgentActivityLabel([], "nope")).toBeNull();
   });
 
-  it("returns own current_activity when set", () => {
+  it("returns role-prefixed current_activity when set", () => {
     const nodes = [makeNode({ agent_id: "root", current_activity: "Reading foo.ts" })];
-    expect(getAgentActivityLabel(nodes, "root")).toBe("Reading foo.ts");
+    expect(getAgentActivityLabel(nodes, "root")).toBe("test-role: Reading foo.ts");
+  });
+
+  it("returns role-prefixed activity with custom role", () => {
+    const nodes = [makeNode({ agent_id: "root", role: "implementer", current_activity: "Writing code" })];
+    expect(getAgentActivityLabel(nodes, "root")).toBe("implementer: Writing code");
   });
 
   it("shows children aggregate even when parent has own activity", () => {
@@ -118,11 +123,20 @@ describe("getAgentActivityDetail", () => {
     expect(getAgentActivityDetail([], "nope")).toBeNull();
   });
 
-  it("returns own activity with no child activity", () => {
+  it("returns role-prefixed own activity with no child activity", () => {
     const nodes = [makeNode({ agent_id: "root", current_activity: "Reading foo.ts" })];
     const detail = getAgentActivityDetail(nodes, "root");
     expect(detail).toEqual({
-      header: "Reading foo.ts",
+      header: "test-role: Reading foo.ts",
+      childActivity: null,
+    });
+  });
+
+  it("returns role-prefixed own activity with custom role", () => {
+    const nodes = [makeNode({ agent_id: "root", role: "implementer", current_activity: "Writing code" })];
+    const detail = getAgentActivityDetail(nodes, "root");
+    expect(detail).toEqual({
+      header: "implementer: Writing code",
       childActivity: null,
     });
   });
@@ -219,11 +233,11 @@ describe("getSessionActivityLabel", () => {
     expect(getSessionActivityLabel(nodes)).toBe("2 agents running");
   });
 
-  it("handles root with own activity", () => {
+  it("handles root with own activity — shows role prefix", () => {
     const nodes = [
       makeNode({ agent_id: "root", role: "implementer", current_activity: "Writing code" }),
     ];
-    expect(getSessionActivityLabel(nodes)).toBe("Writing code");
+    expect(getSessionActivityLabel(nodes)).toBe("implementer: Writing code");
   });
 
   it("handles root with multiple children (includes parent)", () => {
@@ -295,12 +309,12 @@ describe("getSessionActivityDetail", () => {
     expect(detail?.childActivity).toBe("qa-engineer: Testing");
   });
 
-  it("returns no child activity for root with own activity", () => {
+  it("returns role-prefixed activity for root with own activity", () => {
     const nodes = [
-      makeNode({ agent_id: "root", current_activity: "Writing code" }),
+      makeNode({ agent_id: "root", role: "implementer", current_activity: "Writing code" }),
     ];
     const detail = getSessionActivityDetail(nodes);
-    expect(detail).toEqual({ header: "Writing code", childActivity: null });
+    expect(detail).toEqual({ header: "implementer: Writing code", childActivity: null });
   });
 
   it("returns no child activity for multiple running roots", () => {
