@@ -3,7 +3,8 @@
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+import threading
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -1563,3 +1564,200 @@ class TestMaxNumDelegations:
         # Third call — limit reached, denied
         resp = session._handle_delegate(self._make_denden_request())
         assert "DENY_DELEGATIONS_LIMIT" in str(resp)
+
+
+# ---------------------------------------------------------------------------
+# Activity watcher loop
+# ---------------------------------------------------------------------------
+
+
+class TestActivityWatcherLoop:
+    """Tests for the _activity_watcher_loop orchestration logic.
+
+    These tests exercise the watcher's state machine directly by:
+    - Setting up Session internals (_agent_info, _agent_spans, _tracer)
+    - Writing fake log files
+    - Running a single iteration of the loop (stop event fires after one tick)
+    """
+
+    def _make_session_for_watcher(self, tmp_path):
+        """Create a minimally-configured Session for watcher tests."""
+        session = _make_session(tmp_path)
+        session._tracer = MagicMock()
+        session._cancel_watcher_stop = threading.Event()
+        # Point session dir to tmp_path so log files are discoverable
+        session._session_dir = lambda: str(tmp_path)
+        return session
+
+    def _write_agent_log(self, tmp_path, agent_id, content):
+        """Write a fake agent log file."""
+        log_dir = tmp_path / "agents" / agent_id
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / ".log").write_text(content)
+
+    def _register_agent(self, session, agent_id, span_id="span_1", state="running"):
+        from strawpot.cancel import AgentState
+        session._agent_info[agent_id] = {"state": AgentState(state)}
+        session._agent_spans[agent_id] = span_id
+
+    def _run_iterations(self, session, n=1, between=None):
+        """Run the watcher loop for *n* iterations then stop.
+
+        ``between`` is an optional callback invoked after each iteration
+        (except the last) — use it to change log files or agent state
+        between ticks.
+
+        The loop's ``current`` dict is local, so we must run all
+        iterations in a single call to preserve state tracking.
+        """
+        count = 0
+        original_wait = session._cancel_watcher_stop.wait
+
+        def _tick_wait(**kwargs):
+            nonlocal count
+            count += 1
+            if between and count < n:
+                between(count)
+            if count >= n:
+                session._cancel_watcher_stop.set()
+            return count >= n
+
+        session._cancel_watcher_stop.clear()
+        session._cancel_watcher_stop.wait = _tick_wait
+        session._ACTIVITY_POLL_INTERVAL = 0.01
+        session._activity_watcher_loop()
+        session._cancel_watcher_stop.wait = original_wait
+
+    def test_new_activity_emits_tool_start(self, tmp_path):
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading src/app.ts...\n")
+
+        self._run_iterations(session)
+
+        session._tracer.tool_start.assert_called_once_with(
+            span_id="span_1",
+            agent_id="agent_1",
+            tool="Read",
+            summary="Reading src/app.ts...",
+        )
+        # Drain emits tool_end on shutdown for still-tracked activity.
+        session._tracer.tool_end.assert_called_once_with(
+            span_id="span_1", agent_id="agent_1", tool="Read",
+        )
+
+    def test_activity_change_emits_tool_end_then_tool_start(self, tmp_path):
+        """When activity changes, tool_end fires for old, tool_start for new."""
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        def change_log(_tick):
+            self._write_agent_log(tmp_path, "agent_1", "⠙ Editing file.py...\n")
+
+        self._run_iterations(session, n=2, between=change_log)
+
+        # Iteration 1: tool_start(Read). Iteration 2: tool_end(Read) + tool_start(Edit).
+        # Drain: tool_end(Edit).
+        assert session._tracer.tool_start.call_count == 2
+        assert session._tracer.tool_end.call_count == 2  # Read + Edit (drain)
+        session._tracer.tool_start.assert_called_with(
+            span_id="span_1", agent_id="agent_1",
+            tool="Edit", summary="Editing file.py...",
+        )
+
+    def test_activity_cleared_emits_tool_end(self, tmp_path):
+        """When log no longer contains activity, tool_end fires."""
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        def clear_log(_tick):
+            self._write_agent_log(tmp_path, "agent_1", "Here is the result:\n")
+
+        self._run_iterations(session, n=2, between=clear_log)
+
+        # Iteration 1: tool_start(Read). Iteration 2: tool_end(Read).
+        session._tracer.tool_start.assert_called_once()
+        session._tracer.tool_end.assert_called_once_with(
+            span_id="span_1", agent_id="agent_1", tool="Read",
+        )
+
+    def test_agent_stops_while_active_emits_tool_end(self, tmp_path):
+        """When an agent leaves RUNNING state, its pending activity is closed."""
+        from strawpot.cancel import AgentState
+
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        def stop_agent(_tick):
+            session._agent_info["agent_1"]["state"] = AgentState.COMPLETED
+
+        self._run_iterations(session, n=2, between=stop_agent)
+
+        # Iteration 1: tool_start. Iteration 2: agent no longer running → tool_end.
+        session._tracer.tool_start.assert_called_once()
+        session._tracer.tool_end.assert_called_once_with(
+            span_id="span_1", agent_id="agent_1", tool="Read",
+        )
+
+    def test_no_log_file_does_not_crash(self, tmp_path):
+        """Missing log file produces no tracer calls and no crash."""
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        # No log file written
+
+        self._run_iterations(session)
+
+        session._tracer.tool_start.assert_not_called()
+        session._tracer.tool_end.assert_not_called()
+
+    def test_same_activity_no_duplicate_events(self, tmp_path):
+        """Same activity across iterations should not re-emit tool_start."""
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        # Run two iterations with the same log content
+        self._run_iterations(session, n=2)
+
+        # tool_start called only once (dedup on second iteration)
+        assert session._tracer.tool_start.call_count == 1
+        # Drain emits tool_end on shutdown.
+        session._tracer.tool_end.assert_called_once_with(
+            span_id="span_1", agent_id="agent_1", tool="Read",
+        )
+
+    def test_exception_in_parse_does_not_kill_loop(self, tmp_path):
+        """Errors during activity parsing are caught; loop continues."""
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        with patch("strawpot.activity.parse_activity", side_effect=RuntimeError("boom")):
+            # Should not raise — exception is caught
+            self._run_iterations(session)
+
+        # No tracer calls since parsing failed
+        session._tracer.tool_start.assert_not_called()
+
+    def test_skips_non_running_agents(self, tmp_path):
+        """Agents in COMPLETED/CANCELLED state are not polled."""
+        from strawpot.cancel import AgentState
+
+        session = self._make_session_for_watcher(tmp_path)
+        self._register_agent(session, "agent_1", "span_1", state="completed")
+        self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
+
+        self._run_iterations(session)
+
+        session._tracer.tool_start.assert_not_called()
+
+    def test_no_tracer_skips_watcher(self, tmp_path):
+        """_start_activity_watcher is a no-op when tracer is None."""
+        session = _make_session(tmp_path)
+        session._tracer = None
+        # Should return immediately without spawning a thread
+        session._start_activity_watcher()
+        # No crash — that's the assertion

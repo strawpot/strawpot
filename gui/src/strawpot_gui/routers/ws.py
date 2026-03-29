@@ -74,10 +74,22 @@ def _read_last_log_line(log_path: str) -> str | None:
         return None
 
 
+_ACTIVITY_KEYWORDS_RE = _re.compile(
+    r"(?i)^(?:reading|editing|writing|searching|running|executing|"
+    r"thinking|planning|launching|spawning|analyzing|processing|"
+    r"installing|building|testing|compiling|fetching|downloading|"
+    r"uploading|creating|deleting|updating|checking|reviewing|"
+    r"formatting|linting|deploying|committing|pushing|pulling|"
+    r"cloning|merging|rebasing)\b"
+)
+
+
 def _parse_activity_from_log_line(line: str) -> str | None:
     """Extract a human-readable activity description from an agent log line.
 
     Returns ``None`` if the line doesn't contain recognisable activity.
+    Only returns text that looks like a genuine status indicator (starts
+    with a known verb or ends with ``...`` / ``…``), not arbitrary output.
     """
     if not line:
         return None
@@ -86,6 +98,15 @@ def _parse_activity_from_log_line(line: str) -> str | None:
     # Strip leading spinner characters (braille patterns, dots, etc.)
     clean = clean.lstrip("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏•·…● ").strip()
     if not clean:
+        return None
+    # Only accept lines that look like activity indicators:
+    # - start with a known verb, or
+    # - end with "..." / "…" (progress indicator)
+    if not (
+        _ACTIVITY_KEYWORDS_RE.match(clean)
+        or clean.endswith("...")
+        or clean.endswith("…")
+    ):
         return None
     # Truncate to a reasonable display length
     if len(clean) > 120:
