@@ -18,13 +18,29 @@ function formatRunningHeader(count: number): string {
   return `${count} agent${count === 1 ? "" : "s"} running`;
 }
 
-/** Build detail from a set of running nodes: count header + most-recent child activity. */
-function buildRunningDetail(runningNodes: TreeNode[]): AgentActivityDetail {
+/**
+ * Build detail from a set of running child nodes.
+ *
+ * @param runningNodes — the running *child* nodes (used for activity lookup).
+ * @param totalCount   — total running agents to display in the header
+ *                        (includes the parent).  Defaults to runningNodes.length
+ *                        for the flat-fallback path where there is no parent.
+ */
+function buildRunningDetail(
+  runningNodes: TreeNode[],
+  totalCount?: number,
+): AgentActivityDetail {
+  const count = totalCount ?? runningNodes.length;
   const withActivity = runningNodes.filter((n) => n.current_activity);
   const mostRecent = withActivity[withActivity.length - 1];
+  const lastChild = runningNodes[runningNodes.length - 1];
   return {
-    header: formatRunningHeader(runningNodes.length),
-    childActivity: mostRecent ? formatNodeActivity(mostRecent) : "Working…",
+    header: formatRunningHeader(count),
+    childActivity: mostRecent
+      ? formatNodeActivity(mostRecent)
+      : lastChild
+        ? `${lastChild.role}: Working…`
+        : "Working…",
   };
 }
 
@@ -45,9 +61,11 @@ export function getAgentActivityLabel(
 /**
  * Compute structured activity detail for an agent node.
  *
- * - If the node has its own `current_activity`, returns it as header with no child activity.
  * - If the node has running child agents, returns an aggregate header
  *   ("3 agents running") plus the most-recently-updated child's activity.
+ *   The count includes the parent itself (parent + children).
+ * - If the node has its own `current_activity` but no running children,
+ *   returns it as header with no child activity.
  * - Returns `null` when there's nothing meaningful to display.
  */
 export function getAgentActivityDetail(
@@ -57,17 +75,22 @@ export function getAgentActivityDetail(
   const node = nodes.find((n) => n.agent_id === agentId);
   if (!node) return null;
 
-  if (node.current_activity) {
-    return { header: node.current_activity, childActivity: null };
-  }
-
+  // Running children take priority — show aggregate with child detail.
   const runningChildren = nodes.filter(
     (n) => n.parent === agentId && n.status === "running",
   );
 
-  if (runningChildren.length === 0) return null;
+  if (runningChildren.length > 0) {
+    // +1 to include the parent node itself in the total count.
+    return buildRunningDetail(runningChildren, runningChildren.length + 1);
+  }
 
-  return buildRunningDetail(runningChildren);
+  // No running children — fall back to own activity.
+  if (node.current_activity) {
+    return { header: node.current_activity, childActivity: null };
+  }
+
+  return null;
 }
 
 /**
