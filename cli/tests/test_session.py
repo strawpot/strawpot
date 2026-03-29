@@ -1735,7 +1735,7 @@ class TestActivityWatcherLoop:
         self._register_agent(session, "agent_1", "span_1")
         self._write_agent_log(tmp_path, "agent_1", "⠋ Reading file.py...\n")
 
-        with patch("strawpot.activity.parse_activity", side_effect=RuntimeError("boom")):
+        with patch("strawpot.activity.parse_activity_structured", side_effect=RuntimeError("boom")):
             # Should not raise — exception is caught
             self._run_iterations(session)
 
