@@ -6,7 +6,6 @@ StrawPot lets agents figure out how to solve the task.
 
 <p align="center">
   <a href="https://github.com/strawpot/strawpot/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/strawpot/strawpot/release.yml?branch=main&style=for-the-badge&label=PyPI" alt="PyPI Release"></a>
-  <a href="https://discord.gg/6RMpzuKrRd"><img src="https://img.shields.io/discord/1476285531464929505?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
@@ -328,8 +327,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community
 
-- [Discord](https://discord.gg/6RMpzuKrRd): questions, feedback,
-  and discussion
 - [GitHub Issues](https://github.com/strawpot/strawpot/issues):
   bug reports and feature requests
 

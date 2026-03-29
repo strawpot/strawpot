@@ -27,11 +27,6 @@ Open a [GitHub Issue](https://github.com/strawpot/strawpot/issues) with:
 Good: "I want to run the same schedule in multiple projects with different configs."
 Less helpful: "Add a `project_id` column to the `scheduled_tasks` table."
 
-### Share an Idea or Ask a Question
-
-Join the [Discord](https://discord.gg/6RMpzuKrRd) for discussion, feedback,
-and help getting started.
-
 ## What Happens Next
 
 1. You submit an issue describing a bug or feature
