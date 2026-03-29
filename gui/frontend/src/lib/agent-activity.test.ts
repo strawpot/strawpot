@@ -302,6 +302,24 @@ describe("getSessionActivityLabel", () => {
     expect(getSessionActivityLabel(nodes)).toBe("2 agents running");
   });
 
+  it("counts all running agents for multiple roots (not just roots)", () => {
+    const nodes = [
+      makeNode({ agent_id: "root1" }),
+      makeNode({ agent_id: "root2" }),
+      makeNode({ agent_id: "c1", parent: "root1", role: "qa" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBe("3 agents running");
+  });
+
+  it("counts running subtree including grandchildren via session", () => {
+    const nodes = [
+      makeNode({ agent_id: "root" }),
+      makeNode({ agent_id: "child", parent: "root", role: "impl" }),
+      makeNode({ agent_id: "grandchild", parent: "child", role: "qa" }),
+    ];
+    expect(getSessionActivityLabel(nodes)).toBe("3 agents running");
+  });
+
   it("uses singular 'agent' for one non-root running node in flat fallback", () => {
     const nodes = [
       makeNode({ agent_id: "root", status: "completed" }),
@@ -361,6 +379,18 @@ describe("getSessionActivityDetail", () => {
     ];
     const detail = getSessionActivityDetail(nodes);
     expect(detail).toEqual({ header: "2 agents running", childActivity: null, activityAction: null });
+  });
+
+  it("counts all running agents for multiple roots with children", () => {
+    const nodes = [
+      makeNode({ agent_id: "root1" }),
+      makeNode({ agent_id: "root2" }),
+      makeNode({ agent_id: "c1", parent: "root1", role: "qa" }),
+      makeNode({ agent_id: "c2", parent: "root2", role: "cr" }),
+    ];
+    const detail = getSessionActivityDetail(nodes);
+    expect(detail?.header).toBe("4 agents running");
+    expect(detail?.childActivity).toBeNull();
   });
 
   it("returns most-recent child activity in flat fallback", () => {
