@@ -80,6 +80,7 @@ export interface TreeNode {
   duration_ms: number | null;
   parent: string | null;
   current_activity: string | null;
+  activity_action: string | null;
 }
 
 export interface PendingDelegation {
