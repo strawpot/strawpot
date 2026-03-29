@@ -615,3 +615,75 @@ class TestCancelTraceEvents:
         events = _read_events(session_dir)
         assert events[0]["data"]["descendant_count"] == 0
         assert events[0]["data"]["force"] is True
+
+
+# ---------------------------------------------------------------------------
+# Activity update events
+# ---------------------------------------------------------------------------
+
+
+class TestActivityUpdateEvents:
+    def test_activity_update_all_fields(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.activity_update(
+            span_id="span_1",
+            agent_id="agent_abc",
+            action="Read",
+            target="src/app.ts",
+            detail="lines 1-50",
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        e = events[0]
+        assert e["event"] == "activity_update"
+        assert e["span_id"] == "span_1"
+        assert e["data"]["agent_id"] == "agent_abc"
+        assert e["data"]["action"] == "Read"
+        assert e["data"]["target"] == "src/app.ts"
+        assert e["data"]["detail"] == "lines 1-50"
+
+    def test_activity_update_minimal_fields(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.activity_update(
+            span_id="span_2",
+            agent_id="agent_xyz",
+            action="Think",
+        )
+        events = _read_events(session_dir)
+        assert len(events) == 1
+        e = events[0]
+        assert e["event"] == "activity_update"
+        assert e["data"]["agent_id"] == "agent_xyz"
+        assert e["data"]["action"] == "Think"
+        assert e["data"]["target"] == ""
+        assert e["data"]["detail"] == ""
+
+    def test_activity_update_optional_target_only(self, tmp_path):
+        tracer, session_dir = _make_tracer(tmp_path)
+        tracer.activity_update(
+            span_id="span_3",
+            agent_id="agent_123",
+            action="Bash",
+            target="npm test",
+        )
+        events = _read_events(session_dir)
+        e = events[0]
+        assert e["data"]["action"] == "Bash"
+        assert e["data"]["target"] == "npm test"
+        assert e["data"]["detail"] == ""
+
+    def test_activity_update_has_timestamp_and_trace_id(self, tmp_path):
+        from datetime import datetime
+
+        tracer, session_dir = _make_tracer(tmp_path, trace_id="run_activity")
+        tracer.activity_update(
+            span_id="span_4",
+            agent_id="agent_1",
+            action="Search",
+            target="handleSubmit",
+        )
+        events = _read_events(session_dir)
+        e = events[0]
+        assert e["trace_id"] == "run_activity"
+        # Timestamp should be valid ISO format
+        datetime.fromisoformat(e["ts"])
