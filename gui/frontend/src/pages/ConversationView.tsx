@@ -5,6 +5,7 @@ import { useConversationInfinite } from "@/hooks/queries/use-conversations";
 import { useSubmitConversationTask, useRenameConversation, useCancelPendingTask, useCancelQueuedTask } from "@/hooks/mutations/use-conversations";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
+import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
@@ -212,6 +213,8 @@ export default function ConversationView() {
   // Poll while any session is active (same query key — TanStack merges refetchInterval)
   useConversationInfinite(cid, { refetchInterval: hasActiveSession ? 2000 : false });
 
+  const { handleHistoryKeyDown, addToHistory } = usePromptHistory({ text: task, setText: setTask });
+
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const cancelPending = useCancelPendingTask(cid);
@@ -337,6 +340,7 @@ export default function ConversationView() {
       cache_max_entries: advCacheMaxEntries.trim() ? Number(advCacheMaxEntries) : undefined,
       cache_ttl_seconds: advCacheTtl.trim() ? Number(advCacheTtl) : undefined,
     };
+    addToHistory(trimmed);
     submit.mutate(body, {
       onSuccess: () => { setTask(""); setSelectedFiles([]); setShowAllFiles(false); setTimeout(() => textareaRef.current?.focus(), 0); },
     });
@@ -352,7 +356,9 @@ export default function ConversationView() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as unknown as React.FormEvent);
+      return;
     }
+    handleHistoryKeyDown(e);
   }
 
   function startEditTitle() {
