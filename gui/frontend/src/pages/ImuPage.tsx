@@ -7,6 +7,7 @@ import { SourceBadge } from "@/components/SourceBadge";
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useProjectSessions } from "@/hooks/queries/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
+import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useProjectFiles } from "@/hooks/queries/use-projects";
 import { api } from "@/api/client";
@@ -256,6 +257,8 @@ function ImuConversationView({ cid }: { cid: number }) {
 
   useConversationInfinite(cid, { refetchInterval: hasActiveSession ? 2000 : false });
 
+  const { handleHistoryKeyDown, addToHistory } = usePromptHistory({ text: task, setText: setTask });
+
   const submit = useSubmitConversationTask(cid);
   const stop = useStopSession();
   const cancelPending = useCancelPendingTask(cid);
@@ -356,6 +359,7 @@ function ImuConversationView({ cid }: { cid: number }) {
     e.preventDefault();
     const trimmed = task.trim();
     if (!trimmed || hasAdvError) return;
+    addToHistory(trimmed);
     submit.mutate(
       {
         task: trimmed,
@@ -384,7 +388,9 @@ function ImuConversationView({ cid }: { cid: number }) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as unknown as React.FormEvent);
+      return;
     }
+    handleHistoryKeyDown(e);
   }
 
   function startEditTitle() {
