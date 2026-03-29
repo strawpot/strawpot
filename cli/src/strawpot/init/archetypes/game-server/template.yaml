@@ -1,0 +1,93 @@
+archetype: game-server
+name: Game Server
+languages: [rust, go, cpp, python]
+build_systems: [cargo, go, cmake, pip]
+
+questions:
+  - id: networking
+    question: "What networking protocol does this server use?"
+    choices: [TCP, UDP, WebSocket, gRPC]
+    default: TCP
+    affects: [hard_rules]
+
+  - id: state_management
+    question: "How does the server manage game state?"
+    choices: [In-memory, Redis, Database]
+    default: In-memory
+    affects: [hard_rules]
+
+  - id: concurrency
+    question: "What concurrency model does the server use?"
+    choices: [Async, Thread-per-connection, Actor model]
+    default: Async
+    affects: [hard_rules, soft_rules]
+
+rules:
+  hard:
+    - condition: "always"
+      text: "The server is the authoritative source of game state. Never trust client-reported positions, health, or inventory. Validate all client actions server-side."
+
+    - condition: "always"
+      text: "All game state mutations must be deterministic given the same inputs. Use fixed-point math for gameplay calculations to ensure cross-platform consistency."
+
+    - condition: "always"
+      text: "Rate-limit all client actions. A player should never be able to send more than N actions per tick. Drop excess packets and flag the connection."
+
+    - condition: "always"
+      text: "Never process game logic inside network I/O handlers. Decouple network receive from game tick — buffer incoming messages and process them during the tick."
+
+    - condition: "always"
+      text: "All network messages must include a protocol version field. Reject connections from incompatible client versions with a clear upgrade message."
+
+    - condition: "always"
+      text: "Implement connection timeout and heartbeat monitoring. Disconnect idle clients after a configurable timeout to free server resources."
+
+    - condition: "networking == 'UDP'"
+      text: "Implement your own reliability layer for UDP: sequence numbers, ack bitfields, and retransmission for critical messages. Use unreliable delivery only for position updates."
+
+    - condition: "networking == 'WebSocket'"
+      text: "Implement ping/pong heartbeats to detect dead connections. Set idle timeout to disconnect AFK clients and free server resources."
+
+    - condition: "networking == 'gRPC'"
+      text: "Use streaming RPCs for real-time game state updates. Unary RPCs are fine for lobby, matchmaking, and auth. Keep .proto files in a shared package."
+
+    - condition: "state_management == 'In-memory'"
+      text: "Implement periodic state snapshots to disk for crash recovery. Define a serialization format (protobuf recommended) and test round-trip fidelity."
+
+    - condition: "state_management == 'Redis'"
+      text: "Use Redis transactions (MULTI/EXEC) for atomic state updates. Never read-modify-write without a transaction — race conditions cause state corruption."
+
+    - condition: "state_management == 'Database'"
+      text: "Batch database writes per tick — never write to the database for every player action. Use write-behind caching with periodic flush."
+
+    - condition: "concurrency == 'Async'"
+      text: "Never block the async runtime with synchronous I/O or CPU-heavy computation. Offload CPU work to a dedicated thread pool."
+
+    - condition: "concurrency == 'Thread-per-connection'"
+      text: "Cap the thread pool size. Each connection thread must have bounded memory usage. Use connection pooling with a hard limit."
+
+    - condition: "concurrency == 'Actor model'"
+      text: "Each game room/instance is a separate actor. Actors communicate via message passing only — no shared mutable state between actors."
+
+  soft:
+    - condition: "always"
+      text: "Log every connection, disconnection, and authentication event with player ID and IP. Use structured logging with correlation IDs per session."
+
+    - condition: "always"
+      text: "Implement graceful shutdown: stop accepting new connections, wait for current tick to complete, persist state, then exit."
+
+    - condition: "always"
+      text: "Expose server metrics (player count, tick rate, message throughput, memory usage) via a health endpoint or metrics exporter."
+
+    - condition: "always"
+      text: "Anti-cheat: validate movement speed, action frequency, and resource acquisition rates. Flag statistical outliers for review rather than auto-banning."
+
+cross_component:
+  - condition: "has_component('engine')"
+    text: "The engine ({{component.path}}) handles rendering/prediction. Server state is authoritative — resolve conflicts by snapping client state to server state."
+
+  - condition: "has_component('shared')"
+    text: "Network protocol definitions live in {{shared.path}}. Both server and client must use the same generated message types."
+
+  - condition: "has_component('client')"
+    text: "Client and server share the same protocol version. Coordinate version bumps — the client must handle version mismatch gracefully."

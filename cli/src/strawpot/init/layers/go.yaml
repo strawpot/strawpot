@@ -1,0 +1,31 @@
+language: Go
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Check every error return. Never use _ to discard errors unless the function is documented as infallible. Wrap errors with fmt.Errorf and %w for context."
+
+    - condition: "always"
+      text: "Never use panic() in library code. Panics are for truly unrecoverable situations in main packages only. Libraries return errors."
+
+    - condition: "always"
+      text: "All exported types, functions, and methods must have a doc comment starting with the name (e.g., // Foo does bar). Run go vet and golint in CI."
+
+    - condition: "always"
+      text: "Use context.Context as the first parameter for functions that do I/O or may be long-running. Respect context cancellation."
+
+  soft:
+    - condition: "always"
+      text: "Accept interfaces, return structs. Define interfaces at the call site, not the implementation site."
+
+    - condition: "always"
+      text: "Use goroutines for concurrency, channels for communication. Prefer channels over mutexes unless performance profiling says otherwise."
+
+    - condition: "always"
+      text: "Keep packages small and focused. A package should have one clear purpose. Avoid circular dependencies between packages."
+
+    - condition: "always"
+      text: "Use table-driven tests for functions with multiple input/output combinations. Name test cases clearly."
+
+    - condition: "always"
+      text: "Use go mod tidy to keep go.mod clean. Vendor dependencies (go mod vendor) for reproducible builds in CI."

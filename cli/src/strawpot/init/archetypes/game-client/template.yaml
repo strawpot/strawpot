@@ -1,0 +1,87 @@
+archetype: game-client
+name: Game Client
+languages: [typescript, cpp, csharp]
+build_systems: [npm, cmake, dotnet]
+
+questions:
+  - id: ui_framework
+    question: "What UI framework does this client use?"
+    choices: [React, Vue, Unity UI, Custom]
+    default: React
+    affects: [hard_rules, soft_rules]
+
+  - id: asset_pipeline
+    question: "What asset pipeline does this client use?"
+    choices: [Webpack, Vite, Unity, Custom]
+    default: Vite
+    affects: [soft_rules]
+
+  - id: platform
+    question: "What platform does this client target?"
+    choices: [Web, Desktop, Mobile, Console]
+    default: Web
+    affects: [hard_rules]
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Never trust local game state for gameplay decisions. The server is authoritative — client state is for rendering and prediction only."
+
+    - condition: "always"
+      text: "All user input must be processed through an input abstraction layer. Never read raw keyboard/mouse events directly in game logic."
+
+    - condition: "always"
+      text: "Asset loading must be asynchronous with progress feedback. Show loading indicators or placeholder assets — never freeze the UI waiting for assets."
+
+    - condition: "always"
+      text: "Handle network disconnection gracefully: show reconnection UI, buffer pending actions, and resume without losing client state."
+
+    - condition: "always"
+      text: "Separate render logic from game logic. Game state updates must be independent of frame rate — use fixed timestep for simulation, variable for rendering."
+
+    - condition: "ui_framework == 'React'"
+      text: "UI state management must use React state or a state manager (Redux, Zustand). Never mutate state directly — always use setState or dispatch."
+
+    - condition: "ui_framework == 'Vue'"
+      text: "Use Vue's reactivity system for UI state. Avoid deep watchers on large objects — use computed properties for derived state."
+
+    - condition: "ui_framework == 'Unity UI'"
+      text: "Use Unity's new UI Toolkit (UIElements) for new UI work, not legacy UGUI. Keep UI prefabs in a dedicated UI/ folder."
+
+    - condition: "platform == 'Web'"
+      text: "Respect browser performance budgets: target 60fps, keep JS bundles under 200KB gzipped for initial load. Use code splitting aggressively."
+
+    - condition: "platform == 'Mobile'"
+      text: "Implement touch input abstraction. Account for variable screen sizes and safe areas. Test on low-end devices — budget for 30fps minimum."
+
+    - condition: "platform == 'Console'"
+      text: "Controller input must be fully navigable without mouse/keyboard. Implement focus management and button prompts that match the connected controller."
+
+  soft:
+    - condition: "always"
+      text: "Implement client-side prediction for player movement — apply input immediately, reconcile with server state on response."
+
+    - condition: "always"
+      text: "Cache assets aggressively. Use content-addressed filenames (hash in filename) for cache busting on updates."
+
+    - condition: "always"
+      text: "Audio must respect system volume settings and provide in-game volume controls. Implement audio occlusion and distance attenuation."
+
+    - condition: "always"
+      text: "All text visible to users must be localizable. Use string IDs, not hardcoded text. Keep translations in a dedicated i18n directory."
+
+    - condition: "asset_pipeline == 'Webpack'"
+      text: "Use code splitting and lazy loading for non-critical features. Keep the initial bundle small — defer loading game assets until after UI renders."
+
+    - condition: "asset_pipeline == 'Vite'"
+      text: "Leverage Vite's native ES modules in development. Use dynamic imports for route-based code splitting in production builds."
+
+cross_component:
+  - condition: "has_component('server')"
+    text: "The server is authoritative. Client sends intents (move, attack), not state. Never send absolute positions — send input deltas."
+
+  - condition: "has_component('shared')"
+    text: "Import protocol types and constants from {{shared.path}}. Never define network message types locally in the client."
+
+  - condition: "has_component('engine')"
+    text: "Rendering calls go through the engine API. The client owns UI and input — the engine owns the render loop and scene graph."

@@ -1,0 +1,31 @@
+language: Rust
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Never use unsafe blocks unless absolutely necessary. Document every unsafe block with a SAFETY comment explaining why it's sound."
+
+    - condition: "always"
+      text: "Use Result<T, E> for fallible operations, not panics. Reserve panic!() for unrecoverable bugs, never for expected error conditions."
+
+    - condition: "always"
+      text: "Prefer &str over String in function parameters. Accept the most general type that works — take &[T] instead of &Vec<T>."
+
+    - condition: "always"
+      text: "All public types, functions, and modules must have doc comments (///). Include examples in doc comments for complex APIs."
+
+  soft:
+    - condition: "always"
+      text: "Use cargo clippy with default lints. Fix all warnings before committing. Configure project-specific lints in Cargo.toml."
+
+    - condition: "always"
+      text: "Prefer iterators over manual loops. Use .map(), .filter(), .collect() for data transformation chains."
+
+    - condition: "always"
+      text: "Use #[derive] for standard traits (Debug, Clone, PartialEq) on all public types. Derive Serialize/Deserialize for types that cross boundaries."
+
+    - condition: "always"
+      text: "Organize modules by feature, not by type. Group related structs, impls, and tests in the same module."
+
+    - condition: "always"
+      text: "Use thiserror for library error types and anyhow for application error handling. Don't mix them — pick one per crate."

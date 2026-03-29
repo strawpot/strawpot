@@ -185,6 +185,132 @@ class TestWebApiTemplate:
 # ---------------------------------------------------------------------------
 
 
+class TestGameServerTemplate:
+    @pytest.fixture()
+    def template(self):
+        return load_archetype("game-server")
+
+    def test_loads_successfully(self, template):
+        assert template.name == "Game Server"
+        assert template.slug == "game-server"
+
+    def test_has_questions(self, template):
+        ids = {q.id for q in template.questions}
+        assert ids == {"networking", "state_management", "concurrency"}
+
+    def test_all_conditions_parse(self, template):
+        for section in ("hard", "soft"):
+            for rule in template.rules.get(section, []):
+                parse_condition(rule["condition"])
+        for rule in template.cross_component:
+            parse_condition(rule["condition"])
+
+    def test_condition_variables_reference_questions(self, template):
+        question_ids = {q.id for q in template.questions}
+        for section in ("hard", "soft"):
+            for rule in template.rules.get(section, []):
+                for var in extract_variables(rule["condition"]):
+                    assert var in question_ids
+
+    def test_produces_at_least_15_rules(self, template):
+        answers = {
+            "networking": "TCP",
+            "state_management": "In-memory",
+            "concurrency": "Async",
+        }
+        ctx = {
+            "components": ["server", "engine", "client", "shared"],
+            "component": {"name": "server", "path": "server/", "language": "Rust"},
+            "shared": {"path": "shared/"},
+            "project": {"name": "TestGame"},
+        }
+        result = evaluate_rules(
+            {"rules": template.rules, "cross_component": template.cross_component},
+            answers,
+            ctx,
+        )
+        assert len(result) >= 15, f"Expected ≥15 rules, got {len(result)}"
+
+
+class TestGameClientTemplate:
+    @pytest.fixture()
+    def template(self):
+        return load_archetype("game-client")
+
+    def test_loads_successfully(self, template):
+        assert template.name == "Game Client"
+        assert template.slug == "game-client"
+
+    def test_has_questions(self, template):
+        ids = {q.id for q in template.questions}
+        assert ids == {"ui_framework", "asset_pipeline", "platform"}
+
+    def test_all_conditions_parse(self, template):
+        for section in ("hard", "soft"):
+            for rule in template.rules.get(section, []):
+                parse_condition(rule["condition"])
+        for rule in template.cross_component:
+            parse_condition(rule["condition"])
+
+    def test_condition_variables_reference_questions(self, template):
+        question_ids = {q.id for q in template.questions}
+        for section in ("hard", "soft"):
+            for rule in template.rules.get(section, []):
+                for var in extract_variables(rule["condition"]):
+                    assert var in question_ids
+
+    def test_produces_at_least_15_rules(self, template):
+        answers = {
+            "ui_framework": "React",
+            "asset_pipeline": "Vite",
+            "platform": "Web",
+        }
+        ctx = {
+            "components": ["client", "server", "engine", "shared"],
+            "component": {"name": "client", "path": "client/", "language": "TypeScript"},
+            "shared": {"path": "shared/"},
+            "project": {"name": "TestGame"},
+        }
+        result = evaluate_rules(
+            {"rules": template.rules, "cross_component": template.cross_component},
+            answers,
+            ctx,
+        )
+        assert len(result) >= 15, f"Expected ≥15 rules, got {len(result)}"
+
+
+class TestGenericTemplate:
+    @pytest.fixture()
+    def template(self):
+        return load_archetype("generic")
+
+    def test_loads_successfully(self, template):
+        assert template.name == "Generic"
+        assert template.slug == "generic"
+
+    def test_no_questions(self, template):
+        assert template.questions == []
+
+    def test_all_conditions_parse(self, template):
+        for section in ("hard", "soft"):
+            for rule in template.rules.get(section, []):
+                parse_condition(rule["condition"])
+
+    def test_produces_at_least_10_rules(self, template):
+        result = evaluate_rules(
+            {"rules": template.rules, "cross_component": template.cross_component},
+            {},
+            {"components": [], "component": {"name": "lib", "path": "lib/", "language": "Python"},
+             "project": {"name": "Test"}},
+        )
+        assert len(result) >= 10, f"Expected ≥10 rules, got {len(result)}"
+
+
+# ---------------------------------------------------------------------------
+# Language layers
+# ---------------------------------------------------------------------------
+
+
 class TestCppLayer:
     def test_loads_successfully(self):
         layer = load_language_layer("cpp")
@@ -214,6 +340,57 @@ class TestPythonLayer:
 
     def test_all_conditions_parse(self):
         layer = load_language_layer("python")
+        for section in ("hard", "soft"):
+            for rule in layer.rules.get(section, []):
+                parse_condition(rule["condition"])
+
+
+class TestRustLayer:
+    def test_loads_successfully(self):
+        layer = load_language_layer("rust")
+        assert layer.language == "Rust"
+
+    def test_has_at_least_8_rules(self):
+        layer = load_language_layer("rust")
+        total = sum(len(layer.rules.get(s, [])) for s in ("hard", "soft"))
+        assert total >= 8, f"Expected ≥8 rules, got {total}"
+
+    def test_all_conditions_parse(self):
+        layer = load_language_layer("rust")
+        for section in ("hard", "soft"):
+            for rule in layer.rules.get(section, []):
+                parse_condition(rule["condition"])
+
+
+class TestTypescriptLayer:
+    def test_loads_successfully(self):
+        layer = load_language_layer("typescript")
+        assert layer.language == "TypeScript"
+
+    def test_has_at_least_8_rules(self):
+        layer = load_language_layer("typescript")
+        total = sum(len(layer.rules.get(s, [])) for s in ("hard", "soft"))
+        assert total >= 8, f"Expected ≥8 rules, got {total}"
+
+    def test_all_conditions_parse(self):
+        layer = load_language_layer("typescript")
+        for section in ("hard", "soft"):
+            for rule in layer.rules.get(section, []):
+                parse_condition(rule["condition"])
+
+
+class TestGoLayer:
+    def test_loads_successfully(self):
+        layer = load_language_layer("go")
+        assert layer.language == "Go"
+
+    def test_has_at_least_8_rules(self):
+        layer = load_language_layer("go")
+        total = sum(len(layer.rules.get(s, [])) for s in ("hard", "soft"))
+        assert total >= 8, f"Expected ≥8 rules, got {total}"
+
+    def test_all_conditions_parse(self):
+        layer = load_language_layer("go")
         for section in ("hard", "soft"):
             for rule in layer.rules.get(section, []):
                 parse_condition(rule["condition"])

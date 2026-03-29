@@ -1,0 +1,44 @@
+archetype: generic
+name: Generic
+languages: [any]
+build_systems: [any]
+
+questions: []
+
+rules:
+  hard:
+    - condition: "always"
+      text: "All public APIs must have clear documentation — function signature, parameters, return value, and usage example."
+
+    - condition: "always"
+      text: "Error handling must be explicit. Never silently swallow errors. Log errors with enough context to debug without reproducing."
+
+    - condition: "always"
+      text: "No secrets (API keys, passwords, tokens) in source code. Use environment variables or a secrets manager. Add .env to .gitignore."
+
+    - condition: "always"
+      text: "All external inputs must be validated before use. This includes CLI arguments, config files, API responses, and file contents."
+
+    - condition: "always"
+      text: "Dependencies must be pinned to specific versions in production. Use lock files (package-lock.json, Cargo.lock, poetry.lock) and commit them."
+
+  soft:
+    - condition: "always"
+      text: "Follow consistent naming conventions throughout the project. Document the conventions in this file if they differ from language defaults."
+
+    - condition: "always"
+      text: "Write tests for all non-trivial logic. Aim for tests that verify behavior, not implementation details."
+
+    - condition: "always"
+      text: "Keep functions short and focused. If a function does more than one thing, split it. If it needs a comment explaining what it does, it needs a better name."
+
+    - condition: "always"
+      text: "Use a linter and formatter. Configure them once, enforce them in CI. Never argue about formatting in code review."
+
+    - condition: "always"
+      text: "Prefer explicit over implicit. Magic values, implicit type conversions, and hidden side effects make code harder to understand and debug."
+
+    - condition: "always"
+      text: "Log at appropriate levels: ERROR for things that need immediate attention, WARN for degraded behavior, INFO for significant events, DEBUG for development."
+
+cross_component: []

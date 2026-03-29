@@ -113,7 +113,7 @@ class TestGenerateFiles:
         assert "api/CLAUDE.md" in paths
         assert "CLAUDE.md" in paths  # Root file
 
-    def test_unknown_archetype_skips(self):
+    def test_unknown_archetype_falls_back_to_generic(self):
         config = ProjectConfig(
             project_name="Test",
             project_type="Other",
@@ -125,8 +125,9 @@ class TestGenerateFiles:
             ],
         )
         files = generate_files(config, verbose=True)
-        # Should skip since no archetype found and no generic available
-        assert len(files) == 0
+        # Falls back to generic archetype
+        assert len(files) == 1
+        assert files[0].rule_count >= 10
 
     def test_game_engine_content_quality(self):
         """Generated content should include domain-specific rules."""

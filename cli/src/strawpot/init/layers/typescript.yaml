@@ -1,0 +1,31 @@
+language: TypeScript
+
+rules:
+  hard:
+    - condition: "always"
+      text: "Enable strict mode in tsconfig.json (strict: true). Never use 'any' type — use 'unknown' and narrow with type guards when the type is truly unknown."
+
+    - condition: "always"
+      text: "All function parameters and return types must have explicit type annotations. Let TypeScript infer types for local variables only."
+
+    - condition: "always"
+      text: "Use const assertions and enums for fixed sets of values. Never use magic strings or numbers — define them as typed constants."
+
+    - condition: "always"
+      text: "Never use non-null assertion (!) in production code. Use proper null checks or optional chaining (?.) instead."
+
+  soft:
+    - condition: "always"
+      text: "Use named exports, not default exports. Named exports are refactor-friendly and work better with tree shaking."
+
+    - condition: "always"
+      text: "Prefer interfaces over type aliases for object shapes. Use type aliases for unions, intersections, and mapped types."
+
+    - condition: "always"
+      text: "Use async/await instead of raw Promises with .then() chains. Handle errors with try/catch, not .catch()."
+
+    - condition: "always"
+      text: "Organize imports: external packages first, then internal modules, then relative imports. Use path aliases (@/) for deep imports."
+
+    - condition: "always"
+      text: "Use zod or similar runtime validation for data from external sources (API responses, form inputs, env vars). TypeScript types are compile-time only."
