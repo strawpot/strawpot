@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,11 +72,12 @@ _HISTORY_FULL_OUTPUT_TURNS = 5
 # ---------------------------------------------------------------------------
 # Duplicate submission guard
 # ---------------------------------------------------------------------------
-# Tracks (conversation_id, task_hash) -> timestamp to reject identical tasks
-# submitted within a short window.  This catches the frontend double-fire bug
-# where the same message is sent twice within ~1ms.
+# Rejects identical tasks submitted to the same conversation within a short
+# window — catches the frontend double-fire bug (~1ms apart).
 _DEDUP_WINDOW_S = 2.0
+_EVICTION_THRESHOLD_S = _DEDUP_WINDOW_S * 2
 _recent_submissions: dict[tuple[int, str], float] = {}
+_submissions_lock = threading.Lock()
 
 
 def _is_duplicate_submission(conversation_id: int, task: str) -> bool:
@@ -84,16 +86,16 @@ def _is_duplicate_submission(conversation_id: int, task: str) -> bool:
     key = (conversation_id, task_hash)
     now = time.monotonic()
 
-    # Evict stale entries (keep the dict small)
-    stale = [k for k, ts in _recent_submissions.items() if now - ts > _DEDUP_WINDOW_S * 2]
-    for k in stale:
-        del _recent_submissions[k]
+    with _submissions_lock:
+        # Evict stale entries
+        for k in [k for k, ts in _recent_submissions.items() if now - ts > _EVICTION_THRESHOLD_S]:
+            del _recent_submissions[k]
 
-    last_ts = _recent_submissions.get(key)
-    if last_ts is not None and now - last_ts < _DEDUP_WINDOW_S:
-        return True
-    _recent_submissions[key] = now
-    return False
+        prev = _recent_submissions.get(key)
+        if prev is not None and now - prev < _DEDUP_WINDOW_S:
+            return True
+        _recent_submissions[key] = now
+        return False
 
 
 def _build_conversation_context(conn, conversation_id: int, *, history_path: str | None = None) -> str:

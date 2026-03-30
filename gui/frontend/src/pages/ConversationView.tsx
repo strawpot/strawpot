@@ -187,6 +187,7 @@ export default function ConversationView() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const respondedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { respondedIdsRef.current.clear(); }, [cid]);
   const qc = useQueryClient();
 
   const { data: projectResources } = useProjectResources(pid);

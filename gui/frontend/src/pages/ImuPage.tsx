@@ -237,6 +237,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const respondedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { respondedIdsRef.current.clear(); }, [cid]);
 
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");

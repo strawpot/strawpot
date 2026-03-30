@@ -40,16 +40,20 @@ export function useCreateConversation() {
 export function useSubmitConversationTask(conversationId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: SubmitTaskBody) =>
-      api.post<{ run_id?: string; queued?: boolean; conversation_id: number }>(
-        `/conversations/${conversationId}/tasks`,
-        body,
-      ),
-    onError: (error: Error) => {
-      // Silently ignore 409 Conflict — backend duplicate submission guard.
-      // The first request succeeded; the duplicate was correctly rejected.
-      if (error instanceof ApiError && error.status === 409) return;
-      throw error;
+    mutationFn: async (body: SubmitTaskBody) => {
+      try {
+        return await api.post<{ run_id?: string; queued?: boolean; conversation_id: number }>(
+          `/conversations/${conversationId}/tasks`,
+          body,
+        );
+      } catch (error) {
+        // Silently swallow 409 Conflict — backend duplicate submission guard.
+        // Handled here (not onError) so TanStack Query doesn't set isError.
+        if (error instanceof ApiError && error.status === 409) {
+          return { conversation_id: conversationId } as { run_id?: string; queued?: boolean; conversation_id: number };
+        }
+        throw error;
+      }
     },
     onSuccess: (data, variables) => {
       if (data.queued) {
