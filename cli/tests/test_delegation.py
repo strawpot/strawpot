@@ -16,6 +16,7 @@ from strawpot.delegation import (
     _build_delegatable_roles,
     _check_policy,
     _collect_transitive_skills,
+    _compose_memory_prompt,
     _find_skill,
     _format_identity_section,
     _format_memory_prompt,
@@ -2021,6 +2022,25 @@ class TestRecallWarmStart:
             provider, session_id="s", agent_id="a", role="imu"
         )
         assert result == ""
+
+
+class TestComposeMemoryPrompt:
+    def test_all_sections(self):
+        result = _compose_memory_prompt("## Identity", "## Previous", "## Memory")
+        assert result == "## Identity\n\n## Previous\n\n## Memory"
+
+    def test_identity_only(self):
+        assert _compose_memory_prompt("## Identity", "", "") == "## Identity"
+
+    def test_memory_only(self):
+        assert _compose_memory_prompt("", "", "## Memory") == "## Memory"
+
+    def test_all_empty(self):
+        assert _compose_memory_prompt("", "", "") == ""
+
+    def test_skips_empty_sections(self):
+        result = _compose_memory_prompt("## Identity", "", "## Memory")
+        assert result == "## Identity\n\n## Memory"
 
 
 # ---------------------------------------------------------------------------

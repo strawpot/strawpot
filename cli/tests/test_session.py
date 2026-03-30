@@ -1793,3 +1793,82 @@ class TestExtractSessionRecap:
         assert "Line1" in result
         assert "Line2" in result
         assert "Line3" in result
+
+    def test_multiple_recaps_uses_last(self):
+        """When output contains quoted and own recap, use the last one."""
+        output = (
+            "Here was the previous session:\n\n"
+            "## Session Recap\n\nOld recap from last time.\n\n"
+            "Now my work:\n\n"
+            "## Session Recap\n\nNew recap from this session."
+        )
+        result = _extract_session_recap(output)
+        assert "New recap from this session." in result
+        assert "Old recap from last time." not in result
+
+
+# ---------------------------------------------------------------------------
+# Session warm-start remember (stop path)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionWarmStartRemember:
+    """Test that stop() stores session recap for warm-start."""
+
+    def _make_session_with_memory(self, tmp_path):
+        """Create a session with a mock memory provider and a completed agent."""
+        session = _make_session(tmp_path)
+        memory = MagicMock()
+        memory.name = "mock-memory"
+        memory.dump.return_value = None
+        memory.remember.return_value = RememberResult(
+            status="accepted", entry_id="k_1"
+        )
+        session._memory_provider = memory
+        session._run_id = "run_test"
+        session._group_id = "g_test"
+        session.config = _make_config(orchestrator_role="imu")
+        session._orchestrator_role_prompt = "You are imu."
+        session.memory_task = "Do the thing."
+        session._orchestrator_result = AgentResult(
+            summary="Done",
+            output="Work done.\n\n## Session Recap\n\nCompleted task.",
+            exit_code=0,
+        )
+        # Register an orchestrator agent (no parent)
+        session._agent_info = {"agent_orch": {"parent": None}}
+        return session, memory
+
+    def test_remember_called_with_recap(self, tmp_path):
+        """stop() stores session recap via remember()."""
+        session, memory = self._make_session_with_memory(tmp_path)
+        session.stop()
+
+        remember_calls = [
+            c for c in memory.remember.call_args_list
+        ]
+        assert len(remember_calls) == 1
+        kw = remember_calls[0].kwargs
+        assert "session-recap" in kw["keywords"]
+        assert "warm-start" in kw["keywords"]
+        assert "imu" in kw["keywords"]
+        assert "run_test" in kw["keywords"]
+        assert kw["scope"] == "project"
+        assert "Completed task." in kw["content"]
+
+    def test_no_remember_when_no_recap(self, tmp_path):
+        """stop() does not call remember when there's no recap."""
+        session, memory = self._make_session_with_memory(tmp_path)
+        session._orchestrator_result = AgentResult(
+            summary="Done", output="No recap here.", exit_code=0
+        )
+        session.stop()
+
+        memory.remember.assert_not_called()
+
+    def test_remember_failure_does_not_crash(self, tmp_path):
+        """stop() completes even if remember() raises."""
+        session, memory = self._make_session_with_memory(tmp_path)
+        memory.remember.side_effect = RuntimeError("disk full")
+        # Should not raise
+        session.stop()

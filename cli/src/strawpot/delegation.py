@@ -711,6 +711,14 @@ def _format_memory_prompt(get_result: GetResult) -> str:
     return "## Memory\n\n" + "\n\n".join(parts)
 
 
+def _format_identity_section(entries: list[RecallEntry]) -> str:
+    """Format recalled identity entries into a prompt section."""
+    if not entries:
+        return ""
+    parts = [entry.content for entry in entries]
+    return "## Identity (auto-loaded)\n\n" + "\n\n".join(parts)
+
+
 def _recall_identity(
     memory_provider: MemoryProvider,
     *,
@@ -735,7 +743,7 @@ def _recall_identity(
             group_id=group_id,
         )
     except Exception:
-        logger.debug("Identity recall failed for role=%s", role, exc_info=True)
+        logger.warning("Identity recall failed for role=%s", role, exc_info=True)
         return ""
     return _format_identity_section(result.entries)
 
@@ -764,19 +772,25 @@ def _recall_warm_start(
             group_id=group_id,
         )
     except Exception:
-        logger.debug("Warm-start recall failed for role=%s", role, exc_info=True)
+        logger.warning("Warm-start recall failed for role=%s", role, exc_info=True)
         return ""
     if not result.entries:
         return ""
     return f"## Previous Session (auto-loaded)\n\n{result.entries[0].content}"
 
 
-def _format_identity_section(entries: list[RecallEntry]) -> str:
-    """Format recalled identity entries into a prompt section."""
-    if not entries:
-        return ""
-    parts = [entry.content for entry in entries]
-    return "## Identity (auto-loaded)\n\n" + "\n\n".join(parts)
+def _compose_memory_prompt(
+    identity: str,
+    warm_start: str,
+    memory: str,
+) -> str:
+    """Compose Identity, Previous Session, and Memory sections into one prompt.
+
+    Sections appear in order: Identity → Previous Session → Memory.
+    Empty sections are omitted.
+    """
+    parts = [s for s in (identity, warm_start, memory) if s]
+    return "\n\n".join(parts)
 
 
 def _agent_status(result: AgentResult, *, timed_out: bool = False) -> str:
@@ -1046,29 +1060,18 @@ def _handle_delegate_body(
             if get_result.context_cards:
                 memory_prompt = _format_memory_prompt(get_result)
 
-            # 7a-ii. Identity bootstrap — auto-load self-model
-            identity_section = _recall_identity(
-                memory_provider,
+            # 7a-ii. Identity bootstrap + session warm-start
+            recall_kwargs = dict(
                 session_id=request.run_id,
                 agent_id=agent_id,
                 role=request.role_slug,
                 group_id=group_id,
             )
-
-            # 7a-iii. Session warm-start — inject previous session recap
-            warm_start_section = _recall_warm_start(
-                memory_provider,
-                session_id=request.run_id,
-                agent_id=agent_id,
-                role=request.role_slug,
-                group_id=group_id,
+            memory_prompt = _compose_memory_prompt(
+                _recall_identity(memory_provider, **recall_kwargs),
+                _recall_warm_start(memory_provider, **recall_kwargs),
+                memory_prompt,
             )
-
-            # Compose: Identity → Previous Session → Memory
-            prefix_parts = [s for s in (identity_section, warm_start_section) if s]
-            if prefix_parts:
-                prefix = "\n\n".join(prefix_parts)
-                memory_prompt = f"{prefix}\n\n{memory_prompt}" if memory_prompt else prefix
             if tracer is not None and delegate_span_id is not None:
                 tracer.memory_get(
                     span_id=delegate_span_id,
