@@ -4,9 +4,17 @@ import json
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
-from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberResult
+from strawpot_memory.memory_protocol import (
+    ForgetResult,
+    ListEntry,
+    ListResult,
+    RecallEntry,
+    RecallResult,
+    RememberResult,
+)
 
 from strawpot.cli import cli
+from strawpot.memory.consolidation import ConsolidationAction, ConsolidationReport
 
 
 def _invoke(args, *, provider=None):
@@ -191,3 +199,133 @@ class TestMemoryCommandGroup:
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
         assert "Memory" in result.output
+
+
+# -- memory consolidate ------------------------------------------------------
+
+
+def _invoke_consolidate(args, *, report=None, provider=None):
+    """Invoke ``memory consolidate`` with mocked consolidation."""
+    if report is None:
+        report = ConsolidationReport()
+    if provider is None:
+        provider = MagicMock()
+
+    with patch(
+        "strawpot.memory.standalone.get_standalone_provider",
+        return_value=provider,
+    ), patch(
+        "strawpot.memory.consolidation.consolidate",
+        return_value=report,
+    ) as mock_consolidate, patch(
+        "strawpot.memory.standalone.detect_project_dir",
+        return_value="/fake/project",
+    ):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["memory", "consolidate"] + args)
+        return result, mock_consolidate
+
+
+class TestMemoryConsolidateCommand:
+    """Tests for `strawpot memory consolidate` CLI command (AC #4)."""
+
+    def test_no_actions_needed(self):
+        """Clean run with nothing to consolidate shows success message."""
+        report = ConsolidationReport(total_entries_scanned=15)
+        result, _ = _invoke_consolidate([], report=report)
+
+        assert result.exit_code == 0
+        assert "No consolidation needed" in result.output
+        assert "15" in result.output
+
+    def test_dry_run_flag(self):
+        """--dry-run is passed through to consolidate()."""
+        report = ConsolidationReport(
+            total_entries_scanned=5,
+            groups_found=1,
+            actions=[
+                ConsolidationAction(
+                    action="delete_duplicate",
+                    entry_id="dup_1",
+                    reason="Near-duplicate of keep_1",
+                ),
+            ],
+        )
+        result, mock_consolidate = _invoke_consolidate(
+            ["--dry-run"], report=report
+        )
+
+        assert result.exit_code == 0
+        assert "Would consolidate" in result.output
+        call_kwargs = mock_consolidate.call_args.kwargs
+        assert call_kwargs["dry_run"] is True
+
+    def test_scope_flag(self):
+        """--scope is passed through to consolidate()."""
+        report = ConsolidationReport()
+        _, mock_consolidate = _invoke_consolidate(
+            ["--scope", "global"], report=report
+        )
+
+        call_kwargs = mock_consolidate.call_args.kwargs
+        assert call_kwargs["scope"] == "global"
+
+    def test_json_output(self):
+        """--json renders the report as JSON."""
+        report = ConsolidationReport(
+            total_entries_scanned=10,
+            groups_found=2,
+            actions=[
+                ConsolidationAction(
+                    action="delete_duplicate",
+                    entry_id="dup_1",
+                    reason="Near-duplicate of keep_1",
+                ),
+                ConsolidationAction(
+                    action="archive_stale",
+                    entry_id="old_1",
+                    reason="Importance 0.050 < 0.1, age 90 days",
+                ),
+            ],
+        )
+        result, _ = _invoke_consolidate(["--json"], report=report)
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["total_entries_scanned"] == 10
+        assert data["groups_found"] == 2
+        assert data["duplicates_removed"] == 1
+        assert data["entries_archived"] == 1
+        assert len(data["actions"]) == 2
+        assert data["actions"][0]["action"] == "delete_duplicate"
+        assert data["actions"][1]["action"] == "archive_stale"
+
+    def test_json_dry_run_combined(self):
+        """--json --dry-run outputs JSON with dry_run=true."""
+        report = ConsolidationReport(total_entries_scanned=3)
+        result, _ = _invoke_consolidate(
+            ["--json", "--dry-run"], report=report
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["dry_run"] is True
+
+    def test_displays_action_details(self):
+        """Actions are rendered with entry IDs and reasons."""
+        report = ConsolidationReport(
+            total_entries_scanned=5,
+            groups_found=1,
+            actions=[
+                ConsolidationAction(
+                    action="delete_duplicate",
+                    entry_id="dup_abc",
+                    reason="Near-duplicate of keep_xyz (similarity >= 0.8)",
+                ),
+            ],
+        )
+        result, _ = _invoke_consolidate([], report=report)
+
+        assert result.exit_code == 0
+        assert "dup_abc" in result.output
+        assert "Duplicates" in result.output

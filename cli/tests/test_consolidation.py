@@ -68,6 +68,21 @@ class TestGroupByKeywords:
         groups = _group_by_keywords(entries)
         assert len(groups) == 2
 
+    def test_empty_keywords(self):
+        """Entries with empty keyword lists remain ungrouped."""
+        entries = [
+            self._entry("a", []),
+            self._entry("b", []),
+            self._entry("c", ["kw1"]),
+        ]
+        groups = _group_by_keywords(entries)
+        # No pair can share >= 2 keywords, so each is its own group
+        assert len(groups) == 3
+
+    def test_empty_input(self):
+        """Empty entry list returns empty groups."""
+        assert _group_by_keywords([]) == []
+
     def test_transitive_grouping(self):
         entries = [
             self._entry("a", ["kw1", "kw2", "kw3"]),
@@ -261,3 +276,106 @@ class TestConsolidate:
         # Group of 2 doesn't qualify for deduplication
         assert report.groups_found == 0
         assert report.duplicates_removed == 0
+
+    def test_deleted_duplicates_not_reprocessed_in_archive(self, tmp_path):
+        """Entries deleted during dedup are skipped in the archive step (AC #5)."""
+        entries = [
+            self._entry("a", "old repeated fact", ["kw1", "kw2"],
+                         ts="2025-01-01T00:00:00Z"),
+            self._entry("b", "old repeated fact", ["kw1", "kw2"],
+                         ts="2025-01-02T00:00:00Z"),
+            self._entry("c", "old repeated fact slightly different", ["kw1", "kw2"],
+                         ts="2025-01-03T00:00:00Z"),
+        ]
+        provider = self._make_provider(entries)
+
+        report = consolidate(provider, project_dir=str(tmp_path))
+
+        # "a" should be deleted as duplicate (oldest, near-identical to "b")
+        deleted_ids = {
+            a.entry_id for a in report.actions if a.action == "delete_duplicate"
+        }
+        archived_ids = {
+            a.entry_id for a in report.actions if a.action == "archive_stale"
+        }
+        # Confirm "a" was actually deleted in dedup step
+        assert "a" in deleted_ids
+        # Deleted entries must not appear in archive actions
+        assert deleted_ids & archived_ids == set()
+
+    def test_partial_archive_failure_reported(self, tmp_path):
+        """When _archive_entry fails, the action is marked succeeded=False (AC #6)."""
+        entries = [
+            self._entry("stale1", "old fact one", ["kw1"],
+                         ts="2025-01-01T00:00:00Z"),
+            self._entry("stale2", "old fact two", ["kw2"],
+                         ts="2025-01-01T00:00:00Z"),
+        ]
+        provider = self._make_provider(entries)
+        # First remember call succeeds (archive copy), but forget fails
+        provider.remember.return_value = RememberResult(
+            status="accepted", entry_id="arc_1"
+        )
+        provider.forget.side_effect = Exception("storage error")
+
+        report = consolidate(provider, project_dir=str(tmp_path))
+
+        archive_actions = [
+            a for a in report.actions if a.action == "archive_stale"
+        ]
+        assert len(archive_actions) == 2
+        assert all(not a.succeeded for a in archive_actions)
+
+    def test_archive_remember_failure_reported(self, tmp_path):
+        """When the archive copy (remember) itself fails, action is failed."""
+        entries = [
+            self._entry("stale", "old fact", ["kw1"],
+                         ts="2025-01-01T00:00:00Z"),
+        ]
+        provider = self._make_provider(entries)
+        provider.remember.side_effect = Exception("cannot write")
+
+        report = consolidate(provider, project_dir=str(tmp_path))
+
+        archive_actions = [
+            a for a in report.actions if a.action == "archive_stale"
+        ]
+        assert len(archive_actions) == 1
+        assert not archive_actions[0].succeeded
+
+    def test_dedup_failure_does_not_block_archive(self, tmp_path):
+        """A forget failure during dedup still allows the archive step to run."""
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        entries = [
+            # 3 entries sharing keywords for dedup qualification
+            self._entry("dup1", "repeated fact", ["kw1", "kw2"],
+                         ts=(now - timedelta(days=2)).isoformat()),
+            self._entry("dup2", "repeated fact", ["kw1", "kw2"],
+                         ts=(now - timedelta(days=1)).isoformat()),
+            self._entry("diff", "different content entirely", ["kw1", "kw2"],
+                         ts=now.isoformat()),
+            # Separate stale entry that should still get archived
+            self._entry("stale", "old separate fact", ["kw3"],
+                         ts="2025-01-01T00:00:00Z"),
+        ]
+        provider = self._make_provider(entries)
+        # forget fails for dedup but succeeds for archive
+
+        def forget_side_effect(*, entry_id):
+            if entry_id == "dup1":
+                raise Exception("dedup storage error")
+            return ForgetResult(status="deleted")
+
+        provider.forget.side_effect = forget_side_effect
+
+        report = consolidate(provider, project_dir=str(tmp_path))
+
+        # Dedup action should have failed
+        dedup_actions = [a for a in report.actions if a.action == "delete_duplicate"]
+        assert any(not a.succeeded for a in dedup_actions)
+
+        # Archive step should still have run for the stale entry
+        archive_actions = [a for a in report.actions if a.action == "archive_stale"]
+        assert len(archive_actions) >= 1

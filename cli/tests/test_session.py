@@ -1182,6 +1182,62 @@ class TestBoostByImportance:
             boosted = _boost_by_importance(result, str(tmp_path))
             assert boosted.entries[0].score == 0.5
 
+    def test_re_sorts_by_boosted_score(self, tmp_path):
+        """Boosted entries are re-sorted so higher-importance entries surface."""
+        import time
+
+        from strawpot.memory.importance import EntryStats, save_stats
+
+        now = time.time()
+        # e2 has high importance, e1 has none
+        save_stats(
+            {"e2": EntryStats(recall_count=50, last_recalled=now, created=now - 100)},
+            str(tmp_path),
+        )
+
+        result = RecallResult(
+            entries=[
+                RecallEntry(entry_id="e1", content="a", score=1.0),
+                RecallEntry(entry_id="e2", content="b", score=0.8),
+            ]
+        )
+
+        boosted = _boost_by_importance(result, str(tmp_path))
+        # e2 should be first after boost despite lower original score
+        assert boosted.entries[0].entry_id == "e2"
+        assert boosted.entries[0].score > 0.8
+
+    def test_no_partial_mutation_on_computation_error(self, tmp_path):
+        """If importance_score raises mid-loop, no entries are mutated (AC #2)."""
+        import time
+
+        from strawpot.memory.importance import EntryStats, save_stats
+
+        now = time.time()
+        save_stats(
+            {
+                "e1": EntryStats(recall_count=10, last_recalled=now, created=now),
+                "e2": EntryStats(recall_count=5, last_recalled=now, created=now),
+            },
+            str(tmp_path),
+        )
+
+        result = RecallResult(
+            entries=[
+                RecallEntry(entry_id="e1", content="a", score=1.0),
+                RecallEntry(entry_id="e2", content="b", score=0.9),
+            ]
+        )
+
+        with patch(
+            "strawpot.memory.importance.importance_score",
+            side_effect=[10.0, Exception("mid-computation crash")],
+        ):
+            boosted = _boost_by_importance(result, str(tmp_path))
+            # On exception, original result is returned unmodified
+            assert boosted.entries[0].score == 1.0
+            assert boosted.entries[1].score == 0.9
+
 
 class TestRecallWithImportanceIntegration:
     """Integration test: _handle_recall triggers importance tracking."""
