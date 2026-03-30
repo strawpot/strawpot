@@ -197,7 +197,8 @@ def _extract_session_recap(output: str) -> str:
 
     When multiple recaps exist (e.g. a quoted previous recap followed by
     the agent's own), the *last* one is used to avoid capturing stale
-    content.
+    content.  The capture stops at the next ``## `` heading (if any) so
+    trailing content is excluded.
 
     Returns the recap text (trimmed), or an empty string if no recap
     is found.
@@ -209,7 +210,12 @@ def _extract_session_recap(output: str) -> str:
     if not matches:
         return ""
     last = matches[-1]
-    recap = output[last.start():].strip()
+    tail = output[last.start():]
+    # Stop at the next heading (if any) to avoid capturing unrelated content.
+    next_heading = re.search(r"\n## (?!Session Recap\b)", tail)
+    if next_heading:
+        tail = tail[:next_heading.start()]
+    recap = tail.strip()
     # Cap at 2000 chars to prevent context bloat in future sessions.
     return recap[:2000]
 

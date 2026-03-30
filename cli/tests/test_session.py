@@ -1806,6 +1806,38 @@ class TestExtractSessionRecap:
         assert "New recap from this session." in result
         assert "Old recap from last time." not in result
 
+    def test_stops_at_next_heading(self):
+        """Recap extraction stops at the next ## heading."""
+        output = (
+            "## Session Recap\n\nRecap content.\n\n"
+            "## Appendix\n\nTrailing stuff."
+        )
+        result = _extract_session_recap(output)
+        assert "Recap content." in result
+        assert "Trailing stuff." not in result
+        assert "## Appendix" not in result
+
+    def test_word_boundary_no_false_match(self):
+        """'## Session Recaps' should NOT match due to word boundary."""
+        output = "## Session Recaps\n\nThis is a plural heading, not a recap."
+        result = _extract_session_recap(output)
+        # \b after 'Recap' means 's' breaks the boundary — should NOT match
+        assert result == ""
+
+    def test_recap_at_start_of_output(self):
+        """Recap heading at the very start of output is captured."""
+        output = "## Session Recap\n\nEntire output is the recap."
+        result = _extract_session_recap(output)
+        assert result.startswith("## Session Recap")
+        assert "Entire output is the recap." in result
+
+    def test_whitespace_only_recap_body(self):
+        """Recap with only whitespace after heading still returns heading."""
+        output = "Done.\n\n## Session Recap\n\n   \n  "
+        result = _extract_session_recap(output)
+        # strip() applied — should still start with the heading
+        assert result.startswith("## Session Recap")
+
 
 # ---------------------------------------------------------------------------
 # Session warm-start remember (stop path)
@@ -1844,11 +1876,12 @@ class TestSessionWarmStartRemember:
         session, memory = self._make_session_with_memory(tmp_path)
         session.stop()
 
-        remember_calls = [
+        recap_calls = [
             c for c in memory.remember.call_args_list
+            if "session-recap" in c.kwargs.get("keywords", [])
         ]
-        assert len(remember_calls) == 1
-        kw = remember_calls[0].kwargs
+        assert len(recap_calls) == 1
+        kw = recap_calls[0].kwargs
         assert "session-recap" in kw["keywords"]
         assert "warm-start" in kw["keywords"]
         assert "imu" in kw["keywords"]
@@ -1872,3 +1905,11 @@ class TestSessionWarmStartRemember:
         memory.remember.side_effect = RuntimeError("disk full")
         # Should not raise
         session.stop()
+
+    def test_no_remember_when_orchestrator_result_none(self, tmp_path):
+        """stop() does not call remember when orchestrator never finished."""
+        session, memory = self._make_session_with_memory(tmp_path)
+        session._orchestrator_result = None
+        session.stop()
+
+        memory.remember.assert_not_called()
