@@ -2379,6 +2379,121 @@ def memory_consolidate(scope, dry_run, as_json):
         )
 
 
+@memory.command(name="rebuild-embeddings")
+@click.option("--scope", "-s", default="", type=click.Choice(["", "project", "global"]),
+              help="Limit to a specific scope.")
+def memory_rebuild_embeddings(scope):
+    """Recompute embeddings for all existing memories."""
+    from strawpot.memory.embeddings import is_available, rebuild_all
+    from strawpot.memory.standalone import (
+        detect_project_dir,
+        get_standalone_provider,
+    )
+
+    if not is_available():
+        click.echo(
+            click.style("❌ ", fg="red")
+            + "No embedding model available. Install sentence-transformers:\n"
+            + click.style("  pip install sentence-transformers", bold=True)
+        )
+        raise SystemExit(1)
+
+    try:
+        project_dir = detect_project_dir()
+    except Exception:
+        project_dir = None
+
+    provider = get_standalone_provider(project_dir=project_dir)
+
+    click.echo(
+        click.style("🔄 ", fg="cyan")
+        + "Rebuilding embeddings..."
+    )
+    count = rebuild_all(provider, scope=scope, project_dir=project_dir)
+    click.echo(
+        click.style("✅ ", fg="green")
+        + f"Rebuilt embeddings for {count} {_pluralize_memory(count)}."
+    )
+
+
+@memory.command(name="graph")
+@click.argument("entry_id", required=False)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def memory_graph(entry_id, as_json):
+    """Show the memory relationship graph."""
+    from strawpot.memory.graph import format_graph, load_graph
+    from strawpot.memory.standalone import detect_project_dir
+
+    try:
+        project_dir = detect_project_dir()
+    except Exception:
+        project_dir = None
+
+    if as_json:
+        graph = load_graph(project_dir)
+        raw = {
+            source: [
+                {"type": r.relation_type, "target": r.target, "created_at": r.created_at}
+                for r in rels
+            ]
+            for source, rels in graph.edges.items()
+        }
+        if entry_id:
+            # Filter to only relations involving the entry
+            filtered = {}
+            for source, rels in raw.items():
+                if source == entry_id:
+                    filtered[source] = rels
+                else:
+                    relevant = [r for r in rels if r["target"] == entry_id]
+                    if relevant:
+                        filtered[source] = relevant
+            raw = filtered
+        click.echo(json.dumps(raw, indent=2))
+        return
+
+    output = format_graph(entry_id, project_dir)
+    click.echo(output)
+
+
+@memory.command(name="add-relation")
+@click.argument("source")
+@click.argument("relation_type")
+@click.argument("target")
+def memory_add_relation(source, relation_type, target):
+    """Add a relation between two memory entries.
+
+    RELATION_TYPE must be one of: follows_from, caused_by, supersedes, related_to
+    """
+    from strawpot.memory.graph import RELATION_TYPES, add_relation
+    from strawpot.memory.standalone import detect_project_dir
+
+    if relation_type not in RELATION_TYPES:
+        click.echo(
+            click.style("❌ ", fg="red")
+            + f"Invalid relation type: {relation_type}\n"
+            + f"Must be one of: {', '.join(sorted(RELATION_TYPES))}"
+        )
+        raise SystemExit(1)
+
+    try:
+        project_dir = detect_project_dir()
+    except Exception:
+        project_dir = None
+
+    added = add_relation(source, relation_type, target, project_dir)
+    if added:
+        click.echo(
+            click.style("✅ ", fg="green")
+            + f"{source} --{relation_type}--> {target}"
+        )
+    else:
+        click.echo(
+            click.style("⚠️ ", fg="yellow")
+            + "Relation already exists or is invalid."
+        )
+
+
 def _strawhub(*args: str) -> None:
     """Run a strawhub CLI command, passing through stdout/stderr."""
     cmd = _strawhub_cmd()

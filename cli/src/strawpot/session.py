@@ -192,6 +192,153 @@ _SESSION_RECAP_RE = re.compile(
 )
 
 
+def _store_embedding(
+    entry_id: str,
+    content: str,
+    scope: str,
+    project_dir: str | None,
+) -> None:
+    """Store an embedding for a newly remembered entry.
+
+    Failures are logged at DEBUG — embedding storage is best-effort.
+    """
+    try:
+        from strawpot.memory.embeddings import store_embedding
+
+        store_embedding(entry_id, content, scope, project_dir)
+    except Exception:
+        logger.debug("Embedding storage failed for %s", entry_id, exc_info=True)
+
+
+def _semantic_recall(
+    query: str,
+    scope: str,
+    project_dir: str | None,
+    bm25_entries: list,
+    max_results: int,
+) -> list:
+    """Merge BM25 results with semantic similarity using RRF.
+
+    Returns the re-ranked entries list. Falls back to bm25_entries
+    unchanged if semantic search fails.
+    """
+    try:
+        from strawpot.memory.embeddings import find_similar, rrf_merge
+
+        similar = find_similar(query, scope or "project", project_dir, top_k=max_results)
+        if not similar:
+            return bm25_entries
+
+        bm25_ids = [e.entry_id for e in bm25_entries]
+        embedding_ids = [s.entry_id for s in similar]
+        merged = rrf_merge(bm25_ids, embedding_ids)
+
+        # Re-order bm25_entries by RRF rank, assigning RRF scores
+        entry_map = {e.entry_id: e for e in bm25_entries}
+        rrf_scores = {eid: score for eid, score in merged}
+        reranked = []
+        for eid, score in merged:
+            if eid in entry_map:
+                entry_map[eid].score = score
+                reranked.append(entry_map[eid])
+        # Append any BM25 entries not in merged (shouldn't happen, but safe)
+        seen = {e.entry_id for e in reranked}
+        for entry in bm25_entries:
+            if entry.entry_id not in seen:
+                reranked.append(entry)
+        return reranked[:max_results]
+    except Exception:
+        logger.warning("Semantic recall failed; using BM25 only", exc_info=True)
+        return bm25_entries
+
+
+def _expand_with_graph(
+    result,
+    project_dir: str | None,
+    provider,
+    max_results: int,
+) -> None:
+    """Expand recall results with 1-hop graph neighbors.
+
+    Fetches neighbor entries from the memory provider and appends them
+    to the result with a reduced score. Mutates result.entries in place.
+    """
+    try:
+        from strawpot.memory.graph import NEIGHBOR_SCORE_FACTOR, expand_recall
+
+        entry_ids = [e.entry_id for e in result.entries]
+        expansions = expand_recall(entry_ids, project_dir)
+        if not expansions:
+            return
+
+        # Fetch neighbor entries from provider
+        min_score = min(
+            (e.score for e in result.entries if e.score > 0), default=1.0
+        )
+        existing_ids = set(entry_ids)
+
+        for neighbor_id, score_factor in expansions:
+            if len(result.entries) >= max_results:
+                break
+            if neighbor_id in existing_ids:
+                continue
+            try:
+                # Recall by entry ID to get the content
+                neighbor_result = provider.recall(
+                    session_id="graph-expansion",
+                    agent_id="graph-expansion",
+                    role="system",
+                    query=neighbor_id,
+                    scope="",
+                    max_results=1,
+                )
+                for entry in neighbor_result.entries:
+                    if entry.entry_id == neighbor_id:
+                        entry.score = min_score * score_factor
+                        result.entries.append(entry)
+                        existing_ids.add(neighbor_id)
+                        break
+            except Exception:
+                logger.debug(
+                    "Failed to fetch graph neighbor %s", neighbor_id, exc_info=True
+                )
+    except Exception:
+        logger.debug("Graph expansion failed", exc_info=True)
+
+
+def _link_session_recap(
+    new_entry_id: str,
+    provider,
+    run_id: str,
+    project_dir: str | None,
+) -> None:
+    """Create a follows_from relation from the new recap to the previous one.
+
+    Searches for the most recent session-recap entry (excluding the one
+    just created) and links them in the memory graph.
+    """
+    try:
+        from strawpot.memory.graph import add_relation
+
+        result = provider.recall(
+            session_id=run_id,
+            agent_id="recap-linker",
+            role="system",
+            query="session-recap warm-start",
+            keywords=["session-recap", "warm-start"],
+            scope="project",
+            max_results=5,
+        )
+        for entry in result.entries:
+            if entry.entry_id != new_entry_id:
+                add_relation(
+                    new_entry_id, "follows_from", entry.entry_id, project_dir
+                )
+                break  # link to the most recent previous recap only
+    except Exception:
+        logger.debug("Failed to link session recap in graph", exc_info=True)
+
+
 def _track_recall(entry_ids: list[str], project_dir: str | None) -> None:
     """Record recall frequency for importance tracking.
 
@@ -628,7 +775,7 @@ class Session:
                 recap = _extract_session_recap(output)
                 if recap:
                     try:
-                        self._memory_provider.remember(
+                        recap_result = self._memory_provider.remember(
                             session_id=self._run_id,
                             agent_id=orch_agent_id,
                             role=self.config.orchestrator_role,
@@ -642,6 +789,17 @@ class Session:
                             scope="project",
                             group_id=self._group_id,
                         )
+                        # Auto-link to previous session recap via graph
+                        if (
+                            recap_result.entry_id
+                            and getattr(self.config, "memory_graph", True)
+                        ):
+                            _link_session_recap(
+                                new_entry_id=recap_result.entry_id,
+                                provider=self._memory_provider,
+                                run_id=self._run_id,
+                                project_dir=self._working_dir,
+                            )
                     except Exception:
                         logger.warning(
                             "Session recap remember failed for role=%s (recap_len=%d)",
@@ -1465,6 +1623,18 @@ class Session:
                         parent_agent_id=None,
                         group_id=self._group_id,
                     )
+            # Store embedding for semantic search (best-effort, non-blocking)
+            if (
+                result.entry_id
+                and getattr(self.config, "semantic_search", False)
+            ):
+                _store_embedding(
+                    entry_id=result.entry_id,
+                    content=remember.content,
+                    scope=remember.scope or "project",
+                    project_dir=self._working_dir,
+                )
+
             return ok_response(
                 request.request_id,
                 remember_result=denden_pb2.RememberResult(
@@ -1505,6 +1675,31 @@ class Session:
                 max_results=recall.max_results or 10,
                 group_id=self._group_id,
             )
+
+            # Semantic search: merge BM25 with embedding similarity via RRF
+            if (
+                result.entries
+                and getattr(self.config, "semantic_search", False)
+            ):
+                result.entries = _semantic_recall(
+                    query=recall.query,
+                    scope=recall.scope or "",
+                    project_dir=self._working_dir,
+                    bm25_entries=result.entries,
+                    max_results=recall.max_results or 10,
+                )
+
+            # Graph expansion: include 1-hop neighbors
+            if (
+                result.entries
+                and getattr(self.config, "memory_graph", True)
+            ):
+                _expand_with_graph(
+                    result,
+                    self._working_dir,
+                    self._memory_provider,
+                    max_results=recall.max_results or 10,
+                )
 
             # Boost scores by importance and track recall frequency
             if result.entries:
