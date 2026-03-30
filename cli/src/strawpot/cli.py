@@ -2297,6 +2297,88 @@ def memory_list(scope, show_all, as_json):
     list_breadcrumb()
 
 
+@memory.command(name="consolidate")
+@click.option("--scope", "-s", default="", type=click.Choice(["", "project", "global"]),
+              help="Limit consolidation to a specific scope.")
+@click.option("--dry-run", is_flag=True, help="Show what would be consolidated without making changes.")
+@click.option("--json", "as_json", is_flag=True, help="Output report as JSON.")
+def memory_consolidate(scope, dry_run, as_json):
+    """Consolidate memories: remove duplicates and archive stale entries."""
+    from strawpot.memory.consolidation import consolidate
+    from strawpot.memory.standalone import (
+        detect_project_dir,
+        get_standalone_provider,
+    )
+
+    try:
+        project_dir = detect_project_dir()
+    except Exception:
+        project_dir = None
+
+    provider = get_standalone_provider(project_dir=project_dir)
+    report = consolidate(
+        provider,
+        scope=scope,
+        project_dir=project_dir,
+        dry_run=dry_run,
+    )
+
+    if as_json:
+        click.echo(json.dumps({
+            "dry_run": dry_run,
+            "total_entries_scanned": report.total_entries_scanned,
+            "groups_found": report.groups_found,
+            "duplicates_removed": report.duplicates_removed,
+            "entries_archived": report.entries_archived,
+            "actions": [
+                {
+                    "action": a.action,
+                    "entry_id": a.entry_id,
+                    "reason": a.reason,
+                }
+                for a in report.actions
+            ],
+        }, indent=2))
+        return
+
+    prefix = "Would consolidate" if dry_run else "Consolidated"
+
+    if not report.actions:
+        click.echo(
+            click.style("✅ ", fg="green")
+            + f"No consolidation needed ({report.total_entries_scanned} "
+            + f"{_pluralize_memory(report.total_entries_scanned)} scanned)."
+        )
+        return
+
+    click.echo(
+        click.style("🔧 " if not dry_run else "🔍 ", fg="cyan")
+        + f"{prefix} {report.total_entries_scanned} "
+        + f"{_pluralize_memory(report.total_entries_scanned)}:"
+    )
+    click.echo()
+
+    if report.duplicates_removed:
+        click.echo(
+            f"  Duplicates {'to remove' if dry_run else 'removed'}: "
+            + click.style(str(report.duplicates_removed), fg="yellow")
+        )
+    if report.entries_archived:
+        click.echo(
+            f"  Stale entries {'to archive' if dry_run else 'archived'}: "
+            + click.style(str(report.entries_archived), fg="yellow")
+        )
+
+    click.echo()
+    for action in report.actions:
+        icon = "🗑️" if action.action == "delete_duplicate" else "📦"
+        click.echo(
+            f"  {icon} "
+            + click.style(f"[{action.entry_id}]", fg="bright_black")
+            + f" {action.reason}"
+        )
+
+
 def _strawhub(*args: str) -> None:
     """Run a strawhub CLI command, passing through stdout/stderr."""
     cmd = _strawhub_cmd()

@@ -17,7 +17,9 @@ from strawpot.session import (
     AskUserRequest,
     AskUserResponse,
     Session,
+    _boost_by_importance,
     _extract_session_recap,
+    _track_recall,
     recover_stale_sessions,
 )
 from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberResult
@@ -1090,6 +1092,136 @@ class TestHandleRecall:
         recall_result = call_kwargs[1]["recall_result"]
         assert len(recall_result.entries) == 0
         assert result == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Importance tracking in recall
+# ---------------------------------------------------------------------------
+
+
+class TestTrackRecall:
+    """Tests for _track_recall helper."""
+
+    def test_records_entry_ids(self, tmp_path):
+        """Calling _track_recall persists stats to disk."""
+        _track_recall(["e1", "e2"], str(tmp_path))
+
+        from strawpot.memory.importance import load_stats
+
+        stats = load_stats(str(tmp_path))
+        assert stats["e1"].recall_count == 1
+        assert stats["e2"].recall_count == 1
+
+    @patch("strawpot.session.logger")
+    def test_failure_is_silent(self, mock_logger):
+        """Failures in tracking don't propagate."""
+        with patch(
+            "strawpot.memory.importance.record_recall",
+            side_effect=OSError("disk full"),
+        ):
+            # Should not raise
+            _track_recall(["e1"], "/nonexistent")
+
+
+class TestBoostByImportance:
+    """Tests for _boost_by_importance helper."""
+
+    def test_boosts_known_entries(self, tmp_path):
+        """Entries with importance stats get boosted scores."""
+        import time
+
+        from strawpot.memory.importance import EntryStats, save_stats
+
+        now = time.time()
+        save_stats(
+            {"e1": EntryStats(recall_count=10, last_recalled=now, created=now - 100)},
+            str(tmp_path),
+        )
+
+        result = RecallResult(
+            entries=[
+                RecallEntry(entry_id="e1", content="fact", score=1.0),
+                RecallEntry(entry_id="e2", content="other", score=0.9),
+            ]
+        )
+
+        boosted = _boost_by_importance(result, str(tmp_path))
+        # e1 should be boosted, e2 should be unchanged
+        assert boosted.entries[0].entry_id == "e1"
+        assert boosted.entries[0].score > 1.0
+        assert boosted.entries[1].score == 0.9
+
+    def test_no_stats_preserves_order(self, tmp_path):
+        """When no stats file exists, scores and order are unchanged."""
+        result = RecallResult(
+            entries=[
+                RecallEntry(entry_id="e1", content="a", score=0.9),
+                RecallEntry(entry_id="e2", content="b", score=1.0),
+            ]
+        )
+
+        boosted = _boost_by_importance(result, str(tmp_path))
+        # No stats → no boosting, original order preserved
+        assert boosted.entries[0].entry_id == "e1"
+        assert boosted.entries[0].score == 0.9
+        assert boosted.entries[1].entry_id == "e2"
+        assert boosted.entries[1].score == 1.0
+
+    def test_failure_returns_original(self, tmp_path):
+        """If importance loading fails, result is returned unmodified."""
+        result = RecallResult(
+            entries=[
+                RecallEntry(entry_id="e1", content="a", score=0.5),
+            ]
+        )
+
+        with patch(
+            "strawpot.memory.importance.load_stats",
+            side_effect=Exception("broken"),
+        ):
+            boosted = _boost_by_importance(result, str(tmp_path))
+            assert boosted.entries[0].score == 0.5
+
+
+class TestRecallWithImportanceIntegration:
+    """Integration test: _handle_recall triggers importance tracking."""
+
+    def _make_denden_request(self, agent_id="agent_orch", run_id="run_test"):
+        request = MagicMock()
+        request.request_id = "req_imp_1"
+        request.recall.query = "find something"
+        request.recall.keywords = ["kw1"]
+        request.recall.scope = "project"
+        request.recall.max_results = 5
+        request.trace.agent_instance_id = agent_id
+        request.trace.run_id = run_id
+        request.WhichOneof.return_value = "recall"
+        return request
+
+    @patch("strawpot.session._track_recall")
+    @patch("strawpot.session._boost_by_importance")
+    @patch("strawpot.session.ok_response")
+    def test_recall_calls_tracking(self, mock_ok, mock_boost, mock_track, tmp_path):
+        """Successful recall triggers both boost and tracking."""
+        mock_ok.return_value = "ok"
+        entries = [
+            RecallEntry(entry_id="e1", content="fact", score=0.9),
+        ]
+        boosted_result = RecallResult(entries=entries)
+        mock_boost.return_value = boosted_result
+
+        session = _make_session(tmp_path)
+        session._run_id = "run_test"
+        session._working_dir = str(tmp_path)
+        memory = MagicMock()
+        memory.recall.return_value = RecallResult(entries=entries)
+        session._memory_provider = memory
+        session._register_agent("agent_orch", role="orchestrator", parent_id=None)
+
+        session._handle_recall(self._make_denden_request())
+
+        mock_boost.assert_called_once()
+        mock_track.assert_called_once_with(["e1"], str(tmp_path))
 
 
 # ---------------------------------------------------------------------------

@@ -53,7 +53,7 @@ from strawpot.delegation import (
     handle_delegate,
     stage_role,
 )
-from strawpot_memory.memory_protocol import MemoryProvider
+from strawpot_memory.memory_protocol import MemoryProvider, RecallResult
 from strawpot.memory.registry import MemorySpec, load_provider, resolve_memory
 from strawpot._process import is_pid_alive, kill_process_tree
 from strawpot.isolation.protocol import IsolatedEnv, Isolator, NoneIsolator
@@ -190,6 +190,56 @@ def _default_ask_user_handler(req: AskUserRequest) -> AskUserResponse:
 _SESSION_RECAP_RE = re.compile(
     r"## Session Recap\b",
 )
+
+
+def _track_recall(entry_ids: list[str], project_dir: str | None) -> None:
+    """Record recall frequency for importance tracking.
+
+    Failures are silently logged — recall tracking is best-effort and
+    must never break the recall handler.
+    """
+    try:
+        from strawpot.memory.importance import record_recall
+
+        record_recall(entry_ids, project_dir)
+    except Exception:
+        logger.debug("Recall tracking failed", exc_info=True)
+
+
+def _boost_by_importance(
+    result: RecallResult,
+    project_dir: str | None,
+) -> RecallResult:
+    """Boost recall result scores by importance factor.
+
+    Entries with higher recall frequency and recency get a score boost.
+    The boost is multiplicative: ``score * (1 + importance / 10)``.
+    This preserves the original BM25 ordering for entries with no
+    importance data while lifting frequently-used entries.
+
+    Returns the same RecallResult with adjusted scores and re-sorted.
+    """
+    try:
+        from strawpot.memory.importance import (
+            importance_score,
+            load_stats,
+        )
+
+        stats = load_stats(project_dir)
+        if not stats:
+            return result
+
+        for entry in result.entries:
+            entry_stats = stats.get(entry.entry_id)
+            if entry_stats is not None:
+                imp = importance_score(entry_stats)
+                entry.score *= 1.0 + imp / 10.0
+
+        result.entries.sort(key=lambda e: e.score, reverse=True)
+    except Exception:
+        logger.debug("Importance boosting failed", exc_info=True)
+
+    return result
 
 
 def _extract_session_recap(output: str) -> str:
@@ -1447,6 +1497,17 @@ class Session:
                 max_results=recall.max_results or 10,
                 group_id=self._group_id,
             )
+
+            # Boost scores by importance and track recall frequency
+            if result.entries:
+                result = _boost_by_importance(
+                    result, self._working_dir
+                )
+                _track_recall(
+                    [e.entry_id for e in result.entries],
+                    self._working_dir,
+                )
+
             recall_entries = [
                 denden_pb2.RecallEntry(
                     entry_id=e.entry_id,
