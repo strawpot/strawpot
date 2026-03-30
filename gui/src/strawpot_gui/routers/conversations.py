@@ -74,6 +74,8 @@ _HISTORY_FULL_OUTPUT_TURNS = 5
 # ---------------------------------------------------------------------------
 # Rejects identical tasks submitted to the same conversation within a short
 # window — catches the frontend double-fire bug (~1ms apart).
+# NOTE: In-memory only — lost on restart, not shared across workers.  The
+# frontend useSubmitGuard hook is the primary defense; this is a backstop.
 _DEDUP_WINDOW_S = 2.0
 _EVICTION_THRESHOLD_S = _DEDUP_WINDOW_S * 2
 _recent_submissions: dict[tuple[int, str], float] = {}

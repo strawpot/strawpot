@@ -997,6 +997,41 @@ class TestMessageQueuing:
         assert len(sessions) == 2  # original + auto-submitted
 
 
+class TestDuplicateSubmissionGuard:
+    """Tests for the backend duplicate-submission rejection (409)."""
+
+    def test_duplicate_submission_returns_409(self, client, tmp_path):
+        """Identical task submitted immediately returns 409."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        resp1 = _submit_task(client, cid, task="hello world")
+        assert resp1.status_code == 201
+
+        # Immediate re-submit of the same task → 409
+        resp2 = _submit_task(client, cid, task="hello world")
+        assert resp2.status_code == 409
+        assert "Duplicate submission" in resp2.json()["detail"]
+
+    def test_different_task_not_rejected(self, client, tmp_path):
+        """A different task on the same conversation is allowed."""
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        resp1 = _submit_task(client, cid, task="first task")
+        assert resp1.status_code == 201
+
+        # Different text → should be accepted (queued since session is running)
+        resp2 = _submit_task(client, cid, task="second task")
+        assert resp2.status_code in (201, 202)
+
+
 class TestWriteConversationHistory:
     def test_writes_history_file(self, client, tmp_path, app):
         """History file is written with full output for recent turns."""

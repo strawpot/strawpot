@@ -24,10 +24,24 @@ interface SubmitTaskBody {
   cache_ttl_seconds?: number;
 }
 
+/**
+ * Result from the submit-task endpoint.
+ *
+ * Two construction paths:
+ * - **API success**: all fields populated by the server.
+ * - **409 dedup fallback**: only `conversation_id` is set (run_id/queued are undefined).
+ */
 interface SubmitTaskResult {
   run_id?: string;
   queued?: boolean;
   conversation_id: number;
+}
+
+/** Check whether an ApiError body contains the backend dedup rejection detail. */
+function isDuplicateSubmissionError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  const body = error.body as Record<string, unknown> | null;
+  return typeof body?.detail === "string" && body.detail.includes("Duplicate submission");
 }
 
 export function useCreateConversation() {
@@ -53,15 +67,17 @@ export function useSubmitConversationTask(conversationId: number) {
           body,
         );
       } catch (error) {
-        // Silently swallow 409 Conflict — backend duplicate submission guard.
-        // Handled here (not onError) so TanStack Query doesn't set isError.
-        if (error instanceof ApiError && error.status === 409) {
+        // Silently swallow the backend duplicate-submission 409 so TanStack
+        // Query treats it as success (no isError flash).  Only matches the
+        // specific "Duplicate submission" detail to avoid masking unrelated 409s.
+        if (isDuplicateSubmissionError(error)) {
           return { conversation_id: conversationId } as SubmitTaskResult;
         }
         throw error;
       }
     },
     onSuccess: (data, variables) => {
+      // `data` may be a synthetic dedup result (only conversation_id set).
       if (data.queued) {
         // Optimistically append to queued_tasks in the infinite query cache
         qc.setQueryData<InfiniteData<Conversation>>(
