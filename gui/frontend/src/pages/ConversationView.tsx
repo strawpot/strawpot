@@ -219,7 +219,7 @@ export default function ConversationView() {
   const { handleHistoryKeyDown, addToHistory } = usePromptHistory({ text: task, setText: setTask });
 
   const submit = useSubmitConversationTask(cid);
-  const { trySubmit } = useSubmitGuard();
+  const { trySubmit } = useSubmitGuard(cid);
   const stop = useStopSession();
   const cancelPending = useCancelPendingTask(cid);
   const cancelTask = useCancelQueuedTask(cid);
