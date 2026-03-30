@@ -17,6 +17,7 @@ from strawpot.session import (
     AskUserRequest,
     AskUserResponse,
     Session,
+    _extract_session_recap,
     recover_stale_sessions,
 )
 from strawpot_memory.memory_protocol import RecallEntry, RecallResult, RememberResult
@@ -1761,3 +1762,34 @@ class TestActivityWatcherLoop:
         # Should return immediately without spawning a thread
         session._start_activity_watcher()
         # No crash — that's the assertion
+
+
+# ---------------------------------------------------------------------------
+# Session recap extraction
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSessionRecap:
+    def test_extracts_recap_section(self):
+        output = "Some output.\n\n## Session Recap\n\nCompleted task X.\n- Done"
+        result = _extract_session_recap(output)
+        assert result.startswith("## Session Recap")
+        assert "Completed task X." in result
+
+    def test_empty_output(self):
+        assert _extract_session_recap("") == ""
+
+    def test_no_recap(self):
+        assert _extract_session_recap("Just normal output.") == ""
+
+    def test_truncates_long_recap(self):
+        recap = "## Session Recap\n\n" + "x" * 3000
+        result = _extract_session_recap(recap)
+        assert len(result) == 2000
+
+    def test_preserves_full_section(self):
+        output = "Preamble.\n\n## Session Recap\n\nLine1\nLine2\n\nLine3"
+        result = _extract_session_recap(output)
+        assert "Line1" in result
+        assert "Line2" in result
+        assert "Line3" in result

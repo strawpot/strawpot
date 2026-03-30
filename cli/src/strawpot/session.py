@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -44,6 +45,8 @@ from strawpot.delegation import (
     _discover_all_roles,
     _format_memory_prompt,
     _parse_role_deps,
+    _recall_identity,
+    _recall_warm_start,
     build_skill_descriptions,
     create_agent_workspace,
     handle_delegate,
@@ -181,6 +184,28 @@ def _default_ask_user_handler(req: AskUserRequest) -> AskUserResponse:
     if req.default_value:
         return AskUserResponse(text=req.default_value)
     return AskUserResponse(text="Proceed with your best judgment.")
+
+
+_SESSION_RECAP_RE = re.compile(
+    r"## Session Recap\b.*",
+    re.DOTALL,
+)
+
+
+def _extract_session_recap(output: str) -> str:
+    """Extract the ``## Session Recap`` section from agent output.
+
+    Returns the recap text (trimmed), or an empty string if no recap
+    is found.
+    """
+    if not output:
+        return ""
+    match = _SESSION_RECAP_RE.search(output)
+    if match is None:
+        return ""
+    recap = match.group(0).strip()
+    # Cap at 2000 chars to prevent context bloat in future sessions.
+    return recap[:2000]
 
 
 class Session:
@@ -383,6 +408,30 @@ class Session:
                         group_id=self._group_id,
                     )
 
+                # 5a-ii. Identity bootstrap — auto-load self-model
+                identity_section = _recall_identity(
+                    self._memory_provider,
+                    session_id=self._run_id,
+                    agent_id=agent_id,
+                    role=self.config.orchestrator_role,
+                    group_id=self._group_id,
+                )
+
+                # 5a-iii. Session warm-start — inject previous session recap
+                warm_start_section = _recall_warm_start(
+                    self._memory_provider,
+                    session_id=self._run_id,
+                    agent_id=agent_id,
+                    role=self.config.orchestrator_role,
+                    group_id=self._group_id,
+                )
+
+                # Compose: Identity → Previous Session → Memory
+                prefix_parts = [s for s in (identity_section, warm_start_section) if s]
+                if prefix_parts:
+                    prefix = "\n\n".join(prefix_parts)
+                    memory_prompt = f"{prefix}\n\n{memory_prompt}" if memory_prompt else prefix
+
             # 5b. Resolve project files directories
             files_dirs: list[str] = []
             files_dir = os.path.join(self._working_dir, ".strawpot", "files")
@@ -515,6 +564,29 @@ class Session:
                         output=output,
                         group_id=self._group_id,
                     )
+
+                # 0a-ii. Store session recap for warm-start
+                recap = _extract_session_recap(output)
+                if recap:
+                    try:
+                        self._memory_provider.remember(
+                            session_id=self._run_id,
+                            agent_id=orch_agent_id,
+                            role=self.config.orchestrator_role,
+                            content=recap,
+                            keywords=[
+                                "session-recap",
+                                "warm-start",
+                                self.config.orchestrator_role,
+                                self._run_id,
+                            ],
+                            scope="project",
+                            group_id=self._group_id,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Session recap remember failed", exc_info=True
+                        )
 
         # 0b. Emit session_end trace + progress events before cleanup
         end_duration_ms = self._elapsed_ms(self._session_start_time)
