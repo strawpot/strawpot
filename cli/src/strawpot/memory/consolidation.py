@@ -1,5 +1,6 @@
 """Memory consolidation — merge duplicates, archive stale entries."""
 
+import datetime
 import logging
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ class ConsolidationAction:
     action: str  # "delete_duplicate" | "archive_stale"
     entry_id: str
     reason: str
+    succeeded: bool = True
 
 
 @dataclass
@@ -44,9 +46,21 @@ class ConsolidationReport:
 
     actions: list[ConsolidationAction] = field(default_factory=list)
     groups_found: int = 0
-    duplicates_removed: int = 0
-    entries_archived: int = 0
     total_entries_scanned: int = 0
+
+    @property
+    def duplicates_removed(self) -> int:
+        return sum(
+            1 for a in self.actions
+            if a.action == "delete_duplicate" and a.succeeded
+        )
+
+    @property
+    def entries_archived(self) -> int:
+        return sum(
+            1 for a in self.actions
+            if a.action == "archive_stale" and a.succeeded
+        )
 
 
 def _content_similarity(a: str, b: str) -> float:
@@ -156,6 +170,7 @@ def consolidate(
     report.groups_found = len(qualifying_groups)
 
     # 3. Deduplicate within qualifying groups
+    deleted_ids: set[str] = set()
     for group in qualifying_groups:
         for to_delete, to_keep in _find_duplicates(group):
             action = ConsolidationAction(
@@ -166,28 +181,34 @@ def consolidate(
                     f"(similarity >= {_DUPLICATE_THRESHOLD})"
                 ),
             )
-            report.actions.append(action)
-            report.duplicates_removed += 1
 
             if not dry_run:
                 try:
                     provider.forget(entry_id=to_delete.entry_id)
+                    deleted_ids.add(to_delete.entry_id)
                 except Exception:
+                    action.succeeded = False
                     log.warning(
                         "Failed to delete duplicate %s",
                         to_delete.entry_id,
                         exc_info=True,
                     )
 
+            report.actions.append(action)
+
     # 4. Archive stale entries based on importance decay
     stats = load_stats(project_dir)
     now = time.time()
+    stats_modified = False
 
     for entry in entries:
+        # Skip entries already deleted in step 3
+        if entry.entry_id in deleted_ids:
+            continue
+
         entry_stats = stats.get(entry.entry_id)
         if entry_stats is None:
-            # No stats = never recalled; use created time from stats or
-            # fall back to entry timestamp.
+            # No stats = never recalled; use entry timestamp as creation time.
             created_ts = _parse_ts(entry.ts) if entry.ts else 0.0
             if created_ts == 0.0:
                 continue
@@ -198,7 +219,7 @@ def consolidate(
             score = 0.0
         else:
             score = importance_score(entry_stats, now)
-            created_ts = entry_stats.created or _parse_ts(entry.ts) if entry.ts else 0.0
+            created_ts = entry_stats.created or (_parse_ts(entry.ts) if entry.ts else 0.0)
             if created_ts == 0.0:
                 continue
             age_days = (now - created_ts) / 86400.0
@@ -212,11 +233,20 @@ def consolidate(
                     f"age {age_days:.0f} days"
                 ),
             )
-            report.actions.append(action)
-            report.entries_archived += 1
 
             if not dry_run:
-                _archive_entry(provider, entry, stats, project_dir)
+                ok = _archive_entry(provider, entry)
+                if ok:
+                    stats.pop(entry.entry_id, None)
+                    stats_modified = True
+                else:
+                    action.succeeded = False
+
+            report.actions.append(action)
+
+    # Save stats once after all archival operations
+    if stats_modified:
+        save_stats(stats, project_dir)
 
     return report
 
@@ -226,10 +256,7 @@ def _parse_ts(ts_str: str) -> float:
 
     Returns 0.0 on failure.
     """
-    import datetime
-
     try:
-        # Handle common ISO formats
         dt = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
         return dt.timestamp()
     except (ValueError, AttributeError):
@@ -239,16 +266,15 @@ def _parse_ts(ts_str: str) -> float:
 def _archive_entry(
     provider: MemoryProvider,
     entry: ListEntry,
-    stats: dict[str, EntryStats],
-    project_dir: str | None,
-) -> None:
+) -> bool:
     """Archive a stale entry: store in archive, then forget original.
 
     Archived entries are remembered with an ``archived`` keyword so they
     can still be found if needed, then the original is deleted.
+
+    Returns True if both operations succeeded, False otherwise.
     """
     try:
-        # Re-store with "archived" keyword for recovery
         provider.remember(
             session_id="consolidation",
             agent_id="consolidation-job",
@@ -257,12 +283,22 @@ def _archive_entry(
             keywords=[*(entry.keywords or []), "archived"],
             scope=entry.scope or "project",
         )
-        # Remove original
-        provider.forget(entry_id=entry.entry_id)
-        # Clean up stats for the deleted entry
-        stats.pop(entry.entry_id, None)
-        save_stats(stats, project_dir)
     except Exception:
         log.warning(
-            "Failed to archive entry %s", entry.entry_id, exc_info=True
+            "Failed to create archive copy of %s", entry.entry_id,
+            exc_info=True,
         )
+        return False
+
+    try:
+        provider.forget(entry_id=entry.entry_id)
+    except Exception:
+        log.warning(
+            "Archived copy created but failed to delete original %s — "
+            "manual cleanup may be needed",
+            entry.entry_id,
+            exc_info=True,
+        )
+        return False
+
+    return True

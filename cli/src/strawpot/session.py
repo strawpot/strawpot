@@ -195,15 +195,15 @@ _SESSION_RECAP_RE = re.compile(
 def _track_recall(entry_ids: list[str], project_dir: str | None) -> None:
     """Record recall frequency for importance tracking.
 
-    Failures are silently logged — recall tracking is best-effort and
-    must never break the recall handler.
+    Failures are logged at WARNING — persistent failures (e.g. permission
+    errors) should be visible at normal log levels.
     """
     try:
         from strawpot.memory.importance import record_recall
 
         record_recall(entry_ids, project_dir)
     except Exception:
-        logger.debug("Recall tracking failed", exc_info=True)
+        logger.warning("Recall tracking failed", exc_info=True)
 
 
 def _boost_by_importance(
@@ -217,7 +217,8 @@ def _boost_by_importance(
     This preserves the original BM25 ordering for entries with no
     importance data while lifting frequently-used entries.
 
-    Returns the same RecallResult with adjusted scores and re-sorted.
+    Scores are computed into a separate mapping first; only on full
+    success are they applied to entries (avoids partial mutation).
     """
     try:
         from strawpot.memory.importance import (
@@ -229,15 +230,22 @@ def _boost_by_importance(
         if not stats:
             return result
 
+        # Compute all boosted scores before mutating any entry
+        boosted: dict[str, float] = {}
         for entry in result.entries:
             entry_stats = stats.get(entry.entry_id)
             if entry_stats is not None:
                 imp = importance_score(entry_stats)
-                entry.score *= 1.0 + imp / 10.0
+                boosted[entry.entry_id] = entry.score * (1.0 + imp / 10.0)
+
+        # Apply all at once
+        for entry in result.entries:
+            if entry.entry_id in boosted:
+                entry.score = boosted[entry.entry_id]
 
         result.entries.sort(key=lambda e: e.score, reverse=True)
     except Exception:
-        logger.debug("Importance boosting failed", exc_info=True)
+        logger.warning("Importance boosting failed", exc_info=True)
 
     return result
 
