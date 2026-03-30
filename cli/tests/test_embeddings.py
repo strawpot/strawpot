@@ -246,6 +246,34 @@ class TestRebuildAll:
         assert "e1" in loaded
         assert "e2" in loaded
 
+    @patch("strawpot.memory.embeddings.compute_embedding")
+    @patch("strawpot.memory.embeddings.is_available", return_value=True)
+    def test_batches_by_scope(self, _available, mock_compute, tmp_path):
+        """Entries from different scopes are saved to separate files."""
+        from strawpot_memory.memory_protocol import ListEntry, ListResult
+
+        entries = [
+            ListEntry(entry_id="p1", content="project entry", scope="project"),
+            ListEntry(entry_id="g1", content="global entry", scope="global"),
+            ListEntry(entry_id="p2", content="another project", scope="project"),
+        ]
+        provider = MagicMock()
+        provider.list_entries.return_value = ListResult(entries=entries)
+
+        mock_compute.return_value = [0.5, 0.6]
+        count = rebuild_all(provider, project_dir=str(tmp_path))
+        assert count == 3
+
+        # Verify each scope has its own embeddings file
+        project_embeddings = load_embeddings("project", str(tmp_path))
+        assert "p1" in project_embeddings
+        assert "p2" in project_embeddings
+        assert "g1" not in project_embeddings
+
+        global_embeddings = load_embeddings("global", str(tmp_path))
+        assert "g1" in global_embeddings
+        assert "p1" not in global_embeddings
+
 
 class TestIsAvailable:
     @patch("strawpot.memory.embeddings._get_model", return_value=None)
