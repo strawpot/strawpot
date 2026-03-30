@@ -1,7 +1,9 @@
 """Conversation endpoints — chat-mode sessions with sequential task submission."""
 
+import hashlib
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,6 +67,33 @@ logger = logging.getLogger(__name__)
 
 _MAX_TURNS = 10
 _HISTORY_FULL_OUTPUT_TURNS = 5
+
+# ---------------------------------------------------------------------------
+# Duplicate submission guard
+# ---------------------------------------------------------------------------
+# Tracks (conversation_id, task_hash) -> timestamp to reject identical tasks
+# submitted within a short window.  This catches the frontend double-fire bug
+# where the same message is sent twice within ~1ms.
+_DEDUP_WINDOW_S = 2.0
+_recent_submissions: dict[tuple[int, str], float] = {}
+
+
+def _is_duplicate_submission(conversation_id: int, task: str) -> bool:
+    """Return True if the same task was submitted to this conversation recently."""
+    task_hash = hashlib.sha256(task.encode()).hexdigest()[:16]
+    key = (conversation_id, task_hash)
+    now = time.monotonic()
+
+    # Evict stale entries (keep the dict small)
+    stale = [k for k, ts in _recent_submissions.items() if now - ts > _DEDUP_WINDOW_S * 2]
+    for k in stale:
+        del _recent_submissions[k]
+
+    last_ts = _recent_submissions.get(key)
+    if last_ts is not None and now - last_ts < _DEDUP_WINDOW_S:
+        return True
+    _recent_submissions[key] = now
+    return False
 
 
 def _build_conversation_context(conn, conversation_id: int, *, history_path: str | None = None) -> str:
@@ -497,6 +526,17 @@ def submit_task(
     current session completes (202).
     """
     from starlette.responses import JSONResponse
+
+    # Reject duplicate submissions (same conversation + same task within 2s)
+    if _is_duplicate_submission(conversation_id, body.task):
+        logger.warning(
+            "Duplicate task submission rejected for conversation %d",
+            conversation_id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Duplicate submission rejected — same task was submitted moments ago",
+        )
 
     conv = conn.execute(
         "SELECT id, project_id, title, pending_task FROM conversations WHERE id = ?",

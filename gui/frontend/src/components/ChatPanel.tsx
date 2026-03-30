@@ -23,6 +23,7 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const respondedIdsRef = useRef<Set<string>>(new Set());
 
   // Seed from persisted history when it arrives
   useEffect(() => {
@@ -66,6 +67,8 @@ export default function ChatPanel({
 
   const handleSend = (text: string, target: AskUserPending) => {
     if (!text.trim()) return;
+    if (respondedIdsRef.current.has(target.request_id)) return;
+    respondedIdsRef.current.add(target.request_id);
 
     const msgId = `user-${target.request_id}`;
     if (!seenIdsRef.current.has(msgId)) {

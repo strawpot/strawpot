@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { Conversation, ConversationList, ImuConversation } from "@/api/types";
 import type { InfiniteData } from "@tanstack/react-query";
@@ -45,6 +45,12 @@ export function useSubmitConversationTask(conversationId: number) {
         `/conversations/${conversationId}/tasks`,
         body,
       ),
+    onError: (error: Error) => {
+      // Silently ignore 409 Conflict — backend duplicate submission guard.
+      // The first request succeeded; the duplicate was correctly rejected.
+      if (error instanceof ApiError && error.status === 409) return;
+      throw error;
+    },
     onSuccess: (data, variables) => {
       if (data.queued) {
         // Optimistically append to queued_tasks in the infinite query cache
