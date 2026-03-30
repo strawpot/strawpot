@@ -74,8 +74,9 @@ _HISTORY_FULL_OUTPUT_TURNS = 5
 # ---------------------------------------------------------------------------
 # Rejects identical tasks submitted to the same conversation within a short
 # window — catches the frontend double-fire bug (~1ms apart).
+# NOTE: In-memory only — lost on restart, not shared across workers.  The
+# frontend useSubmitGuard hook is the primary defense; this is a backstop.
 _DEDUP_WINDOW_S = 2.0
-_EVICTION_THRESHOLD_S = _DEDUP_WINDOW_S * 2
 _recent_submissions: dict[tuple[int, str], float] = {}
 _submissions_lock = threading.Lock()
 
@@ -88,7 +89,7 @@ def _is_duplicate_submission(conversation_id: int, task: str) -> bool:
 
     with _submissions_lock:
         # Evict stale entries
-        for k in [k for k, ts in _recent_submissions.items() if now - ts > _EVICTION_THRESHOLD_S]:
+        for k in [k for k, ts in _recent_submissions.items() if now - ts > _DEDUP_WINDOW_S]:
             del _recent_submissions[k]
 
         prev = _recent_submissions.get(key)

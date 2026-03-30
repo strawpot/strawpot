@@ -11,10 +11,13 @@ import CollapsibleMessage from "@/components/CollapsibleMessage";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatPanel({
+  scopeKey,
   pendingAskUsers,
   initialMessages,
   respond,
 }: {
+  /** Identity key (e.g. runId) — clears dedup state when the session changes. */
+  scopeKey?: string;
   pendingAskUsers: AskUserPending[];
   initialMessages?: ChatMessage[];
   respond: (requestId: string, text: string) => void;
@@ -24,6 +27,7 @@ export default function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const respondedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { respondedIdsRef.current.clear(); }, [scopeKey]);
 
   // Seed from persisted history when it arrives
   useEffect(() => {

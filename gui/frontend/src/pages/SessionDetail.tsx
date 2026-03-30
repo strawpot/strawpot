@@ -172,6 +172,7 @@ export default function SessionDetail() {
         {isInteractive && (
           <TabsContent value="chat">
             <ChatPanel
+              scopeKey={runId}
               pendingAskUsers={pendingAskUsers}
               initialMessages={chatMessages}
               respond={respond}
