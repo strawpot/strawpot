@@ -280,7 +280,7 @@ def _merge_graph_relations(
 
         merge_relations(old_entry_id, new_entry_id, project_dir)
     except Exception:
-        log.debug(
+        log.warning(
             "Failed to merge graph relations %s -> %s",
             old_entry_id, new_entry_id,
             exc_info=True,
@@ -297,7 +297,7 @@ def _remove_graph_entry(entry_id: str, project_dir: str | None) -> None:
 
         remove_entry(entry_id, project_dir)
     except Exception:
-        log.debug(
+        log.warning(
             "Failed to remove graph relations for %s",
             entry_id, exc_info=True,
         )

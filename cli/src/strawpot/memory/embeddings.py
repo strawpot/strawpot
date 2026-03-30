@@ -108,9 +108,13 @@ def load_embeddings(
 
     entries: dict[str, EmbeddingEntry] = {}
     for entry_id, data in raw.items():
+        vector = data.get("vector", [])
+        if not vector:
+            log.debug("Skipping entry %s with empty vector", entry_id)
+            continue
         entries[entry_id] = EmbeddingEntry(
             entry_id=entry_id,
-            vector=data.get("vector", []),
+            vector=vector,
         )
     return entries
 
@@ -119,8 +123,11 @@ def save_embeddings(
     embeddings: dict[str, EmbeddingEntry],
     scope: str,
     project_dir: str | None = None,
-) -> None:
-    """Persist embeddings to disk."""
+) -> bool:
+    """Persist embeddings to disk.
+
+    Returns True on success, False if the write failed.
+    """
     path = _embeddings_path(scope, project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -130,8 +137,10 @@ def save_embeddings(
     }
     try:
         path.write_text(json.dumps(raw), encoding="utf-8")
+        return True
     except OSError:
-        log.warning("Failed to save embeddings to %s", path, exc_info=True)
+        log.error("Failed to save embeddings to %s", path, exc_info=True)
+        return False
 
 
 def store_embedding(
@@ -151,8 +160,7 @@ def store_embedding(
 
     embeddings = load_embeddings(scope, project_dir)
     embeddings[entry_id] = EmbeddingEntry(entry_id=entry_id, vector=vector)
-    save_embeddings(embeddings, scope, project_dir)
-    return True
+    return save_embeddings(embeddings, scope, project_dir)
 
 
 def remove_embedding(
@@ -271,12 +279,21 @@ def rebuild_all(
     result = provider.list_entries(scope=scope, limit=10000)
     count = 0
 
+    # Batch by scope to avoid O(N²) load/save per entry
+    by_scope: dict[str, list] = {}
     for entry in result.entries:
-        count += store_embedding(
-            entry_id=entry.entry_id,
-            content=entry.content,
-            scope=entry.scope or "project",
-            project_dir=project_dir,
-        )
+        entry_scope = entry.scope or "project"
+        by_scope.setdefault(entry_scope, []).append(entry)
+
+    for entry_scope, entries in by_scope.items():
+        embeddings = load_embeddings(entry_scope, project_dir)
+        for entry in entries:
+            vector = compute_embedding(entry.content)
+            if vector is not None:
+                embeddings[entry.entry_id] = EmbeddingEntry(
+                    entry_id=entry.entry_id, vector=vector
+                )
+                count += 1
+        save_embeddings(embeddings, entry_scope, project_dir)
 
     return count

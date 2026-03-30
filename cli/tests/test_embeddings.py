@@ -225,9 +225,9 @@ class TestRebuildAll:
         provider = MagicMock()
         assert rebuild_all(provider) == 0
 
-    @patch("strawpot.memory.embeddings.store_embedding")
+    @patch("strawpot.memory.embeddings.compute_embedding")
     @patch("strawpot.memory.embeddings.is_available", return_value=True)
-    def test_processes_all_entries(self, _available, mock_store, tmp_path):
+    def test_processes_all_entries(self, _available, mock_compute, tmp_path):
         from strawpot_memory.memory_protocol import ListEntry, ListResult
 
         entries = [
@@ -237,10 +237,14 @@ class TestRebuildAll:
         provider = MagicMock()
         provider.list_entries.return_value = ListResult(entries=entries)
 
-        mock_store.return_value = True
+        mock_compute.return_value = [0.1, 0.2, 0.3]
         count = rebuild_all(provider, project_dir=str(tmp_path))
         assert count == 2
-        assert mock_store.call_count == 2
+        assert mock_compute.call_count == 2
+        # Verify embeddings were batched and saved
+        loaded = load_embeddings("project", str(tmp_path))
+        assert "e1" in loaded
+        assert "e2" in loaded
 
 
 class TestIsAvailable:

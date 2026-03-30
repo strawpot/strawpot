@@ -85,8 +85,11 @@ def load_graph(project_dir: str | None = None) -> GraphData:
     return graph
 
 
-def save_graph(graph: GraphData, project_dir: str | None = None) -> None:
-    """Persist the memory graph to disk."""
+def save_graph(graph: GraphData, project_dir: str | None = None) -> bool:
+    """Persist the memory graph to disk.
+
+    Returns True on success, False if the write failed.
+    """
     path = _graph_path(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -104,8 +107,10 @@ def save_graph(graph: GraphData, project_dir: str | None = None) -> None:
     }
     try:
         path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        return True
     except OSError:
-        log.warning("Failed to save memory graph to %s", path, exc_info=True)
+        log.error("Failed to save memory graph to %s", path, exc_info=True)
+        return False
 
 
 def add_relation(
@@ -267,12 +272,20 @@ def merge_relations(
                 existing.append(rel)
                 transferred += 1
 
-    # Redirect incoming relations
+    # Redirect incoming relations (with dedup check)
     for source_id, relations in graph.edges.items():
+        existing_targets = {(r.relation_type, r.target) for r in relations}
         for rel in relations:
             if rel.target == old_entry_id:
-                rel.target = new_entry_id
+                if (rel.relation_type, new_entry_id) in existing_targets:
+                    # Would create a duplicate — mark for removal instead
+                    rel.target = ""  # sentinel for cleanup
+                else:
+                    rel.target = new_entry_id
+                    existing_targets.add((rel.relation_type, new_entry_id))
                 transferred += 1
+        # Remove sentinel entries
+        graph.edges[source_id] = [r for r in relations if r.target]
 
     if transferred:
         save_graph(graph, project_dir)

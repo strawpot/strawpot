@@ -10,18 +10,23 @@ from strawpot.session import (
     _semantic_recall,
     _store_embedding,
 )
-from strawpot_memory.memory_protocol import RecallEntry, RecallResult
+from strawpot_memory.memory_protocol import (
+    ListEntry,
+    ListResult,
+    RecallEntry,
+    RecallResult,
+)
 
 
 class TestStoreEmbedding:
     @patch("strawpot.session.logger")
-    def test_logs_failure_at_debug(self, mock_logger, tmp_path):
+    def test_logs_failure_at_warning(self, mock_logger, tmp_path):
         with patch(
             "strawpot.memory.embeddings.store_embedding",
             side_effect=RuntimeError("fail"),
         ):
             _store_embedding("e1", "content", "project", str(tmp_path))
-        mock_logger.debug.assert_called()
+        mock_logger.warning.assert_called()
 
     @patch("strawpot.memory.embeddings.store_embedding", return_value=True)
     def test_calls_store_embedding(self, mock_store, tmp_path):
@@ -88,6 +93,17 @@ class TestExpandWithGraph:
         ]
         return RecallResult(entries=entries)
 
+    def _make_provider_with_entries(self, entry_map):
+        """Create a provider mock whose list_entries returns given entries."""
+        provider = MagicMock()
+        provider.list_entries.return_value = ListResult(
+            entries=[
+                ListEntry(entry_id=eid, content=content, keywords=[], scope="project")
+                for eid, content in entry_map.items()
+            ]
+        )
+        return provider
+
     @patch("strawpot.memory.graph.expand_recall", return_value=[])
     def test_no_expansion(self, _mock):
         result = self._make_result(["a", "b"])
@@ -100,15 +116,12 @@ class TestExpandWithGraph:
         mock_expand.return_value = [("c", 0.5)]
         result = self._make_result(["a", "b"])
 
-        provider = MagicMock()
-        neighbor_entry = RecallEntry(
-            entry_id="c", content="neighbor", score=5.0
-        )
-        provider.recall.return_value = RecallResult(entries=[neighbor_entry])
+        provider = self._make_provider_with_entries({"c": "neighbor"})
 
         _expand_with_graph(result, "/tmp/test", provider, 10)
         assert len(result.entries) == 3
         assert result.entries[-1].entry_id == "c"
+        assert result.entries[-1].content == "neighbor"
         # Score should be min_score * factor
         assert result.entries[-1].score == 9.0 * 0.5
 
@@ -117,15 +130,7 @@ class TestExpandWithGraph:
         mock_expand.return_value = [("c", 0.5), ("d", 0.5)]
         result = self._make_result(["a", "b"])
 
-        provider = MagicMock()
-
-        def fake_recall(**kwargs):
-            eid = kwargs["query"]
-            return RecallResult(
-                entries=[RecallEntry(entry_id=eid, content="n", score=1.0)]
-            )
-
-        provider.recall.side_effect = fake_recall
+        provider = self._make_provider_with_entries({"c": "n1", "d": "n2"})
 
         _expand_with_graph(result, "/tmp/test", provider, 3)
         assert len(result.entries) == 3  # max_results=3, started with 2
@@ -139,6 +144,17 @@ class TestExpandWithGraph:
         provider = MagicMock()
         _expand_with_graph(result, "/tmp/test", provider, 10)
         assert len(result.entries) == 1
+
+    @patch("strawpot.memory.graph.expand_recall")
+    def test_skips_missing_neighbors(self, mock_expand):
+        mock_expand.return_value = [("c", 0.5)]
+        result = self._make_result(["a"])
+
+        # Provider doesn't have entry "c"
+        provider = self._make_provider_with_entries({"x": "other"})
+
+        _expand_with_graph(result, "/tmp/test", provider, 10)
+        assert len(result.entries) == 1  # "c" not found, not added
 
 
 class TestLinkSessionRecap:

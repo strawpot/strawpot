@@ -200,14 +200,15 @@ def _store_embedding(
 ) -> None:
     """Store an embedding for a newly remembered entry.
 
-    Failures are logged at DEBUG — embedding storage is best-effort.
+    Failures are logged at WARNING — persistent failures (e.g. permission
+    errors) should be visible at normal log levels.
     """
     try:
         from strawpot.memory.embeddings import store_embedding
 
         store_embedding(entry_id, content, scope, project_dir)
     except Exception:
-        logger.debug("Embedding storage failed for %s", entry_id, exc_info=True)
+        logger.warning("Embedding storage failed for %s", entry_id, exc_info=True)
 
 
 def _semantic_recall(
@@ -263,14 +264,20 @@ def _expand_with_graph(
     to the result with a reduced score. Mutates result.entries in place.
     """
     try:
-        from strawpot.memory.graph import NEIGHBOR_SCORE_FACTOR, expand_recall
+        from strawpot.memory.graph import expand_recall
 
         entry_ids = [e.entry_id for e in result.entries]
         expansions = expand_recall(entry_ids, project_dir)
         if not expansions:
             return
 
-        # Fetch neighbor entries from provider
+        # Fetch all entries and build a lookup for neighbor resolution.
+        # This avoids using recall(query=entry_id) which is BM25-based
+        # and would not match entry IDs.
+        wanted_ids = {eid for eid, _ in expansions}
+        all_entries = provider.list_entries(scope="", limit=10000)
+        entry_lookup = {e.entry_id: e for e in all_entries.entries}
+
         min_score = min(
             (e.score for e in result.entries if e.score > 0), default=1.0
         )
@@ -281,28 +288,22 @@ def _expand_with_graph(
                 break
             if neighbor_id in existing_ids:
                 continue
-            try:
-                # Recall by entry ID to get the content
-                neighbor_result = provider.recall(
-                    session_id="graph-expansion",
-                    agent_id="graph-expansion",
-                    role="system",
-                    query=neighbor_id,
-                    scope="",
-                    max_results=1,
-                )
-                for entry in neighbor_result.entries:
-                    if entry.entry_id == neighbor_id:
-                        entry.score = min_score * score_factor
-                        result.entries.append(entry)
-                        existing_ids.add(neighbor_id)
-                        break
-            except Exception:
-                logger.debug(
-                    "Failed to fetch graph neighbor %s", neighbor_id, exc_info=True
-                )
-    except Exception:
+            neighbor = entry_lookup.get(neighbor_id)
+            if neighbor is not None:
+                from strawpot_memory.memory_protocol import RecallEntry
+
+                result.entries.append(RecallEntry(
+                    entry_id=neighbor.entry_id,
+                    content=neighbor.content,
+                    keywords=neighbor.keywords,
+                    scope=neighbor.scope,
+                    score=min_score * score_factor,
+                ))
+                existing_ids.add(neighbor_id)
+    except (ImportError, OSError):
         logger.debug("Graph expansion failed", exc_info=True)
+    except Exception:
+        logger.warning("Graph expansion failed unexpectedly", exc_info=True)
 
 
 def _link_session_recap(

@@ -250,6 +250,21 @@ class TestMergeRelations:
         )
         assert count == 1
 
+    def test_dedup_incoming_redirects(self, tmp_path):
+        """When redirecting incoming edges, don't create duplicates."""
+        # e1 -> old AND e1 -> new already exist
+        add_relation("e1", "related_to", "old", str(tmp_path))
+        add_relation("e1", "related_to", "new", str(tmp_path))
+
+        merge_relations("old", "new", str(tmp_path))
+        graph = load_graph(str(tmp_path))
+        # e1 should have exactly one related_to -> new, not two
+        count = sum(
+            1 for r in graph.edges.get("e1", [])
+            if r.relation_type == "related_to" and r.target == "new"
+        )
+        assert count == 1
+
 
 class TestFormatGraph:
     def test_empty_graph(self, tmp_path):
