@@ -186,6 +186,10 @@ def consolidate(
                 try:
                     provider.forget(entry_id=to_delete.entry_id)
                     deleted_ids.add(to_delete.entry_id)
+                    # Transfer graph relations from deleted entry to kept entry
+                    _merge_graph_relations(
+                        to_delete.entry_id, to_keep.entry_id, project_dir
+                    )
                 except Exception:
                     action.succeeded = False
                     log.warning(
@@ -239,6 +243,7 @@ def consolidate(
                 if ok:
                     stats.pop(entry.entry_id, None)
                     stats_modified = True
+                    _remove_graph_entry(entry.entry_id, project_dir)
                 else:
                     action.succeeded = False
 
@@ -261,6 +266,41 @@ def _parse_ts(ts_str: str) -> float:
         return dt.timestamp()
     except (ValueError, AttributeError):
         return 0.0
+
+
+def _merge_graph_relations(
+    old_entry_id: str, new_entry_id: str, project_dir: str | None
+) -> None:
+    """Transfer graph relations from a deleted entry to its replacement.
+
+    Best-effort — failures are logged but don't block consolidation.
+    """
+    try:
+        from strawpot.memory.graph import merge_relations
+
+        merge_relations(old_entry_id, new_entry_id, project_dir)
+    except Exception:
+        log.debug(
+            "Failed to merge graph relations %s -> %s",
+            old_entry_id, new_entry_id,
+            exc_info=True,
+        )
+
+
+def _remove_graph_entry(entry_id: str, project_dir: str | None) -> None:
+    """Remove all graph relations for an archived entry.
+
+    Best-effort — failures are logged but don't block consolidation.
+    """
+    try:
+        from strawpot.memory.graph import remove_entry
+
+        remove_entry(entry_id, project_dir)
+    except Exception:
+        log.debug(
+            "Failed to remove graph relations for %s",
+            entry_id, exc_info=True,
+        )
 
 
 def _archive_entry(

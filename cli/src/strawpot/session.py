@@ -235,7 +235,6 @@ def _semantic_recall(
 
         # Re-order bm25_entries by RRF rank, assigning RRF scores
         entry_map = {e.entry_id: e for e in bm25_entries}
-        rrf_scores = {eid: score for eid, score in merged}
         reranked = []
         for eid, score in merged:
             if eid in entry_map:
@@ -792,7 +791,7 @@ class Session:
                         # Auto-link to previous session recap via graph
                         if (
                             recap_result.entry_id
-                            and getattr(self.config, "memory_graph", True)
+                            and self.config.memory_graph
                         ):
                             _link_session_recap(
                                 new_entry_id=recap_result.entry_id,
@@ -1626,7 +1625,7 @@ class Session:
             # Store embedding for semantic search (best-effort, non-blocking)
             if (
                 result.entry_id
-                and getattr(self.config, "semantic_search", False)
+                and self.config.semantic_search
             ):
                 _store_embedding(
                     entry_id=result.entry_id,
@@ -1679,7 +1678,7 @@ class Session:
             # Semantic search: merge BM25 with embedding similarity via RRF
             if (
                 result.entries
-                and getattr(self.config, "semantic_search", False)
+                and self.config.semantic_search
             ):
                 result.entries = _semantic_recall(
                     query=recall.query,
@@ -1692,7 +1691,7 @@ class Session:
             # Graph expansion: include 1-hop neighbors
             if (
                 result.entries
-                and getattr(self.config, "memory_graph", True)
+                and self.config.memory_graph
             ):
                 _expand_with_graph(
                     result,

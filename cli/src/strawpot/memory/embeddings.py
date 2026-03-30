@@ -272,14 +272,11 @@ def rebuild_all(
     count = 0
 
     for entry in result.entries:
-        entry_scope = entry.scope or "project"
-        stored = store_embedding(
+        count += store_embedding(
             entry_id=entry.entry_id,
             content=entry.content,
-            scope=entry_scope,
+            scope=entry.scope or "project",
             project_dir=project_dir,
         )
-        if stored:
-            count += 1
 
     return count

@@ -184,22 +184,7 @@ def get_neighbors(
     Returns a list of (neighbor_id, relation_type) tuples.
     Includes both outgoing and incoming edges.
     """
-    graph = load_graph(project_dir)
-    neighbors: list[tuple[str, str]] = []
-
-    # Outgoing edges
-    for rel in graph.edges.get(entry_id, []):
-        neighbors.append((rel.target, rel.relation_type))
-
-    # Incoming edges
-    for source_id, relations in graph.edges.items():
-        if source_id == entry_id:
-            continue
-        for rel in relations:
-            if rel.target == entry_id:
-                neighbors.append((source_id, rel.relation_type))
-
-    return neighbors
+    return _get_neighbors_from_graph(entry_id, load_graph(project_dir))
 
 
 def expand_recall(
@@ -329,11 +314,10 @@ def format_graph(
     else:
         # Full graph summary
         total_relations = sum(len(rels) for rels in graph.edges.values())
-        total_entries = len({
-            eid
-            for source, rels in graph.edges.items()
-            for eid in [source] + [r.target for r in rels]
-        })
+        all_ids = set(graph.edges)
+        for rels in graph.edges.values():
+            all_ids.update(r.target for r in rels)
+        total_entries = len(all_ids)
         lines.append(f"Memory graph: {total_entries} entries, {total_relations} relations")
         lines.append("")
         for source_id, relations in sorted(graph.edges.items()):
