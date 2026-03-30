@@ -188,6 +188,36 @@ def test_load_config_memory_merge(tmp_path, monkeypatch):
     assert config.memory_config["em_max_events"] == 5000
 
 
+def test_load_config_memory_settings(tmp_path, monkeypatch):
+    """[memory_settings] section sets semantic_search and graph flags."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text(
+        "[memory_settings]\n"
+        "semantic_search = true\n"
+        "graph = false\n"
+    )
+
+    config = load_config(project_dir)
+    assert config.semantic_search is True
+    assert config.memory_graph is False
+
+
+def test_load_config_memory_settings_defaults(tmp_path, monkeypatch):
+    """Memory settings default to semantic_search=false, graph=true."""
+    monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "strawpot.toml").write_text("")
+
+    config = load_config(project_dir)
+    assert config.semantic_search is False
+    assert config.memory_graph is True
+
+
 def test_load_config_skills_env(tmp_path, monkeypatch):
     """[skills.<slug>.env] values are loaded into config.skills."""
     monkeypatch.setenv("STRAWPOT_HOME", str(tmp_path / "nonexistent"))

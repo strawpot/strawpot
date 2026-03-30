@@ -35,6 +35,8 @@ class StrawPotConfig:
     roles: dict[str, dict] = field(default_factory=dict)
     memory: str = "dial"
     memory_config: dict[str, str] = field(default_factory=dict)
+    semantic_search: bool = False
+    memory_graph: bool = True
     pull_before_session: str = "prompt"
     trace: bool = True
     skip_update_check: bool = False
@@ -102,6 +104,12 @@ def _apply(config: StrawPotConfig, data: dict) -> None:
     memory_cfg = data.get("memory_config", {})
     for key, value in memory_cfg.items():
         config.memory_config[key] = value
+
+    memory_section = data.get("memory_settings", {})
+    if "semantic_search" in memory_section:
+        config.semantic_search = bool(memory_section["semantic_search"])
+    if "graph" in memory_section:
+        config.memory_graph = bool(memory_section["graph"])
 
     session = data.get("session", {})
     if "pull_before_session" in session:
