@@ -6,6 +6,7 @@ import { useSubmitConversationTask, useRenameConversation, useCancelPendingTask,
 import { useStopSession } from "@/hooks/mutations/use-sessions";
 import { useSessionWS } from "@/hooks/useSessionWS";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
+import { useSubmitGuard } from "@/hooks/useSubmitGuard";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useProjectFiles, useProjectConfig } from "@/hooks/queries/use-projects";
 import { Badge } from "@/components/ui/badge";
@@ -185,6 +186,8 @@ export default function ConversationView() {
   const prevChatLengthRef = useRef(0);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const respondedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { respondedIdsRef.current.clear(); }, [cid]);
   const qc = useQueryClient();
 
   const { data: projectResources } = useProjectResources(pid);
@@ -216,6 +219,7 @@ export default function ConversationView() {
   const { handleHistoryKeyDown, addToHistory } = usePromptHistory({ text: task, setText: setTask });
 
   const submit = useSubmitConversationTask(cid);
+  const { trySubmit } = useSubmitGuard();
   const stop = useStopSession();
   const cancelPending = useCancelPendingTask(cid);
   const cancelTask = useCancelQueuedTask(cid);
@@ -327,6 +331,7 @@ export default function ConversationView() {
     e.preventDefault();
     const trimmed = task.trim();
     if (!trimmed || !!roleError || hasAdvError) return;
+    if (!trySubmit(trimmed, submit.isPending)) return;
     const body: Parameters<typeof submit.mutate>[0] = {
       task: trimmed,
       role: role.trim() || undefined,
@@ -348,6 +353,8 @@ export default function ConversationView() {
 
   function handleAskUserResponse(pending: AskUserPending, text: string) {
     if (!text.trim()) return;
+    if (respondedIdsRef.current.has(pending.request_id)) return;
+    respondedIdsRef.current.add(pending.request_id);
     respond(pending.request_id, text.trim());
     setAskUserResponse("");
   }

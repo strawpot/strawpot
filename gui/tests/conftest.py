@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from strawpot_gui.app import create_app
 from strawpot_gui.db import get_db
+from strawpot_gui.routers.conversations import _recent_submissions
 
 # Tables deleted in an order that avoids FK constraint violations.
 _TABLES = [
@@ -46,6 +47,10 @@ def _clean_db(request):
     IMU project (id=0) after cleanup so subsequent tests can reference it.
     """
     yield
+    # Clear the in-memory duplicate-submission cache so stale entries from
+    # a previous test (which may have used the same auto-incremented
+    # conversation_id + task text) don't cause false 409 rejections.
+    _recent_submissions.clear()
     # Resolve the db_path from the module's app fixture, if present.
     try:
         app_instance = request.getfixturevalue("app")
