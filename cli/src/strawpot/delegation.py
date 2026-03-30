@@ -27,7 +27,7 @@ from strawpot.context import (
     read_skill_description,
     validate_frontmatter_slug,
 )
-from strawpot_memory.memory_protocol import GetResult, MemoryProvider
+from strawpot_memory.memory_protocol import GetResult, MemoryProvider, RecallEntry
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +711,88 @@ def _format_memory_prompt(get_result: GetResult) -> str:
     return "## Memory\n\n" + "\n\n".join(parts)
 
 
+def _format_identity_section(entries: list[RecallEntry]) -> str:
+    """Format recalled identity entries into a prompt section."""
+    if not entries:
+        return ""
+    parts = [entry.content for entry in entries]
+    return "## Identity (auto-loaded)\n\n" + "\n\n".join(parts)
+
+
+def _recall_identity(
+    memory_provider: MemoryProvider,
+    *,
+    session_id: str,
+    agent_id: str,
+    role: str,
+    group_id: str | None = None,
+) -> str:
+    """Recall self-model / identity entries for the given role.
+
+    Returns a formatted ``## Identity (auto-loaded)`` section, or an
+    empty string when nothing relevant is found.
+    """
+    try:
+        result = memory_provider.recall(
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            query=f"self-model identity {role}",
+            keywords=["self-model", "identity", role],
+            max_results=3,
+            group_id=group_id,
+        )
+    except Exception:
+        logger.warning("Identity recall failed for role=%s", role, exc_info=True)
+        return ""
+    return _format_identity_section(result.entries)
+
+
+def _recall_warm_start(
+    memory_provider: MemoryProvider,
+    *,
+    session_id: str,
+    agent_id: str,
+    role: str,
+    group_id: str | None = None,
+) -> str:
+    """Recall the most recent session recap for the given role.
+
+    Returns a formatted ``## Previous Session (auto-loaded)`` section,
+    or an empty string when no recap is found.
+    """
+    try:
+        result = memory_provider.recall(
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            query=f"session-recap warm-start {role}",
+            keywords=["session-recap", "warm-start", role],
+            max_results=1,
+            group_id=group_id,
+        )
+    except Exception:
+        logger.warning("Warm-start recall failed for role=%s", role, exc_info=True)
+        return ""
+    if not result.entries:
+        return ""
+    return f"## Previous Session (auto-loaded)\n\n{result.entries[0].content}"
+
+
+def _compose_memory_prompt(
+    identity: str,
+    warm_start: str,
+    memory: str,
+) -> str:
+    """Compose Identity, Previous Session, and Memory sections into one prompt.
+
+    Sections appear in order: Identity → Previous Session → Memory.
+    Empty sections are omitted.
+    """
+    parts = [s for s in (identity, warm_start, memory) if s]
+    return "\n\n".join(parts)
+
+
 def _agent_status(result: AgentResult, *, timed_out: bool = False) -> str:
     """Map an agent result to a status string for memory.dump."""
     if timed_out:
@@ -977,6 +1059,19 @@ def _handle_delegate_body(
             )
             if get_result.context_cards:
                 memory_prompt = _format_memory_prompt(get_result)
+
+            # 7a-ii. Identity bootstrap + session warm-start
+            recall_kwargs = dict(
+                session_id=request.run_id,
+                agent_id=agent_id,
+                role=request.role_slug,
+                group_id=group_id,
+            )
+            memory_prompt = _compose_memory_prompt(
+                _recall_identity(memory_provider, **recall_kwargs),
+                _recall_warm_start(memory_provider, **recall_kwargs),
+                memory_prompt,
+            )
             if tracer is not None and delegate_span_id is not None:
                 tracer.memory_get(
                     span_id=delegate_span_id,

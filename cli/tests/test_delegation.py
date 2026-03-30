@@ -16,7 +16,9 @@ from strawpot.delegation import (
     _build_delegatable_roles,
     _check_policy,
     _collect_transitive_skills,
+    _compose_memory_prompt,
     _find_skill,
+    _format_identity_section,
     _format_memory_prompt,
     _get_default_agent,
     _merge_env_entry,
@@ -25,6 +27,8 @@ from strawpot.delegation import (
     _parse_skill_deps,
     _parse_skill_env,
     _collect_saved_env,
+    _recall_identity,
+    _recall_warm_start,
     _validate_output,
     collect_skill_env,
     create_agent_workspace,
@@ -37,6 +41,8 @@ from strawpot_memory.memory_protocol import (
     DumpReceipt,
     GetResult,
     MemoryKind,
+    RecallEntry,
+    RecallResult,
 )
 
 
@@ -1664,6 +1670,7 @@ def _mock_memory_provider(context_cards=None):
         context_cards=context_cards or [],
     )
     provider.dump.return_value = DumpReceipt()
+    provider.recall.return_value = RecallResult(entries=[])
     return provider
 
 
@@ -1792,6 +1799,248 @@ class TestMemoryIntegration:
 
         dump_kwargs = provider.dump.call_args.kwargs
         assert dump_kwargs["group_id"] is None
+
+    def test_identity_bootstrap_injected(self, tmp_path):
+        """Identity recall results are injected before memory prompt."""
+        provider = _mock_memory_provider(
+            context_cards=[ContextCard(kind=MemoryKind.SM, content="some fact")]
+        )
+        provider.recall.return_value = RecallResult(
+            entries=[
+                RecallEntry(
+                    entry_id="e_1",
+                    content="I am Imu, self-operation agent.",
+                    keywords=["self-model", "identity", "implementer"],
+                    scope="project",
+                    score=0.9,
+                ),
+            ]
+        )
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        prompt = spawn_kwargs["memory_prompt"]
+        assert "## Identity (auto-loaded)" in prompt
+        assert "I am Imu, self-operation agent." in prompt
+        # Identity should come before Memory
+        id_pos = prompt.index("## Identity (auto-loaded)")
+        mem_pos = prompt.index("## Memory")
+        assert id_pos < mem_pos
+
+    def test_identity_empty_when_no_entries(self, tmp_path):
+        """No identity section when recall returns empty entries."""
+        provider = _mock_memory_provider(
+            context_cards=[ContextCard(kind=MemoryKind.SM, content="fact")]
+        )
+        provider.recall.return_value = RecallResult(entries=[])
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert "## Identity" not in spawn_kwargs["memory_prompt"]
+
+    def test_warm_start_injected(self, tmp_path):
+        """Warm-start recap is injected before memory prompt."""
+        provider = _mock_memory_provider(
+            context_cards=[ContextCard(kind=MemoryKind.SM, content="fact")]
+        )
+        # First call returns identity (empty), second returns warm-start
+        provider.recall.side_effect = [
+            RecallResult(entries=[]),
+            RecallResult(
+                entries=[
+                    RecallEntry(
+                        entry_id="e_2",
+                        content="Last session: completed issue #42.",
+                        keywords=["session-recap", "warm-start", "implementer"],
+                        scope="project",
+                        score=0.8,
+                    ),
+                ]
+            ),
+        ]
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        prompt = spawn_kwargs["memory_prompt"]
+        assert "## Previous Session (auto-loaded)" in prompt
+        assert "Last session: completed issue #42." in prompt
+
+    def test_identity_and_warm_start_both_injected(self, tmp_path):
+        """Both identity and warm-start appear in correct order."""
+        provider = _mock_memory_provider(
+            context_cards=[ContextCard(kind=MemoryKind.SM, content="fact")]
+        )
+        provider.recall.side_effect = [
+            RecallResult(
+                entries=[
+                    RecallEntry(
+                        entry_id="e_1",
+                        content="I am the implementer.",
+                        keywords=["self-model"],
+                        scope="project",
+                        score=0.9,
+                    ),
+                ]
+            ),
+            RecallResult(
+                entries=[
+                    RecallEntry(
+                        entry_id="e_2",
+                        content="Previous: shipped PR #100.",
+                        keywords=["session-recap"],
+                        scope="project",
+                        score=0.8,
+                    ),
+                ]
+            ),
+        ]
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        prompt = spawn_kwargs["memory_prompt"]
+        id_pos = prompt.index("## Identity (auto-loaded)")
+        prev_pos = prompt.index("## Previous Session (auto-loaded)")
+        mem_pos = prompt.index("## Memory")
+        assert id_pos < prev_pos < mem_pos
+
+    def test_recall_exception_does_not_break_spawn(self, tmp_path):
+        """If recall raises, spawn still proceeds with normal memory."""
+        provider = _mock_memory_provider(
+            context_cards=[ContextCard(kind=MemoryKind.SM, content="fact")]
+        )
+        provider.recall.side_effect = RuntimeError("connection failed")
+        runtime = _mock_runtime()
+        self._run_delegate(tmp_path, runtime=runtime, memory_provider=provider)
+
+        # Spawn still called with just the memory prompt
+        spawn_kwargs = runtime.spawn.call_args.kwargs
+        assert "## Memory" in spawn_kwargs["memory_prompt"]
+        assert "## Identity" not in spawn_kwargs["memory_prompt"]
+
+    def test_recall_called_with_correct_args(self, tmp_path):
+        """Recall is called with role-specific keywords."""
+        provider = _mock_memory_provider()
+        provider.recall.return_value = RecallResult(entries=[])
+        self._run_delegate(tmp_path, memory_provider=provider, group_id="g_1")
+
+        # Two recall calls: identity + warm-start
+        assert provider.recall.call_count == 2
+
+        id_call = provider.recall.call_args_list[0].kwargs
+        assert id_call["keywords"] == ["self-model", "identity", "implementer"]
+        assert id_call["max_results"] == 3
+        assert id_call["group_id"] == "g_1"
+
+        ws_call = provider.recall.call_args_list[1].kwargs
+        assert ws_call["keywords"] == ["session-recap", "warm-start", "implementer"]
+        assert ws_call["max_results"] == 1
+        assert ws_call["group_id"] == "g_1"
+
+
+# ---------------------------------------------------------------------------
+# Identity bootstrap + warm-start unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatIdentitySection:
+    def test_empty_entries(self):
+        assert _format_identity_section([]) == ""
+
+    def test_single_entry(self):
+        entries = [RecallEntry(entry_id="e1", content="I am Imu.")]
+        result = _format_identity_section(entries)
+        assert result == "## Identity (auto-loaded)\n\nI am Imu."
+
+    def test_multiple_entries(self):
+        entries = [
+            RecallEntry(entry_id="e1", content="Part 1"),
+            RecallEntry(entry_id="e2", content="Part 2"),
+        ]
+        result = _format_identity_section(entries)
+        assert "Part 1" in result
+        assert "Part 2" in result
+        assert result.startswith("## Identity (auto-loaded)")
+
+
+class TestRecallIdentity:
+    def test_returns_section_on_match(self):
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(entry_id="e1", content="Self model v1")]
+        )
+        result = _recall_identity(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert "## Identity (auto-loaded)" in result
+        assert "Self model v1" in result
+
+    def test_returns_empty_on_no_entries(self):
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(entries=[])
+        result = _recall_identity(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert result == ""
+
+    def test_returns_empty_on_exception(self):
+        provider = MagicMock()
+        provider.recall.side_effect = RuntimeError("boom")
+        result = _recall_identity(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert result == ""
+
+
+class TestRecallWarmStart:
+    def test_returns_section_on_match(self):
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(entry_id="e1", content="Shipped PR #50.")]
+        )
+        result = _recall_warm_start(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert "## Previous Session (auto-loaded)" in result
+        assert "Shipped PR #50." in result
+
+    def test_returns_empty_on_no_entries(self):
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(entries=[])
+        result = _recall_warm_start(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert result == ""
+
+    def test_returns_empty_on_exception(self):
+        provider = MagicMock()
+        provider.recall.side_effect = RuntimeError("boom")
+        result = _recall_warm_start(
+            provider, session_id="s", agent_id="a", role="imu"
+        )
+        assert result == ""
+
+
+class TestComposeMemoryPrompt:
+    def test_all_sections(self):
+        result = _compose_memory_prompt("## Identity", "## Previous", "## Memory")
+        assert result == "## Identity\n\n## Previous\n\n## Memory"
+
+    def test_identity_only(self):
+        assert _compose_memory_prompt("## Identity", "", "") == "## Identity"
+
+    def test_memory_only(self):
+        assert _compose_memory_prompt("", "", "## Memory") == "## Memory"
+
+    def test_all_empty(self):
+        assert _compose_memory_prompt("", "", "") == ""
+
+    def test_skips_empty_sections(self):
+        result = _compose_memory_prompt("## Identity", "", "## Memory")
+        assert result == "## Identity\n\n## Memory"
 
 
 # ---------------------------------------------------------------------------
