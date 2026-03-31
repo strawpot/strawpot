@@ -113,6 +113,7 @@ export default function Settings() {
                 placeholders={projectConfig.data.merged_nested}
                 onSave={handleSaveProject}
                 saving={saveProject.isPending}
+                projectId={selectedProjectId}
               />
             )}
           </div>

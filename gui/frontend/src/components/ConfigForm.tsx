@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useResources } from "@/hooks/queries/use-registry";
-import { cn } from "@/lib/utils";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
+import RoleQuickSwitch from "@/components/RoleQuickSwitch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -14,15 +15,13 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Save } from "lucide-react";
 
-const QUICK_ROLES = ["imu", "imu-live"] as const;
-type QuickRole = (typeof QUICK_ROLES)[number];
-
 interface ConfigFormProps {
   values: Record<string, unknown>;
   placeholders?: Record<string, unknown>;
   onSave: (data: Record<string, unknown>) => void;
   saving?: boolean;
   showQuickSwitch?: boolean;
+  projectId?: number | null;
 }
 
 // --- helpers to flatten / unflatten nested TOML ---
@@ -127,11 +126,15 @@ export default function ConfigForm({
   onSave,
   saving,
   showQuickSwitch = false,
+  projectId,
 }: ConfigFormProps) {
   const [state, setState] = useState<FlatState>(toFlat(values));
   const { data: agents } = useResources("agents");
   const { data: roles } = useResources("roles");
   const { data: memories } = useResources("memories");
+  const { data: projectResources } = useProjectResources(projectId ?? 0, {
+    enabled: projectId != null && projectId > 0,
+  });
 
   const ph = placeholders ? toFlat(placeholders) : undefined;
 
@@ -150,7 +153,15 @@ export default function ConfigForm({
   };
 
   const agentNames = (agents ?? []).map((a) => a.name);
-  const roleNames = (roles ?? []).map((r) => r.name);
+  // Merge global roles with project-specific roles (deduplicated)
+  const roleNames = useMemo(() => {
+    const globalRoles = (roles ?? []).map((r) => r.name);
+    if (!projectResources) return globalRoles;
+    const projectRoles = projectResources
+      .filter((r) => r.type === "roles")
+      .map((r) => r.name);
+    return [...new Set([...globalRoles, ...projectRoles])].sort();
+  }, [roles, projectResources]);
   const memoryNames = new Set((memories ?? []).map((m) => m.name));
   memoryNames.add("none");
   const memoryOptions = [...memoryNames].sort();
@@ -220,16 +231,19 @@ export default function ConfigForm({
         <h3 className="text-sm font-semibold">Orchestrator</h3>
         <Separator />
         {showQuickSwitch && (
-          <RoleQuickSwitch
-            current={state.orchestrator_role}
-            onSwitch={(role) => {
-              if (role === state.orchestrator_role) return;
-              const updated = { ...state, orchestrator_role: role };
-              setState(updated);
-              onSave(toNested(updated));
-            }}
-            disabled={saving}
-          />
+          <div className="flex items-center gap-3">
+            <Label className="text-xs text-muted-foreground">Quick switch</Label>
+            <RoleQuickSwitch
+              current={state.orchestrator_role}
+              onSwitch={(role) => {
+                if (role === state.orchestrator_role) return;
+                const updated = { ...state, orchestrator_role: role };
+                setState(updated);
+                onSave(toNested(updated));
+              }}
+              disabled={saving}
+            />
+          </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Role">
@@ -403,43 +417,6 @@ function Field({
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <Label className="text-xs">{label}</Label>
       {children}
-    </div>
-  );
-}
-
-function RoleQuickSwitch({
-  current,
-  onSwitch,
-  disabled,
-}: {
-  current: string;
-  onSwitch: (role: QuickRole) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <Label className="text-xs text-muted-foreground">Quick switch</Label>
-      <div className="inline-flex h-8 items-center rounded-md border border-border bg-muted p-0.5">
-        {QUICK_ROLES.map((role) => (
-          <button
-            key={role}
-            type="button"
-            disabled={disabled}
-            onClick={() => onSwitch(role)}
-            className={cn(
-              "inline-flex h-7 items-center justify-center rounded-sm px-3",
-              "text-xs font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "disabled:pointer-events-none disabled:opacity-50",
-              current === role
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {role}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
