@@ -18,7 +18,7 @@ from strawpot_gui.event_bus import event_bus
 from strawpot_gui.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
-from strawpot_gui.routers import config, conversations, files, fs, health, imu, integrations, logs, project_resources, projects, registry, schedules, sessions, sse, stats, ws
+from strawpot_gui.routers import config, conversations, files, fs, health, imu, integrations, logs, project_resources, projects, registry, schedules, sessions, settings, sse, stats, ws
 
 
 def _ensure_imu_role() -> None:
@@ -189,6 +189,7 @@ def create_app(
     app.include_router(project_resources.router)
     app.include_router(schedules.router)
     app.include_router(stats.router)
+    app.include_router(settings.router)
 
     # Serve built frontend — check installed package path then dev path
     static_dir = Path(__file__).resolve().parent / "static"

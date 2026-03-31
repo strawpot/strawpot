@@ -464,6 +464,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "isolation" in cols:
         conn.execute("ALTER TABLE sessions DROP COLUMN isolation")
 
+    # Add settings table for GUI key-value settings (added 2026-03-31).
+    # Used by ImuPage to persist orchestrator_role without touching TOML files.
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+
 
 @contextmanager
 def get_db(db_path: str):
