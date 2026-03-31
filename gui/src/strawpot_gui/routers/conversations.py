@@ -17,6 +17,19 @@ from strawpot_gui.routers.sessions import _refresh_session_status, launch_sessio
 from strawpot_gui.routers.ws import _read_chat_messages
 
 router = APIRouter(prefix="/api", tags=["conversations"])
+logger = logging.getLogger(__name__)
+
+_DEFAULT_ROLE = "imu"
+
+
+def _default_orchestrator_role() -> str:
+    """Read orchestrator role from global config, falling back to 'imu'."""
+    try:
+        role = load_config(None).orchestrator_role
+        return role if role else _DEFAULT_ROLE
+    except Exception:
+        logger.warning("Failed to load global config for default role", exc_info=True)
+        return _DEFAULT_ROLE
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +632,7 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
             full_task,
             user_task=body.task,
             memory_task=body.task if context else None,
-            role=body.role or (load_config(None).orchestrator_role if project_id == 0 else None),
+            role=body.role or (_default_orchestrator_role() if project_id == 0 else None),
             system_prompt=body.system_prompt or None,
             context_files=body.context_files,
             interactive=body.interactive,
