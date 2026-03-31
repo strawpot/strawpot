@@ -3,10 +3,11 @@ import { api } from "@/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import type { ProjectResource, ResourceDetail, ResourceConfig } from "@/api/types";
 
-export function useProjectResources(projectId: number) {
+export function useProjectResources(projectId: number, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.projects.resources(projectId),
     queryFn: () => api.get<ProjectResource[]>(`/projects/${projectId}/resources`),
+    enabled: options?.enabled,
   });
 }
 

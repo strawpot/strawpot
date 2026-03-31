@@ -11,6 +11,10 @@ vi.mock("@/hooks/queries/use-registry", () => ({
   useResources: () => ({ data: [] }),
 }));
 
+vi.mock("@/hooks/queries/use-project-resources", () => ({
+  useProjectResources: () => ({ data: undefined }),
+}));
+
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------

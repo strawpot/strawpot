@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useResources } from "@/hooks/queries/use-registry";
+import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import RoleQuickSwitch from "@/components/RoleQuickSwitch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ interface ConfigFormProps {
   onSave: (data: Record<string, unknown>) => void;
   saving?: boolean;
   showQuickSwitch?: boolean;
+  projectId?: number | null;
 }
 
 // --- helpers to flatten / unflatten nested TOML ---
@@ -124,11 +126,15 @@ export default function ConfigForm({
   onSave,
   saving,
   showQuickSwitch = false,
+  projectId,
 }: ConfigFormProps) {
   const [state, setState] = useState<FlatState>(toFlat(values));
   const { data: agents } = useResources("agents");
   const { data: roles } = useResources("roles");
   const { data: memories } = useResources("memories");
+  const { data: projectResources } = useProjectResources(projectId ?? 0, {
+    enabled: projectId != null && projectId > 0,
+  });
 
   const ph = placeholders ? toFlat(placeholders) : undefined;
 
@@ -147,7 +153,15 @@ export default function ConfigForm({
   };
 
   const agentNames = (agents ?? []).map((a) => a.name);
-  const roleNames = (roles ?? []).map((r) => r.name);
+  // Merge global roles with project-specific roles (deduplicated)
+  const roleNames = useMemo(() => {
+    const globalRoles = (roles ?? []).map((r) => r.name);
+    if (!projectResources) return globalRoles;
+    const projectRoles = projectResources
+      .filter((r) => r.type === "roles")
+      .map((r) => r.name);
+    return [...new Set([...globalRoles, ...projectRoles])].sort();
+  }, [roles, projectResources]);
   const memoryNames = new Set((memories ?? []).map((m) => m.name));
   memoryNames.add("none");
   const memoryOptions = [...memoryNames].sort();
