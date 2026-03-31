@@ -74,7 +74,7 @@ export default function CreateScheduleDialog({
   const [conversationId, setConversationId] = useState<string>("none");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const selectedProjectId = editing ? editing.project_id : (projectId ? Number(projectId) : -1);
+  const selectedProjectId = projectId ? Number(projectId) : -1;
   const isImu = selectedProjectId === 0;
   const { data: projectResources } = useProjectResources(selectedProjectId);
   const { data: projectConversations } = useProjectConversations(selectedProjectId);
@@ -128,7 +128,7 @@ export default function CreateScheduleDialog({
     e.preventDefault();
     try {
       let resolvedConvId: number | null = null;
-      const pid = editing ? editing.project_id : Number(projectId);
+      const pid = Number(projectId);
       if (conversationId === "new") {
         if (pid === 0) {
           const conv = await createImuConversation.mutateAsync();
@@ -154,7 +154,7 @@ export default function CreateScheduleDialog({
         conversation_id: resolvedConvId,
       };
       if (editing) {
-        await updateSchedule.mutateAsync({ id: editing.id, ...body });
+        await updateSchedule.mutateAsync({ id: editing.id, project_id: pid, ...body });
       } else {
         await createSchedule.mutateAsync({
           ...body,
@@ -204,26 +204,24 @@ export default function CreateScheduleDialog({
             />
           </div>
 
-          {!editing && (
-            <div className="space-y-2">
-              <Label htmlFor="sched-project">
-                Project <span className="text-destructive">*</span>
-              </Label>
-              <Select value={projectId} onValueChange={setProjectId} required>
-                <SelectTrigger id="sched-project">
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Imu</SelectItem>
-                  {(projects ?? []).map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.display_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="sched-project">
+              Project <span className="text-destructive">*</span>
+            </Label>
+            <Select value={projectId} onValueChange={setProjectId} required>
+              <SelectTrigger id="sched-project">
+                <SelectValue placeholder="Select a project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Imu</SelectItem>
+                {(projects ?? []).map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="sched-task">
