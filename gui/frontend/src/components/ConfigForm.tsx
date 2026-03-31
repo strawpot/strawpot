@@ -22,6 +22,7 @@ interface ConfigFormProps {
   placeholders?: Record<string, unknown>;
   onSave: (data: Record<string, unknown>) => void;
   saving?: boolean;
+  showQuickSwitch?: boolean;
 }
 
 // --- helpers to flatten / unflatten nested TOML ---
@@ -125,6 +126,7 @@ export default function ConfigForm({
   placeholders,
   onSave,
   saving,
+  showQuickSwitch = false,
 }: ConfigFormProps) {
   const [state, setState] = useState<FlatState>(toFlat(values));
   const { data: agents } = useResources("agents");
@@ -217,16 +219,18 @@ export default function ConfigForm({
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold">Orchestrator</h3>
         <Separator />
-        <RoleQuickSwitch
-          current={state.orchestrator_role}
-          onSwitch={(role) => {
-            if (role === state.orchestrator_role) return;
-            const updated = { ...state, orchestrator_role: role };
-            setState(updated);
-            onSave(toNested(updated));
-          }}
-          disabled={saving}
-        />
+        {showQuickSwitch && (
+          <RoleQuickSwitch
+            current={state.orchestrator_role}
+            onSwitch={(role) => {
+              if (role === state.orchestrator_role) return;
+              const updated = { ...state, orchestrator_role: role };
+              setState(updated);
+              onSave(toNested(updated));
+            }}
+            disabled={saving}
+          />
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Role">
             <Input

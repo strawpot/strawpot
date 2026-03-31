@@ -79,6 +79,7 @@ export default function Settings() {
               placeholders={globalConfig.data?.defaults}
               onSave={handleSaveGlobal}
               saving={saveGlobal.isPending}
+              showQuickSwitch
             />
           )}
         </TabsContent>

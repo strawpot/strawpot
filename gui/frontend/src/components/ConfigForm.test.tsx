@@ -31,11 +31,16 @@ beforeEach(() => {
 
 function renderForm(
   valuesOverrides: Record<string, unknown> = {},
-  props: { saving?: boolean } = {},
+  props: { saving?: boolean; showQuickSwitch?: boolean } = {},
 ) {
   const values = makeValues(valuesOverrides);
   return render(
-    <ConfigForm values={values} onSave={onSave} saving={props.saving} />,
+    <ConfigForm
+      values={values}
+      onSave={onSave}
+      saving={props.saving}
+      showQuickSwitch={props.showQuickSwitch}
+    />,
   );
 }
 
@@ -47,12 +52,36 @@ function getQuickSwitchButtons() {
 }
 
 // --------------------------------------------------------------------------
-// Tests — RoleQuickSwitch
+// Tests — RoleQuickSwitch visibility
+// --------------------------------------------------------------------------
+
+describe("ConfigForm — RoleQuickSwitch visibility", () => {
+  it("does not render quick-switch when showQuickSwitch is false (default)", () => {
+    renderForm();
+
+    expect(screen.queryByText("Quick switch")).not.toBeInTheDocument();
+  });
+
+  it("does not render quick-switch when showQuickSwitch is explicitly false", () => {
+    renderForm({}, { showQuickSwitch: false });
+
+    expect(screen.queryByText("Quick switch")).not.toBeInTheDocument();
+  });
+
+  it("renders quick-switch when showQuickSwitch is true", () => {
+    renderForm({}, { showQuickSwitch: true });
+
+    expect(screen.getByText("Quick switch")).toBeInTheDocument();
+  });
+});
+
+// --------------------------------------------------------------------------
+// Tests — RoleQuickSwitch behavior
 // --------------------------------------------------------------------------
 
 describe("ConfigForm — RoleQuickSwitch", () => {
   it("renders two quick-switch buttons: imu and imu-live", () => {
-    renderForm();
+    renderForm({}, { showQuickSwitch: true });
 
     const buttons = getQuickSwitchButtons();
     expect(buttons).toHaveLength(2);
@@ -62,7 +91,7 @@ describe("ConfigForm — RoleQuickSwitch", () => {
 
   it("calls onSave immediately when switching to a different role", async () => {
     const user = userEvent.setup();
-    renderForm({ orchestrator: { role: "imu" } });
+    renderForm({ orchestrator: { role: "imu" } }, { showQuickSwitch: true });
 
     const buttons = getQuickSwitchButtons();
     await user.click(buttons[1]); // click "imu-live"
@@ -74,7 +103,7 @@ describe("ConfigForm — RoleQuickSwitch", () => {
 
   it("does not call onSave when clicking the already-selected role", async () => {
     const user = userEvent.setup();
-    renderForm({ orchestrator: { role: "imu" } });
+    renderForm({ orchestrator: { role: "imu" } }, { showQuickSwitch: true });
 
     const buttons = getQuickSwitchButtons();
     await user.click(buttons[0]); // click "imu" — already selected
@@ -83,7 +112,10 @@ describe("ConfigForm — RoleQuickSwitch", () => {
   });
 
   it("reflects the current role with active styling class", () => {
-    renderForm({ orchestrator: { role: "imu-live" } });
+    renderForm(
+      { orchestrator: { role: "imu-live" } },
+      { showQuickSwitch: true },
+    );
 
     const buttons = getQuickSwitchButtons();
     // Active button gets bg-background class
@@ -94,7 +126,10 @@ describe("ConfigForm — RoleQuickSwitch", () => {
   });
 
   it("disables quick-switch buttons when saving", () => {
-    renderForm({ orchestrator: { role: "imu" } }, { saving: true });
+    renderForm(
+      { orchestrator: { role: "imu" } },
+      { saving: true, showQuickSwitch: true },
+    );
 
     const buttons = getQuickSwitchButtons();
     expect(buttons[0]).toBeDisabled();
@@ -102,7 +137,10 @@ describe("ConfigForm — RoleQuickSwitch", () => {
   });
 
   it("shows no active button when orchestrator_role is a non-quick-role value", () => {
-    renderForm({ orchestrator: { role: "custom-role" } });
+    renderForm(
+      { orchestrator: { role: "custom-role" } },
+      { showQuickSwitch: true },
+    );
 
     const buttons = getQuickSwitchButtons();
     // Neither button should have the active styling
@@ -114,7 +152,7 @@ describe("ConfigForm — RoleQuickSwitch", () => {
 
   it("updates the Role input field value after quick-switch", async () => {
     const user = userEvent.setup();
-    renderForm({ orchestrator: { role: "imu" } });
+    renderForm({ orchestrator: { role: "imu" } }, { showQuickSwitch: true });
 
     // Role input should initially show "imu"
     const roleInput = screen.getByDisplayValue("imu");
@@ -130,10 +168,13 @@ describe("ConfigForm — RoleQuickSwitch", () => {
 
   it("preserves other config values when quick-switching roles", async () => {
     const user = userEvent.setup();
-    renderForm({
-      orchestrator: { role: "imu", permission_mode: "plan" },
-      runtime: "my-agent",
-    });
+    renderForm(
+      {
+        orchestrator: { role: "imu", permission_mode: "plan" },
+        runtime: "my-agent",
+      },
+      { showQuickSwitch: true },
+    );
 
     const buttons = getQuickSwitchButtons();
     await user.click(buttons[1]); // switch to imu-live
