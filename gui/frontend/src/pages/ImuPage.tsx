@@ -372,7 +372,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
-    if (!trimmed || hasAdvError) return;
+    if (!trimmed || hasAdvError || globalConfig.isLoading) return;
     if (!trySubmit(trimmed, submit.isPending)) return;
     addToHistory(trimmed);
     submit.mutate(
@@ -802,7 +802,7 @@ function ImuConversationView({ cid }: { cid: number }) {
               )}
               <Button
                 type="submit"
-                disabled={!task.trim() || submit.isPending || hasAdvError}
+                disabled={!task.trim() || submit.isPending || hasAdvError || globalConfig.isLoading}
                 variant={hasActiveSession ? "outline" : "default"}
                 title={hasActiveSession ? "Queue task (runs after current session)" : undefined}
               >
