@@ -19,7 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, Pause, Play, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import type { Schedule } from "@/api/types";
 
 function formatDateTime(iso: string | null): string {
@@ -58,6 +58,7 @@ function StatusBadge({ schedule }: { schedule: Schedule }) {
 export default function OneTimeSchedules() {
   const { data: schedules, isLoading, error } = useSchedules("one_time");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Schedule | null>(null);
   const deleteSchedule = useDeleteSchedule();
   const toggleSchedule = useToggleSchedule();
 
@@ -84,7 +85,7 @@ export default function OneTimeSchedules() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">One-Time Schedules</h1>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           Create One-Time Schedule
         </Button>
@@ -96,7 +97,7 @@ export default function OneTimeSchedules() {
           <Button
             variant="outline"
             className="mt-4"
-            onClick={() => setDialogOpen(true)}
+            onClick={() => { setEditing(null); setDialogOpen(true); }}
           >
             <Plus className="mr-2 h-4 w-4" />
             Create your first one-time schedule
@@ -133,6 +134,17 @@ export default function OneTimeSchedules() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setEditing(s);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -174,6 +186,7 @@ export default function OneTimeSchedules() {
       <CreateOneTimeScheduleDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        editing={editing}
       />
     </div>
   );

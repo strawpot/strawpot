@@ -26,6 +26,7 @@ interface CreateOneTimeScheduleBody {
 
 interface UpdateScheduleBody {
   name?: string;
+  project_id?: number;
   task?: string;
   cron_expr?: string;
   run_at?: string;

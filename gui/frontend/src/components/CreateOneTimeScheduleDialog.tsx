@@ -3,7 +3,7 @@ import { useProjects } from "@/hooks/queries/use-projects";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
 import { useProjectConversations, useImuConversations } from "@/hooks/queries/use-conversations";
 import { useCreateConversation, useCreateImuConversation } from "@/hooks/mutations/use-conversations";
-import { useCreateOneTimeSchedule } from "@/hooks/mutations/use-schedules";
+import { useCreateOneTimeSchedule, useUpdateSchedule } from "@/hooks/mutations/use-schedules";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,18 +27,22 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
+import type { Schedule } from "@/api/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editing?: Schedule | null;
 }
 
 export default function CreateOneTimeScheduleDialog({
   open,
   onOpenChange,
+  editing,
 }: Props) {
   const { data: projects } = useProjects();
   const createSchedule = useCreateOneTimeSchedule();
+  const updateSchedule = useUpdateSchedule();
   const createConversation = useCreateConversation();
   const createImuConversation = useCreateImuConversation();
 
@@ -78,10 +82,29 @@ export default function CreateOneTimeScheduleDialog({
   }, [isImu]);
 
   useEffect(() => {
-    if (open) {
+    if (open && editing) {
+      setName(editing.name);
+      setProjectId(String(editing.project_id));
+      setTask(editing.task);
+      // Convert ISO datetime to datetime-local format
+      if (editing.run_at) {
+        try {
+          const dt = new Date(editing.run_at);
+          const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+          setRunAt(local.toISOString().slice(0, 16));
+        } catch {
+          setRunAt("");
+        }
+      } else {
+        setRunAt("");
+      }
+      setRole(editing.role ?? "");
+      setSystemPrompt(editing.system_prompt ?? "");
+      setConversationId(editing.conversation_id ? String(editing.conversation_id) : "none");
+    } else if (open && !editing) {
       resetForm();
     }
-  }, [open]);
+  }, [open, editing]);
 
   function resetForm() {
     setName("");
@@ -116,15 +139,29 @@ export default function CreateOneTimeScheduleDialog({
 
       // Convert local datetime-local value to ISO with timezone
       const dt = new Date(runAt);
-      await createSchedule.mutateAsync({
-        name: name.trim(),
-        project_id: pid,
-        task: task.trim(),
-        run_at: dt.toISOString(),
-        role: role.trim() || undefined,
-        system_prompt: systemPrompt.trim() || undefined,
-        conversation_id: resolvedConvId,
-      });
+
+      if (editing) {
+        await updateSchedule.mutateAsync({
+          id: editing.id,
+          project_id: pid,
+          name: name.trim(),
+          task: task.trim(),
+          run_at: dt.toISOString(),
+          role: role.trim() || undefined,
+          system_prompt: systemPrompt.trim() || undefined,
+          conversation_id: resolvedConvId,
+        });
+      } else {
+        await createSchedule.mutateAsync({
+          name: name.trim(),
+          project_id: pid,
+          task: task.trim(),
+          run_at: dt.toISOString(),
+          role: role.trim() || undefined,
+          system_prompt: systemPrompt.trim() || undefined,
+          conversation_id: resolvedConvId,
+        });
+      }
       resetForm();
       onOpenChange(false);
     } catch {
@@ -139,11 +176,16 @@ export default function CreateOneTimeScheduleDialog({
     return d.toISOString().slice(0, 16);
   }, [open]);
 
+  const isPending = createSchedule.isPending || updateSchedule.isPending || createConversation.isPending || createImuConversation.isPending;
+  const mutationError = createSchedule.error || updateSchedule.error;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create One-Time Schedule</DialogTitle>
+          <DialogTitle>
+            {editing ? "Edit One-Time Schedule" : "Create One-Time Schedule"}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -203,7 +245,7 @@ export default function CreateOneTimeScheduleDialog({
               type="datetime-local"
               value={runAt}
               onChange={(e) => setRunAt(e.target.value)}
-              min={minDateTime}
+              min={editing ? undefined : minDateTime}
               required
             />
             <p className="text-xs text-muted-foreground">
@@ -284,9 +326,9 @@ export default function CreateOneTimeScheduleDialog({
             </CollapsibleContent>
           </Collapsible>
 
-          {createSchedule.error && (
+          {mutationError && (
             <p className="text-sm text-destructive">
-              {(createSchedule.error as Error).message}
+              {(mutationError as Error).message}
             </p>
           )}
 
@@ -300,9 +342,13 @@ export default function CreateOneTimeScheduleDialog({
             </Button>
             <Button
               type="submit"
-              disabled={createSchedule.isPending || createConversation.isPending || createImuConversation.isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
+              disabled={isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
             >
-              {createSchedule.isPending ? "Creating..." : "Create"}
+              {isPending
+                ? "Saving..."
+                : editing
+                  ? "Update"
+                  : "Create"}
             </Button>
           </div>
         </form>
