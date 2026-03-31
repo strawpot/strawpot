@@ -23,7 +23,8 @@ function makeValues(overrides: Record<string, unknown> = {}) {
   };
 }
 
-let onSave: ReturnType<typeof vi.fn>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let onSave: any;
 
 beforeEach(() => {
   onSave = vi.fn();
