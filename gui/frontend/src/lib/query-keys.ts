@@ -24,6 +24,10 @@ export const queryKeys = {
   config: {
     global: ["config", "global"] as const,
   },
+  settings: {
+    all: ["settings"] as const,
+    detail: (key: string) => ["settings", key] as const,
+  },
   registry: {
     list: (type: string) => ["registry", type] as const,
     detail: (type: string, name: string) => ["registry", type, name] as const,

@@ -48,8 +48,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile, TreeData } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
-import { useGlobalConfig } from "@/hooks/queries/use-config";
-import { useSaveGlobalConfig } from "@/hooks/mutations/use-config";
+import { useSetting } from "@/hooks/queries/use-settings";
+import { useSaveSetting } from "@/hooks/mutations/use-settings";
 import RoleQuickSwitch, { type QuickRole } from "@/components/RoleQuickSwitch";
 import { toast } from "sonner";
 
@@ -243,11 +243,9 @@ function ImuConversationView({ cid }: { cid: number }) {
   const respondedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { respondedIdsRef.current.clear(); }, [cid]);
 
-  const globalConfig = useGlobalConfig();
-  const saveGlobalConfig = useSaveGlobalConfig();
-  const configValues = globalConfig.data?.values as Record<string, unknown> | undefined;
-  const configRole = (configValues?.orchestrator as Record<string, unknown> | undefined)?.role as string | undefined;
-  const orchestratorRole: string = configRole || DEFAULT_ROLE;
+  const settingQuery = useSetting("orchestrator_role");
+  const saveSetting = useSaveSetting("orchestrator_role");
+  const orchestratorRole: string = settingQuery.data || DEFAULT_ROLE;
 
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
@@ -372,7 +370,7 @@ function ImuConversationView({ cid }: { cid: number }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = task.trim();
-    if (!trimmed || hasAdvError || globalConfig.isLoading) return;
+    if (!trimmed || hasAdvError || settingQuery.isLoading) return;
     if (!trySubmit(trimmed, submit.isPending)) return;
     addToHistory(trimmed);
     submit.mutate(
@@ -740,18 +738,11 @@ function ImuConversationView({ cid }: { cid: number }) {
               current={orchestratorRole}
               onSwitch={(role) => {
                 if (role === orchestratorRole) return;
-                const merged = {
-                  ...configValues,
-                  orchestrator: {
-                    ...((configValues?.orchestrator as Record<string, unknown>) ?? {}),
-                    role,
-                  },
-                };
-                saveGlobalConfig.mutate(merged, {
+                saveSetting.mutate(role, {
                   onError: () => toast.error("Failed to save role"),
                 });
               }}
-              disabled={saveGlobalConfig.isPending || globalConfig.isLoading}
+              disabled={saveSetting.isPending || settingQuery.isLoading}
               size="sm"
             />
             <div className="flex items-center gap-1">
@@ -802,7 +793,7 @@ function ImuConversationView({ cid }: { cid: number }) {
               )}
               <Button
                 type="submit"
-                disabled={!task.trim() || submit.isPending || hasAdvError || globalConfig.isLoading}
+                disabled={!task.trim() || submit.isPending || hasAdvError || settingQuery.isLoading}
                 variant={hasActiveSession ? "outline" : "default"}
                 title={hasActiveSession ? "Queue task (runs after current session)" : undefined}
               >

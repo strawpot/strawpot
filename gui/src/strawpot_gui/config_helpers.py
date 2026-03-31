@@ -1,8 +1,9 @@
 """Shared config helpers for the GUI backend."""
 
 import logging
+import sqlite3
 
-from strawpot.config import load_config
+from strawpot.config import get_strawpot_home, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +13,42 @@ logger = logging.getLogger(__name__)
 _FALLBACK_ROLE = "imu"
 
 
-def default_orchestrator_role() -> str:
-    """Read orchestrator role from global config.
+def _read_setting_from_db(key: str) -> str | None:
+    """Read a single setting from the GUI database, or None if unavailable."""
+    db_path = get_strawpot_home() / "gui.db"
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+        conn.close()
+        return row["value"] if row else None
+    except Exception:
+        logger.debug("Could not read setting %r from DB", key, exc_info=True)
+        return None
 
-    Returns the configured ``orchestrator.role`` value.  Falls back to
-    ``"imu"`` only when the config file cannot be read (e.g. TOML parse
-    error, missing file, or permission denied).  An empty-string role in
-    the config is also treated as a fallback case.
+
+def default_orchestrator_role() -> str:
+    """Read orchestrator role with priority: DB → TOML → fallback.
+
+    1. Check ``settings`` table for ``orchestrator_role`` (set by ImuPage).
+    2. Fall back to ``orchestrator.role`` in global ``strawpot.toml``.
+    3. Last resort: ``"imu"``.
     """
+    # 1. DB setting (highest priority — set directly by the user via GUI)
+    db_role = _read_setting_from_db("orchestrator_role")
+    if db_role:
+        return db_role
+
+    # 2. TOML config
     try:
         role = load_config(None).orchestrator_role
-        return role if role else _FALLBACK_ROLE
+        if role:
+            return role
     except Exception:
         logger.warning("Failed to load global config for default role", exc_info=True)
-        return _FALLBACK_ROLE
+
+    return _FALLBACK_ROLE
