@@ -11,22 +11,10 @@ from datetime import datetime, timezone
 
 from croniter import croniter
 
-from strawpot.config import load_config
+from strawpot_gui.config_helpers import default_orchestrator_role
 from strawpot_gui.db import get_db
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_ROLE = "imu"
-
-
-def _default_orchestrator_role() -> str:
-    """Read orchestrator role from global config, falling back to 'imu'."""
-    try:
-        role = load_config(None).orchestrator_role
-        return role if role else _DEFAULT_ROLE
-    except Exception:
-        logger.warning("Failed to load global config for default role", exc_info=True)
-        return _DEFAULT_ROLE
 
 
 class Scheduler:
@@ -198,7 +186,7 @@ def fire_schedule(conn, schedule: dict, launch_fn, *, task_override: str | None 
     """
     schedule_id = schedule["id"]
     project_id = schedule["project_id"]
-    role = schedule["role"] or (_default_orchestrator_role() if project_id == 0 else None)
+    role = schedule["role"] or (default_orchestrator_role() if project_id == 0 else None)
     task = task_override or schedule["task"]
     conversation_id = schedule.get("conversation_id")
 
