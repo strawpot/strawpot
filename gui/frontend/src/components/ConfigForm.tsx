@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useResources } from "@/hooks/queries/use-registry";
 import { useProjectResources } from "@/hooks/queries/use-project-resources";
-import RoleQuickSwitch from "@/components/RoleQuickSwitch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ interface ConfigFormProps {
   placeholders?: Record<string, unknown>;
   onSave: (data: Record<string, unknown>) => void;
   saving?: boolean;
-  showQuickSwitch?: boolean;
   projectId?: number | null;
 }
 
@@ -125,7 +123,6 @@ export default function ConfigForm({
   placeholders,
   onSave,
   saving,
-  showQuickSwitch = false,
   projectId,
 }: ConfigFormProps) {
   const [state, setState] = useState<FlatState>(toFlat(values));
@@ -230,21 +227,6 @@ export default function ConfigForm({
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold">Orchestrator</h3>
         <Separator />
-        {showQuickSwitch && (
-          <div className="flex items-center gap-3">
-            <Label className="text-xs text-muted-foreground">Quick switch</Label>
-            <RoleQuickSwitch
-              current={state.orchestrator_role}
-              onSwitch={(role) => {
-                if (role === state.orchestrator_role) return;
-                const updated = { ...state, orchestrator_role: role };
-                setState(updated);
-                onSave(toNested(updated));
-              }}
-              disabled={saving}
-            />
-          </div>
-        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Role">
             <Input
