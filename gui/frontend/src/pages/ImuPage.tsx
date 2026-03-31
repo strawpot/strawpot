@@ -48,8 +48,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, BotMessageSquare, CheckCircle2, CornerDownLeft, ExternalLink, Loader2, MessageSquare, Paperclip, Pencil, Settings, Square, Trash2, Upload, X, XCircle } from "lucide-react";
 import type { AskUserPending, ChatMessage, ConversationSession, ImuConversation, ProjectFile, TreeData } from "@/api/types";
 import MarkdownContent from "@/components/MarkdownContent";
+import { useGlobalConfig } from "@/hooks/queries/use-config";
+import { useSaveGlobalConfig } from "@/hooks/mutations/use-config";
+import RoleQuickSwitch, { type QuickRole } from "@/components/RoleQuickSwitch";
+import { toast } from "sonner";
 
-const IMU_ROLE = "imu";
+const DEFAULT_ROLE: QuickRole = "imu";
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "";
@@ -239,6 +243,12 @@ function ImuConversationView({ cid }: { cid: number }) {
   const respondedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { respondedIdsRef.current.clear(); }, [cid]);
 
+  const globalConfig = useGlobalConfig();
+  const saveGlobalConfig = useSaveGlobalConfig();
+  const configValues = globalConfig.data?.values as Record<string, unknown> | undefined;
+  const configRole = (configValues?.orchestrator as Record<string, unknown> | undefined)?.role as string | undefined;
+  const orchestratorRole: string = configRole || DEFAULT_ROLE;
+
   const { data: agents } = useResources("agents");
   const { data: memories } = useResources("memories");
   const projectFiles = useProjectFiles(0);
@@ -368,7 +378,7 @@ function ImuConversationView({ cid }: { cid: number }) {
     submit.mutate(
       {
         task: trimmed,
-        role: IMU_ROLE,
+        role: orchestratorRole,
         interactive,
         context_files: selectedFiles.length > 0 ? selectedFiles : undefined,
         system_prompt: advSystemPrompt.trim() || undefined,
@@ -471,7 +481,7 @@ function ImuConversationView({ cid }: { cid: number }) {
           {!isLoading && allSessions.length === 0 && (
             <ImuOnboarding onSelectPrompt={(text) => {
               submit.mutate(
-                { task: text, role: IMU_ROLE, interactive },
+                { task: text, role: orchestratorRole, interactive },
                 { onSuccess: () => { setTimeout(() => textareaRef.current?.focus(), 0); } },
               );
             }} />
@@ -726,7 +736,24 @@ function ImuConversationView({ cid }: { cid: number }) {
               )}
             </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground px-1">Role: {IMU_ROLE}</span>
+            <RoleQuickSwitch
+              current={orchestratorRole}
+              onSwitch={(role) => {
+                if (role === orchestratorRole) return;
+                const merged = {
+                  ...configValues,
+                  orchestrator: {
+                    ...((configValues?.orchestrator as Record<string, unknown>) ?? {}),
+                    role,
+                  },
+                };
+                saveGlobalConfig.mutate(merged, {
+                  onError: () => toast.error("Failed to save role"),
+                });
+              }}
+              disabled={saveGlobalConfig.isPending || globalConfig.isLoading}
+              size="sm"
+            />
             <div className="flex items-center gap-1">
               <Button
                 type="button"
