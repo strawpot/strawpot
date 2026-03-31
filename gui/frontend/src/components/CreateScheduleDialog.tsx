@@ -279,19 +279,32 @@ export default function CreateScheduleDialog({
 
           <div className="space-y-2">
             <Label htmlFor="sched-role">Role</Label>
-            <Input
-              id="sched-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder={roles[0] ?? "orchestrator"}
-              list="sched-role-list"
-              disabled={isImu}
-            />
-            <datalist id="sched-role-list">
-              {roles.map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
+            {isImu ? (
+              <Select value={role || "imu"} onValueChange={setRole}>
+                <SelectTrigger id="sched-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="imu">imu</SelectItem>
+                  <SelectItem value="imu-live">imu-live</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <>
+                <Input
+                  id="sched-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  placeholder={roles[0] ?? "orchestrator"}
+                  list="sched-role-list"
+                />
+                <datalist id="sched-role-list">
+                  {roles.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+              </>
+            )}
             {!isImu && role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
               <p className="text-xs text-destructive">Role not found in installed roles</p>
             )}
@@ -379,7 +392,7 @@ export default function CreateScheduleDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}>
+            <Button type="submit" disabled={isPending || (!isImu && !!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}>
               {isPending
                 ? "Saving..."
                 : editing
