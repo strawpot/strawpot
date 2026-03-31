@@ -11,11 +11,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
+from strawpot_gui.config_helpers import default_orchestrator_role
 from strawpot_gui.db import _extract_recap, _strip_recap, get_db_conn
 from strawpot_gui.routers.sessions import _refresh_session_status, launch_session_subprocess
 from strawpot_gui.routers.ws import _read_chat_messages
 
 router = APIRouter(prefix="/api", tags=["conversations"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +620,7 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
             full_task,
             user_task=body.task,
             memory_task=body.task if context else None,
-            role=body.role or ("imu" if project_id == 0 else None),
+            role=body.role or (default_orchestrator_role() if project_id == 0 else None),
             system_prompt=body.system_prompt or None,
             context_files=body.context_files,
             interactive=body.interactive,

@@ -3,7 +3,7 @@
 import os
 import sqlite3
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from croniter import croniter
@@ -331,15 +331,27 @@ class TestOneTimeScheduleFire:
 
 
 class TestImuRoleEnforcement:
-    def test_imu_role_for_project_zero(self, db_path):
-        """Schedules with project_id=0 and no explicit role get role='imu'."""
+    """Tests for orchestrator role fallback on project_id == 0.
+
+    All tests mock load_config to isolate from the user's real config file.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_config(self):
+        mock_cfg = MagicMock()
+        mock_cfg.orchestrator_role = "imu"
+        with patch("strawpot_gui.config_helpers.load_config", return_value=mock_cfg):
+            yield mock_cfg
+
+    def test_default_orchestrator_role_for_project_zero(self, db_path):
+        """Schedules with project_id=0 and no explicit role get the default orchestrator role."""
         # Insert project 0 (strawpot-internal)
         with get_db(db_path) as conn:
             conn.execute(
                 "INSERT INTO projects (id, display_name, working_dir) "
                 "VALUES (0, 'strawpot', '/tmp/strawpot')"
             )
-        sid = _insert_schedule(db_path, 0, next_run_at="2000-01-01T00:00:00+00:00")
+        _insert_schedule(db_path, 0, next_run_at="2000-01-01T00:00:00+00:00")
 
         launch_fn = MagicMock(return_value="run-imu")
         scheduler = Scheduler(db_path, launch_fn)
