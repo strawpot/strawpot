@@ -255,19 +255,32 @@ export default function CreateOneTimeScheduleDialog({
 
           <div className="space-y-2">
             <Label htmlFor="ot-role">Role</Label>
-            <Input
-              id="ot-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder={roles[0] ?? "orchestrator"}
-              list="ot-role-list"
-              disabled={isImu}
-            />
-            <datalist id="ot-role-list">
-              {roles.map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
+            {isImu ? (
+              <Select value={role || "imu"} onValueChange={setRole}>
+                <SelectTrigger id="ot-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="imu">imu</SelectItem>
+                  <SelectItem value="imu-live">imu-live</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <>
+                <Input
+                  id="ot-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  placeholder={roles[0] ?? "orchestrator"}
+                  list="ot-role-list"
+                />
+                <datalist id="ot-role-list">
+                  {roles.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+              </>
+            )}
             {!isImu && role.trim() && roles.length > 0 && !roles.includes(role.trim()) && (
               <p className="text-xs text-destructive">Role not found in installed roles</p>
             )}
@@ -342,7 +355,7 @@ export default function CreateOneTimeScheduleDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isPending || (!!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
+              disabled={isPending || (!isImu && !!role.trim() && roles.length > 0 && !roles.includes(role.trim()))}
             >
               {isPending
                 ? "Saving..."
