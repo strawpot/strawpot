@@ -8,6 +8,9 @@ import pytest
 from strawpot.agents.protocol import AgentHandle, AgentResult
 from strawpot.config import StrawPotConfig
 from strawpot.delegation import (
+    AFFECT_BASELINE,
+    AFFECT_DIMENSIONS,
+    MODULATION_RULES,
     DelegateRequest,
     DelegateResult,
     DelegationError,
@@ -17,19 +20,25 @@ from strawpot.delegation import (
     _check_policy,
     _collect_transitive_skills,
     _compose_memory_prompt,
+    _compute_affect_decay,
     _find_skill,
+    _format_affect_section,
     _format_identity_section,
     _format_memory_prompt,
+    _get_active_modulation_rules,
     _get_default_agent,
+    _is_affect_enabled,
     _merge_env_entry,
     _discover_all_roles,
     _parse_role_deps,
     _parse_skill_deps,
     _parse_skill_env,
     _collect_saved_env,
+    _recall_affect,
     _recall_identity,
     _recall_warm_start,
     _validate_output,
+    _verify_affect_stored,
     collect_skill_env,
     create_agent_workspace,
     handle_delegate,
@@ -97,7 +106,7 @@ def _write_skill(base, slug, body="Skill body.", deps=None, env=None):
 
 def _write_role(base, slug, body="Role body.", description="test",
                 skill_deps=None, role_deps=None,
-                default_agent=None):
+                default_agent=None, affect=None):
     """Write a ROLE.md file.
 
     Args:
@@ -108,15 +117,19 @@ def _write_role(base, slug, body="Role body.", description="test",
         skill_deps: Optional list of skill dependency slugs.
         role_deps: Optional list of role dependency slugs.
         default_agent: Optional string for metadata.strawpot.default_agent.
+        affect: Optional bool for metadata.strawpot.affect.
     """
     d = os.path.join(base, "roles", slug)
     os.makedirs(d, exist_ok=True)
     has_strawpot = (
         skill_deps or role_deps
         or default_agent is not None
+        or affect is not None
     )
     if has_strawpot:
         strawpot_lines = []
+        if affect is not None:
+            strawpot_lines.append(f"    affect: {'true' if affect else 'false'}")
         if skill_deps or role_deps:
             strawpot_lines.append("    dependencies:")
             if skill_deps:
@@ -2026,21 +2039,357 @@ class TestRecallWarmStart:
 
 class TestComposeMemoryPrompt:
     def test_all_sections(self):
-        result = _compose_memory_prompt("## Identity", "## Previous", "## Memory")
-        assert result == "## Identity\n\n## Previous\n\n## Memory"
+        result = _compose_memory_prompt(
+            "## Identity", "## Affect", "## Previous", "## Memory"
+        )
+        assert result == "## Identity\n\n## Affect\n\n## Previous\n\n## Memory"
 
     def test_identity_only(self):
-        assert _compose_memory_prompt("## Identity", "", "") == "## Identity"
+        assert _compose_memory_prompt("## Identity", "", "", "") == "## Identity"
 
     def test_memory_only(self):
-        assert _compose_memory_prompt("", "", "## Memory") == "## Memory"
+        assert _compose_memory_prompt("", "", "", "## Memory") == "## Memory"
 
     def test_all_empty(self):
-        assert _compose_memory_prompt("", "", "") == ""
+        assert _compose_memory_prompt("", "", "", "") == ""
 
     def test_skips_empty_sections(self):
-        result = _compose_memory_prompt("## Identity", "", "## Memory")
+        result = _compose_memory_prompt("## Identity", "", "", "## Memory")
         assert result == "## Identity\n\n## Memory"
+
+    def test_affect_between_identity_and_warm_start(self):
+        result = _compose_memory_prompt(
+            "## Identity", "## Affect", "## Previous", "## Memory"
+        )
+        id_pos = result.index("## Identity")
+        af_pos = result.index("## Affect")
+        prev_pos = result.index("## Previous")
+        mem_pos = result.index("## Memory")
+        assert id_pos < af_pos < prev_pos < mem_pos
+
+    def test_without_affect(self):
+        result = _compose_memory_prompt(
+            "## Identity", "", "## Previous", "## Memory"
+        )
+        assert "## Identity" in result
+        assert "## Previous" in result
+        assert "## Memory" in result
+        assert "## Affect" not in result
+
+
+# ---------------------------------------------------------------------------
+# Affect vector injection (Layer 3B)
+# ---------------------------------------------------------------------------
+
+
+class TestIsAffectEnabled:
+    def test_returns_true_when_affect_true(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        assert _is_affect_enabled(role_path) is True
+
+    def test_returns_false_when_affect_false(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=False)
+        assert _is_affect_enabled(role_path) is False
+
+    def test_returns_false_when_absent(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "plain-role")
+        assert _is_affect_enabled(role_path) is False
+
+    def test_returns_false_when_no_role_md(self, tmp_path):
+        assert _is_affect_enabled(str(tmp_path / "nonexistent")) is False
+
+
+class TestComputeAffectDecay:
+    def test_decay_toward_baseline(self):
+        vector = {"satisfaction": 5, "frustration": 1, "curiosity": 3,
+                  "warmth": 3, "anxiety": 0, "drive": 7}
+        decayed, log = _compute_affect_decay(vector, sessions_elapsed=1)
+        assert decayed["satisfaction"] == 4  # 5 -> 4
+        assert decayed["frustration"] == 2  # 1 -> 2
+        assert decayed["curiosity"] == 3    # at baseline
+        assert decayed["warmth"] == 3       # at baseline
+        assert decayed["anxiety"] == 1      # 0 -> 1
+        assert decayed["drive"] == 6        # 7 -> 6
+
+    def test_no_decay_at_baseline(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        decayed, log = _compute_affect_decay(vector, sessions_elapsed=1)
+        assert all(decayed[d] == AFFECT_BASELINE for d in AFFECT_DIMENSIONS)
+        assert log == []
+
+    def test_multiple_sessions_decay(self):
+        vector = {"satisfaction": 7, "frustration": 3, "curiosity": 3,
+                  "warmth": 3, "anxiety": 3, "drive": 3}
+        decayed, log = _compute_affect_decay(vector, sessions_elapsed=3)
+        assert decayed["satisfaction"] == 4  # 7 -> 4
+
+    def test_clamp_to_bounds(self):
+        vector = {"satisfaction": 10, "frustration": 0, "curiosity": 3,
+                  "warmth": 3, "anxiety": 3, "drive": 3}
+        decayed, _ = _compute_affect_decay(vector, sessions_elapsed=20)
+        assert all(0 <= v <= 10 for v in decayed.values())
+        # After 20 decays everything should be at baseline
+        assert decayed["satisfaction"] == AFFECT_BASELINE
+        assert decayed["frustration"] == AFFECT_BASELINE
+
+    def test_zero_sessions_no_decay(self):
+        vector = {"satisfaction": 8, "frustration": 1, "curiosity": 6,
+                  "warmth": 4, "anxiety": 2, "drive": 9}
+        decayed, log = _compute_affect_decay(vector, sessions_elapsed=0)
+        for dim in AFFECT_DIMENSIONS:
+            assert decayed[dim] == vector[dim]
+        assert log == []
+
+    def test_missing_dimensions_use_baseline(self):
+        decayed, _ = _compute_affect_decay({}, sessions_elapsed=1)
+        assert all(decayed[d] == AFFECT_BASELINE for d in AFFECT_DIMENSIONS)
+
+
+class TestGetActiveModulationRules:
+    def test_no_rules_at_baseline(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        assert _get_active_modulation_rules(vector) == []
+
+    def test_frustration_rule(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        vector["frustration"] = 5
+        rules = _get_active_modulation_rules(vector)
+        assert len(rules) == 1
+        assert "frustration" in rules[0]
+
+    def test_multiple_rules(self):
+        vector = {"satisfaction": 7, "frustration": 5, "curiosity": 6,
+                  "warmth": 6, "anxiety": 4, "drive": 7}
+        rules = _get_active_modulation_rules(vector)
+        assert len(rules) == 6  # All rules triggered
+
+
+class TestFormatAffectSection:
+    def test_basic_format(self):
+        vector = {"satisfaction": 4, "frustration": 2, "curiosity": 5,
+                  "warmth": 4, "anxiety": 1, "drive": 3}
+        result = _format_affect_section(
+            vector, "2026-03-31T16:40:00Z", ["satisfaction 5→4"], []
+        )
+        assert result.startswith("## Emotional State (auto-loaded)")
+        assert "satisfaction: 4" in result
+        assert "Last updated: 2026-03-31T16:40:00Z" in result
+        assert "satisfaction 5→4" in result
+
+    def test_no_decay_log(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        result = _format_affect_section(vector, "unknown", [], [])
+        assert "Decay applied: (none)" in result
+
+    def test_with_modulation_rules(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        rules = ["- frustration ≥ 5: Seek alternatives."]
+        result = _format_affect_section(vector, "ts", [], rules)
+        assert "frustration ≥ 5" in result
+
+    def test_no_active_rules(self):
+        vector = {dim: AFFECT_BASELINE for dim in AFFECT_DIMENSIONS}
+        result = _format_affect_section(vector, "ts", [], [])
+        assert "none currently active" in result
+
+
+class TestRecallAffect:
+    def _make_affect_entry(self, **overrides):
+        """Create a RecallEntry with a valid affect JSON payload."""
+        import json as _json
+        data = {
+            "affect_vector": {
+                "satisfaction": 4, "frustration": 2, "curiosity": 5,
+                "warmth": 4, "anxiety": 1, "drive": 3,
+            },
+            "last_updated": "2026-03-31T16:40:00Z",
+        }
+        data.update(overrides)
+        return RecallEntry(
+            entry_id="e_affect",
+            content=_json.dumps(data),
+            keywords=["imu-affect", "emotional-state", "emo-role"],
+            scope="project",
+            score=0.95,
+        )
+
+    def test_returns_empty_for_non_affect_role(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "plain")
+        provider = MagicMock()
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="plain",
+            role_path=role_path,
+        )
+        assert result == ""
+        provider.recall.assert_not_called()
+
+    def test_returns_section_for_affect_role(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(
+            entries=[self._make_affect_entry()]
+        )
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert "## Emotional State (auto-loaded)" in result
+        assert "satisfaction:" in result
+
+    def test_returns_empty_when_no_entries(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(entries=[])
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert result == ""
+
+    def test_returns_empty_on_malformed_json(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(
+                entry_id="e1", content="not json at all",
+                keywords=["imu-affect"], scope="project", score=0.9,
+            )]
+        )
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert result == ""
+
+    def test_returns_empty_on_missing_vector(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        import json as _json
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(
+                entry_id="e1", content=_json.dumps({"no_affect": True}),
+                keywords=["imu-affect"], scope="project", score=0.9,
+            )]
+        )
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert result == ""
+
+    def test_returns_empty_on_exception(self, tmp_path):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.side_effect = RuntimeError("boom")
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert result == ""
+
+    def test_supports_affect_key_format(self, tmp_path):
+        """Supports both 'affect_vector' and 'affect' keys."""
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        import json as _json
+        data = {
+            "affect": {
+                "satisfaction": 5, "frustration": 3, "curiosity": 4,
+                "warmth": 3, "anxiety": 2, "drive": 6,
+            },
+            "last_updated": "2026-03-31T20:00:00Z",
+        }
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(
+                entry_id="e1", content=_json.dumps(data),
+                keywords=["imu-affect"], scope="project", score=0.9,
+            )]
+        )
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        assert "## Emotional State (auto-loaded)" in result
+        # Decay applied: drive 6→5
+        assert "drive" in result
+
+    def test_decay_applied(self, tmp_path):
+        """Decay is applied to the vector (one step per session)."""
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        import json as _json
+        data = {
+            "affect_vector": {
+                "satisfaction": 5, "frustration": 3, "curiosity": 3,
+                "warmth": 3, "anxiety": 3, "drive": 3,
+            },
+            "last_updated": "2026-03-31T16:00:00Z",
+        }
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(
+                entry_id="e1", content=_json.dumps(data),
+                keywords=["imu-affect"], scope="project", score=0.9,
+            )]
+        )
+        result = _recall_affect(
+            provider, session_id="s", agent_id="a", role="emo-role",
+            role_path=role_path,
+        )
+        # satisfaction 5 should decay to 4
+        assert "satisfaction: 4" in result
+        assert "satisfaction 5→4" in result
+
+
+class TestVerifyAffectStored:
+    def test_no_warning_for_non_affect_role(self, tmp_path, caplog):
+        role_path = _write_role(str(tmp_path), "plain")
+        provider = MagicMock()
+        _verify_affect_stored(
+            provider, session_id="s", agent_id="a", role="plain",
+            role_path=role_path,
+        )
+        provider.recall.assert_not_called()
+
+    def test_no_warning_when_affect_stored(self, tmp_path, caplog):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(
+            entries=[RecallEntry(
+                entry_id="e1", content='{"affect_vector": {}}',
+                keywords=["imu-affect"], scope="project", score=0.9,
+            )]
+        )
+        import logging
+        with caplog.at_level(logging.WARNING):
+            _verify_affect_stored(
+                provider, session_id="s", agent_id="a", role="emo-role",
+                role_path=role_path,
+            )
+        assert "did not store" not in caplog.text
+
+    def test_warning_when_affect_not_stored(self, tmp_path, caplog):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.return_value = RecallResult(entries=[])
+        import logging
+        with caplog.at_level(logging.WARNING):
+            _verify_affect_stored(
+                provider, session_id="s", agent_id="a", role="emo-role",
+                role_path=role_path,
+            )
+        assert "did not store" in caplog.text
+
+    def test_handles_exception_gracefully(self, tmp_path, caplog):
+        role_path = _write_role(str(tmp_path), "emo-role", affect=True)
+        provider = MagicMock()
+        provider.recall.side_effect = RuntimeError("connection lost")
+        import logging
+        with caplog.at_level(logging.WARNING):
+            _verify_affect_stored(
+                provider, session_id="s", agent_id="a", role="emo-role",
+                role_path=role_path,
+            )
+        assert "verification failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------

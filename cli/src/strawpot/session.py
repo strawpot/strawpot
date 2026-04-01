@@ -46,8 +46,10 @@ from strawpot.delegation import (
     _discover_all_roles,
     _format_memory_prompt,
     _parse_role_deps,
+    _recall_affect,
     _recall_identity,
     _recall_warm_start,
+    _verify_affect_stored,
     build_skill_descriptions,
     create_agent_workspace,
     handle_delegate,
@@ -493,6 +495,7 @@ class Session:
         self._agent_spans: dict[str, str] = {}
         self._orchestrator_result: AgentResult | None = None
         self._orchestrator_role_prompt: str = ""
+        self._orchestrator_role_path: str = ""
         self._files_dirs: list[str] = []
         self._delegation_cache: OrderedDict[str, tuple[str, "denden_pb2.DelegateResult", float]] = OrderedDict()
         self._delegation_lock = threading.RLock()
@@ -587,6 +590,7 @@ class Session:
                 custom_prompt=self.system_prompt or None,
             )
             self._orchestrator_role_prompt = role_prompt
+            self._orchestrator_role_path = resolved["path"]
 
             # 4. Stage role + create agent workspace
             agent_id = f"agent_{uuid.uuid4().hex[:12]}"
@@ -625,7 +629,7 @@ class Session:
                         group_id=self._group_id,
                     )
 
-                # 5a-ii. Identity bootstrap + session warm-start
+                # 5a-ii. Identity bootstrap + affect injection + session warm-start
                 recall_kwargs = dict(
                     session_id=self._run_id,
                     agent_id=agent_id,
@@ -634,6 +638,11 @@ class Session:
                 )
                 memory_prompt = _compose_memory_prompt(
                     _recall_identity(self._memory_provider, **recall_kwargs),
+                    _recall_affect(
+                        self._memory_provider,
+                        role_path=resolved["path"],
+                        **recall_kwargs,
+                    ),
                     _recall_warm_start(self._memory_provider, **recall_kwargs),
                     memory_prompt,
                 )
@@ -807,6 +816,16 @@ class Session:
                             len(recap),
                             exc_info=True,
                         )
+
+                # 0a-iii. Post-session affect verification
+                _verify_affect_stored(
+                    self._memory_provider,
+                    session_id=self._run_id,
+                    agent_id=orch_agent_id,
+                    role=self.config.orchestrator_role,
+                    role_path=self._orchestrator_role_path,
+                    group_id=self._group_id,
+                )
 
         # 0b. Emit session_end trace + progress events before cleanup
         end_duration_ms = self._elapsed_ms(self._session_start_time)
