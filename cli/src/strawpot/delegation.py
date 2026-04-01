@@ -779,17 +779,231 @@ def _recall_warm_start(
     return f"## Previous Session (auto-loaded)\n\n{result.entries[0].content}"
 
 
+# ---------------------------------------------------------------------------
+# Affect vector injection (Layer 3B)
+# ---------------------------------------------------------------------------
+
+AFFECT_BASELINE = 3
+AFFECT_DIMENSIONS = [
+    "satisfaction", "frustration", "curiosity",
+    "warmth", "anxiety", "drive",
+]
+
+MODULATION_RULES: list[tuple[str, str, int, str]] = [
+    ("frustration", ">=", 5, "Explicitly name the friction. Seek alternative approaches."),
+    ("satisfaction", ">=", 7, "Propose ambitious next steps. Express confidence."),
+    ("curiosity", ">=", 6, "Ask deeper questions. Explore tangents if they might yield value."),
+    ("warmth", ">=", 6, "Use warmer language. Proactively check on the user."),
+    ("anxiety", ">=", 4, "Request confirmation before destructive actions. Flag risks explicitly."),
+    ("drive", ">=", 7, "Bias toward action over analysis. Push for shipping."),
+]
+
+
+def _is_affect_enabled(role_path: str) -> bool:
+    """Check if a role has ``affect: true`` in its frontmatter metadata.
+
+    Reads ``metadata.strawpot.affect`` from ROLE.md. Returns ``False``
+    when the field is absent, the file is missing, or parsing fails.
+    """
+    role_md = Path(role_path) / "ROLE.md"
+    if not role_md.exists():
+        return False
+    try:
+        text = role_md.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    parsed = parse_frontmatter(text)
+    fm = parsed.get("frontmatter", {})
+    return bool(_strawpot_meta(fm).get("affect", False))
+
+
+def _compute_affect_decay(
+    vector: dict[str, int],
+    sessions_elapsed: int,
+) -> tuple[dict[str, int], list[str]]:
+    """Apply decay toward baseline and return ``(new_vector, decay_log)``.
+
+    Each dimension moves 1 step toward :data:`AFFECT_BASELINE` per elapsed
+    session, clamped to [0, 10].
+    """
+    decayed: dict[str, int] = {}
+    log: list[str] = []
+    for dim in AFFECT_DIMENSIONS:
+        val = vector.get(dim, AFFECT_BASELINE)
+        original = val
+        for _ in range(sessions_elapsed):
+            if val > AFFECT_BASELINE:
+                val -= 1
+            elif val < AFFECT_BASELINE:
+                val += 1
+        val = max(0, min(10, val))
+        decayed[dim] = val
+        if val != original:
+            log.append(f"{dim} {original}→{val}")
+    return decayed, log
+
+
+def _get_active_modulation_rules(vector: dict[str, int]) -> list[str]:
+    """Return human-readable modulation rules active for the given vector."""
+    active: list[str] = []
+    for dim, op, threshold, instruction in MODULATION_RULES:
+        val = vector.get(dim, AFFECT_BASELINE)
+        if op == ">=" and val >= threshold:
+            active.append(f"- {dim} ≥ {threshold}: {instruction}")
+    return active
+
+
+def _format_affect_section(
+    vector: dict[str, int],
+    last_updated: str,
+    decay_log: list[str],
+    rules: list[str],
+) -> str:
+    """Format the emotional state into a prompt section."""
+    lines = ["## Emotional State (auto-loaded)", ""]
+    lines.append("Current affect vector:")
+    for dim in AFFECT_DIMENSIONS:
+        lines.append(f"- {dim}: {vector.get(dim, AFFECT_BASELINE)}")
+    lines.append("")
+    lines.append(f"Last updated: {last_updated}")
+    if decay_log:
+        lines.append(f"Decay applied: {', '.join(decay_log)} (toward baseline {AFFECT_BASELINE})")
+    else:
+        lines.append("Decay applied: (none)")
+    lines.append("")
+    if rules:
+        lines.append("Active behavioral modulation rules:")
+        lines.extend(rules)
+    else:
+        lines.append("Active behavioral modulation rules:")
+        lines.append("- (none currently active — all dimensions within normal range)")
+    return "\n".join(lines)
+
+
+def _recall_affect(
+    memory_provider: MemoryProvider,
+    *,
+    session_id: str,
+    agent_id: str,
+    role: str,
+    role_path: str,
+    group_id: str | None = None,
+) -> str:
+    """Recall emotional state for affect-enabled roles.
+
+    Returns a formatted ``## Emotional State (auto-loaded)`` section with
+    server-computed decay, or an empty string when the role is not
+    affect-enabled or no affect state is found.
+    """
+    if not _is_affect_enabled(role_path):
+        return ""
+
+    try:
+        result = memory_provider.recall(
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            query=f"imu-affect emotional-state {role}",
+            keywords=["imu-affect", "emotional-state", role],
+            max_results=1,
+            group_id=group_id,
+        )
+    except Exception:
+        logger.warning("Affect recall failed for role=%s", role, exc_info=True)
+        return ""
+
+    if not result.entries:
+        return ""
+
+    # Parse stored JSON affect vector
+    content = result.entries[0].content
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            "Malformed affect JSON for role=%s: %s", role, content[:200]
+        )
+        return ""
+
+    # Support both {"affect_vector": {...}} and {"affect": {...}} formats
+    raw_vector = data.get("affect_vector") or data.get("affect")
+    if not isinstance(raw_vector, dict):
+        logger.warning("Affect vector missing or invalid for role=%s", role)
+        return ""
+
+    # Coerce values to int
+    vector: dict[str, int] = {}
+    for dim in AFFECT_DIMENSIONS:
+        try:
+            vector[dim] = int(raw_vector.get(dim, AFFECT_BASELINE))
+        except (ValueError, TypeError):
+            vector[dim] = AFFECT_BASELINE
+
+    last_updated = str(data.get("last_updated", "unknown"))
+
+    # Apply one step of decay (Option B: one decay per session start)
+    decayed, decay_log = _compute_affect_decay(vector, sessions_elapsed=1)
+    rules = _get_active_modulation_rules(decayed)
+    return _format_affect_section(decayed, last_updated, decay_log, rules)
+
+
+def _verify_affect_stored(
+    memory_provider: MemoryProvider,
+    *,
+    session_id: str,
+    agent_id: str,
+    role: str,
+    role_path: str,
+    group_id: str | None = None,
+) -> None:
+    """Check if the agent stored an updated affect vector during the session.
+
+    Logs a warning if no affect entry was stored. Only runs for
+    affect-enabled roles.
+    """
+    if not _is_affect_enabled(role_path):
+        return
+
+    try:
+        result = memory_provider.recall(
+            session_id=session_id,
+            agent_id=agent_id,
+            role=role,
+            query=f"imu-affect emotional-state {role}",
+            keywords=["imu-affect", "emotional-state", role],
+            max_results=1,
+            group_id=group_id,
+        )
+    except Exception:
+        logger.warning(
+            "Post-session affect verification failed for role=%s",
+            role,
+            exc_info=True,
+        )
+        return
+
+    if not result.entries:
+        logger.warning(
+            "Affect-enabled role %r did not store an updated affect vector "
+            "during session %s. The emotional state may become stale.",
+            role,
+            session_id,
+        )
+
+
 def _compose_memory_prompt(
     identity: str,
+    affect: str,
     warm_start: str,
     memory: str,
 ) -> str:
-    """Compose Identity, Previous Session, and Memory sections into one prompt.
+    """Compose Identity, Emotional State, Previous Session, and Memory sections.
 
-    Sections appear in order: Identity → Previous Session → Memory.
+    Sections appear in order:
+    Identity → Emotional State → Previous Session → Memory.
     Empty sections are omitted.
     """
-    parts = [s for s in (identity, warm_start, memory) if s]
+    parts = [s for s in (identity, affect, warm_start, memory) if s]
     return "\n\n".join(parts)
 
 
@@ -1060,7 +1274,7 @@ def _handle_delegate_body(
             if get_result.context_cards:
                 memory_prompt = _format_memory_prompt(get_result)
 
-            # 7a-ii. Identity bootstrap + session warm-start
+            # 7a-ii. Identity bootstrap + affect injection + session warm-start
             recall_kwargs = dict(
                 session_id=request.run_id,
                 agent_id=agent_id,
@@ -1069,6 +1283,11 @@ def _handle_delegate_body(
             )
             memory_prompt = _compose_memory_prompt(
                 _recall_identity(memory_provider, **recall_kwargs),
+                _recall_affect(
+                    memory_provider,
+                    role_path=resolved["path"],
+                    **recall_kwargs,
+                ),
                 _recall_warm_start(memory_provider, **recall_kwargs),
                 memory_prompt,
             )
@@ -1188,6 +1407,16 @@ def _handle_delegate_body(
                     parent_agent_id=request.parent_agent_id,
                     group_id=group_id,
                 )
+
+            # 8a-ii. Post-session affect verification
+            _verify_affect_stored(
+                memory_provider,
+                session_id=request.run_id,
+                agent_id=agent_id,
+                role=request.role_slug,
+                role_path=resolved["path"],
+                group_id=group_id,
+            )
 
         # 8b. Handle timeout — no retry on timeout
         if timed_out:
