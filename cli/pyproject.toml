@@ -20,13 +20,18 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.1",
-    "croniter>=1.0",
+    "croniter>=6.2.2",
     "mcp>=1.0",
     "pyyaml>=6.0",
     "tomli_w>=1.0",
     "strawhub",
     "strawpot-memory",
     "denden-server",
+    # Security: pin minimum versions for transitive dependencies
+    "cryptography>=46.0.6",
+    "certifi>=2026.2.25",
+    # Core SDK: keep in sync with ecosystem
+    "anthropic>=0.88.0",
 ]
 
 [project.urls]
@@ -46,6 +51,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=6.0",
+    "coverage>=7.13.5",
     "pytest-timeout>=2.0",
     "pyinstaller>=6.0",
 ]

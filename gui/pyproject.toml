@@ -11,7 +11,7 @@ dependencies = [
     "tomli_w>=1.0",
     "watchfiles>=1.0",
     "python-multipart>=0.0.9",
-    "croniter>=2.0",
+    "croniter>=6.2.2",
 ]
 
 [project.scripts]
