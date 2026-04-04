@@ -30,8 +30,6 @@ dependencies = [
     # Security: pin minimum versions for transitive dependencies
     "cryptography>=46.0.6",
     "certifi>=2026.2.25",
-    # Core SDK: keep in sync with ecosystem
-    "anthropic>=0.88.0",
 ]
 
 [project.urls]
