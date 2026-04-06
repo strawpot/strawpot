@@ -206,6 +206,66 @@ class TestDrainActiveSessionGuard:
         assert remaining[0]["task"] == "Beta"
 
 
+class TestDrainSchedulerSource:
+    """Drained tasks from the scheduler should preserve schedule_id on the session."""
+
+    def test_drain_scheduler_task_sets_schedule_id(self, client, tmp_path, app):
+        """When a scheduler-queued task is drained, the new session has schedule_id."""
+        from strawpot_gui.routers.sessions import _drain_pending_task
+
+        d = tmp_path / "proj"
+        d.mkdir()
+        pid = _register_project(client, d)
+        conv = _create_conversation(client, pid)
+        cid = conv["id"]
+
+        # Launch first task to occupy the conversation
+        resp = _submit_task(client, cid, task="First")
+        run_id = resp.json()["run_id"]
+
+        # Create a schedule and insert a scheduler-sourced queued task (simulates schedule rerun)
+        with get_db(app.state.db_path) as conn:
+            conn.execute(
+                """INSERT INTO scheduled_tasks
+                   (name, project_id, role, task, cron_expr, enabled)
+                   VALUES (?, ?, ?, ?, ?, 1)""",
+                ("test-schedule", pid, "some-role", "original task", "0 * * * *"),
+            )
+            schedule_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                """INSERT INTO conversation_task_queue
+                   (conversation_id, task, source, source_id, role)
+                   VALUES (?, ?, 'scheduler', ?, ?)""",
+                (cid, "Scheduled retry task", str(schedule_id), "some-role"),
+            )
+
+        # Complete first session, then drain
+        with patch("strawpot_gui.routers.sessions.shutil.which", return_value="/usr/bin/strawpot"), \
+             patch("strawpot_gui.routers.sessions.subprocess.Popen"), \
+             patch("strawpot_gui.routers.sessions.load_config") as mock_config:
+            from strawpot.config import StrawPotConfig
+            mock_config.return_value = StrawPotConfig()
+            with get_db(app.state.db_path) as conn:
+                conn.execute(
+                    "UPDATE sessions SET status = 'completed' WHERE run_id = ?",
+                    (run_id,),
+                )
+                _drain_pending_task(conn, cid)
+
+        # The drained session should have schedule_id set
+        with get_db(app.state.db_path) as conn:
+            sessions = conn.execute(
+                "SELECT run_id, schedule_id FROM sessions "
+                "WHERE conversation_id = ? ORDER BY rowid",
+                (cid,),
+            ).fetchall()
+        assert len(sessions) == 2
+        # First session has no schedule_id
+        assert sessions[0]["schedule_id"] is None
+        # Drained session should carry the schedule_id
+        assert sessions[1]["schedule_id"] == schedule_id
+
+
 class TestCancelQueuedTask:
     """Individual and bulk queue cancellation."""
 
