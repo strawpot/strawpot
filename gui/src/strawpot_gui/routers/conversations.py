@@ -613,6 +613,14 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
     context = _build_conversation_context(conn, conversation_id, history_path=hist_path)
     full_task = f"{context}\n\n---\n\n{body.task}" if context else body.task
 
+    # Resolve schedule_id when this task originated from the scheduler
+    schedule_id: int | None = None
+    if body.source == "scheduler" and body.source_id:
+        try:
+            schedule_id = int(body.source_id)
+        except (ValueError, TypeError):
+            pass
+
     try:
         run_id = launch_session_subprocess(
             conn,
@@ -631,6 +639,7 @@ def _launch_conversation_task(conn, conv, body: ConversationTask):
             cache_delegations=body.cache_delegations,
             cache_max_entries=body.cache_max_entries,
             cache_ttl_seconds=body.cache_ttl_seconds,
+            schedule_id=schedule_id,
         )
     except RuntimeError as e:
         _ERROR_STATUS = {
